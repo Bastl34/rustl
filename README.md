@@ -1,7 +1,12 @@
 # Rustl - a game engine written in rust
 
-* WIP (very early state)
+* WIP (very _very_ **very** early state)
 * this is going to be a game engine soon ™️ 😬
+
+
+## current state
+<img src="history/2023-04-25_2.png" width="720">
+<br>
 
 ## requrements
 
