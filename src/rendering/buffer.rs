@@ -56,7 +56,9 @@ impl Vertex
 pub struct Buffer
 {
     vertex_count: u32,
+    index_count: u32,
     vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
 }
 
 impl Buffer
@@ -65,11 +67,20 @@ impl Buffer
     {
         let device = wgpu.device();
 
-        const VERTICES: &[Vertex] = &
-        [
-            Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-            Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-            Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+        const VERTICES: &[Vertex] =
+        &[
+            Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
+            Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
+            Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
+            Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
+            Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
+        ];
+
+        const INDICES: &[u16] =
+        &[
+            0, 1, 4,
+            1, 2, 4,
+            2, 3, 4,
         ];
 
         let vertex_buffer_name = format!("{} Vertex Buffer", name);
@@ -83,10 +94,24 @@ impl Buffer
             }
         );
 
+        let index_buffer_name = format!("{} Index Buffer", name);
+        let index_buffer = device.create_buffer_init
+        (
+            &wgpu::util::BufferInitDescriptor
+            {
+                label: Some(index_buffer_name.as_str()),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+
         Self
         {
             vertex_count: VERTICES.len() as u32,
-            vertex_buffer: vertex_buffer
+            index_count: INDICES.len() as u32,
+
+            vertex_buffer: vertex_buffer,
+            index_buffer: index_buffer,
         }
     }
 
@@ -95,8 +120,18 @@ impl Buffer
         &self.vertex_buffer
     }
 
+    pub fn get_index_buffer(&self) -> &wgpu::Buffer
+    {
+        &self.index_buffer
+    }
+
     pub fn get_vertex_count(&self) -> u32
     {
         self.vertex_count
+    }
+
+    pub fn get_index_count(&self) -> u32
+    {
+        self.index_count
     }
 }
