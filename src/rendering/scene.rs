@@ -2,25 +2,29 @@ use wgpu::{CommandEncoder, TextureView};
 
 use crate::{state::state::{StateItem}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
 
-use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline};
+use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer};
 
 pub struct Scene
 {
     state: StateItem,
 
-    dummy_pipe: Pipeline
+    pipe: Pipeline,
+    buffer: Buffer,
 }
 
 impl Scene
 {
     pub fn new(state: StateItem, wgpu: &mut WGpu) -> Scene
     {
-        let pipeline = Pipeline::new(wgpu, "test", "resources/shader/test.wgsl");
+        let buffer: Buffer = Buffer::new(wgpu, "test");
+        let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl");
 
         Self
         {
             state,
-            dummy_pipe: pipeline
+
+            pipe,
+            buffer
         }
     }
 }
@@ -57,8 +61,9 @@ impl WGpuRendering for Scene
             depth_stencil_attachment: None,
         });
 
-        render_pass.set_pipeline(&self.dummy_pipe.get());
-        render_pass.draw(0..3, 0..1);
+        render_pass.set_pipeline(&self.pipe.get());
+        render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
+        render_pass.draw(0..self.buffer.get_vertex_count(), 0..1);
 
         /*
 

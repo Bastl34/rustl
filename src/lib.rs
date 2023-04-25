@@ -2,6 +2,7 @@ mod rendering
 {
     pub(crate) mod wgpu;
     pub(crate) mod pipeline;
+    pub(crate) mod buffer;
     pub(crate) mod scene;
 }
 

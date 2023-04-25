@@ -1,7 +1,6 @@
 use std::{fs, borrow::Cow};
 
-use super::wgpu::WGpu;
-
+use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex};
 
 pub struct Pipeline
 {
@@ -10,7 +9,7 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_path: &str) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, buffer: &Buffer, name: &str, shader_path: &str) -> Pipeline
     {
         let shader_source = fs::read_to_string(shader_path).unwrap();
 
@@ -39,7 +38,10 @@ impl Pipeline
             {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers:
+                &[
+                    Vertex::desc()
+                ],
             },
             fragment: Some(wgpu::FragmentState
             {
