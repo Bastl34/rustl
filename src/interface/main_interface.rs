@@ -23,11 +23,11 @@ impl MainInterface
 {
     pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
     {
-        let gpu = WGpu::new(&window).await;
+        let mut gpu = WGpu::new(&window).await;
         let gui = EGui::new(event_loop, gpu.device(), gpu.surface_config(), &window);
 
         let state = Rc::new(RefCell::new(State::new()));
-        let scene = Scene::new(state.clone());
+        let scene = Scene::new(state.clone(), &mut gpu);
 
         Self
         {

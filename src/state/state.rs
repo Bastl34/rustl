@@ -27,7 +27,7 @@ impl State
         Self
         {
             running: false,
-            clear_color_r: 1.0,
+            clear_color_r: 0.0,
             clear_color_g: 0.0,
             clear_color_b: 0.0,
             fullscreen: false,

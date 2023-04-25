@@ -1,6 +1,7 @@
 mod rendering
 {
     pub(crate) mod wgpu;
+    pub(crate) mod pipeline;
     pub(crate) mod scene;
 }
 
@@ -18,6 +19,11 @@ mod window
 mod interface
 {
     pub(crate) mod main_interface;
+}
+
+mod helper
+{
+    pub(crate) mod file;
 }
 
 #[cfg(target_arch="wasm32")]

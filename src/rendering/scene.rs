@@ -1,21 +1,26 @@
 use wgpu::{CommandEncoder, TextureView};
 
-use crate::state::state::{StateItem};
+use crate::{state::state::{StateItem}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
 
-use super::wgpu::{WGpuRendering, WGpu};
+use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline};
 
 pub struct Scene
 {
-    state: StateItem
+    state: StateItem,
+
+    dummy_pipe: Pipeline
 }
 
 impl Scene
 {
-    pub fn new(state: StateItem) -> Scene
+    pub fn new(state: StateItem, wgpu: &mut WGpu) -> Scene
     {
+        let pipeline = Pipeline::new(wgpu, "test", "resources/shader/test.wgsl");
+
         Self
         {
-            state
+            state,
+            dummy_pipe: pipeline
         }
     }
 }
@@ -36,7 +41,7 @@ impl WGpuRendering for Scene
 
         let clear_color = wgpu::LoadOp::Clear(clear_color);
 
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment
@@ -51,6 +56,9 @@ impl WGpuRendering for Scene
             })],
             depth_stencil_attachment: None,
         });
+
+        render_pass.set_pipeline(&self.dummy_pipe.get());
+        render_pass.draw(0..3, 0..1);
 
         /*
 
