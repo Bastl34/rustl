@@ -3,12 +3,19 @@ mod rendering
     pub(crate) mod wgpu;
     pub(crate) mod pipeline;
     pub(crate) mod buffer;
+    pub(crate) mod texture;
     pub(crate) mod scene;
+    pub(crate) mod camera;
 }
 
 mod state
 {
     pub(crate) mod state;
+
+    pub(crate) mod scene
+    {
+        pub(crate) mod camera;
+    }
 }
 
 mod window
@@ -25,6 +32,7 @@ mod interface
 mod helper
 {
     pub(crate) mod file;
+    pub(crate) mod math;
 }
 
 #[cfg(target_arch="wasm32")]

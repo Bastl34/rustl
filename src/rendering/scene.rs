@@ -1,31 +1,61 @@
+use nalgebra::{Vector3, Point3};
 use wgpu::{CommandEncoder, TextureView};
 
-use crate::{state::state::{StateItem}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
+use crate::{state::{state::{StateItem}, scene::camera::Camera}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
 
-use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer};
+use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer, texture::Texture, camera::{CameraUniform}};
 
 pub struct Scene
 {
     state: StateItem,
 
     pipe: Pipeline,
+    texture: Texture,
     buffer: Buffer,
+
+    cam: Camera,
+    camera_uniform: CameraUniform
 }
 
 impl Scene
 {
     pub fn new(state: StateItem, wgpu: &mut WGpu) -> Scene
     {
-        let buffer: Buffer = Buffer::new(wgpu, "test");
-        let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl");
+        let buffer = Buffer::new(wgpu, "test");
+        let texture = Texture::new(wgpu, "test", "resources/images/test.png");
+
+        let mut cam = Camera::new();
+        cam.fovy = 45.0;
+        cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 2.0);
+        cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
+
+        cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
+        cam.init_matrices();
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&cam);
+
+        dbg!(camera_uniform.view_proj);
+
+        let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &texture, &camera_uniform);
 
         Self
         {
             state,
 
+            texture,
             pipe,
-            buffer
+            buffer,
+
+            cam: cam,
+            camera_uniform: camera_uniform
         }
+    }
+
+    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, _scale_factor: Option<f64>)
+    {
+        self.cam.init(dimensions.width, dimensions.height);
+        self.cam.init_matrices();
     }
 }
 
@@ -62,6 +92,9 @@ impl WGpuRendering for Scene
         });
 
         render_pass.set_pipeline(&self.pipe.get());
+        render_pass.set_bind_group(0, &self.pipe.get_diffuse_bind_group(), &[]);
+        render_pass.set_bind_group(1, &self.pipe.get_camera_bind_group(), &[]);
+
         render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
 
         render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16); // 1.
