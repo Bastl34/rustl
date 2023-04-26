@@ -95,6 +95,9 @@ impl EGui
                 ui.add(egui::Slider::new(&mut state.clear_color_g, 0.0..=1.0));
                 ui.add(egui::Slider::new(&mut state.clear_color_b, 0.0..=1.0));
 
+                ui.label("fov:");
+                ui.add(egui::Slider::new(&mut state.cam_fov, 0.0..=90.0));
+
                 ui.checkbox(&mut state.fullscreen, "Fullscreen");
             });
         });

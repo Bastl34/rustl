@@ -22,7 +22,7 @@ impl CameraUniform
 
     pub fn update_view_proj(&mut self, camera: &Camera)
     {
-        self.view_proj = camera.webgpu_projection().into();
+        self.view_proj = (camera.webgpu_projection() * camera.view).into();
     }
 }
 

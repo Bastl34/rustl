@@ -25,17 +25,17 @@ impl Scene
         let texture = Texture::new(wgpu, "test", "resources/images/test.png");
 
         let mut cam = Camera::new();
-        cam.fovy = 45.0;
+        cam.fovy = 45.0f32.to_radians();
         cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 2.0);
         cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
+        cam.clipping_near = 0.1;
+        cam.clipping_far = 100.0;
 
         cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
         cam.init_matrices();
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&cam);
-
-        dbg!(camera_uniform.view_proj);
 
         let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &texture, &camera_uniform);
 
@@ -61,7 +61,7 @@ impl Scene
 
 impl WGpuRendering for Scene
 {
-    fn render_pass(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let state = &*(self.state.borrow());
 
@@ -74,6 +74,11 @@ impl WGpuRendering for Scene
         };
 
         let clear_color = wgpu::LoadOp::Clear(clear_color);
+
+        self.cam.fovy = state.cam_fov.to_radians();
+        self.cam.init_matrices();
+        self.camera_uniform.update_view_proj(&self.cam);
+        self.pipe.update_camera(wgpu, &self.camera_uniform);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {

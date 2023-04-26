@@ -11,6 +11,8 @@ pub struct Pipeline
     pipe: wgpu::RenderPipeline,
 
     diffuse_bind_group: BindGroup,
+
+    camera_buffer: wgpu::Buffer,
     camera_bind_group: BindGroup
 }
 
@@ -206,8 +208,15 @@ impl Pipeline
             name: name.to_string(),
             pipe: render_pipeline,
             diffuse_bind_group,
+
+            camera_buffer,
             camera_bind_group
         }
+    }
+
+    pub fn update_camera(&self, wgpu: &mut WGpu, cam: &CameraUniform)
+    {
+        wgpu.queue_mut().write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[cam.view_proj]));
     }
 
     pub fn get(&self) -> &wgpu::RenderPipeline

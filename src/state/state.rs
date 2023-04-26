@@ -12,6 +12,8 @@ pub struct State
     pub clear_color_g: f64,
     pub clear_color_b: f64,
 
+    pub cam_fov: f32,
+
     pub fullscreen: bool,
 
     pub fps_timer: Instant,
@@ -31,6 +33,8 @@ impl State
             clear_color_g: 0.0,
             clear_color_b: 0.0,
             fullscreen: false,
+
+            cam_fov: 45.0,
 
             fps_timer: Instant::now(),
             last_time: 0,
