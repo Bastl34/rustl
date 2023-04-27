@@ -6,6 +6,7 @@ mod rendering
     pub(crate) mod texture;
     pub(crate) mod scene;
     pub(crate) mod camera;
+    pub(crate) mod uniform;
 }
 
 mod state
@@ -31,6 +32,7 @@ mod interface
 
 mod helper
 {
+    pub(crate) mod generic;
     pub(crate) mod file;
     pub(crate) mod math;
 }

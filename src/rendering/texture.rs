@@ -1,5 +1,7 @@
 use std::{fs};
 
+use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
+
 use super::{wgpu::WGpu};
 
 pub struct Texture
@@ -106,5 +108,48 @@ impl Texture
     pub fn get_sampler(&self) -> &wgpu::Sampler
     {
         &self.sampler
+    }
+
+    pub fn get_bind_group_layout_entries(&self, index: u32) -> [BindGroupLayoutEntry; 2]
+    {
+        [
+            wgpu::BindGroupLayoutEntry
+            {
+                binding: index * 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture
+                {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry
+            {
+                binding: (index * 2) + 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                // This should match the filterable field of the
+                // corresponding Texture entry above.
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            }
+        ]
+    }
+
+    pub fn get_bind_group_entries(&self, index: u32) -> [BindGroupEntry; 2]
+    {
+        [
+            wgpu::BindGroupEntry
+            {
+                binding: index * 2,
+                resource: wgpu::BindingResource::TextureView(&self.view),
+            },
+            wgpu::BindGroupEntry
+            {
+                binding: (index * 2) + 1,
+                resource: wgpu::BindingResource::Sampler(&self.sampler),
+            }
+        ]
     }
 }

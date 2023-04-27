@@ -97,7 +97,7 @@ impl WGpuRendering for Scene
         });
 
         render_pass.set_pipeline(&self.pipe.get());
-        render_pass.set_bind_group(0, &self.pipe.get_diffuse_bind_group(), &[]);
+        render_pass.set_bind_group(0, &self.pipe.get_textures_bind_group(), &[]);
         render_pass.set_bind_group(1, &self.pipe.get_camera_bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));

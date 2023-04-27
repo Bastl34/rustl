@@ -3,14 +3,14 @@ use std::{fs, borrow::Cow};
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
-use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::Texture, camera::{CameraUniform}};
+use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::Texture, camera::{CameraUniform}, uniform};
 
 pub struct Pipeline
 {
     pub name: String,
     pipe: wgpu::RenderPipeline,
 
-    diffuse_bind_group: BindGroup,
+    textures_bind_group: BindGroup,
 
     camera_buffer: wgpu::Buffer,
     camera_bind_group: BindGroup
@@ -32,56 +32,32 @@ impl Pipeline
         });
 
         // ******************** texture ********************
-        let texture_bind_group_layout_name = format!("{} {} texture_bind_group_layout ", name, texture.name);
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        let textures_layout_group = texture.get_bind_group_layout_entries(0);
+        let textures_group = texture.get_bind_group_entries(0);
+
+        let mut textures_layout_group_vec = vec![];
+        let mut textures_group_vec = vec![];
+
+        textures_layout_group_vec.append(&mut textures_layout_group.to_vec());
+        textures_group_vec.append(&mut textures_group.to_vec());
+
+        let textures_bind_group_layout_name = format!("{} {} texture_bind_group_layout ", name, texture.name);
+        let textures_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
-            &[
-                wgpu::BindGroupLayoutEntry
-                {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture
-                    {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry
-                {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filterable field of the
-                    // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some(texture_bind_group_layout_name.as_str()),
+            &textures_layout_group_vec.as_slice(),
+            label: Some(textures_bind_group_layout_name.as_str()),
         });
 
-        let diffuse_bind_group_layout_name = format!("{} {} diffuse_bind_group ", name, texture.name);
-        let diffuse_bind_group = device.create_bind_group
+        let textures_bind_group_name = format!("{} {} diffuse_bind_group ", name, texture.name);
+        let textures_bind_group = device.create_bind_group
         (
             &wgpu::BindGroupDescriptor
             {
-                layout: &texture_bind_group_layout,
+                layout: &textures_bind_group_layout,
                 entries:
-                &[
-                    wgpu::BindGroupEntry
-                    {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.get_view()),
-                    },
-                    wgpu::BindGroupEntry
-                    {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture.get_sampler()),
-                    }
-                ],
-                label: Some(diffuse_bind_group_layout_name.as_str()),
+                &textures_group_vec.as_slice(),
+                label: Some(textures_bind_group_name.as_str()),
             }
         );
 
@@ -103,18 +79,7 @@ impl Pipeline
         {
             entries:
             &[
-                wgpu::BindGroupLayoutEntry
-                {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer
-                    {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
+                uniform::uniform_bind_group_layout_entry(0, true, false)
             ],
             label: Some(camera_bind_group_layout_name.as_str()),
         });
@@ -125,15 +90,10 @@ impl Pipeline
             layout: &camera_bind_group_layout,
             entries:
             &[
-                wgpu::BindGroupEntry
-                {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }
+                uniform::uniform_bind_group(0, &camera_buffer)
             ],
             label: Some(camera_bind_group_name.as_str()),
         });
-
 
 
         let layout_name = format!("{} Layout", name);
@@ -142,7 +102,7 @@ impl Pipeline
             label: Some(layout_name.as_str()),
             bind_group_layouts:
             &[
-                &texture_bind_group_layout,
+                &textures_bind_group_layout,
                 &camera_bind_group_layout,
 
             ],
@@ -207,7 +167,7 @@ impl Pipeline
         {
             name: name.to_string(),
             pipe: render_pipeline,
-            diffuse_bind_group,
+            textures_bind_group,
 
             camera_buffer,
             camera_bind_group
@@ -224,9 +184,9 @@ impl Pipeline
         &self.pipe
     }
 
-    pub fn get_diffuse_bind_group(&self) -> &BindGroup
+    pub fn get_textures_bind_group(&self) -> &BindGroup
     {
-        &self.diffuse_bind_group
+        &self.textures_bind_group
     }
 
     pub fn get_camera_bind_group(&self) -> &BindGroup
