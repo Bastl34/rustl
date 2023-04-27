@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView};
 
 pub trait WGpuRendering
@@ -32,7 +34,7 @@ impl WGpu
         let dimensions = window.inner_size();
 
         let mut instance_desc = wgpu::InstanceDescriptor::default();
-        //instance_desc.backends = wgpu::Backends::VULKAN;
+        instance_desc.backends = wgpu::Backends::DX12;
 
         let instance = wgpu::Instance::new(instance_desc);
         let surface = unsafe { instance.create_surface(window) }.unwrap();
@@ -44,6 +46,15 @@ impl WGpu
         })
         .await
         .unwrap();
+
+        println!(" ********** info **********");
+        dbg!(adapter.get_info());
+
+        println!(" ********** features possible **********");
+        dbg!(adapter.features());
+
+        println!(" ********** limits possible **********");
+        dbg!(adapter.limits());
 
         let (device, queue) = adapter.request_device
         (
@@ -65,6 +76,13 @@ impl WGpu
         )
         .await
         .unwrap();
+
+        println!(" ********** features used **********");
+        dbg!(device.features());
+
+        println!(" ********** limits used **********");
+        dbg!(device.limits());
+
 
         let surface_caps = surface.get_capabilities(&adapter);
 
