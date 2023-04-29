@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub fn approx_equal(a: f32, b: f32) -> bool
 {
     let decimal_places = 6;

@@ -49,7 +49,7 @@ impl MainInterface
     {
         self.gpu.resize(dimensions);
         self.gui.resize(dimensions, scale_factor);
-        self.scene.resize(dimensions, scale_factor);
+        self.scene.resize(&mut self.gpu);
     }
 
     pub fn update(&mut self)

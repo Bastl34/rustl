@@ -3,7 +3,7 @@ use std::{fs, borrow::Cow};
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
-use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::Texture, camera::{CameraUniform}, uniform, instance::InstanceRaw};
+use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::{Texture, self}, camera::{CameraUniform}, uniform, instance::InstanceRaw};
 
 pub struct Pipeline
 {
@@ -25,6 +25,7 @@ impl Pipeline
         let device = wgpu.device();
         let config = wgpu.surface_config();
 
+        // ******************** shader ********************
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
         {
             label: Some(name),
@@ -95,7 +96,7 @@ impl Pipeline
             label: Some(camera_bind_group_name.as_str()),
         });
 
-
+        // ******************** render pipeline ********************
         let layout_name = format!("{} Layout", name);
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
@@ -152,7 +153,14 @@ impl Pipeline
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState
+            {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // front to back
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState
             {
                 count: 1,
@@ -168,6 +176,7 @@ impl Pipeline
         {
             name: name.to_string(),
             pipe: render_pipeline,
+
             textures_bind_group,
 
             camera_buffer,

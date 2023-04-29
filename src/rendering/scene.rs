@@ -13,6 +13,7 @@ pub struct Scene
     state: StateItem,
 
     pipe: Pipeline,
+    depth_texture: Texture,
     texture: Texture,
     buffer: Buffer,
 
@@ -27,8 +28,9 @@ impl Scene
 {
     pub fn new(state: StateItem, wgpu: &mut WGpu) -> Scene
     {
+
         let buffer = Buffer::new(wgpu, "test");
-        let texture = Texture::new(wgpu, "test", "resources/images/test.png");
+        let texture = Texture::new_from_image(wgpu, "test", "resources/images/test.png");
 
         let mut cam = Camera::new();
         cam.fovy = 45.0f32.to_radians();
@@ -65,6 +67,7 @@ impl Scene
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
         let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &texture, &camera_uniform);
+        let depth_texture = Texture::new_depth_texture(wgpu);
 
         Self
         {
@@ -72,6 +75,7 @@ impl Scene
 
             texture,
             pipe,
+            depth_texture,
             buffer,
             instances,
             instance_buffer,
@@ -106,10 +110,12 @@ impl Scene
         }
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, _scale_factor: Option<f64>)
+    pub fn resize(&mut self, wgpu: &mut WGpu)
     {
-        self.cam.init(dimensions.width, dimensions.height);
+        self.cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
         self.cam.init_matrices();
+
+        self.depth_texture = Texture::new_depth_texture(wgpu);
     }
 }
 
@@ -142,7 +148,16 @@ impl WGpuRendering for Scene
                     store: true,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
+            {
+                view: &self.depth_texture.get_view(),
+                depth_ops: Some(wgpu::Operations
+                {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            })
         });
 
         render_pass.set_pipeline(&self.pipe.get());
