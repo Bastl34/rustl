@@ -3,6 +3,7 @@ mod rendering
     pub(crate) mod wgpu;
     pub(crate) mod pipeline;
     pub(crate) mod buffer;
+    pub(crate) mod instance;
     pub(crate) mod texture;
     pub(crate) mod scene;
     pub(crate) mod camera;
@@ -16,6 +17,7 @@ mod state
     pub(crate) mod scene
     {
         pub(crate) mod camera;
+        pub(crate) mod instance;
     }
 }
 

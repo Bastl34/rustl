@@ -82,6 +82,9 @@ impl MainInterface
             }
         }
 
+        // update scene
+        self.scene.update(&mut self.gpu);
+
         // build ui
         {
             let state = &mut *(self.state.borrow_mut());

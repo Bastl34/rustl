@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView};
 
 pub trait WGpuRendering
@@ -7,7 +5,6 @@ pub trait WGpuRendering
     fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder);
 }
 
-//pub type WGpuRenderingItem = dyn WGpuRendering + Send + Sync;
 pub type WGpuRenderingItem = dyn WGpuRendering;
 
 pub struct WGpu
@@ -15,13 +12,6 @@ pub struct WGpu
     device: Device,
     queue: Queue,
     surface: Surface,
-
-    /*
-    square_pipeline: Pipeline,
-
-    square_buffers: VertexBuffer,
-    instance_buffers: InstanceBuffers,
-    */
 
     surface_config: SurfaceConfiguration,
     pub surface_caps: SurfaceCapabilities,

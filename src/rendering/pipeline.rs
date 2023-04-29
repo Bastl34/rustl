@@ -3,7 +3,7 @@ use std::{fs, borrow::Cow};
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
-use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::Texture, camera::{CameraUniform}, uniform};
+use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::Texture, camera::{CameraUniform}, uniform, instance::InstanceRaw};
 
 pub struct Pipeline
 {
@@ -119,7 +119,8 @@ impl Pipeline
                 entry_point: "vs_main",
                 buffers:
                 &[
-                    Vertex::desc()
+                    Vertex::desc(),
+                    InstanceRaw::desc()
                 ],
             },
             fragment: Some(wgpu::FragmentState

@@ -16,6 +16,8 @@ pub struct State
 
     pub fullscreen: bool,
 
+    pub instances: u32,
+
     pub fps_timer: Instant,
     pub last_time: u128,
     pub fps: u32,
@@ -35,6 +37,8 @@ impl State
             fullscreen: false,
 
             cam_fov: 45.0,
+
+            instances: 3,
 
             fps_timer: Instant::now(),
             last_time: 0,

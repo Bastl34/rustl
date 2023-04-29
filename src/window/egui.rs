@@ -1,4 +1,4 @@
-use egui::FullOutput;
+use egui::{FullOutput, Color32, RichText};
 use egui_winit::{winit};
 use wgpu::{TextureView, CommandEncoder};
 
@@ -99,6 +99,16 @@ impl EGui
                 ui.add(egui::Slider::new(&mut state.cam_fov, 0.0..=90.0));
 
                 ui.checkbox(&mut state.fullscreen, "Fullscreen");
+
+                ui.label("instances:");
+                ui.add(egui::Slider::new(&mut state.instances, 1..=10));
+
+                // just some tests
+                ui.horizontal(|ui|
+                {
+                    ui.selectable_value(& mut state.fullscreen, true, RichText::new("⛶").size(20.0));
+                    ui.selectable_value(& mut state.fullscreen, false, RichText::new("↕").size(20.0));
+                });
             });
         });
 
