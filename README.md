@@ -11,12 +11,12 @@
 ## requrements
 
 ```bash
-#install
+# install
 
-#cargo watch
+# cargo watch
 cargo install cargo-watch
 
-#wasm-pack
+# wasm-pack
 #https://rustwasm.github.io/wasm-pack/installer/
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 ```
@@ -24,10 +24,16 @@ curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 ```bash
 
-#build locally (with watch)
-cargo watch -s "cargo run --release" -w src/
+# build locally (with watch)
+cargo watch -s "cargo run --release" -w src/ -w resources/
 
-#build for web  (with watch)
-cargo watch -s "wasm-pack build --target web" -w src/
+# build for web  (with watch)
+cargo watch -s "wasm-pack build --target web" -w src/ -w resources/
+
+# run with backtrace (on windows)
+set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
+
+# run with backtrace (mac/linux)
+RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```

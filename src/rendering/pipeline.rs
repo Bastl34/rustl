@@ -18,7 +18,7 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, buffer: &Buffer, name: &str, shader_path: &str, texture: &Texture, cam: &CameraUniform) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, buffer: &Buffer, name: &str, shader_path: &str, textures: &Vec<&Texture>, cam: &CameraUniform, depth_stencil: bool) -> Pipeline
     {
         let shader_source = fs::read_to_string(shader_path).unwrap();
 
@@ -32,17 +32,23 @@ impl Pipeline
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_source)).into(),
         });
 
-        // ******************** texture ********************
-        let textures_layout_group = texture.get_bind_group_layout_entries(0);
-        let textures_group = texture.get_bind_group_entries(0);
-
+        // ******************** textures ********************
         let mut textures_layout_group_vec = vec![];
         let mut textures_group_vec = vec![];
 
-        textures_layout_group_vec.append(&mut textures_layout_group.to_vec());
-        textures_group_vec.append(&mut textures_group.to_vec());
+        let mut i = 0;
+        for texture in textures
+        {
+            let textures_layout_group = texture.get_bind_group_layout_entries(i);
+            let textures_group = texture.get_bind_group_entries(i);
 
-        let textures_bind_group_layout_name = format!("{} {} texture_bind_group_layout ", name, texture.name);
+            textures_layout_group_vec.append(&mut textures_layout_group.to_vec());
+            textures_group_vec.append(&mut textures_group.to_vec());
+
+            i += 1;
+        }
+
+        let textures_bind_group_layout_name = format!("{} texture_bind_group_layout ", name);
         let textures_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
@@ -50,7 +56,7 @@ impl Pipeline
             label: Some(textures_bind_group_layout_name.as_str()),
         });
 
-        let textures_bind_group_name = format!("{} {} diffuse_bind_group ", name, texture.name);
+        let textures_bind_group_name = format!("{} texturediffuse_bind_group ", name);
         let textures_bind_group = device.create_bind_group
         (
             &wgpu::BindGroupDescriptor
@@ -110,6 +116,19 @@ impl Pipeline
             push_constant_ranges: &[],
         });
 
+        let mut depth_stencil_state = None;
+        if depth_stencil
+        {
+            depth_stencil_state = Some(wgpu::DepthStencilState
+            {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // front to back
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            });
+        }
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
         {
             label: Some(name),
@@ -153,14 +172,7 @@ impl Pipeline
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: Some(wgpu::DepthStencilState
-            {
-                format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // front to back
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState
             {
                 count: 1,

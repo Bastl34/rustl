@@ -28,9 +28,7 @@ impl Scene
 {
     pub fn new(state: StateItem, wgpu: &mut WGpu) -> Scene
     {
-
         let buffer = Buffer::new(wgpu, "test");
-        let texture = Texture::new_from_image(wgpu, "test", "resources/images/test.png");
 
         let mut cam = Camera::new();
         cam.fovy = 45.0f32.to_radians();
@@ -45,20 +43,6 @@ impl Scene
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&cam);
 
-        // create some instances
-        /*
-        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z|
-        {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x|
-            {
-                let position = Vector3::<f32>::new(x as f32, 0.0, z as f32) - INSTANCE_DISPLACEMENT;
-                let rotation = Vector3::<f32>::new(0.0, 0.0, 0.0);
-                let scale = Vector3::<f32>::new(1.0, 1.0, 1.0);
-
-                Instance::new(position, rotation, scale)
-            })
-        }).collect::<Vec<_>>();
-        */
         let mut instances = vec![];
         instances.push(Instance::new(Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
         instances.push(Instance::new(Vector3::<f32>::new(-1.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 40.0f32.to_radians(), 0.0), Vector3::<f32>::new(0.8, 0.8, 0.8)));
@@ -66,8 +50,14 @@ impl Scene
 
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
-        let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &texture, &camera_uniform);
+        let texture = Texture::new_from_image(wgpu, "test", "resources/images/test.png");
         let depth_texture = Texture::new_depth_texture(wgpu);
+
+        let mut textures = vec![];
+        textures.push(&texture);
+        //textures.push(&depth_texture);
+
+        let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &textures, &camera_uniform, true);
 
         Self
         {
@@ -100,8 +90,6 @@ impl Scene
         {
             let x = (-(state.instances as f32) / 2.0) + (i as f32 * 0.5);
             self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
-            //instances.push(Instance::new(Vector3::<f32>::new(-1.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 40.0f32.to_radians(), 0.0), Vector3::<f32>::new(0.8, 0.8, 0.8)));
-            //instances.push(Instance::new(Vector3::<f32>::new(1.0, 0.0, 0.0), Vector3::<f32>::new(0.0, -40.0f32.to_radians(), 0.0), Vector3::<f32>::new(1.2, 1.2, 1.2)));
         }
 
         if self.instances.len() > 0
