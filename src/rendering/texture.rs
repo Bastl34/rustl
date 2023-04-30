@@ -1,5 +1,6 @@
-use std::{fs};
+use std::{fs, mem, num::NonZeroU32};
 
+use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
 use super::{wgpu::WGpu};
@@ -8,6 +9,8 @@ pub struct Texture
 {
     pub name: String,
 
+    width: u32,
+    height: u32,
     is_depth_texture: bool,
 
     texture: wgpu::Texture,
@@ -18,6 +21,7 @@ pub struct Texture
 impl Texture
 {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
     pub fn new_from_image(wgpu: &mut WGpu, name: &str, path: &str) -> Texture
     {
@@ -48,8 +52,8 @@ impl Texture
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                format: Self::RGBA_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST| wgpu::TextureUsages::COPY_SRC, // COPY_SRC just to read again
                 label: Some(texture_name.as_str()),
 
                 // Rgba8UnormSrgb is allowed for WebGL2
@@ -93,6 +97,9 @@ impl Texture
         Self
         {
             name: name.to_string(),
+
+            width: dimensions.0,
+            height: dimensions.1,
             is_depth_texture: false,
 
             texture: texture,
@@ -120,7 +127,7 @@ impl Texture
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[Self::DEPTH_FORMAT],
         };
         let texture = device.create_texture(&desc);
@@ -146,6 +153,9 @@ impl Texture
         Self
         {
             name: "depth texture".to_string(),
+
+            width: config.width,
+            height: config.height,
             is_depth_texture: true,
 
             texture,
@@ -224,5 +234,82 @@ impl Texture
                 resource: wgpu::BindingResource::Sampler(&self.sampler),
             }
         ]
+    }
+
+    pub fn to_image(&self, wgpu: &mut WGpu) -> DynamicImage
+    {
+        // https://sotrh.github.io/learn-wgpu/showcase/gifs/#how-do-we-make-the-frames
+        // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/tests/write_texture.rs
+
+        // ********** create texture buffer **********
+        // wgpu requires texture -> buffer copies to be aligned using wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
+        // Because of this its needed to save both the padded_bytes_per_row as well as the unpadded_bytes_per_row
+        let pixel_size = mem::size_of::<[u8;4]>() as u32;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let unpadded_bytes_per_row = pixel_size * self.width;
+        let padding = (align - unpadded_bytes_per_row % align) % align;
+        let padded_bytes_per_row = unpadded_bytes_per_row + padding;
+
+        // create a buffer to copy the texture to so we can get the data
+        let buffer_size = (padded_bytes_per_row * self.height) as wgpu::BufferAddress;
+        let buffer_desc = wgpu::BufferDescriptor
+        {
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            label: Some("Output Buffer"),
+            mapped_at_creation: false,
+        };
+        let output_buffer = wgpu.device().create_buffer(&buffer_desc);
+
+        // ********** copy to buffer **********
+        let mut encoder = wgpu.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.copy_texture_to_buffer
+        (
+            wgpu::ImageCopyTexture
+            {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer
+            {
+                buffer: &output_buffer,
+                layout: wgpu::ImageDataLayout
+                {
+                    offset: 0,
+                    bytes_per_row: NonZeroU32::new(padded_bytes_per_row),
+                    rows_per_image: NonZeroU32::new(self.height),
+                }
+            },
+            wgpu::Extent3d
+            {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        wgpu.queue_mut().submit(Some(encoder.finish()));
+
+        // ********** read buffer **********
+        let slice = output_buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| ());
+        wgpu.device().poll(wgpu::Maintain::Wait);
+
+        // ********** remove padding **********
+        let padded_data = slice.get_mapped_range();
+        let data = padded_data
+            .chunks(padded_bytes_per_row as _)
+            .map(|chunk| { &chunk[..unpadded_bytes_per_row as _]})
+            .flatten()
+            .map(|x| { *x })
+            .collect::<Vec<_>>();
+        drop(padded_data);
+        output_buffer.unmap();
+
+        DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(self.width, self.height, data).unwrap())
+
     }
 }

@@ -27,7 +27,7 @@ impl MainInterface
         let gui = EGui::new(event_loop, gpu.device(), gpu.surface_config(), &window);
 
         let state = Rc::new(RefCell::new(State::new()));
-        let scene = Scene::new(state.clone(), &mut gpu);
+        let scene = Scene::new(&mut gpu);
 
         Self
         {
@@ -83,7 +83,10 @@ impl MainInterface
         }
 
         // update scene
-        self.scene.update(&mut self.gpu);
+        {
+            let state = &mut *(self.state.borrow_mut());
+            self.scene.update(&mut self.gpu, state);
+        }
 
         // build ui
         {

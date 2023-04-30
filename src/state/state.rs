@@ -17,6 +17,9 @@ pub struct State
     pub fullscreen: bool,
 
     pub instances: u32,
+    pub save_image: bool,
+    pub save_depth_image: bool,
+    pub save_screenshot: bool,
 
     pub fps_timer: Instant,
     pub last_time: u128,
@@ -39,6 +42,9 @@ impl State
             cam_fov: 45.0,
 
             instances: 3,
+            save_image: false,
+            save_depth_image: false,
+            save_screenshot: false,
 
             fps_timer: Instant::now(),
             last_time: 0,

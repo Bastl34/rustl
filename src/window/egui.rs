@@ -1,4 +1,4 @@
-use egui::{FullOutput, Color32, RichText};
+use egui::{FullOutput, RichText};
 use egui_winit::{winit};
 use wgpu::{TextureView, CommandEncoder};
 
@@ -109,6 +109,21 @@ impl EGui
                     ui.selectable_value(& mut state.fullscreen, true, RichText::new("⛶").size(20.0));
                     ui.selectable_value(& mut state.fullscreen, false, RichText::new("↕").size(20.0));
                 });
+
+                if ui.button("save image").clicked()
+                {
+                    state.save_image = true;
+                }
+
+                if ui.button("save depth image").clicked()
+                {
+                    state.save_depth_image = true;
+                }
+
+                if ui.button("save screenshot").clicked()
+                {
+                    state.save_screenshot = true;
+                }
             });
         });
 

@@ -1,7 +1,7 @@
 use nalgebra::{Vector3, Point3, Rotation};
 use wgpu::{CommandEncoder, TextureView};
 
-use crate::{state::{state::{StateItem}, scene::{camera::Camera, instance::Instance}}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
+use crate::{state::{state::{StateItem, State}, scene::{camera::Camera, instance::Instance}}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer};
 
@@ -10,7 +10,7 @@ const INSTANCE_DISPLACEMENT: nalgebra::Vector3<f32> = nalgebra::Vector3::new(NUM
 
 pub struct Scene
 {
-    state: StateItem,
+    clear_color: wgpu::Color,
 
     pipe: Pipeline,
     depth_texture: Texture,
@@ -26,7 +26,7 @@ pub struct Scene
 
 impl Scene
 {
-    pub fn new(state: StateItem, wgpu: &mut WGpu) -> Scene
+    pub fn new(wgpu: &mut WGpu) -> Scene
     {
         let buffer = Buffer::new(wgpu, "test");
 
@@ -50,7 +50,7 @@ impl Scene
 
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
-        let texture = Texture::new_from_image(wgpu, "test", "resources/images/test.png");
+        let texture = Texture::new_from_image(wgpu, "test", "resources/images/test_2.png");
         let depth_texture = Texture::new_depth_texture(wgpu);
 
         let mut textures = vec![];
@@ -61,7 +61,7 @@ impl Scene
 
         Self
         {
-            state,
+            clear_color: wgpu::Color::BLACK,
 
             texture,
             pipe,
@@ -75,9 +75,15 @@ impl Scene
         }
     }
 
-    pub fn update(&mut self, wgpu: &mut WGpu)
+    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State)
     {
-        let state = &*(self.state.borrow());
+        self.clear_color = wgpu::Color
+        {
+            a: 1.0,
+            r: state.clear_color_r,
+            g: state.clear_color_g,
+            b: state.clear_color_b,
+        };
 
         self.cam.fovy = state.cam_fov.to_radians();
         self.cam.init_matrices();
@@ -96,6 +102,28 @@ impl Scene
         {
             self.instance_buffer = instances_to_buffer(wgpu, &self.instances);
         }
+
+        if state.save_image
+        {
+            let img_data = self.texture.to_image(wgpu);
+            img_data.save("data/texture.png");
+            state.save_image = false;
+        }
+
+        if state.save_depth_image
+        {
+            let img_data = self.depth_texture.to_image(wgpu);
+            img_data.save("data/depth.png");
+            state.save_depth_image = false;
+        }
+
+        if state.save_screenshot
+        {
+            let img_data = wgpu.get_screenshot();
+            img_data.save("data/screenshot.png");
+            state.save_screenshot = false;
+        }
+
     }
 
     pub fn resize(&mut self, wgpu: &mut WGpu)
@@ -111,18 +139,6 @@ impl WGpuRendering for Scene
 {
     fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
-        let state = &*(self.state.borrow());
-
-        let clear_color = wgpu::Color
-        {
-            a: 1.0,
-            r: state.clear_color_r,
-            g: state.clear_color_g,
-            b: state.clear_color_b,
-        };
-
-        let clear_color = wgpu::LoadOp::Clear(clear_color);
-
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: None,
@@ -132,7 +148,7 @@ impl WGpuRendering for Scene
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
-                    load: clear_color,
+                    load: wgpu::LoadOp::Clear(self.clear_color),
                     store: true,
                 },
             })],

@@ -1,3 +1,6 @@
+use std::{mem, num::NonZeroU32};
+
+use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView};
 
 pub trait WGpuRendering
@@ -139,5 +142,10 @@ impl WGpu
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+    }
+
+    pub fn get_screenshot(&mut self) -> DynamicImage
+    {
+        DynamicImage::new_rgba8(0, 0)
     }
 }
