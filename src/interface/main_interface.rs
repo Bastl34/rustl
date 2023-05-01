@@ -4,9 +4,11 @@ use std::vec;
 
 use winit::window::{Window, Fullscreen};
 
+use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
-use crate::window::egui::EGui;
+
 use crate::rendering::wgpu::{WGpu, WGpuRenderingItem};
+use crate::state::gui::gui::build_gui;
 use crate::state::state::{State, StateItem};
 
 pub struct MainInterface
@@ -14,29 +16,29 @@ pub struct MainInterface
     state: StateItem,
     scene: Scene,
 
-    gpu: WGpu,
+    wgpu: WGpu,
     window: Window,
-    gui: EGui,
+    egui: EGui,
 }
 
 impl MainInterface
 {
     pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
     {
-        let mut gpu = WGpu::new(&window).await;
-        let gui = EGui::new(event_loop, gpu.device(), gpu.surface_config(), &window);
+        let mut wgpu: WGpu = WGpu::new(&window).await;
+        let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
         let state = Rc::new(RefCell::new(State::new()));
-        let scene = Scene::new(&mut gpu);
+        let scene = Scene::new(&mut wgpu);
 
         Self
         {
             state,
             scene,
 
-            gpu,
+            wgpu,
             window,
-            gui,
+            egui,
         }
     }
 
@@ -47,9 +49,9 @@ impl MainInterface
 
     pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
     {
-        self.gpu.resize(dimensions);
-        self.gui.resize(dimensions, scale_factor);
-        self.scene.resize(&mut self.gpu);
+        self.wgpu.resize(dimensions);
+        self.egui.resize(dimensions, scale_factor);
+        self.scene.resize(&mut self.wgpu);
     }
 
     pub fn update(&mut self)
@@ -85,27 +87,30 @@ impl MainInterface
         // update scene
         {
             let state = &mut *(self.state.borrow_mut());
-            self.scene.update(&mut self.gpu, state);
+            self.scene.update(&mut self.wgpu, state);
         }
 
         // build ui
         {
             let state = &mut *(self.state.borrow_mut());
-            self.gui.build(state, &self.window);
+
+            let gui_output = build_gui(state, &self.window, &mut self.egui);
+            self.egui.output = Some(gui_output);
+
             //self.gui.request_repaint();
         }
 
         let mut render_passes: Vec<&mut WGpuRenderingItem> = vec![];
         render_passes.push(&mut self.scene);
-        render_passes.push(&mut self.gui);
+        render_passes.push(&mut self.egui);
 
-        self.gpu.render(&mut render_passes);
+        self.wgpu.render(&mut render_passes);
 
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.gui.on_event(event)
+        if self.egui.on_event(event)
         {
             return;
         }

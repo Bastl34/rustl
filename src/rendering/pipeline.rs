@@ -56,7 +56,7 @@ impl Pipeline
             label: Some(textures_bind_group_layout_name.as_str()),
         });
 
-        let textures_bind_group_name = format!("{} texturediffuse_bind_group ", name);
+        let textures_bind_group_name = format!("{} texture diffuse_bind_group ", name);
         let textures_bind_group = device.create_bind_group
         (
             &wgpu::BindGroupDescriptor

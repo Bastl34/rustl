@@ -1,17 +1,17 @@
-use egui::{FullOutput, RichText};
+use egui::{FullOutput};
 use egui_winit::{winit};
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::{state::state::State, rendering::wgpu::{WGpu, WGpuRendering}};
+use crate::{rendering::wgpu::{WGpu, WGpuRendering}};
 
 pub struct EGui
 {
-    ctx: egui::Context,
-    renderer: egui_wgpu::renderer::Renderer,
-    ui_state: egui_winit::State,
-    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
+    pub ctx: egui::Context,
+    pub renderer: egui_wgpu::renderer::Renderer,
+    pub ui_state: egui_winit::State,
+    pub screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
 
-    output: Option<FullOutput>
+    pub output: Option<FullOutput>
 }
 
 impl EGui
@@ -79,59 +79,6 @@ impl EGui
     pub fn request_repaint(&self)
     {
         self.ctx.request_repaint();
-    }
-
-    pub fn build(&mut self, state: &mut State, window: &winit::window::Window)
-    {
-        let raw_input = self.ui_state.take_egui_input(window);
-
-        let full_output = self.ctx.run(raw_input, |ctx|
-        {
-            egui::Window::new("Settings").show(ctx, |ui|
-            {
-                ui.label(format!("fps: {}", state.last_fps));
-                ui.label("clear color:");
-                ui.add(egui::Slider::new(&mut state.clear_color_r, 0.0..=1.0));
-                ui.add(egui::Slider::new(&mut state.clear_color_g, 0.0..=1.0));
-                ui.add(egui::Slider::new(&mut state.clear_color_b, 0.0..=1.0));
-
-                ui.label("fov:");
-                ui.add(egui::Slider::new(&mut state.cam_fov, 0.0..=90.0));
-
-                ui.checkbox(&mut state.fullscreen, "Fullscreen");
-
-                ui.label("instances:");
-                ui.add(egui::Slider::new(&mut state.instances, 1..=10));
-
-                // just some tests
-                ui.horizontal(|ui|
-                {
-                    ui.selectable_value(& mut state.fullscreen, true, RichText::new("⛶").size(20.0));
-                    ui.selectable_value(& mut state.fullscreen, false, RichText::new("↕").size(20.0));
-                });
-
-                if ui.button("save image").clicked()
-                {
-                    state.save_image = true;
-                }
-
-                if ui.button("save depth image").clicked()
-                {
-                    state.save_depth_image = true;
-                }
-
-                if ui.button("save screenshot").clicked()
-                {
-                    state.save_screenshot = true;
-                }
-            });
-        });
-
-        let platform_output = full_output.platform_output.clone();
-
-        self.ui_state.handle_platform_output(window, &self.ctx, platform_output);
-
-        self.output = Some(full_output);
     }
 }
 

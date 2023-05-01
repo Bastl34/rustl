@@ -1,6 +1,7 @@
 mod rendering
 {
     pub(crate) mod wgpu;
+    pub(crate) mod egui;
     pub(crate) mod pipeline;
     pub(crate) mod buffer;
     pub(crate) mod instance;
@@ -19,12 +20,16 @@ mod state
         pub(crate) mod camera;
         pub(crate) mod instance;
     }
+
+    pub(crate) mod gui
+    {
+        pub(crate) mod gui;
+    }
 }
 
 mod window
 {
     pub(crate) mod window;
-    pub(crate) mod egui;
 }
 
 mod interface
