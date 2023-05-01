@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView, RgbaImage};
+use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView};
 
 use crate::helper::image::brga_to_rgba;
@@ -79,7 +79,6 @@ impl WGpu
 
         println!(" ********** limits used **********");
         dbg!(device.limits());
-
 
         let surface_caps = surface.get_capabilities(&adapter);
 

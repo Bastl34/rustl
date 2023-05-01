@@ -117,7 +117,6 @@ impl MainInterface
                 state.save_screenshot = false;
             }
         }
-
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)

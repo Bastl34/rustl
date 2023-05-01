@@ -1,7 +1,7 @@
 use nalgebra::{Vector3, Point3};
 use wgpu::{CommandEncoder, TextureView};
 
-use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}};
+use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer};
 
@@ -91,7 +91,8 @@ impl Scene
 
         for i in 0..state.instances
         {
-            let x = (-(state.instances as f32) / 2.0) + (i as f32 * 0.5);
+            let x = (-((state.instances as f32) / 2.0) * 0.5) + (i as f32 * 0.5);
+            dbg!(x);
             self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
         }
 
@@ -111,6 +112,10 @@ impl Scene
         {
             let img_data = self.depth_texture.to_image(wgpu);
             img_data.save("data/depth.png");
+
+            let img_data_gray = float32_to_grayscale(img_data);
+            img_data_gray.save("data/depth_gray.png");
+
             state.save_depth_image = false;
         }
 
