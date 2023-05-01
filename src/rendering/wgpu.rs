@@ -9,7 +9,7 @@ use super::helper::buffer::{BufferDimensions, remove_padding};
 
 pub trait WGpuRendering
 {
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, extra_color_attachment: Option<wgpu::RenderPassColorAttachment>);
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder);
 }
 
 pub type WGpuRenderingItem = dyn WGpuRendering;
@@ -141,7 +141,7 @@ impl WGpu
 
         for pass in render_passes
         {
-            pass.render_pass(self, &view, &mut encoder, None);
+            pass.render_pass(self, &view, &mut encoder);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -186,7 +186,7 @@ impl WGpu
 
         for pass in render_passes
         {
-            pass.render_pass(self, &view, &mut encoder, None);
+            pass.render_pass(self, &view, &mut encoder);
         }
 
         // Copy the data from the texture to the buffer

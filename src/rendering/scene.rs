@@ -1,12 +1,9 @@
-use nalgebra::{Vector3, Point3, Rotation};
+use nalgebra::{Vector3, Point3};
 use wgpu::{CommandEncoder, TextureView};
 
-use crate::{state::{state::{StateItem, State}, scene::{camera::Camera, instance::Instance}}, helper::file::{get_current_working_dir, get_current_working_dir_str}};
+use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer};
-
-const NUM_INSTANCES_PER_ROW: u32 = 10;
-const INSTANCE_DISPLACEMENT: nalgebra::Vector3<f32> = nalgebra::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
 pub struct Scene
 {
@@ -130,35 +127,24 @@ impl Scene
 
 impl WGpuRendering for Scene
 {
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, extra_color_attachment: Option<wgpu::RenderPassColorAttachment>)
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
-        let color_attachment = Some(wgpu::RenderPassColorAttachment
-        {
-            view: &view,
-            resolve_target: None,
-            ops: wgpu::Operations
-            {
-                load: wgpu::LoadOp::Clear(self.clear_color),
-                store: true,
-            },
-        });
-
-        let mut attachments = vec![];
-
-        if extra_color_attachment.is_some()
-        {
-            attachments.push(color_attachment);
-            attachments.push(extra_color_attachment);
-        }
-        else
-        {
-            attachments.push(color_attachment);
-        }
-
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: None,
-            color_attachments: &attachments,
+            color_attachments:
+            &[
+                Some(wgpu::RenderPassColorAttachment
+                {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations
+                    {
+                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        store: true,
+                    },
+                })
+            ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
             {
                 view: &self.depth_texture.get_view(),

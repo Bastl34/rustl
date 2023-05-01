@@ -1,9 +1,9 @@
-use std::{fs, mem, num::NonZeroU32};
+use std::{fs, num::NonZeroU32};
 
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
-use super::{wgpu::WGpu};
+use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
 pub struct Texture
 {
@@ -242,19 +242,11 @@ impl Texture
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/tests/write_texture.rs
 
         // ********** create texture buffer **********
-        // wgpu requires texture -> buffer copies to be aligned using wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
-        // Because of this its needed to save both the padded_bytes_per_row as well as the unpadded_bytes_per_row
-        let pixel_size = mem::size_of::<[u8;4]>() as u32;
-        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let unpadded_bytes_per_row = pixel_size * self.width;
-        let padding = (align - unpadded_bytes_per_row % align) % align;
-        let padded_bytes_per_row = unpadded_bytes_per_row + padding;
+        let buffer_dimensions = BufferDimensions::new(self.width as usize, self.height as usize);
 
-        // create a buffer to copy the texture to so we can get the data
-        let buffer_size = (padded_bytes_per_row * self.height) as wgpu::BufferAddress;
         let buffer_desc = wgpu::BufferDescriptor
         {
-            size: buffer_size,
+            size: (buffer_dimensions.padded_bytes_per_row * buffer_dimensions.height) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             label: Some("Output Buffer"),
             mapped_at_creation: false,
@@ -279,7 +271,7 @@ impl Texture
                 layout: wgpu::ImageDataLayout
                 {
                     offset: 0,
-                    bytes_per_row: NonZeroU32::new(padded_bytes_per_row),
+                    bytes_per_row: NonZeroU32::new(buffer_dimensions.padded_bytes_per_row as u32),
                     rows_per_image: NonZeroU32::new(self.height),
                 }
             },
@@ -300,12 +292,7 @@ impl Texture
 
         // ********** remove padding **********
         let padded_data = slice.get_mapped_range();
-        let data = padded_data
-            .chunks(padded_bytes_per_row as _)
-            .map(|chunk| { &chunk[..unpadded_bytes_per_row as _]})
-            .flatten()
-            .map(|x| { *x })
-            .collect::<Vec<_>>();
+        let data = remove_padding(&padded_data, &buffer_dimensions);
         drop(padded_data);
         output_buffer.unmap();
 

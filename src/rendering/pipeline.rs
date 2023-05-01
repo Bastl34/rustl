@@ -3,7 +3,7 @@ use std::{fs, borrow::Cow};
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
-use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::{Texture, self}, camera::{CameraUniform}, uniform, instance::InstanceRaw};
+use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::{Texture, self}, camera::CameraUniform, uniform, instance::InstanceRaw};
 
 pub struct Pipeline
 {

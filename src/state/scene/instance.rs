@@ -1,5 +1,3 @@
-use std::convert::identity;
-
 use nalgebra::{Rotation3, Matrix4, Vector3};
 
 use crate::rendering::instance::InstanceRaw;

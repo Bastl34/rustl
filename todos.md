@@ -1,10 +1,11 @@
 todo:
- * use BufferDimensions for texture save
+ * remove extra_color_attachment
  * buffer update on model matrix change
  * cleanup vertex/instancing structure
  * get depth map
 
 done:
+* use BufferDimensions for texture save
 * screenshot (render pass color attachment)
 * update camera/s on resize
 * do not save state on scene (just pass it on update/render)
