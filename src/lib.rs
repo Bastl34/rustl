@@ -9,6 +9,11 @@ mod rendering
     pub(crate) mod scene;
     pub(crate) mod camera;
     pub(crate) mod uniform;
+
+    pub(crate) mod helper
+    {
+        pub(crate) mod buffer;
+    }
 }
 
 mod state
@@ -42,6 +47,7 @@ mod helper
     pub(crate) mod generic;
     pub(crate) mod file;
     pub(crate) mod math;
+    pub(crate) mod image;
 }
 
 #[cfg(target_arch="wasm32")]

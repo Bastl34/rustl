@@ -1,11 +1,15 @@
-use std::{mem, num::NonZeroU32};
+use std::num::NonZeroU32;
 
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView, RgbaImage};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView};
+
+use crate::helper::image::brga_to_rgba;
+
+use super::helper::buffer::{BufferDimensions, remove_padding};
 
 pub trait WGpuRendering
 {
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder);
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, extra_color_attachment: Option<wgpu::RenderPassColorAttachment>);
 }
 
 pub type WGpuRenderingItem = dyn WGpuRendering;
@@ -137,15 +141,86 @@ impl WGpu
 
         for pass in render_passes
         {
-            pass.render_pass(self, &view, &mut encoder);
+            pass.render_pass(self, &view, &mut encoder, None);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
     }
 
-    pub fn get_screenshot(&mut self) -> DynamicImage
+    pub fn get_screenshot(&mut self, render_passes: &mut Vec<&mut WGpuRenderingItem>) -> DynamicImage
     {
-        DynamicImage::new_rgba8(0, 0)
+        let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
+
+        // The output buffer lets us retrieve the data as an array
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor
+        {
+            label: None,
+            size: (buffer_dimensions.padded_bytes_per_row * buffer_dimensions.height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let texture_extent = wgpu::Extent3d
+        {
+            width: buffer_dimensions.width as u32,
+            height: buffer_dimensions.height as u32,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor
+        {
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            label: None,
+            view_formats: &[],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        for pass in render_passes
+        {
+            pass.render_pass(self, &view, &mut encoder, None);
+        }
+
+        // Copy the data from the texture to the buffer
+        encoder.copy_texture_to_buffer
+        (
+            texture.as_image_copy(),
+            wgpu::ImageCopyBuffer
+            {
+                buffer: &output_buffer,
+                layout: wgpu::ImageDataLayout
+                {
+                    offset: 0,
+                    bytes_per_row: NonZeroU32::new(buffer_dimensions.padded_bytes_per_row as u32),
+                    rows_per_image: None,
+                },
+            },
+            texture_extent,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // read buffer
+        let slice: wgpu::BufferSlice = output_buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| ());
+        self.device.poll(wgpu::Maintain::Wait);
+
+        // remove padding
+        let padded_data = slice.get_mapped_range();
+        let data = remove_padding(&padded_data, &buffer_dimensions);
+        drop(padded_data);
+
+        output_buffer.unmap();
+
+        let img = DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(buffer_dimensions.width as u32, buffer_dimensions.height as u32, data).unwrap());
+        brga_to_rgba(img)
     }
 }

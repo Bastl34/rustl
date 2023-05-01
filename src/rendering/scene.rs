@@ -117,13 +117,6 @@ impl Scene
             state.save_depth_image = false;
         }
 
-        if state.save_screenshot
-        {
-            let img_data = wgpu.get_screenshot();
-            img_data.save("data/screenshot.png");
-            state.save_screenshot = false;
-        }
-
     }
 
     pub fn resize(&mut self, wgpu: &mut WGpu)
@@ -137,21 +130,35 @@ impl Scene
 
 impl WGpuRendering for Scene
 {
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, extra_color_attachment: Option<wgpu::RenderPassColorAttachment>)
     {
+        let color_attachment = Some(wgpu::RenderPassColorAttachment
+        {
+            view: &view,
+            resolve_target: None,
+            ops: wgpu::Operations
+            {
+                load: wgpu::LoadOp::Clear(self.clear_color),
+                store: true,
+            },
+        });
+
+        let mut attachments = vec![];
+
+        if extra_color_attachment.is_some()
+        {
+            attachments.push(color_attachment);
+            attachments.push(extra_color_attachment);
+        }
+        else
+        {
+            attachments.push(color_attachment);
+        }
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment
-            {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations
-                {
-                    load: wgpu::LoadOp::Clear(self.clear_color),
-                    store: true,
-                },
-            })],
+            color_attachments: &attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
             {
                 view: &self.depth_texture.get_view(),

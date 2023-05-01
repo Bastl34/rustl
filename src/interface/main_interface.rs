@@ -106,6 +106,18 @@ impl MainInterface
 
         self.wgpu.render(&mut render_passes);
 
+        // screenshot
+        {
+            let state = &mut *(self.state.borrow_mut());
+
+            if state.save_screenshot
+            {
+                let img_data = self.wgpu.get_screenshot(&mut render_passes);
+                img_data.save("data/screenshot.png");
+                state.save_screenshot = false;
+            }
+        }
+
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)

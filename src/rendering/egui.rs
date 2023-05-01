@@ -84,24 +84,39 @@ impl EGui
 
 impl WGpuRendering for EGui
 {
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, extra_color_attachment: Option<wgpu::RenderPassColorAttachment>)
     {
         let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
+
+        let color_attachment = Some(wgpu::RenderPassColorAttachment
+        {
+            view: &view,
+            resolve_target: None,
+            ops: wgpu::Operations
+            {
+                load: wgpu::LoadOp::Load,
+                store: true,
+            }
+        });
+
+        let mut attachments = vec![];
+
+        if extra_color_attachment.is_some()
+        {
+            attachments.push(color_attachment);
+            attachments.push(extra_color_attachment);
+        }
+        else
+        {
+            attachments.push(color_attachment);
+        }
+
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment
-                {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations
-                    {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    }
-                })],
+                color_attachments: &attachments,
                 depth_stencil_attachment: None,
             });
 
