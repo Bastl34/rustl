@@ -1,5 +1,6 @@
 use std::{fs, borrow::Cow};
 
+use egui::Options;
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
@@ -48,22 +49,20 @@ impl Pipeline
             i += 1;
         }
 
-        let textures_bind_group_layout_name = format!("{} texture_bind_group_layout ", name);
+        let textures_bind_group_layout_name = format!("{} texture_bind_group_layout", name);
         let textures_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
-            entries:
-            &textures_layout_group_vec.as_slice(),
+            entries: &textures_layout_group_vec.as_slice(),
             label: Some(textures_bind_group_layout_name.as_str()),
         });
 
-        let textures_bind_group_name = format!("{} texture diffuse_bind_group ", name);
+        let textures_bind_group_name = format!("{} texture__bind_group", name);
         let textures_bind_group = device.create_bind_group
         (
             &wgpu::BindGroupDescriptor
             {
                 layout: &textures_bind_group_layout,
-                entries:
-                &textures_group_vec.as_slice(),
+                entries: &textures_group_vec.as_slice(),
                 label: Some(textures_bind_group_name.as_str()),
             }
         );
@@ -101,6 +100,8 @@ impl Pipeline
             ],
             label: Some(camera_bind_group_name.as_str()),
         });
+
+        dbg!(&textures_layout_group_vec);
 
         // ******************** render pipeline ********************
         let layout_name = format!("{} Layout", name);

@@ -110,6 +110,9 @@ impl Texture
 
     pub fn new_depth_texture(wgpu: &mut WGpu) -> Texture
     {
+        // shadow
+        // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/shader.wgsl
+        // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/main.rs
         let config = wgpu.surface_config();
         let device = wgpu.device();
 
@@ -144,8 +147,6 @@ impl Texture
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::FilterMode::Nearest,
                 compare: Some(wgpu::CompareFunction::LessEqual),
-                lod_min_clamp: 0.0,
-                lod_max_clamp: 100.0,
                 ..Default::default()
             }
         );
@@ -182,17 +183,18 @@ impl Texture
 
     pub fn get_bind_group_layout_entries(&self, index: u32) -> [BindGroupLayoutEntry; 2]
     {
-
         let mut sample_type = wgpu::TextureSampleType::Float { filterable: true };
         if self.is_depth_texture
         {
-            sample_type = wgpu::TextureSampleType::Float { filterable: false };
+            //sample_type = wgpu::TextureSampleType::Float { filterable: false };
+            sample_type = wgpu::TextureSampleType::Depth
         }
 
         let mut binding_type = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering);
         if self.is_depth_texture
         {
-            binding_type = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering);
+            //binding_type = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering);
+            binding_type = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison);
         }
 
         [

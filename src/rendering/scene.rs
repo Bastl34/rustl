@@ -52,7 +52,7 @@ impl Scene
 
         let mut textures = vec![];
         textures.push(&texture);
-        //textures.push(&depth_texture);
+        textures.push(&depth_texture);
 
         let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &textures, &camera_uniform, true);
 
@@ -92,7 +92,6 @@ impl Scene
         for i in 0..state.instances
         {
             let x = (-((state.instances as f32) / 2.0) * 0.5) + (i as f32 * 0.5);
-            dbg!(x);
             self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
         }
 
