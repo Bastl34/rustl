@@ -1,9 +1,10 @@
+use log::info;
 use nalgebra::{Vector3, Point3};
 use wgpu::{CommandEncoder, TextureView};
 
-use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale};
+use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale, resources::resources};
 
-use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, buffer::Buffer, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer};
+use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer};
 
 pub struct Scene
 {
@@ -12,7 +13,7 @@ pub struct Scene
     pipe: Pipeline,
     depth_texture: Texture,
     texture: Texture,
-    buffer: Buffer,
+    buffer: VertexBuffer,
 
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
@@ -23,9 +24,9 @@ pub struct Scene
 
 impl Scene
 {
-    pub fn new(wgpu: &mut WGpu) -> Scene
+    pub async fn new(wgpu: &mut WGpu) -> Scene
     {
-        let buffer = Buffer::new(wgpu, "test");
+        let buffer = VertexBuffer::new(wgpu, "test");
 
         let mut cam = Camera::new();
         cam.fovy = 45.0f32.to_radians();
@@ -47,14 +48,16 @@ impl Scene
 
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
-        let texture = Texture::new_from_image(wgpu, "test", "resources/images/test_2.png");
+        let tex_image = resources::load_binary_async("images/test_2.png").await.unwrap();
+        let texture = Texture::new_from_image(wgpu, "test", &tex_image);
         let depth_texture = Texture::new_depth_texture(wgpu);
 
         let mut textures = vec![];
         textures.push(&texture);
         textures.push(&depth_texture);
 
-        let pipe = Pipeline::new(wgpu, &buffer, "test", "resources/shader/test.wgsl", &textures, &camera_uniform, true);
+        let shader_source = resources::load_string_async("shader/test.wgsl").await.unwrap();
+        let pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
 
         Self
         {

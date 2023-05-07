@@ -3,7 +3,7 @@ mod rendering
     pub(crate) mod wgpu;
     pub(crate) mod egui;
     pub(crate) mod pipeline;
-    pub(crate) mod buffer;
+    pub(crate) mod vertex_buffer;
     pub(crate) mod instance;
     pub(crate) mod texture;
     pub(crate) mod scene;
@@ -50,11 +50,16 @@ mod helper
     pub(crate) mod image;
 }
 
+mod resources
+{
+    pub(crate) mod resources;
+}
+
 #[cfg(target_arch="wasm32")]
 use wasm_bindgen::prelude::*;
 
 #[cfg_attr(target_arch="wasm32", wasm_bindgen(start))]
-pub fn start()
+pub async fn start()
 {
-    window::window::start();
+    window::window::start().await;
 }

@@ -2,5 +2,5 @@ use rustl::start;
 
 fn main()
 {
-    start();
+    pollster::block_on(start());
 }

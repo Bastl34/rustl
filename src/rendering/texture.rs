@@ -23,10 +23,8 @@ impl Texture
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
     pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-    pub fn new_from_image(wgpu: &mut WGpu, name: &str, path: &str) -> Texture
+    pub fn new_from_image(wgpu: &mut WGpu, name: &str, image_bytes: &Vec<u8>) -> Texture
     {
-        let image_bytes = fs::read(path).unwrap();
-
         let device = wgpu.device();
         let queue = wgpu.queue_mut();
 

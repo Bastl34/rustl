@@ -62,7 +62,7 @@ var s_depth: sampler_comparison;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    //return textureSample(t_diffuse, s_diffuse, in.tex_coords);
-    let res = textureSampleCompare(t_depth, s_depth, in.tex_coords, 0.0);
-    return vec4<f32>(res, res, res, 1.0);
+    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    //let res = textureSampleCompare(t_depth, s_depth, in.tex_coords, 0.0);
+    //return vec4<f32>(res, res, res, 1.0);
 }

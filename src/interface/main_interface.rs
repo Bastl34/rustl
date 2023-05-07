@@ -29,7 +29,7 @@ impl MainInterface
         let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
         let state = Rc::new(RefCell::new(State::new()));
-        let scene = Scene::new(&mut wgpu);
+        let scene = Scene::new(&mut wgpu).await;
 
         Self
         {
@@ -126,9 +126,4 @@ impl MainInterface
             return;
         }
     }
-}
-
-pub fn init(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> MainInterface
-{
-    pollster::block_on(MainInterface::new(window, event_loop))
 }

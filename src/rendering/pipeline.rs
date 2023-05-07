@@ -1,10 +1,9 @@
 use std::{fs, borrow::Cow};
 
-use egui::Options;
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
-use super::{wgpu::WGpu, buffer::Buffer, buffer::Vertex, texture::{Texture, self}, camera::CameraUniform, uniform, instance::InstanceRaw};
+use super::{wgpu::WGpu, vertex_buffer::{Vertex, VertexBuffer}, texture::{Texture, self}, camera::CameraUniform, uniform, instance::InstanceRaw};
 
 pub struct Pipeline
 {
@@ -19,10 +18,8 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, buffer: &Buffer, name: &str, shader_path: &str, textures: &Vec<&Texture>, cam: &CameraUniform, depth_stencil: bool) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, buffer: &VertexBuffer, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, depth_stencil: bool) -> Pipeline
     {
-        let shader_source = fs::read_to_string(shader_path).unwrap();
-
         let device = wgpu.device();
         let config = wgpu.surface_config();
 
@@ -100,8 +97,6 @@ impl Pipeline
             ],
             label: Some(camera_bind_group_name.as_str()),
         });
-
-        dbg!(&textures_layout_group_vec);
 
         // ******************** render pipeline ********************
         let layout_name = format!("{} Layout", name);
