@@ -54,7 +54,7 @@ impl Scene
 
         let mut textures = vec![];
         textures.push(&texture);
-        textures.push(&depth_texture);
+        //textures.push(&depth_texture);
 
         let shader_source = resources::load_string_async("shader/test.wgsl").await.unwrap();
         let pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
