@@ -10,8 +10,11 @@ pub struct Scene
 {
     clear_color: wgpu::Color,
 
-    pipe: Pipeline,
-    depth_texture: Texture,
+    depth_pipe: Pipeline,
+    color_pipe: Pipeline,
+
+    depth_pass_buffer_texture: Texture,
+    depth_buffer_texture: Texture,
     texture: Texture,
     buffer: VertexBuffer,
 
@@ -50,22 +53,35 @@ impl Scene
 
         let tex_image = resources::load_binary_async("images/test_2.png").await.unwrap();
         let texture = Texture::new_from_image(wgpu, "test", &tex_image);
-        let depth_texture = Texture::new_depth_texture(wgpu);
 
-        let mut textures = vec![];
-        textures.push(&texture);
-        //textures.push(&depth_texture);
+        let depth_buffer_texture = Texture::new_depth_texture(wgpu);
+        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
+
+         // ********** depth pass **********
+         let mut textures = vec![];
+         textures.push(&texture);
+
+         let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
+         let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
+
+         // ********** color pass **********
+        //let mut textures = vec![];
+        textures.push(&depth_pass_buffer_texture);
 
         let shader_source = resources::load_string_async("shader/test.wgsl").await.unwrap();
-        let pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
+        let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
 
         Self
         {
             clear_color: wgpu::Color::BLACK,
 
             texture,
-            pipe,
-            depth_texture,
+
+            color_pipe,
+            depth_pipe,
+
+            depth_buffer_texture,
+            depth_pass_buffer_texture,
             buffer,
             instances,
             instance_buffer,
@@ -88,7 +104,9 @@ impl Scene
         self.cam.fovy = state.cam_fov.to_radians();
         self.cam.init_matrices();
         self.camera_uniform.update_view_proj(&self.cam);
-        self.pipe.update_camera(wgpu, &self.camera_uniform);
+
+        self.color_pipe.update_camera(wgpu, &self.camera_uniform);
+        self.depth_pipe.update_camera(wgpu, &self.camera_uniform);
 
         self.instances.clear();
 
@@ -106,19 +124,30 @@ impl Scene
         if state.save_image
         {
             let img_data = self.texture.to_image(wgpu);
-            img_data.save("data/texture.png");
+            img_data.save("data/texture.png").unwrap();
             state.save_image = false;
         }
 
-        if state.save_depth_image
+        if state.save_depth_pass_image
         {
-            let img_data = self.depth_texture.to_image(wgpu);
-            img_data.save("data/depth.png");
+            let img_data = self.depth_pass_buffer_texture.to_image(wgpu);
+            img_data.save("data/depth_pass.png").unwrap();
 
             let img_data_gray = float32_to_grayscale(img_data);
-            img_data_gray.save("data/depth_gray.png");
+            img_data_gray.save("data/depth_pass_gray.png").unwrap();
 
-            state.save_depth_image = false;
+            state.save_depth_pass_image = false;
+        }
+
+        if state.save_depth_buffer_image
+        {
+            let img_data = self.depth_buffer_texture.to_image(wgpu);
+            img_data.save("data/depth_buffer.png").unwrap();
+
+            let img_data_gray = float32_to_grayscale(img_data);
+            img_data_gray.save("data/depth_buffer_gray.png").unwrap();
+
+            state.save_depth_buffer_image = false;
         }
 
     }
@@ -128,17 +157,15 @@ impl Scene
         self.cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
         self.cam.init_matrices();
 
-        self.depth_texture = Texture::new_depth_texture(wgpu);
+        self.depth_buffer_texture = Texture::new_depth_texture(wgpu);
+        self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
     }
-}
 
-impl WGpuRendering for Scene
-{
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    fn render_depth(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
-            label: None,
+            label: Some("depth pass"),
             color_attachments:
             &[
                 Some(wgpu::RenderPassColorAttachment
@@ -154,7 +181,7 @@ impl WGpuRendering for Scene
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
             {
-                view: &self.depth_texture.get_view(),
+                view: &self.depth_pass_buffer_texture.get_view(),
                 depth_ops: Some(wgpu::Operations
                 {
                     load: wgpu::LoadOp::Clear(1.0),
@@ -164,9 +191,9 @@ impl WGpuRendering for Scene
             })
         });
 
-        render_pass.set_pipeline(&self.pipe.get());
-        render_pass.set_bind_group(0, &self.pipe.get_textures_bind_group(), &[]);
-        render_pass.set_bind_group(1, &self.pipe.get_camera_bind_group(), &[]);
+        render_pass.set_pipeline(&self.depth_pipe.get());
+        render_pass.set_bind_group(0, &self.depth_pipe.get_textures_bind_group(), &[]);
+        render_pass.set_bind_group(1, &self.depth_pipe.get_camera_bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
 
@@ -175,5 +202,57 @@ impl WGpuRendering for Scene
 
         render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instances.len() as _);
+    }
+
+    fn render_color(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+        {
+            label: Some("color pass"),
+            color_attachments:
+            &[
+                Some(wgpu::RenderPassColorAttachment
+                {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations
+                    {
+                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        store: true,
+                    },
+                })
+            ],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
+            {
+                view: &self.depth_buffer_texture.get_view(),
+                depth_ops: Some(wgpu::Operations
+                {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            })
+        });
+
+        render_pass.set_pipeline(&self.color_pipe.get());
+        render_pass.set_bind_group(0, &self.color_pipe.get_textures_bind_group(), &[]);
+        render_pass.set_bind_group(1, &self.color_pipe.get_camera_bind_group(), &[]);
+
+        render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
+
+        // instancing
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+
+        render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instances.len() as _);
+    }
+}
+
+impl WGpuRendering for Scene
+{
+    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    {
+        self.render_depth(wgpu, view, encoder);
+        self.render_color(wgpu, view, encoder);
     }
 }

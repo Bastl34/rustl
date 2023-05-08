@@ -37,9 +37,14 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                 state.save_image = true;
             }
 
-            if ui.button("save depth image").clicked()
+            if ui.button("save depth pass image").clicked()
             {
-                state.save_depth_image = true;
+                state.save_depth_pass_image = true;
+            }
+
+            if ui.button("save depth buffer image").clicked()
+            {
+                state.save_depth_buffer_image = true;
             }
 
             if ui.button("save screenshot").clicked()

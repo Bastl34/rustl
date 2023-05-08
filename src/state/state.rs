@@ -18,7 +18,9 @@ pub struct State
 
     pub instances: u32,
     pub save_image: bool,
-    pub save_depth_image: bool,
+    pub save_depth_pass_image: bool,
+    pub save_depth_buffer_image: bool,
+
     pub save_screenshot: bool,
 
     pub fps_timer: Instant,
@@ -43,7 +45,8 @@ impl State
 
             instances: 3,
             save_image: false,
-            save_depth_image: false,
+            save_depth_pass_image: false,
+            save_depth_buffer_image: false,
             save_screenshot: false,
 
             fps_timer: Instant::now(),
