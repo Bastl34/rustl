@@ -8,6 +8,8 @@ use super::{wgpu::WGpu, vertex_buffer::{Vertex, VertexBuffer}, texture::{Texture
 pub struct Pipeline
 {
     pub name: String,
+    pub fragment_attachment: bool,
+
     pipe: wgpu::RenderPipeline,
 
     textures_bind_group: BindGroup,
@@ -18,7 +20,7 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, buffer: &VertexBuffer, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, depth_stencil: bool) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, buffer: &VertexBuffer, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, depth_stencil: bool, fragment_attachment: bool) -> Pipeline
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -125,6 +127,28 @@ impl Pipeline
             });
         }
 
+        let fragment_targets = &[Some(wgpu::ColorTargetState
+        {
+            format: config.format,
+            blend: Some(wgpu::BlendState
+            {
+                color: wgpu::BlendComponent::REPLACE,
+                alpha: wgpu::BlendComponent::REPLACE,
+            }),
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+
+        let mut fragment_state = None;
+        if fragment_attachment
+        {
+            fragment_state = Some(wgpu::FragmentState
+            {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: fragment_targets
+            });
+        }
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
         {
             label: Some(name),
@@ -139,21 +163,7 @@ impl Pipeline
                     InstanceRaw::desc()
                 ],
             },
-            fragment: Some(wgpu::FragmentState
-            {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState
-                {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState
-                    {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
+            fragment: fragment_state,
             primitive: wgpu::PrimitiveState
             {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -184,6 +194,8 @@ impl Pipeline
         {
             name: name.to_string(),
             pipe: render_pipeline,
+
+            fragment_attachment,
 
             textures_bind_group,
 

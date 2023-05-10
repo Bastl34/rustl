@@ -22,8 +22,29 @@ mod state
 
     pub(crate) mod scene
     {
+        pub(crate) mod manager
+        {
+            pub(crate) mod id_manager;
+        }
+
+        pub(crate) mod loader
+        {
+            pub(crate) mod wavefront;
+        }
+
+        pub(crate) mod components
+        {
+            pub(crate) mod component;
+            pub(crate) mod transformation;
+            pub(crate) mod mesh;
+            pub(crate) mod material;
+        }
+
+        pub(crate) mod texture;
         pub(crate) mod camera;
         pub(crate) mod instance;
+        pub(crate) mod node;
+        pub(crate) mod scene;
     }
 
     pub(crate) mod gui
@@ -48,6 +69,7 @@ mod helper
     pub(crate) mod file;
     pub(crate) mod math;
     pub(crate) mod image;
+    pub(crate) mod crypto;
 }
 
 mod resources

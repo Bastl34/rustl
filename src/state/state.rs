@@ -2,11 +2,14 @@ use std::{cell::RefCell, rc::Rc};
 
 use instant::Instant;
 
+use super::scene::scene::SceneItem;
+
 pub type StateItem = Rc<RefCell<State>>;
 
 pub struct State
 {
     pub running: bool,
+    pub scenes: Vec<SceneItem>,
 
     pub clear_color_r: f64,
     pub clear_color_g: f64,
@@ -36,6 +39,8 @@ impl State
         Self
         {
             running: false,
+            scenes: vec![],
+
             clear_color_r: 0.0,
             clear_color_g: 0.0,
             clear_color_b: 0.0,

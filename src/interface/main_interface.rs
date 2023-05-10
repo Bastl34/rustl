@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
 
+use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
 use crate::rendering::egui::EGui;
@@ -9,6 +10,7 @@ use crate::rendering::scene::Scene;
 
 use crate::rendering::wgpu::{WGpu, WGpuRenderingItem};
 use crate::state::gui::gui::build_gui;
+use crate::state::scene::camera::Camera;
 use crate::state::state::{State, StateItem};
 
 pub struct MainInterface
@@ -29,6 +31,32 @@ impl MainInterface
         let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
         let state = Rc::new(RefCell::new(State::new()));
+
+        //init scene
+        {
+            let state = &mut *(state.borrow_mut());
+
+            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
+
+            // load model
+            scene.load("objects/cube/cube.obj").await.unwrap();
+
+
+            let mut cam = Camera::new();
+            cam.fovy = 45.0f32.to_radians();
+            cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 2.0);
+            cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
+            cam.clipping_near = 0.1;
+            cam.clipping_far = 100.0;
+
+            cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.init_matrices();
+
+            scene.cameras.push(Box::new(cam));
+
+            state.scenes.push(Box::new(scene));
+        }
+
         let scene = Scene::new(&mut wgpu).await;
 
         Self
@@ -100,6 +128,8 @@ impl MainInterface
             //self.gui.request_repaint();
         }
 
+
+        // render
         let mut render_passes: Vec<&mut WGpuRenderingItem> = vec![];
         render_passes.push(&mut self.scene);
         render_passes.push(&mut self.egui);
@@ -113,7 +143,7 @@ impl MainInterface
             if state.save_screenshot
             {
                 let img_data = self.wgpu.get_screenshot(&mut render_passes);
-                img_data.save("data/screenshot.png");
+                img_data.save("data/screenshot.png").unwrap();
                 state.save_screenshot = false;
             }
         }

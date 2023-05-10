@@ -33,6 +33,7 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
     0.0, 0.0, 0.0, 1.0,
 );
 
+pub type CameraItem = Box<Camera>;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Camera

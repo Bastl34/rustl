@@ -24,3 +24,8 @@ pub fn get_dirname(path: &str) -> String
         None =>  { return "".to_string(); },
     }
 }
+
+pub fn is_absolute(path: &str) -> bool
+{
+    Path::new(path).is_absolute()
+}

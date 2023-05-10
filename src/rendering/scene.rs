@@ -1,6 +1,6 @@
 use log::info;
 use nalgebra::{Vector3, Point3};
-use wgpu::{CommandEncoder, TextureView};
+use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
 use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale, resources::resources};
 
@@ -62,14 +62,14 @@ impl Scene
          textures.push(&texture);
 
          let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
-         let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
+         let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true, true);
 
          // ********** color pass **********
         //let mut textures = vec![];
         textures.push(&depth_pass_buffer_texture);
 
         let shader_source = resources::load_string_async("shader/test.wgsl").await.unwrap();
-        let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true);
+        let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true, true);
 
         Self
         {
@@ -163,22 +163,30 @@ impl Scene
 
     fn render_depth(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
+        let clear_color = wgpu::Color::BLACK;
+
+        let mut color_attachments: &[Option<RenderPassColorAttachment>] = &[
+            Some(wgpu::RenderPassColorAttachment
+            {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations
+                {
+                    load: wgpu::LoadOp::Clear(clear_color),
+                    store: true,
+                },
+            })
+        ];
+
+        if !self.depth_pipe.fragment_attachment
+        {
+            color_attachments = &[];
+        }
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: Some("depth pass"),
-            color_attachments:
-            &[
-                Some(wgpu::RenderPassColorAttachment
-                {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations
-                    {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: true,
-                    },
-                })
-            ],
+            color_attachments: color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
             {
                 view: &self.depth_pass_buffer_texture.get_view(),
