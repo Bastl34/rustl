@@ -355,22 +355,7 @@ impl Material
         self.texture_reflectivity.is_some()
     }
 
-    pub fn has_texture(&self, tex_type: TextureType) -> bool
-    {
-        match tex_type
-        {
-            TextureType::Base => self.texture_base.is_some(),
-            TextureType::AmbientEmissive => self.texture_ambient.is_some(),
-            TextureType::Specular => self.texture_specular.is_some(),
-            TextureType::Normal => self.texture_normal.is_some(),
-            TextureType::Alpha => self.texture_alpha.is_some(),
-            TextureType::Roughness => self.texture_roughness.is_some(),
-            TextureType::AmbientOcclusion => self.texture_ambient_occlusion.is_some(),
-            TextureType::Reflectivity => self.texture_reflectivity.is_some()
-        }
-    }
-
-    pub fn texture_dimension(&self, tex_type: TextureType) -> (u32, u32)
+    fn get_texture_by_type(&self, tex_type: TextureType) -> Option<Arc<RwLock<Box<Texture>>>>
     {
         let tex;
 
@@ -385,6 +370,20 @@ impl Material
             TextureType::AmbientOcclusion => { tex = self.texture_ambient_occlusion.clone() },
             TextureType::Reflectivity => { tex = self.texture_reflectivity.clone() },
         }
+
+        tex
+    }
+
+    pub fn has_texture(&self, tex_type: TextureType) -> bool
+    {
+        let tex = self.get_texture_by_type(tex_type);
+
+        tex.is_some()
+    }
+
+    pub fn texture_dimension(&self, tex_type: TextureType) -> (u32, u32)
+    {
+        let tex = self.get_texture_by_type(tex_type);
 
         if tex.is_some()
         {
@@ -401,19 +400,7 @@ impl Material
             return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
         }
 
-        let tex;
-
-        match tex_type
-        {
-            TextureType::Base => { tex = self.texture_base.clone() },
-            TextureType::AmbientEmissive => { tex = self.texture_ambient.clone() },
-            TextureType::Specular => { tex = self.texture_specular.clone() },
-            TextureType::Normal => { tex = self.texture_normal.clone() },
-            TextureType::Alpha => { tex = self.texture_alpha.clone() },
-            TextureType::Roughness => { tex = self.texture_roughness.clone() },
-            TextureType::AmbientOcclusion => { tex = self.texture_ambient_occlusion.clone() },
-            TextureType::Reflectivity => { tex = self.texture_reflectivity.clone() },
-        }
+        let tex = self.get_texture_by_type(tex_type);
 
         if tex.is_some()
         {
@@ -430,19 +417,7 @@ impl Material
             return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
         }
 
-        let tex;
-
-        match tex_type
-        {
-            TextureType::Base => { tex = self.texture_base.clone() },
-            TextureType::AmbientEmissive => { tex = self.texture_ambient.clone() },
-            TextureType::Specular => { tex = self.texture_specular.clone() },
-            TextureType::Normal => { tex = self.texture_normal.clone() },
-            TextureType::Alpha => { tex = self.texture_alpha.clone() },
-            TextureType::Roughness => { tex = self.texture_roughness.clone() },
-            TextureType::AmbientOcclusion => { tex = self.texture_ambient_occlusion.clone() },
-            TextureType::Reflectivity => { tex = self.texture_reflectivity.clone() },
-        }
+        let tex = self.get_texture_by_type(tex_type);
 
         let tex_arc = tex.unwrap();
         let tex = tex_arc.read().unwrap();
