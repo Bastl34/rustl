@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use nalgebra::{Vector3, Matrix4, Rotation3};
 
 use super::component::Component;
@@ -49,8 +51,23 @@ impl Component for Transformation
         true
     }
 
+    fn name(&self) -> &'static str
+    {
+        "Transformation"
+    }
+
     fn update(&mut self, time_delta: f32)
     {
         // TODO
+    }
+
+    fn as_any(&self) -> &dyn Any
+    {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any
+    {
+        self
     }
 }

@@ -1,4 +1,6 @@
-use super::components::component::{ComponentItem};
+use crate::{find_shared_component_mut, shared_component_downcast_mut};
+
+use super::components::component::{ComponentItem, SharedComponentItem, Component};
 
 pub type NodeItem = Box<Node>;
 
@@ -7,24 +9,24 @@ pub struct Node
     id: u32,
     name: String,
 
-    components: Vec<ComponentItem>
+    pub nodes: Vec<NodeItem>,
+
+    components: Vec<ComponentItem>,
+    shared_components: Vec<SharedComponentItem>
 }
 
 impl Node
 {
-    pub fn new(id: u32, name: &str, components: Option<Vec<ComponentItem>>) -> Node
+    pub fn new(id: u32, name: &str) -> Node
     {
-        let mut component_items = vec![];
-        if components.is_some()
-        {
-            component_items = components.unwrap();
-        }
-
         Self
         {
             id: id,
             name: name.to_string(),
-            components: component_items
+            components: vec![],
+            shared_components: vec![],
+
+            nodes: vec![]
         }
     }
 
@@ -33,11 +35,29 @@ impl Node
         self.components.push(component);
     }
 
+    pub fn add_shared_component(&mut self, component: SharedComponentItem)
+    {
+        self.shared_components.push(component);
+    }
+
     pub fn update(&mut self, time_delta: f32)
     {
+        // update components
         for component in &mut self.components
         {
             component.update(time_delta);
+        }
+
+        for component in &mut self.shared_components
+        {
+            let mut component_write = component.write().unwrap();
+            component_write.update(time_delta);
+        }
+
+        // update nodes
+        for node in &mut self.nodes
+        {
+            node.update(time_delta);
         }
     }
 }

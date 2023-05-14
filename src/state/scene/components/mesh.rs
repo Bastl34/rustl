@@ -1,4 +1,6 @@
-use nalgebra::{Point2, Point3, Vector3};
+use std::any::Any;
+
+use nalgebra::{Point2, Point3};
 use parry3d::shape::TriMesh;
 
 use super::component::Component;
@@ -117,8 +119,23 @@ impl Component for Mesh
         true
     }
 
+    fn name(&self) -> &'static str
+    {
+        "Mesh"
+    }
+
     fn update(&mut self, time_delta: f32)
     {
         // TODO
+    }
+
+    fn as_any(&self) -> &dyn Any
+    {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any
+    {
+        self
     }
 }

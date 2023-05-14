@@ -116,6 +116,8 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
             self.scene.update(&mut self.wgpu, state);
+
+            state.update(1.0); //todo: delta time
         }
 
         // build ui

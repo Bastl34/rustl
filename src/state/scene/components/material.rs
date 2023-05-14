@@ -1,10 +1,20 @@
 use std::sync::{RwLock, Arc};
+use std::any::Any;
 
 use nalgebra::{Vector3, Vector4};
 
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
-#[derive(Clone, Copy)]
+use super::component::{Component, SharedComponentItem};
+
+//pub type MaterialItem = Arc<RwLock<Box<Material>>>;
+//pub type MaterialItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
+pub type MaterialItem = SharedComponentItem;
+
+//pub type MaterialBoxItem = Box<dyn Any + Send + Sync>;
+//pub type MaterialItem = Arc<RwLock<MaterialBoxItem>>;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TextureType
 {
     Base,
@@ -15,6 +25,13 @@ pub enum TextureType
     Roughness,
     AmbientOcclusion,
     Reflectivity,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TextureFiltering
+{
+    Nearest,
+    Linear
 }
 
 #[derive(Debug)]
@@ -35,6 +52,8 @@ pub struct Material
     pub texture_roughness: Option<TextureItem>,
     pub texture_ambient_occlusion: Option<TextureItem>,
     pub texture_reflectivity: Option<TextureItem>,
+
+    pub filtering_mode: TextureFiltering,
 
     pub alpha: f32,
     pub shininess: f32,
@@ -78,6 +97,8 @@ impl Material
             texture_roughness: None,
             texture_ambient_occlusion: None,
             texture_reflectivity: None,
+
+            filtering_mode: TextureFiltering::Linear,
 
             alpha: 1.0,
             shininess: 150.0,
@@ -141,6 +162,8 @@ impl Material
         }
 
         // ********** other attributes **********
+        if default_material.filtering_mode != new_mat.filtering_mode { self.filtering_mode = new_mat.filtering_mode; }
+
         if !helper::math::approx_equal(default_material.alpha, new_mat.alpha) { self.alpha = new_mat.alpha; }
         if !helper::math::approx_equal(default_material.shininess, new_mat.shininess) { self.shininess = new_mat.shininess; }
         if !helper::math::approx_equal(default_material.reflectivity, new_mat.reflectivity) { self.reflectivity = new_mat.reflectivity; }
@@ -211,6 +234,8 @@ impl Material
         println!("texture_roughness: {:?}", self.texture_roughness.is_some());
         println!("texture_ambient_occlusion: {:?}", self.texture_ambient_occlusion.is_some());
         println!("texture_reflectivity: {:?}", self.texture_reflectivity.is_some());
+
+        println!("filtering_mode: {:?}", self.filtering_mode);
 
         println!("alpha: {:?}", self.alpha);
         println!("shininess: {:?}", self.shininess);
@@ -396,5 +421,93 @@ impl Material
         }
 
         Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0)
+    }
+
+    pub fn get_texture_pixel_float(&self, x: f32, y: f32, tex_type: TextureType) -> Vector4<f32>
+    {
+        if !self.has_texture(tex_type)
+        {
+            return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
+        }
+
+        let tex;
+
+        match tex_type
+        {
+            TextureType::Base => { tex = self.texture_base.clone() },
+            TextureType::AmbientEmissive => { tex = self.texture_ambient.clone() },
+            TextureType::Specular => { tex = self.texture_specular.clone() },
+            TextureType::Normal => { tex = self.texture_normal.clone() },
+            TextureType::Alpha => { tex = self.texture_alpha.clone() },
+            TextureType::Roughness => { tex = self.texture_roughness.clone() },
+            TextureType::AmbientOcclusion => { tex = self.texture_ambient_occlusion.clone() },
+            TextureType::Reflectivity => { tex = self.texture_reflectivity.clone() },
+        }
+
+        let tex_arc = tex.unwrap();
+        let tex = tex_arc.read().unwrap();
+
+        let width = tex.width();
+        let height = tex.height();
+
+        let mut x = x * width as f32;
+        let mut y = y * height as f32;
+        if x < 0.0 { x = x + width as f32; }
+        if y < 0.0 { y = y + height as f32; }
+
+        let mut x0: u32 = x.floor() as u32;
+        let mut x1: u32 = x.ceil() as u32;
+
+        let mut y0: u32 = y.floor() as u32;
+        let mut y1: u32 = y.ceil() as u32;
+
+        // out of bounds check
+        if x0 >= width { x0 = width - 1; }
+        if y0 >= height { y0 = height - 1; }
+        if x1 >= width { x1 = width - 1; }
+        if y1 >= height { y1 = height - 1; }
+
+        let x_f = x - x0 as f32;
+        let y_f = y - y0 as f32;
+
+        let p0 = tex.get_pixel_as_float_vec(x0, y0);
+        let p1 = tex.get_pixel_as_float_vec(x1, y0);
+        let p2 = tex.get_pixel_as_float_vec(x0, y1);
+        let p3 = tex.get_pixel_as_float_vec(x1, y1);
+
+        let p_res_1 = helper::math::interpolate_vec4(p0, p1, x_f);
+        let p_res_2 = helper::math::interpolate_vec4(p2, p3, x_f);
+
+        let res = helper::math::interpolate_vec4(p_res_1, p_res_2, y_f);
+
+        res
+    }
+}
+
+impl Component for Material
+{
+    fn is_enabled(&self) -> bool
+    {
+        true
+    }
+
+    fn name(&self) -> &'static str
+    {
+        "Material"
+    }
+
+    fn update(&mut self, time_delta: f32)
+    {
+        // TODO
+    }
+
+    fn as_any(&self) -> &dyn Any
+    {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any
+    {
+        self
     }
 }

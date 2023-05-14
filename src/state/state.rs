@@ -60,4 +60,13 @@ impl State
             last_fps: 0
         }
     }
+
+    pub fn update(&mut self, time_delta: f32)
+    {
+        // update scnes
+        for scene in &mut self.scenes
+        {
+            scene.update(time_delta);
+        }
+    }
 }
