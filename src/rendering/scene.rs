@@ -2,9 +2,11 @@ use log::info;
 use nalgebra::{Vector3, Point3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale, resources::resources};
+use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer};
+
+type MaterialComponent = crate::state::scene::components::material::Material;
 
 pub struct Scene
 {
@@ -31,6 +33,7 @@ impl Scene
     {
         let node = scene.nodes.get_mut(0).unwrap();
 
+        /*
         {
             let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
             dbg!(&mesh.normals);
@@ -40,6 +43,20 @@ impl Scene
             let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
             mesh.normals.clear();
             dbg!(&mesh.normals);
+        }
+        */
+
+        {
+
+            let mat = node.find_shared_component::<MaterialComponent>().unwrap();
+            let mat = mat.read().unwrap().as_any().downcast_ref::<MaterialComponent>().unwrap();
+        }
+
+        {
+            let mat = node.find_shared_component_mut::<MaterialComponent>().unwrap();
+            shared_component_write!(mat, MaterialComponent, mat);
+
+            mat.alpha = 0.0;
         }
 
         let buffer = VertexBuffer::new(wgpu, "test");

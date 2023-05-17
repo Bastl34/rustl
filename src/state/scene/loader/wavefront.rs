@@ -1,8 +1,8 @@
-use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path, ops::Deref};
+use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, self, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node}, helper, new_shared_component, shared_component_downcast_mut};
+use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}}, scene::Scene, node::Node}, helper, new_shared_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -163,7 +163,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
 
                     let mut material_guard = material_arc.write().unwrap();
                     let any = material_guard.as_any_mut();
-                    let mut material =  shared_component_downcast_mut!(any, Material);
+                    let mut material = any.downcast_mut::<Material>().unwrap();
 
                     let mat: &tobj::Material = &wavefront_materials[wavefront_mat_id];
 
@@ -285,8 +285,6 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
             //node.add_component(material_arc.write().unwrap());
 
             scene.nodes.push(Box::new(node));
-
-            dbg!("ooooooooooooookkk");
         }
 
     }

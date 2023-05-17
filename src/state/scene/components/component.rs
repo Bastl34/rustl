@@ -27,6 +27,7 @@ impl<T: Component + 'static> Component for T
 }
 */
 
+/*
 #[macro_export]
 macro_rules! find_shared_component
 {
@@ -100,6 +101,8 @@ macro_rules! shared_component_downcast_mut
         }
     };
 }
+
+ */
 
 #[macro_export]
 macro_rules! new_shared_component

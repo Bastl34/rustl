@@ -1,6 +1,4 @@
-use std::sync::RwLockReadGuard;
-
-use crate::{find_shared_component_mut, shared_component_downcast_mut};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, any::Any};
 
 use super::components::component::{ComponentItem, SharedComponentItem, Component};
 
@@ -79,14 +77,14 @@ impl Node
         Some(downcast)
     }
 
-    pub fn find_shared_component<'a, T>(&'a self) -> Option<Box<&'a T>> where T: 'static
+    pub fn find_shared_component<T>(&self) -> Option<SharedComponentItem> where T: 'static
     {
         let value = self.shared_components.iter().find
         (
             |c|
             {
-                let component_item = c.read().unwrap();
-                let component_item = component_item.as_any();
+                let component = c.read().unwrap();
+                let component_item = component.as_any();
                 component_item.is::<T>()
             }
         );
@@ -95,19 +93,26 @@ impl Node
             return None;
         }
 
-        /*
-        let any = value.unwrap().read().unwrap().as_any();
-        let downcast: Box<&'a T> = Box::new(any.downcast_ref::<T>().unwrap());
+        Some(value.unwrap().clone())
+    }
 
-        Some(downcast)
-        */
+    pub fn find_shared_component_mut<T>(&mut self) -> Option<SharedComponentItem> where T: 'static
+    {
+        let value = self.shared_components.iter_mut().find
+        (
+            |c|
+            {
+                let component = c.read().unwrap();
+                let component_item = component.as_any();
+                component_item.is::<T>()
+            }
+        );
+        if !value.is_some()
+        {
+            return None;
+        }
 
-        let read: RwLockReadGuard<'a, Box<dyn Component + Send + Sync>> = value.unwrap().read().unwrap();
-        let any = read.as_any();
-        let downcast: &T = any.downcast_ref::<T>().unwrap();
-        let boxed_downcast: Box<&'a T> = Box::new(downcast);
-
-        Some(boxed_downcast)
+        Some(value.unwrap().clone())
     }
 
     pub fn add_shared_component(&mut self, component: SharedComponentItem)
@@ -135,4 +140,34 @@ impl Node
             node.update(time_delta);
         }
     }
+}
+
+#[macro_export]
+macro_rules! get_component_mut
+{
+    ($node:ident, $component:ty, $result:ident) =>
+    {
+        let $result = $node.find_shared_component_mut::<$component>().unwrap();
+        let mut writable = $result.write().unwrap();
+        let $result = writable.as_any_mut().downcast_mut::<$component>().unwrap();
+    };
+}
+
+#[macro_export]
+macro_rules! shared_component_write
+{
+    ($component:ident, $component_type:ty, $result:ident) =>
+    {
+        let mut writable = $component.write().unwrap();
+        let $result = writable.as_any_mut().downcast_mut::<$component_type>().unwrap();
+    };
+}
+
+macro_rules! shared_component_read
+{
+    ($component:ident, $component_type:ty, $result:ident) =>
+    {
+        let mut readable = $component.read().unwrap();
+        let $result = readable.as_any_mut().downcast_ref::<$component_type>().unwrap();
+    };
 }
