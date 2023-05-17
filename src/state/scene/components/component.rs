@@ -33,7 +33,7 @@ macro_rules! find_shared_component
     ($vec:expr, $type:ty) =>
     {
         {
-            let mut res: Option<&Arc<RwLock<Box<dyn Any + Send + Sync>>>> = None;
+            let mut res: Option<&SharedComponentItem> = None;
             let value = $vec.iter().find
             (
                 |c|
@@ -59,7 +59,7 @@ macro_rules! find_shared_component_mut
     ($vec:expr, $type:ty) =>
     {
         {
-            let mut res: Option<&mut Arc<RwLock<Box<dyn Any + Send + Sync>>>> = None;
+            let mut res: Option<&SharedComponentItem> = None;
             let value = $vec.iter_mut().find
             (
                 |c|

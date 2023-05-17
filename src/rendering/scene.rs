@@ -27,8 +27,21 @@ pub struct Scene
 
 impl Scene
 {
-    pub async fn new(wgpu: &mut WGpu) -> Scene
+    pub async fn new(wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>) -> Scene
     {
+        let node = scene.nodes.get_mut(0).unwrap();
+
+        {
+            let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
+            dbg!(&mesh.normals);
+        }
+
+        {
+            let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
+            mesh.normals.clear();
+            dbg!(&mesh.normals);
+        }
+
         let buffer = VertexBuffer::new(wgpu, "test");
 
         let mut cam = Camera::new();

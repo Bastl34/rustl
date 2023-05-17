@@ -6,7 +6,7 @@ use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
 use crate::rendering::egui::EGui;
-use crate::rendering::scene::Scene;
+use crate::rendering::scene::{Scene, self};
 
 use crate::rendering::wgpu::{WGpu, WGpuRenderingItem};
 use crate::state::gui::gui::build_gui;
@@ -57,7 +57,14 @@ impl MainInterface
             state.scenes.push(Box::new(scene));
         }
 
-        let scene = Scene::new(&mut wgpu).await;
+        let scene;
+        {
+            let state = &mut *(state.borrow_mut());
+
+            let graph_scene = state.scenes.get_mut(0);
+
+            scene = Scene::new(&mut wgpu, graph_scene.unwrap()).await;
+        }
 
         Self
         {
