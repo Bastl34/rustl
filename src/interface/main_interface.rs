@@ -16,7 +16,7 @@ use crate::state::state::{State, StateItem};
 pub struct MainInterface
 {
     state: StateItem,
-    scene: Scene,
+    render_scene: Scene,
 
     wgpu: WGpu,
     window: Window,
@@ -40,11 +40,12 @@ impl MainInterface
 
             // load model
             scene.load("objects/cube/cube.obj").await.unwrap();
-
+            //scene.load("objects/plane/plane.obj").await.unwrap();
+            //scene.load("objects/bastl/bastl.obj").await.unwrap();
 
             let mut cam = Camera::new();
             cam.fovy = 45.0f32.to_radians();
-            cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 2.0);
+            cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
             cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
             cam.clipping_near = 0.1;
             cam.clipping_far = 100.0;
@@ -57,19 +58,19 @@ impl MainInterface
             state.scenes.push(Box::new(scene));
         }
 
-        let scene;
+        let render_scene;
         {
             let state = &mut *(state.borrow_mut());
 
             let graph_scene = state.scenes.get_mut(0);
 
-            scene = Scene::new(&mut wgpu, graph_scene.unwrap()).await;
+            render_scene = Scene::new(&mut wgpu, graph_scene.unwrap()).await;
         }
 
         Self
         {
             state,
-            scene,
+            render_scene,
 
             wgpu,
             window,
@@ -86,7 +87,14 @@ impl MainInterface
     {
         self.wgpu.resize(dimensions);
         self.egui.resize(dimensions, scale_factor);
-        self.scene.resize(&mut self.wgpu);
+
+
+        {
+            let state = &mut *(self.state.borrow_mut());
+
+            let scene_id: usize = 0;
+            self.render_scene.resize(&mut self.wgpu, &mut state.scenes[scene_id]);
+        }
     }
 
     pub fn update(&mut self)
@@ -122,7 +130,9 @@ impl MainInterface
         // update scene
         {
             let state = &mut *(self.state.borrow_mut());
-            self.scene.update(&mut self.wgpu, state);
+
+            let scene_id: usize = 0;
+            self.render_scene.update(&mut self.wgpu, state, 0);
 
             state.update(1.0); //todo: delta time
         }
@@ -140,7 +150,7 @@ impl MainInterface
 
         // render
         let mut render_passes: Vec<&mut WGpuRenderingItem> = vec![];
-        render_passes.push(&mut self.scene);
+        render_passes.push(&mut self.render_scene);
         render_passes.push(&mut self.egui);
 
         self.wgpu.render(&mut render_passes);

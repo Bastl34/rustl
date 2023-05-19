@@ -24,7 +24,6 @@ pub struct Scene
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
 
-    cam: Camera,
     camera_uniform: CameraUniform
 }
 
@@ -63,23 +62,11 @@ impl Scene
         let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
         let buffer = VertexBuffer::new(wgpu, "test", *mesh);
 
-        let mut cam = Camera::new();
-        cam.fovy = 45.0f32.to_radians();
-        cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 2.0);
-        cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
-        cam.clipping_near = 0.1;
-        cam.clipping_far = 100.0;
-
-        cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
-        cam.init_matrices();
-
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&cam);
+        camera_uniform.update_view_proj(&scene.cameras[0]); // TODO
 
         let mut instances = vec![];
-        instances.push(Instance::new(Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
-        instances.push(Instance::new(Vector3::<f32>::new(-1.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 40.0f32.to_radians(), 0.0), Vector3::<f32>::new(0.8, 0.8, 0.8)));
-        instances.push(Instance::new(Vector3::<f32>::new(1.0, 0.0, 0.0), Vector3::<f32>::new(0.0, -40.0f32.to_radians(), 0.0), Vector3::<f32>::new(1.2, 1.2, 1.2)));
+        instances.push(Instance::new(Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 2.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
 
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
@@ -118,12 +105,11 @@ impl Scene
             instances,
             instance_buffer,
 
-            cam: cam,
             camera_uniform: camera_uniform
         }
     }
 
-    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State)
+    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene_id: usize)
     {
         self.clear_color = wgpu::Color
         {
@@ -133,9 +119,14 @@ impl Scene
             b: state.clear_color_b,
         };
 
-        self.cam.fovy = state.cam_fov.to_radians();
-        self.cam.init_matrices();
-        self.camera_uniform.update_view_proj(&self.cam);
+        let scene = state.scenes.get_mut(scene_id).unwrap();
+
+        for cam in &mut scene.cameras
+        {
+            cam.fovy = state.cam_fov.to_radians();
+            cam.init_matrices();
+            self.camera_uniform.update_view_proj(&cam);
+        }
 
         self.color_pipe.update_camera(wgpu, &self.camera_uniform);
         self.depth_pipe.update_camera(wgpu, &self.camera_uniform);
@@ -144,7 +135,7 @@ impl Scene
 
         for i in 0..state.instances
         {
-            let x = (-((state.instances as f32) / 2.0) * 0.5) + (i as f32 * 0.5);
+            let x = (i as f32 * 4.0) - ((state.instances - 1) as f32 * 4.0) / 2.0;
             self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
         }
 
@@ -184,10 +175,13 @@ impl Scene
 
     }
 
-    pub fn resize(&mut self, wgpu: &mut WGpu)
+    pub fn resize(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
     {
-        self.cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
-        self.cam.init_matrices();
+        for cam in &mut scene.cameras
+        {
+            cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.init_matrices();
+        }
 
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
@@ -283,7 +277,7 @@ impl Scene
         // instancing
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-        render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instances.len() as _);
     }
 }
