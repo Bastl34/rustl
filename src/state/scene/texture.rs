@@ -83,4 +83,9 @@ impl Texture
         )
     }
 
+    pub fn rgba_data(&self) -> &[u8]
+    {
+        self.image.as_bytes()
+    }
+
 }

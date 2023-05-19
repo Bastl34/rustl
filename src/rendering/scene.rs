@@ -31,7 +31,8 @@ impl Scene
 {
     pub async fn new(wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>) -> Scene
     {
-        let node = scene.nodes.get_mut(0).unwrap();
+        let node_id = 1;
+        let node = scene.nodes.get_mut(node_id).unwrap();
 
         /*
         {
@@ -70,8 +71,17 @@ impl Scene
 
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
-        let tex_image = resources::load_binary_async("images/test_2.png").await.unwrap();
-        let texture = Texture::new_from_image(wgpu, "test", &tex_image);
+        let texture;
+        {
+            let mat = node.find_shared_component::<MaterialComponent>().unwrap();
+            let mat = mat.read().unwrap();
+            let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+
+            let tex = mat.texture_base.as_ref().unwrap().read().unwrap();
+
+            texture = Texture::new_from_texture(wgpu, "test", &tex);
+        }
+
 
         let depth_buffer_texture = Texture::new_depth_texture(wgpu);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
@@ -131,12 +141,22 @@ impl Scene
         self.color_pipe.update_camera(wgpu, &self.camera_uniform);
         self.depth_pipe.update_camera(wgpu, &self.camera_uniform);
 
-        self.instances.clear();
-
-        for i in 0..state.instances
+        if self.instances.len() != state.instances as usize
         {
-            let x = (i as f32 * 4.0) - ((state.instances - 1) as f32 * 4.0) / 2.0;
-            self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
+            self.instances.clear();
+
+            for i in 0..state.instances
+            {
+                let x = (i as f32 * 5.0) - ((state.instances - 1) as f32 * 5.0) / 2.0;
+                self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
+            }
+        }
+        else
+        {
+            for instance in &mut self.instances
+            {
+                instance.rotation.y += state.rotation_speed;
+            }
         }
 
         if self.instances.len() > 0

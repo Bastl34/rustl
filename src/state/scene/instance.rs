@@ -4,9 +4,9 @@ use crate::rendering::instance::InstanceRaw;
 
 pub struct Instance
 {
-    position: Vector3<f32>,
-    rotation: Vector3<f32>,
-    scale: Vector3<f32>,
+    pub position: Vector3<f32>,
+    pub rotation: Vector3<f32>,
+    pub scale: Vector3<f32>,
 }
 
 impl Instance

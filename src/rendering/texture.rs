@@ -23,21 +23,15 @@ impl Texture
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
     pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-    pub fn new_from_image(wgpu: &mut WGpu, name: &str, image_bytes: &Vec<u8>) -> Texture
+    pub fn new_from_texture(wgpu: &mut WGpu, name: &str, scene_texture: &crate::state::scene::texture::Texture) -> Texture
     {
         let device = wgpu.device();
         let queue = wgpu.queue_mut();
 
-        let image = image::load_from_memory(image_bytes.as_slice()).unwrap();
-        let rgba = image.to_rgba8();
-
-        use image::GenericImageView;
-        let dimensions = image.dimensions();
-
         let texture_size = wgpu::Extent3d
         {
-            width: dimensions.0,
-            height: dimensions.1,
+            width: scene_texture.width(),
+            height: scene_texture.height(),
             depth_or_array_layers: 1,
         };
 
@@ -69,12 +63,12 @@ impl Texture
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            scene_texture.rgba_data(),
             wgpu::ImageDataLayout
             {
                 offset: 0,
-                bytes_per_row: std::num::NonZeroU32::new(4 * dimensions.0),
-                rows_per_image: std::num::NonZeroU32::new(dimensions.1),
+                bytes_per_row: std::num::NonZeroU32::new(4 * scene_texture.width()),
+                rows_per_image: std::num::NonZeroU32::new(scene_texture.width()),
             },
             texture_size,
         );
@@ -96,8 +90,8 @@ impl Texture
         {
             name: name.to_string(),
 
-            width: dimensions.0,
-            height: dimensions.1,
+            width: scene_texture.width(),
+            height: scene_texture.height(),
             is_depth_texture: false,
 
             texture: texture,

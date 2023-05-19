@@ -20,6 +20,8 @@ pub struct State
     pub fullscreen: bool,
 
     pub instances: u32,
+    pub rotation_speed: f32,
+
     pub save_image: bool,
     pub save_depth_pass_image: bool,
     pub save_depth_buffer_image: bool,
@@ -49,6 +51,8 @@ impl State
             cam_fov: 45.0,
 
             instances: 3,
+            rotation_speed: 0.01,
+
             save_image: false,
             save_depth_pass_image: false,
             save_depth_buffer_image: false,

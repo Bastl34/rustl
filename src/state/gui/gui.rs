@@ -25,6 +25,9 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             ui.label("instances:");
             ui.add(egui::Slider::new(&mut state.instances, 1..=10));
 
+            ui.label("rotation speed:");
+            ui.add(egui::Slider::new(&mut state.rotation_speed, 0.0..=0.2));
+
             // just some tests
             ui.horizontal(|ui|
             {

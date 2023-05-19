@@ -39,14 +39,14 @@ impl MainInterface
             let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
 
             // load model
-            scene.load("objects/cube/cube.obj").await.unwrap();
+            //scene.load("objects/cube/cube.obj").await.unwrap();
             //scene.load("objects/plane/plane.obj").await.unwrap();
-            //scene.load("objects/bastl/bastl.obj").await.unwrap();
+            scene.load("objects/bastl/bastl.obj").await.unwrap();
 
             let mut cam = Camera::new();
             cam.fovy = 45.0f32.to_radians();
             cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
-            cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
+            cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
             cam.clipping_near = 0.1;
             cam.clipping_far = 100.0;
 
