@@ -2,12 +2,14 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, any::Any};
 
 use super::components::component::{ComponentItem, SharedComponentItem, Component};
 
-pub type NodeItem = Box<Node>;
+pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
 pub struct Node
 {
     id: u32,
     name: String,
+
+    pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
 
@@ -17,16 +19,32 @@ pub struct Node
 
 impl Node
 {
-    pub fn new(id: u32, name: &str) -> Node
+    pub fn new(id: u32, name: &str) -> NodeItem
     {
-        Self
+        let node = Self
         {
             id: id,
             name: name.to_string(),
             components: vec![],
             shared_components: vec![],
 
+            parent: None,
             nodes: vec![]
+        };
+
+        Arc::new(RwLock::new(Box::new(node)))
+    }
+
+    pub fn add_node(node: NodeItem, child_node: NodeItem)
+    {
+        {
+            let mut node = node.write().unwrap();
+            node.nodes.push(child_node.clone());
+        }
+
+        {
+            let mut child_node = child_node.write().unwrap();
+            child_node.parent = Some(node.clone());
         }
     }
 
@@ -137,7 +155,7 @@ impl Node
         // update nodes
         for node in &mut self.nodes
         {
-            node.update(time_delta);
+            node.write().unwrap().update(time_delta);
         }
     }
 }

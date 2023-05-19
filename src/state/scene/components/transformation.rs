@@ -2,6 +2,8 @@ use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3};
 
+use crate::state::scene::node::NodeItem;
+
 use super::component::Component;
 
 pub struct Transformation
@@ -9,6 +11,9 @@ pub struct Transformation
     position: Vector3<f32>,
     rotation: Vector3<f32>,
     scale: Vector3<f32>,
+
+    pub trans: Matrix4<f32>,
+    tran_inverse: Matrix4<f32>,
 }
 
 impl Transformation
@@ -19,7 +24,10 @@ impl Transformation
         {
             position,
             rotation,
-            scale
+            scale,
+
+            trans: Matrix4::<f32>::identity(),
+            tran_inverse: Matrix4::<f32>::identity(),
         }
     }
 
@@ -41,6 +49,35 @@ impl Transformation
         trans = trans * rotation_x;
 
         trans
+    }
+
+    pub fn get_full_transform(&self, node: NodeItem) -> Matrix4::<f32>
+    {
+        let transform = self.get_transform();
+
+        let mut parent_transform = Matrix4::<f32>::identity();
+
+        let node = node.read().unwrap();
+        if node.parent.is_some()
+        {
+            let parent_node = node.parent.clone().unwrap();
+            let parent_read = parent_node.read().unwrap();
+
+            let parent_transform_component = parent_read.find_component::<Transformation>();
+
+            if parent_transform_component.is_some()
+            {
+                parent_transform = parent_transform_component.unwrap().get_full_transform(parent_node.clone()).clone();
+            }
+        }
+
+        parent_transform * transform
+    }
+
+    pub fn calc_full_transform(&mut self, node: NodeItem)
+    {
+        self.trans = self.get_full_transform(node);
+        self.tran_inverse = self.trans.try_inverse().unwrap();
     }
 }
 

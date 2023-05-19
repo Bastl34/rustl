@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper};
 
-use super::{manager::id_manager::IdManager, node::NodeItem, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -63,8 +63,13 @@ impl Scene
         // update nodes
         for node in &mut self.nodes
         {
-            node.update(time_delta);
+            node.write().unwrap().update(time_delta);
         }
+    }
+
+    pub fn add_node(&mut self, node: NodeItem)
+    {
+        self.nodes.push(node);
     }
 
     pub async fn load_texture_or_reuse(&mut self, path: &str) -> anyhow::Result<TextureItem>

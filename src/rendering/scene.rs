@@ -49,19 +49,23 @@ impl Scene
 
         {
 
-            let mat = node.find_shared_component::<MaterialComponent>().unwrap();
+            let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
             let mat = mat.read().unwrap().as_any().downcast_ref::<MaterialComponent>().unwrap();
         }
 
         {
-            let mat = node.find_shared_component_mut::<MaterialComponent>().unwrap();
+            let mat = node.write().unwrap().find_shared_component_mut::<MaterialComponent>().unwrap();
             shared_component_write!(mat, MaterialComponent, mat);
 
             mat.alpha = 0.0;
         }
 
-        let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
-        let buffer = VertexBuffer::new(wgpu, "test", *mesh);
+        let buffer;
+        {
+            let node = node.read().unwrap();
+            let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
+            buffer = VertexBuffer::new(wgpu, "test", *mesh);
+        }
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&scene.cameras[0]); // TODO
@@ -73,7 +77,7 @@ impl Scene
 
         let texture;
         {
-            let mat = node.find_shared_component::<MaterialComponent>().unwrap();
+            let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
             let mat = mat.read().unwrap();
             let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 

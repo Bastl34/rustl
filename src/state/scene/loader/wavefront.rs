@@ -280,28 +280,21 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                 normals_indices = indices.clone();
             }
 
-            println!("vert: {}", verts.len());
-            println!("indices: {}", indices.len());
-            println!("uvs: {}", uvs.len());
-            println!("uv_indices: {}", uv_indices.len());
-            println!("normals: {}", normals.len());
-            println!("normals_indices: {}", normals_indices.len());
-
-            //let mut item = Mesh::new_with_data(m.name.as_str(), material_arc.clone(), verts, indices, uvs, uv_indices, normals, normals_indices);
             let item = Mesh::new_with_data(verts, indices, uvs, uv_indices, normals, normals_indices);
 
             let id = scene.id_manager.get_next_node_id();
             loaded_ids.push(id);
 
-            let mut node = Node::new(id, m.name.as_str());
-            node.add_component(Box::new(item));
+            let node = Node::new(id, m.name.as_str());
+            {
+                let mut node = node.write().unwrap();
+                node.add_component(Box::new(item));
 
-            // add material
-            node.add_shared_component(material_arc);
+                // add material
+                node.add_shared_component(material_arc);
+            }
 
-            //node.add_component(material_arc.write().unwrap());
-
-            scene.nodes.push(Box::new(node));
+            scene.add_node(node);
         }
 
     }

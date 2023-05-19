@@ -11,6 +11,7 @@ use crate::rendering::scene::{Scene, self};
 use crate::rendering::wgpu::{WGpu, WGpuRenderingItem};
 use crate::state::gui::gui::build_gui;
 use crate::state::scene::camera::Camera;
+use crate::state::scene::node::Node;
 use crate::state::state::{State, StateItem};
 
 pub struct MainInterface
@@ -42,6 +43,12 @@ impl MainInterface
             //scene.load("objects/cube/cube.obj").await.unwrap();
             //scene.load("objects/plane/plane.obj").await.unwrap();
             scene.load("objects/bastl/bastl.obj").await.unwrap();
+
+            let mut node1 = Node::new(scene.id_manager.get_next_node_id(), "test1");
+            let mut node2 = Node::new(scene.id_manager.get_next_node_id(), "test2");
+
+            scene.add_node(node1.clone());
+            Node::add_node(node1, node2);
 
             let mut cam = Camera::new();
             cam.fovy = 45.0f32.to_radians();
