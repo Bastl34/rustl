@@ -270,6 +270,23 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                 material_arc = Arc::new(RwLock::new(Box::new(Material::new(material_id, ""))));
             }
 
+            if uvs.len() > 0 && uv_indices.len() == 0
+            {
+                uv_indices = indices.clone();
+            }
+
+            if normals.len() > 0 && normals_indices.len() == 0
+            {
+                normals_indices = indices.clone();
+            }
+
+            println!("vert: {}", verts.len());
+            println!("indices: {}", indices.len());
+            println!("uvs: {}", uvs.len());
+            println!("uv_indices: {}", uv_indices.len());
+            println!("normals: {}", normals.len());
+            println!("normals_indices: {}", normals_indices.len());
+
             //let mut item = Mesh::new_with_data(m.name.as_str(), material_arc.clone(), verts, indices, uvs, uv_indices, normals, normals_indices);
             let item = Mesh::new_with_data(verts, indices, uvs, uv_indices, normals, normals_indices);
 

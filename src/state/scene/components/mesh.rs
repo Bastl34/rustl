@@ -9,6 +9,9 @@ pub struct Mesh
 {
     pub mesh: TriMesh,
 
+    pub vertices: Vec<Point3<f32>>,
+    pub indices: Vec<[u32; 3]>,
+
     pub uvs: Vec<Point2<f32>>,
     pub uv_indices: Vec<[u32; 3]>,
 
@@ -22,6 +25,8 @@ impl Mesh
     {
         let mut mesh = Mesh
         {
+            vertices: vertices.clone(),
+            indices: indices.clone(),
             mesh: TriMesh::new(vertices, indices),
             uvs: uvs,
             uv_indices: uv_indices,
@@ -50,6 +55,20 @@ impl Mesh
         let uv_indices = vec![[0u32, 1, 2], [0, 2, 3]];
 
         Mesh::new_with_data(points, indices, uvs, uv_indices, vec![], vec![])
+    }
+
+    pub fn get_index_array(&self) -> Vec<u32>
+    {
+        let mut indices = vec![];
+
+        for index_tiple in self.mesh.indices()
+        {
+            indices.push(index_tiple[0]);
+            indices.push(index_tiple[1]);
+            indices.push(index_tiple[2]);
+        }
+
+        indices
     }
 
     /*

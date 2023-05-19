@@ -143,17 +143,6 @@ impl Node
 }
 
 #[macro_export]
-macro_rules! get_component_mut
-{
-    ($node:ident, $component:ty, $result:ident) =>
-    {
-        let $result = $node.find_shared_component_mut::<$component>().unwrap();
-        let mut writable = $result.write().unwrap();
-        let $result = writable.as_any_mut().downcast_mut::<$component>().unwrap();
-    };
-}
-
-#[macro_export]
 macro_rules! shared_component_write
 {
     ($component:ident, $component_type:ty, $result:ident) =>

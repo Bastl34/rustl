@@ -7,6 +7,7 @@ use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
+type MeshComponent = crate::state::scene::components::mesh::Mesh;
 
 pub struct Scene
 {
@@ -59,7 +60,8 @@ impl Scene
             mat.alpha = 0.0;
         }
 
-        let buffer = VertexBuffer::new(wgpu, "test");
+        let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
+        let buffer = VertexBuffer::new(wgpu, "test", *mesh);
 
         let mut cam = Camera::new();
         cam.fovy = 45.0f32.to_radians();
