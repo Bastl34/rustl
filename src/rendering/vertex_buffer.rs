@@ -56,7 +56,7 @@ impl VertexBuffer
             vertices.push(Vertex
             {
                 position: [v.x, v.y, v.z],
-                tex_coords: [uv.x, uv.y],
+                tex_coords: [uv.x, 1.0 - uv.y], // flip y because in wgpu y-axis is pointing up (not down as in images)
                 normal: [n.x, n.y, n.z]
             });
         }

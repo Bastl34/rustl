@@ -67,7 +67,7 @@ impl Texture
             wgpu::ImageDataLayout
             {
                 offset: 0,
-                bytes_per_row: std::num::NonZeroU32::new(4 * scene_texture.width()),
+                bytes_per_row: std::num::NonZeroU32::new(4 * scene_texture.width()), // 4 = RGBA
                 rows_per_image: std::num::NonZeroU32::new(scene_texture.width()),
             },
             texture_size,

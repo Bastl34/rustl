@@ -63,7 +63,9 @@ var s_depth: sampler_comparison;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    var uvs = in.tex_coords;
+    //uvs.y = -uvs.y;
+    return textureSample(t_diffuse, s_diffuse, uvs);
 
     //return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 
