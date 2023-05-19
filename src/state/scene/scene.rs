@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper};
 
-use super::{manager::id_manager::IdManager, node::NodeItem, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem};
+use super::{manager::id_manager::IdManager, node::NodeItem, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -17,6 +17,7 @@ pub struct Scene
 
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
+    pub lights: Vec<LightItem>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u32, MaterialItem>,
 }
@@ -32,6 +33,7 @@ impl Scene
             name: name.to_string(),
             nodes: vec![],
             cameras: vec![],
+            lights: vec![],
             textures: HashMap::new(),
             materials: HashMap::new(),
         }
