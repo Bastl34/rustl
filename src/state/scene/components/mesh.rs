@@ -61,7 +61,7 @@ impl Mesh
     {
         let mut indices = vec![];
 
-        for index_tiple in self.mesh.indices()
+        for index_tiple in &self.indices
         {
             indices.push(index_tiple[0]);
             indices.push(index_tiple[1]);

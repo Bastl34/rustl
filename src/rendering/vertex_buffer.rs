@@ -125,9 +125,9 @@ impl VertexBuffer
         dbg!(vertices.len());
         dbg!(mesh.mesh.vertices().len());
 
-        //let indices = mesh.get_index_array();
+        let indices = mesh.get_index_array();
         //let indices = mesh.normals_indices.clone();
-        let indices = mesh.indices.clone();
+        //let indices = mesh.indices.clone();
 
         let vertex_buffer_name = format!("{} Vertex Buffer", name);
         let vertex_buffer = device.create_buffer_init
