@@ -19,6 +19,7 @@ nalgebra = "0.32.1"
 sha256 = "1.1.3"
 
 parry3d = "0.13"
+bvh = "0.7"
 
 tobj = { version = "4.0", features = ["async"]}
 

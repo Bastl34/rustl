@@ -139,7 +139,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
 
             let scene_id: usize = 0;
-            self.render_scene.update(&mut self.wgpu, state, 0);
+            self.render_scene.update(&mut self.wgpu, state, scene_id);
 
             state.update(1.0); //todo: delta time
         }
@@ -153,7 +153,6 @@ impl MainInterface
 
             //self.gui.request_repaint();
         }
-
 
         // render
         let mut render_passes: Vec<&mut WGpuRenderingItem> = vec![];

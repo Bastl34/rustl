@@ -1,6 +1,9 @@
-use std::{sync::{RwLockReadGuard, Arc, RwLock}, any::Any};
+use std::{sync::{Arc, RwLock}};
+use bvh::aabb::Bounded;
+use bvh::bounding_hierarchy::BHShape;
+use nalgebra::{Matrix4};
 
-use super::components::component::{ComponentItem, SharedComponentItem, Component};
+use super::components::{component::{ComponentItem, SharedComponentItem}, mesh::Mesh, transformation::Transformation};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
@@ -8,13 +11,17 @@ pub struct Node
 {
     id: u32,
     name: String,
+    pub visible: bool,
 
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
 
     components: Vec<ComponentItem>,
-    shared_components: Vec<SharedComponentItem>
+    shared_components: Vec<SharedComponentItem>,
+
+    // bounding box
+    b_box_node_index: usize,
 }
 
 impl Node
@@ -25,11 +32,15 @@ impl Node
         {
             id: id,
             name: name.to_string(),
+            visible: true,
+
             components: vec![],
             shared_components: vec![],
 
             parent: None,
-            nodes: vec![]
+            nodes: vec![],
+
+            b_box_node_index: 0
         };
 
         Arc::new(RwLock::new(Box::new(node)))
@@ -160,6 +171,66 @@ impl Node
     }
 }
 
+// ******************** bounding box ********************
+impl Bounded for Node
+{
+    fn aabb(&self) -> bvh::aabb::AABB
+    {
+        let mesh_component = self.find_component::<Mesh>();
+        let transform_component = self.find_component::<Transformation>();
+
+        if mesh_component.is_none()
+        {
+            return bvh::aabb::AABB::empty();
+        }
+
+        let mut trans = Matrix4::<f32>::identity();
+        if transform_component.is_some()
+        {
+            //transform_component.unwrap().get_full_transform(node)
+            trans = transform_component.unwrap().trans;
+        }
+
+        let aabb = mesh_component.unwrap().b_box;
+        let verts = aabb.vertices();
+
+        let mut min = verts[0];
+        let mut max = verts[0];
+
+        for vert in &verts
+        {
+            let transformed = trans * vert.to_homogeneous();
+
+            min.x = min.x.min(transformed.x);
+            min.y = min.y.min(transformed.y);
+            min.z = min.z.min(transformed.z);
+
+            max.x = max.x.max(transformed.x);
+            max.y = max.y.max(transformed.y);
+            max.z = max.z.max(transformed.z);
+        }
+
+        let min = bvh::Point3::new(min.x, min.y, min.z);
+        let max = bvh::Point3::new(max.x, max.y, max.z);
+
+        bvh::aabb::AABB::with_bounds(min, max)
+    }
+}
+
+impl BHShape for Node
+{
+    fn set_bh_node_index(&mut self, index: usize)
+    {
+        self.b_box_node_index = index;
+    }
+
+    fn bh_node_index(&self) -> usize
+    {
+        self.b_box_node_index
+    }
+}
+
+// ******************** macros ********************
 #[macro_export]
 macro_rules! shared_component_write
 {

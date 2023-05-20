@@ -1,7 +1,7 @@
 use std::any::Any;
 
-use nalgebra::{Point2, Point3};
-use parry3d::shape::TriMesh;
+use nalgebra::{Point2, Point3, Isometry3};
+use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
 use super::component::Component;
 
@@ -17,6 +17,9 @@ pub struct Mesh
 
     pub normals: Vec<Point3<f32>>,
     pub normals_indices: Vec<[u32; 3]>,
+
+    pub flip_normals: bool,
+    pub b_box: Aabb,
 }
 
 impl Mesh
@@ -25,16 +28,20 @@ impl Mesh
     {
         let mut mesh = Mesh
         {
-            vertices: vertices.clone(),
-            indices: indices.clone(),
-            mesh: TriMesh::new(vertices, indices),
+            mesh: TriMesh::new(vertices.clone(), indices.clone()),
+
+            vertices: vertices,
+            indices: indices,
             uvs: uvs,
             uv_indices: uv_indices,
             normals: normals,
-            normals_indices: normals_indices
+            normals_indices: normals_indices,
+
+            flip_normals: false,
+            b_box: Aabb::new_invalid(),
         };
 
-        //mesh.calc_bbox();
+        mesh.calc_bbox();
 
         mesh
     }
@@ -54,21 +61,17 @@ impl Mesh
         let indices = vec![[0u32, 1, 2], [0, 2, 3]];
         let uv_indices = vec![[0u32, 1, 2], [0, 2, 3]];
 
-        Mesh::new_with_data(points, indices, uvs, uv_indices, vec![], vec![])
+        let mut mesh = Mesh::new_with_data(points, indices, uvs, uv_indices, vec![], vec![]);
+
+        mesh.calc_bbox();
+
+        mesh
     }
 
-    pub fn get_index_array(&self) -> Vec<u32>
+    fn calc_bbox(&mut self)
     {
-        let mut indices = vec![];
-
-        for index_tiple in &self.indices
-        {
-            indices.push(index_tiple[0]);
-            indices.push(index_tiple[1]);
-            indices.push(index_tiple[2]);
-        }
-
-        indices
+        let trans = Isometry3::<f32>::identity();
+        self.b_box = self.mesh.aabb(&trans);
     }
 
     /*
