@@ -13,7 +13,7 @@ pub struct Transformation
     scale: Vector3<f32>,
 
     pub trans: Matrix4<f32>,
-    tran_inverse: Matrix4<f32>,
+    pub tran_inverse: Matrix4<f32>,
 }
 
 impl Transformation

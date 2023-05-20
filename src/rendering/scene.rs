@@ -4,7 +4,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
 use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
-use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer};
+use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -70,6 +70,9 @@ impl Scene
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&scene.cameras[0]); // TODO
 
+        let light = &scene.lights[0]; // TODO
+        let mut light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
+
         let mut instances = vec![];
         instances.push(Instance::new(Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 2.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
 
@@ -95,14 +98,14 @@ impl Scene
          textures.push(&texture);
 
          let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
-         let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true, true);
+         let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
 
          // ********** color pass **********
         //let mut textures = vec![];
         textures.push(&depth_pass_buffer_texture);
 
         let shader_source = resources::load_string_async("shader/test.wgsl").await.unwrap();
-        let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, true, true);
+        let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
 
         Self
         {
@@ -252,6 +255,7 @@ impl Scene
         render_pass.set_pipeline(&self.depth_pipe.get());
         render_pass.set_bind_group(0, &self.depth_pipe.get_textures_bind_group(), &[]);
         render_pass.set_bind_group(1, &self.depth_pipe.get_camera_bind_group(), &[]);
+        render_pass.set_bind_group(2, &self.depth_pipe.get_light_bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
 
@@ -295,6 +299,7 @@ impl Scene
         render_pass.set_pipeline(&self.color_pipe.get());
         render_pass.set_bind_group(0, &self.color_pipe.get_textures_bind_group(), &[]);
         render_pass.set_bind_group(1, &self.color_pipe.get_camera_bind_group(), &[]);
+        render_pass.set_bind_group(2, &self.color_pipe.get_light_bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
 

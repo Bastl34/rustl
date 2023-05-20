@@ -7,6 +7,15 @@ struct CameraUniform
 @group(1) @binding(0)
 var<uniform> camera: CameraUniform;
 
+struct LightUniform
+{
+    position: vec4<f32>,
+    color: vec4<f32>,
+    lintensity: f32,
+};
+@group(2) @binding(0)
+var<uniform> light: LightUniform;
+
 struct VertexInput
 {
     @location(0) position: vec3<f32>,
@@ -64,8 +73,18 @@ var s_depth: sampler_comparison;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
     var uvs = in.tex_coords;
-    //uvs.y = -uvs.y;
-    return textureSample(t_diffuse, s_diffuse, uvs);
+
+    let light_color = light.color.xyz;
+    let ambient_strength = 0.1;
+    let ambient_color = light_color * ambient_strength;
+
+    let object_color = textureSample(t_diffuse, s_diffuse, uvs);
+
+    let result = light.color.xyz * object_color.xyz;
+
+    return vec4<f32>(result, object_color.a);
+
+    //return textureSample(t_diffuse, s_diffuse, uvs);
 
     //return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 

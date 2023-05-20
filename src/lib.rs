@@ -9,6 +9,7 @@ mod rendering
     pub(crate) mod scene;
     pub(crate) mod camera;
     pub(crate) mod uniform;
+    pub(crate) mod light;
 
     pub(crate) mod helper
     {

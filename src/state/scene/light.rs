@@ -28,6 +28,21 @@ pub struct Light
 
 impl Light
 {
+    pub fn new_point(id: u32, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    {
+        Self
+        {
+            enabled: true,
+            id: id,
+            pos: pos,
+            dir: Vector3::<f32>::zeros(),
+            color: color,
+            intensity: intensity,
+            max_angle: 0.0,
+            light_type: LightType::Point
+        }
+    }
+
     pub fn name(&self) -> String
     {
         match self.light_type

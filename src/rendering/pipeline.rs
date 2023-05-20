@@ -3,7 +3,7 @@ use std::{fs, borrow::Cow};
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;
 
-use super::{wgpu::WGpu, vertex_buffer::{Vertex, VertexBuffer}, texture::{Texture, self}, camera::CameraUniform, uniform, instance::InstanceRaw};
+use super::{wgpu::WGpu, vertex_buffer::{Vertex, VertexBuffer}, texture::{Texture, self}, camera::CameraUniform, uniform, instance::InstanceRaw, light::LightUniform};
 
 pub struct Pipeline
 {
@@ -15,12 +15,15 @@ pub struct Pipeline
     textures_bind_group: BindGroup,
 
     camera_buffer: wgpu::Buffer,
-    camera_bind_group: BindGroup
+    camera_bind_group: BindGroup,
+
+    light_buffer: wgpu::Buffer,
+    light_bind_group: BindGroup
 }
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, buffer: &VertexBuffer, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, depth_stencil: bool, fragment_attachment: bool) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, buffer: &VertexBuffer, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, light: &LightUniform, depth_stencil: bool, fragment_attachment: bool) -> Pipeline
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -73,8 +76,7 @@ impl Pipeline
             &wgpu::util::BufferInitDescriptor
             {
                 label: Some(camera_buffer_name.as_str()),
-                //contents: bytemuck::cast_slice(&[cam]),
-                contents: bytemuck::cast_slice(&cam.view_proj),
+                contents: bytemuck::cast_slice(&[*cam]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -100,6 +102,39 @@ impl Pipeline
             label: Some(camera_bind_group_name.as_str()),
         });
 
+        // ******************** light ********************
+        let light_buffer_name = format!("{} Light Buffer", name);
+        let light_buffer = device.create_buffer_init
+        (
+            &wgpu::util::BufferInitDescriptor
+            {
+                label: Some(light_buffer_name.as_str()),
+                contents: bytemuck::cast_slice(&[*light]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let light_bind_group_layout_name = format!("{} light_bind_group_layout", name);
+        let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            entries:
+            &[
+                uniform::uniform_bind_group_layout_entry(0, true, true)
+            ],
+            label: Some(light_bind_group_layout_name.as_str()),
+        });
+
+        let light_bind_group_name = format!("{} light_bind_group", name);
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
+        {
+            layout: &light_bind_group_layout,
+            entries:
+            &[
+                uniform::uniform_bind_group(0, &light_buffer)
+            ],
+            label: Some(light_bind_group_name.as_str()),
+        });
+
         // ******************** render pipeline ********************
         let layout_name = format!("{} Layout", name);
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
@@ -109,7 +144,7 @@ impl Pipeline
             &[
                 &textures_bind_group_layout,
                 &camera_bind_group_layout,
-
+                &light_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -201,13 +236,21 @@ impl Pipeline
             textures_bind_group,
 
             camera_buffer,
-            camera_bind_group
+            camera_bind_group,
+
+            light_buffer,
+            light_bind_group,
         }
     }
 
     pub fn update_camera(&self, wgpu: &mut WGpu, cam: &CameraUniform)
     {
-        wgpu.queue_mut().write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[cam.view_proj]));
+        wgpu.queue_mut().write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*cam]));
+    }
+
+    pub fn update_light(&self, wgpu: &mut WGpu, light: &LightUniform)
+    {
+        wgpu.queue_mut().write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[*light]));
     }
 
     pub fn get(&self) -> &wgpu::RenderPipeline
@@ -223,6 +266,11 @@ impl Pipeline
     pub fn get_camera_bind_group(&self) -> &BindGroup
     {
         &self.camera_bind_group
+    }
+
+    pub fn get_light_bind_group(&self) -> &BindGroup
+    {
+        &self.light_bind_group
     }
 
 }

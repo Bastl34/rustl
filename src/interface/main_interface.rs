@@ -11,6 +11,7 @@ use crate::rendering::scene::{Scene, self};
 use crate::rendering::wgpu::{WGpu, WGpuRenderingItem};
 use crate::state::gui::gui::build_gui;
 use crate::state::scene::camera::Camera;
+use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::state::{State, StateItem};
 
@@ -39,7 +40,7 @@ impl MainInterface
 
             let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
 
-            // load model
+            // ********** models **********
             //scene.load("objects/cube/cube.obj").await.unwrap();
             //scene.load("objects/plane/plane.obj").await.unwrap();
             scene.load("objects/bastl/bastl.obj").await.unwrap();
@@ -50,7 +51,9 @@ impl MainInterface
             scene.add_node(node1.clone());
             Node::add_node(node1, node2);
 
-            let mut cam = Camera::new();
+            // ********** cam **********
+            let cam_id = scene.id_manager.get_next_camera_id();
+            let mut cam = Camera::new(cam_id);
             cam.fovy = 45.0f32.to_radians();
             cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
             cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
@@ -62,6 +65,12 @@ impl MainInterface
 
             scene.cameras.push(Box::new(cam));
 
+            // ********** light **********
+            let light_id = scene.id_manager.get_next_light_id();
+            let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 0.0, 0.0), 1.0);
+            scene.lights.push(Box::new(light));
+
+            // ********** scene add **********
             state.scenes.push(Box::new(scene));
         }
 
