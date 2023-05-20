@@ -67,7 +67,7 @@ impl MainInterface
 
             // ********** light **********
             let light_id = scene.id_manager.get_next_light_id();
-            let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 0.0, 0.0), 1.0);
+            let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
             scene.lights.push(Box::new(light));
 
             // ********** scene add **********

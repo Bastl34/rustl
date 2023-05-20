@@ -86,7 +86,7 @@ impl Pipeline
         {
             entries:
             &[
-                uniform::uniform_bind_group_layout_entry(0, true, false)
+                uniform::uniform_bind_group_layout_entry(0, true, true)
             ],
             label: Some(camera_bind_group_layout_name.as_str()),
         });

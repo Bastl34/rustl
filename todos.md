@@ -1,4 +1,6 @@
 todo:
+ * everything should be dynamic
+ * view space ligthning (https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#the-normal-matrix)
  * buffer update on model matrix change
  * cleanup vertex/instancing structure
  * TODOs
