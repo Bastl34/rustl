@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use instant::Instant;
+use nalgebra::Vector3;
 
 use super::scene::scene::SceneItem;
 
@@ -11,9 +12,8 @@ pub struct State
     pub running: bool,
     pub scenes: Vec<SceneItem>,
 
-    pub clear_color_r: f64,
-    pub clear_color_g: f64,
-    pub clear_color_b: f64,
+    pub clear_color: Vector3<f32>,
+    pub light_color: Vector3<f32>,
 
     pub cam_fov: f32,
 
@@ -43,9 +43,8 @@ impl State
             running: false,
             scenes: vec![],
 
-            clear_color_r: 0.0,
-            clear_color_g: 0.0,
-            clear_color_b: 0.0,
+            clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
+            light_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             fullscreen: false,
 
             cam_fov: 45.0,

@@ -24,7 +24,8 @@ pub struct Scene
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
 
-    camera_uniform: CameraUniform
+    camera_uniform: CameraUniform,
+    light_uniform: LightUniform,
 }
 
 impl Scene
@@ -122,7 +123,8 @@ impl Scene
             instances,
             instance_buffer,
 
-            camera_uniform: camera_uniform
+            camera_uniform: camera_uniform,
+            light_uniform: light_uniform
         }
     }
 
@@ -131,9 +133,9 @@ impl Scene
         self.clear_color = wgpu::Color
         {
             a: 1.0,
-            r: state.clear_color_r,
-            g: state.clear_color_g,
-            b: state.clear_color_b,
+            r: state.clear_color.x as f64,
+            g: state.clear_color.y as f64,
+            b: state.clear_color.z as f64,
         };
 
         let scene = state.scenes.get_mut(scene_id).unwrap();
@@ -169,6 +171,15 @@ impl Scene
         if self.instances.len() > 0
         {
             self.instance_buffer = instances_to_buffer(wgpu, &self.instances);
+        }
+
+        // light
+        if scene.lights.len() > 0
+        {
+            let mut light = scene.lights.get_mut(0).unwrap();
+            light.color = state.light_color.clone();
+            self.light_uniform.color = [light.color.x, light.color.y, light.color.z, 1.0];
+            self.color_pipe.update_light(wgpu, &self.light_uniform);
         }
 
         if state.save_image

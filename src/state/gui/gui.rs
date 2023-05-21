@@ -1,4 +1,5 @@
-use egui::{FullOutput, RichText};
+use egui::{FullOutput, RichText, Color32};
+use nalgebra::Vector3;
 
 use crate::{state::state::State, rendering::egui::EGui};
 
@@ -13,9 +14,25 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
         {
             ui.label(format!("fps: {}", state.last_fps));
             ui.label("clear color:");
-            ui.add(egui::Slider::new(&mut state.clear_color_r, 0.0..=1.0));
-            ui.add(egui::Slider::new(&mut state.clear_color_g, 0.0..=1.0));
-            ui.add(egui::Slider::new(&mut state.clear_color_b, 0.0..=1.0));
+
+            ui.horizontal(|ui|
+            {
+                let r = (state.clear_color.x * 255.0) as u8;
+                let g = (state.clear_color.y * 255.0) as u8;
+                let b = (state.clear_color.z * 255.0) as u8;
+                let mut color = Color32::from_rgb(r, g, b);
+
+                ui.label("clear color:");
+                let changed = ui.color_edit_button_srgba(&mut color).changed();
+
+                if changed
+                {
+                    let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                    let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                    let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                    state.clear_color = Vector3::<f32>::new(r, g, b);
+                }
+            });
 
             ui.label("fov:");
             ui.add(egui::Slider::new(&mut state.cam_fov, 0.0..=90.0));
@@ -28,6 +45,24 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             ui.label("rotation speed:");
             ui.add(egui::Slider::new(&mut state.rotation_speed, 0.0..=0.4));
 
+            ui.horizontal(|ui|
+                {
+                    let r = (state.light_color.x * 255.0) as u8;
+                    let g = (state.light_color.y * 255.0) as u8;
+                    let b = (state.light_color.z * 255.0) as u8;
+                    let mut color = Color32::from_rgb(r, g, b);
+
+                    ui.label("light color:");
+                    let changed = ui.color_edit_button_srgba(&mut color).changed();
+
+                    if changed
+                    {
+                        let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                        let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                        let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                        state.light_color = Vector3::<f32>::new(r, g, b);
+                    }
+                });
             // just some tests
             ui.horizontal(|ui|
             {

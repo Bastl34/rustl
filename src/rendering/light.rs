@@ -12,9 +12,9 @@ use nalgebra::{Vector3, Point3};
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightUniform
 {
-    position: [f32; 4],
-    color: [f32; 4],
-    intensity: f32,
+    pub position: [f32; 4],
+    pub color: [f32; 4],
+    pub intensity: f32,
     _padding: [f32; 3],
 }
 
