@@ -64,8 +64,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     var out: VertexOutput;
 
     out.tex_coords = model.tex_coords;
-    //out.world_normal = normal_matrix * model.normal;
-    out.world_normal = (model_matrix * vec4<f32>(model.normal, 0.0)).xyz;
+    out.world_normal = normal_matrix * model.normal;
+    //out.world_normal = (model_matrix * vec4<f32>(model.normal, 0.0)).xyz;
 
     var world_position: vec4<f32> = model_matrix * vec4<f32>(model.position, 1.0);
     out.world_position = world_position.xyz;
@@ -112,7 +112,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     let object_color = textureSample(t_diffuse, s_diffuse, uvs);
 
-    //let result = light.color.xyz * object_color.xyz;
     let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
 
     return vec4<f32>(result, object_color.a);
