@@ -11,6 +11,7 @@ Ni 1.450000
 d 1.000000
 illum 2
 map_Kd bastl.png
+map_Bump ../cube/cube-normal.jpg
 
 newmtl Material.001
 Ns 225.000000

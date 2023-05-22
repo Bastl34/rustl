@@ -216,6 +216,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                     // base texture
                     if mat.diffuse_texture.is_some()
                     {
+                        println!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
                         let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                         let tex_path = get_texture_path(&diffuse_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str()).await?;
@@ -225,6 +226,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                     // normal texture
                     if mat.normal_texture.is_some()
                     {
+                        println!("loading normal texture {}", mat.normal_texture.clone().unwrap());
                         let normal_texture = mat.normal_texture.clone().unwrap();
                         let tex_path = get_texture_path(&normal_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str()).await?;
@@ -234,6 +236,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                     // ambient texture
                     if mat.ambient_texture.is_some()
                     {
+                        println!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
                         let ambient_texture = mat.ambient_texture.clone().unwrap();
                         let tex_path = get_texture_path(&ambient_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str()).await?;
@@ -243,6 +246,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                     // specular texture
                     if mat.specular_texture.is_some()
                     {
+                        println!("loading specular texture {}", mat.specular_texture.clone().unwrap());
                         let specular_texture = mat.specular_texture.clone().unwrap();
                         let tex_path: String = get_texture_path(&specular_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str()).await?;
@@ -252,6 +256,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                     // specular texture
                     if mat.dissolve_texture.is_some()
                     {
+                        println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
                         let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                         let tex_path = get_texture_path(&dissolve_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str()).await?;

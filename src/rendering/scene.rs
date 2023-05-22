@@ -18,7 +18,10 @@ pub struct Scene
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
-    texture: Texture,
+
+    base_texture: Texture,
+    normal_texture: Texture,
+
     buffer: VertexBuffer,
 
     instances: Vec<Instance>,
@@ -79,15 +82,18 @@ impl Scene
 
         let instance_buffer = instances_to_buffer(wgpu, &instances);
 
-        let texture;
+        let base_texture;
+        let normal_texture;
         {
             let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
             let mat = mat.read().unwrap();
             let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 
-            let tex = mat.texture_base.as_ref().unwrap().read().unwrap();
+            let base_tex = mat.texture_base.as_ref().unwrap().read().unwrap();
+            let normal_tex = mat.texture_normal.as_ref().unwrap().read().unwrap();
 
-            texture = Texture::new_from_texture(wgpu, "test", &tex);
+            base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
+            normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
         }
 
 
@@ -96,7 +102,8 @@ impl Scene
 
          // ********** depth pass **********
          let mut textures = vec![];
-         textures.push(&texture);
+         textures.push(&base_texture);
+         textures.push(&normal_texture);
 
          let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
          let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
@@ -105,14 +112,15 @@ impl Scene
         //let mut textures = vec![];
         textures.push(&depth_pass_buffer_texture);
 
-        let shader_source = resources::load_string_async("shader/test.wgsl").await.unwrap();
+        let shader_source = resources::load_string_async("shader/phong.wgsl").await.unwrap();
         let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
 
         Self
         {
             clear_color: wgpu::Color::BLACK,
 
-            texture,
+            base_texture,
+            normal_texture,
 
             color_pipe,
             depth_pipe,
@@ -184,8 +192,12 @@ impl Scene
 
         if state.save_image
         {
-            let img_data = self.texture.to_image(wgpu);
-            img_data.save("data/texture.png").unwrap();
+            let img_data = self.base_texture.to_image(wgpu);
+            img_data.save("data/base_texture.png").unwrap();
+
+            let img_data = self.normal_texture.to_image(wgpu);
+            img_data.save("data/normal_texture.png").unwrap();
+
             state.save_image = false;
         }
 

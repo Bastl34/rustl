@@ -11,6 +11,8 @@ pub struct Texture
 
     width: u32,
     height: u32,
+
+    format: wgpu::TextureFormat,
     is_depth_texture: bool,
 
     texture: wgpu::Texture,
@@ -21,12 +23,23 @@ pub struct Texture
 impl Texture
 {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-    pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+    pub const SRGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+    pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-    pub fn new_from_texture(wgpu: &mut WGpu, name: &str, scene_texture: &crate::state::scene::texture::Texture) -> Texture
+    pub fn new_from_texture(wgpu: &mut WGpu, name: &str, scene_texture: &crate::state::scene::texture::Texture, srgb: bool) -> Texture
     {
         let device = wgpu.device();
         let queue = wgpu.queue_mut();
+
+        let format;
+        if srgb
+        {
+            format = Self::SRGBA_FORMAT;
+        }
+        else
+        {
+            format = Self::RGBA_FORMAT;
+        }
 
         let texture_size = wgpu::Extent3d
         {
@@ -44,7 +57,7 @@ impl Texture
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: Self::RGBA_FORMAT,
+                format: format,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST| wgpu::TextureUsages::COPY_SRC, // COPY_SRC just to read again
                 label: Some(texture_name.as_str()),
 
@@ -92,6 +105,8 @@ impl Texture
 
             width: scene_texture.width(),
             height: scene_texture.height(),
+
+            format: format,
             is_depth_texture: false,
 
             texture: texture,
@@ -149,6 +164,8 @@ impl Texture
 
             width: config.width,
             height: config.height,
+
+            format: Self::DEPTH_FORMAT,
             is_depth_texture: true,
 
             texture,
