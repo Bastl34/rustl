@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use instant::Instant;
-use nalgebra::Vector3;
+use nalgebra::{Vector3, Point3};
 
 use super::scene::scene::SceneItem;
 
@@ -21,6 +21,9 @@ pub struct State
 
     pub instances: u32,
     pub rotation_speed: f32,
+
+    pub camera_pos: Point3<f32>,
+    pub light_pos: Point3<f32>,
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -51,6 +54,9 @@ impl State
 
             instances: 3,
             rotation_speed: 0.01,
+
+            camera_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
+            light_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
 
             save_image: false,
             save_depth_pass_image: false,

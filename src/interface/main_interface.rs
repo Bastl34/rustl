@@ -52,10 +52,12 @@ impl MainInterface
             Node::add_node(node1, node2);
 
             // ********** cam **********
+            state.camera_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
+
             let cam_id = scene.id_manager.get_next_camera_id();
             let mut cam = Camera::new(cam_id);
             cam.fovy = 45.0f32.to_radians();
-            cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
+            cam.eye_pos = state.camera_pos;
             cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
             cam.clipping_near = 0.1;
             cam.clipping_far = 100.0;
@@ -66,8 +68,9 @@ impl MainInterface
             scene.cameras.push(Box::new(cam));
 
             // ********** light **********
+            state.light_pos = Point3::<f32>::new(2.0, 5.0, 2.0);
             let light_id = scene.id_manager.get_next_light_id();
-            let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+            let light = Light::new_point(light_id, state.light_pos, Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
             scene.lights.push(Box::new(light));
 
             // ********** scene add **********

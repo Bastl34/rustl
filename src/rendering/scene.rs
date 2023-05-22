@@ -96,7 +96,6 @@ impl Scene
             normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
         }
 
-
         let depth_buffer_texture = Texture::new_depth_texture(wgpu);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
 
@@ -150,6 +149,7 @@ impl Scene
 
         for cam in &mut scene.cameras
         {
+            cam.eye_pos = state.camera_pos;
             cam.fovy = state.cam_fov.to_radians();
             cam.init_matrices();
             self.camera_uniform.update_view_proj(&cam);
@@ -186,7 +186,9 @@ impl Scene
         {
             let mut light = scene.lights.get_mut(0).unwrap();
             light.color = state.light_color.clone();
+            light.pos = state.light_pos.clone();
             self.light_uniform.color = [light.color.x, light.color.y, light.color.z, 1.0];
+            self.light_uniform.position =  [light.pos.x, light.pos.y, light.pos.z, 1.0];
             self.color_pipe.update_light(wgpu, &self.light_uniform);
         }
 
