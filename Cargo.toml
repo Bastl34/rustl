@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 simple_logger = "4.0.0"
 log = "0.4"
 cfg-if = "1"
-wgpu = "0.15"
+wgpu = "0.16.0"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 instant = "0.1"
 winit = "0.28.3"
@@ -27,18 +27,18 @@ tobj = { version = "4.0", features = ["async"]}
 image = { version = "0.24.5", default-features = false, features = [ "png", "jpeg"] }
 # image = "0.24.5"
 
-egui = "0.21.0"
-egui-wgpu = "0.21.0"
+egui = "0.22.0"
+egui-wgpu = "0.22.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.21.1"
+egui-winit = "0.22.0"
 pollster = "0.3.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.11"
-wgpu = { version = "0.15", features = ["webgl"]}
+wgpu = { version = "0.16", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
@@ -48,7 +48,7 @@ web-sys = { version = "0.3", features = [
     "Location",
 ]}
 
-egui-winit = { version = "0.21.1", default-features = false, features = [
+egui-winit = { version = "0.22.0", default-features = false, features = [
   "links",
 ] }
 

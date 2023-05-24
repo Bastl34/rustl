@@ -15,7 +15,7 @@ pub struct InstanceRaw
 
 impl InstanceRaw
 {
-    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a>
+    pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
         use std::mem;
         wgpu::VertexBufferLayout

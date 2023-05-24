@@ -1,5 +1,3 @@
-use std::{fs, num::NonZeroU32};
-
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
@@ -80,8 +78,8 @@ impl Texture
             wgpu::ImageDataLayout
             {
                 offset: 0,
-                bytes_per_row: std::num::NonZeroU32::new(4 * scene_texture.width()), // 4 = RGBA
-                rows_per_image: std::num::NonZeroU32::new(scene_texture.width()),
+                bytes_per_row: Some(4 * scene_texture.width()), // 4 = RGBA
+                rows_per_image: Some(scene_texture.width()),
             },
             texture_size,
         );
@@ -282,8 +280,8 @@ impl Texture
                 layout: wgpu::ImageDataLayout
                 {
                     offset: 0,
-                    bytes_per_row: NonZeroU32::new(buffer_dimensions.padded_bytes_per_row as u32),
-                    rows_per_image: NonZeroU32::new(self.height),
+                    bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),
+                    rows_per_image: Some(self.height),
                 }
             },
             wgpu::Extent3d

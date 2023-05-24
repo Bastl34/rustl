@@ -263,7 +263,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                         material.set_texture(tex, TextureType::Alpha);
                     }
 
-                    // shininess_texture is not supported
+                    // shininess_texture is not supported -> TODO
 
                     scene.add_material(material_id, &material_arc);
                     double_check_materials.push((wavefront_mat_id, material_id));
