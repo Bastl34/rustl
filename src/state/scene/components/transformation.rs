@@ -12,8 +12,8 @@ pub struct Transformation
     rotation: Vector3<f32>,
     scale: Vector3<f32>,
 
-    pub trans: Matrix4<f32>,
-    pub tran_inverse: Matrix4<f32>,
+    trans: Matrix4<f32>,
+    tran_inverse: Matrix4<f32>,
 }
 
 impl Transformation
@@ -31,7 +31,7 @@ impl Transformation
         }
     }
 
-    pub fn get_transform(&self) -> Matrix4::<f32>
+    pub fn calc_transform(&self) -> Matrix4::<f32>
     {
         let translation = nalgebra::Isometry3::translation(self.position.x, self.position.y, self.position.z).to_homogeneous();
 
@@ -51,9 +51,9 @@ impl Transformation
         trans
     }
 
-    pub fn get_full_transform(&self, node: NodeItem) -> Matrix4::<f32>
+    fn get_full_transform(&self, node: NodeItem) -> Matrix4::<f32>
     {
-        let transform = self.get_transform();
+        let transform = self.calc_transform();
 
         let mut parent_transform = Matrix4::<f32>::identity();
 
@@ -78,6 +78,16 @@ impl Transformation
     {
         self.trans = self.get_full_transform(node);
         self.tran_inverse = self.trans.try_inverse().unwrap();
+    }
+
+    pub fn get_transform(&self) -> &Matrix4::<f32>
+    {
+        &self.trans
+    }
+
+    pub fn get_transform_inverse(&self) -> &Matrix4::<f32>
+    {
+        &self.tran_inverse
     }
 }
 

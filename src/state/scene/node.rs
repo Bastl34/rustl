@@ -187,8 +187,7 @@ impl Bounded for Node
         let mut trans = Matrix4::<f32>::identity();
         if transform_component.is_some()
         {
-            //transform_component.unwrap().get_full_transform(node)
-            trans = transform_component.unwrap().trans;
+            trans = transform_component.unwrap().get_transform().clone();
         }
 
         let aabb = mesh_component.unwrap().b_box;
