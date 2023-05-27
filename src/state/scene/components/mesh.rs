@@ -1,11 +1,11 @@
 use std::any::Any;
 
-use nalgebra::{Point2, Point3, Isometry3};
+use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
 use super::component::Component;
 
-pub struct Mesh
+pub struct MeshData
 {
     pub mesh: TriMesh,
 
@@ -22,11 +22,16 @@ pub struct Mesh
     pub b_box: Aabb,
 }
 
+pub struct Mesh
+{
+    data: MeshData,
+}
+
 impl Mesh
 {
     pub fn new_with_data(vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
-        let mut mesh = Mesh
+        let mut mesh_data = MeshData
         {
             mesh: TriMesh::new(vertices.clone(), indices.clone()),
 
@@ -40,6 +45,8 @@ impl Mesh
             flip_normals: false,
             b_box: Aabb::new_invalid(),
         };
+
+        let mut mesh = Mesh { data: mesh_data };
 
         mesh.calc_bbox();
 
@@ -68,26 +75,35 @@ impl Mesh
         mesh
     }
 
+    pub fn get_data(&self) -> &MeshData
+    {
+        &self.data
+    }
+
+    pub fn get_data_mut(&mut self) -> &mut MeshData
+    {
+        &mut self.data
+    }
+
     fn calc_bbox(&mut self)
     {
         let trans = Isometry3::<f32>::identity();
-        self.b_box = self.mesh.aabb(&trans);
+        self.data.b_box = self.data.mesh.aabb(&trans);
     }
 
-    /*
-    fn get_normal(&self, hit: Point3<f32>, face_id: u32) -> Vector3<f32>
+    pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>) -> Vector3<f32>
     {
         // https://stackoverflow.com/questions/23980748/triangle-texture-mapping-with-barycentric-coordinates
         // https://answers.unity.com/questions/383804/calculate-uv-coordinates-of-3d-point-on-plane-of-m.html
 
         //transform hit to local coords
-        let hit_pos_local = self.basic.tran_inverse * hit.to_homogeneous();
+        let hit_pos_local = tran_inverse * hit.to_homogeneous();
         let hit_pos_local = Point3::<f32>::from_homogeneous(hit_pos_local).unwrap();
 
-        let f_id = (face_id % self.mesh.indices().len() as u32) as usize;
+        let f_id = (face_id % self.data.mesh.indices().len() as u32) as usize;
 
-        let face = self.mesh.indices()[f_id];
-        let normal_face = self.normals_indices[f_id];
+        let face = self.data.mesh.indices()[f_id];
+        let normal_face = self.data.normals_indices[f_id];
 
         let i0 = face[0] as usize;
         let i1 = face[1] as usize;
@@ -97,13 +113,13 @@ impl Mesh
         let i_normal_1 = normal_face[1] as usize;
         let i_normal_2 = normal_face[2] as usize;
 
-        let a = self.mesh.vertices()[i0].to_homogeneous();
-        let b = self.mesh.vertices()[i1].to_homogeneous();
-        let c = self.mesh.vertices()[i2].to_homogeneous();
+        let a = self.data.mesh.vertices()[i0].to_homogeneous();
+        let b = self.data.mesh.vertices()[i1].to_homogeneous();
+        let c = self.data.mesh.vertices()[i2].to_homogeneous();
 
-        let a_t = self.normals[i_normal_0];
-        let b_t = self.normals[i_normal_1];
-        let c_t = self.normals[i_normal_2];
+        let a_t = self.data.normals[i_normal_0];
+        let b_t = self.data.normals[i_normal_1];
+        let c_t = self.data.normals[i_normal_2];
 
         let a = Point3::<f32>::from_homogeneous(a).unwrap();
         let b = Point3::<f32>::from_homogeneous(b).unwrap();
@@ -131,7 +147,6 @@ impl Mesh
 
         Vector3::<f32>::new(normal.x, normal.y, normal.z)
     }
-    */
 }
 
 impl Component for Mesh

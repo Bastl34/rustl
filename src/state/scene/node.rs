@@ -74,6 +74,7 @@ impl Node
                 component_item.is::<T>()
             }
         );
+
         if !value.is_some()
         {
             return None;
@@ -95,6 +96,7 @@ impl Node
                 component_item.is::<T>()
             }
         );
+
         if !value.is_some()
         {
             return None;
@@ -117,6 +119,7 @@ impl Node
                 component_item.is::<T>()
             }
         );
+
         if !value.is_some()
         {
             return None;
@@ -136,6 +139,7 @@ impl Node
                 component_item.is::<T>()
             }
         );
+
         if !value.is_some()
         {
             return None;
@@ -190,7 +194,9 @@ impl Bounded for Node
             trans = transform_component.unwrap().get_transform().clone();
         }
 
-        let aabb = mesh_component.unwrap().b_box;
+        let mesh_data = mesh_component.unwrap().get_data();
+
+        let aabb = mesh_data.b_box;
         let verts = aabb.vertices();
 
         let mut min = verts[0];

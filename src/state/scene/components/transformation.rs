@@ -6,7 +6,7 @@ use crate::state::scene::node::NodeItem;
 
 use super::component::Component;
 
-pub struct Transformation
+pub struct TransformationData
 {
     position: Vector3<f32>,
     rotation: Vector3<f32>,
@@ -16,11 +16,16 @@ pub struct Transformation
     tran_inverse: Matrix4<f32>,
 }
 
+pub struct Transformation
+{
+    data: TransformationData
+}
+
 impl Transformation
 {
     pub fn new(position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
     {
-        Transformation
+        let data = TransformationData
         {
             position,
             rotation,
@@ -28,18 +33,20 @@ impl Transformation
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity(),
-        }
+        };
+
+        Transformation { data: data }
     }
 
     pub fn calc_transform(&self) -> Matrix4::<f32>
     {
-        let translation = nalgebra::Isometry3::translation(self.position.x, self.position.y, self.position.z).to_homogeneous();
+        let translation = nalgebra::Isometry3::translation(self.data.position.x, self.data.position.y, self.data.position.z).to_homogeneous();
 
-        let scale = Matrix4::new_nonuniform_scaling(&self.scale);
+        let scale = Matrix4::new_nonuniform_scaling(&self.data.scale);
 
-        let rotation_x  = Rotation3::from_euler_angles(self.rotation.x, 0.0, 0.0).to_homogeneous();
-        let rotation_y  = Rotation3::from_euler_angles(0.0, self.rotation.y, 0.0).to_homogeneous();
-        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, self.rotation.z).to_homogeneous();
+        let rotation_x  = Rotation3::from_euler_angles(self.data.rotation.x, 0.0, 0.0).to_homogeneous();
+        let rotation_y  = Rotation3::from_euler_angles(0.0, self.data.rotation.y, 0.0).to_homogeneous();
+        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, self.data.rotation.z).to_homogeneous();
 
         let mut trans = Matrix4::<f32>::identity();
         trans = trans * translation;
@@ -76,18 +83,18 @@ impl Transformation
 
     pub fn calc_full_transform(&mut self, node: NodeItem)
     {
-        self.trans = self.get_full_transform(node);
-        self.tran_inverse = self.trans.try_inverse().unwrap();
+        self.data.trans = self.get_full_transform(node);
+        self.data.tran_inverse = self.data.trans.try_inverse().unwrap();
     }
 
     pub fn get_transform(&self) -> &Matrix4::<f32>
     {
-        &self.trans
+        &self.data.trans
     }
 
     pub fn get_transform_inverse(&self) -> &Matrix4::<f32>
     {
-        &self.tran_inverse
+        &self.data.tran_inverse
     }
 }
 

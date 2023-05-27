@@ -47,14 +47,15 @@ impl VertexBuffer
     pub fn new(wgpu: &mut WGpu, name: &str, mesh: &Mesh) -> VertexBuffer
     {
         let device = wgpu.device();
+        let mesh_data = mesh.get_data();
 
         let mut vertices = vec![];
 
-        for i in  0..mesh.vertices.len()
+        for i in  0..mesh_data.vertices.len()
         {
-            let v = mesh.vertices[i];
-            let n = mesh.normals[i];
-            let uv = mesh.uvs[i];
+            let v = mesh_data.vertices[i];
+            let n = mesh_data.normals[i];
+            let uv = mesh_data.uvs[i];
 
             vertices.push(Vertex
             {
@@ -70,7 +71,7 @@ impl VertexBuffer
         let mut triangles_included = vec![0; vertices.len()];
 
         //for c in mesh.indices.chunks(3)
-        for c in &mesh.indices
+        for c in &mesh_data.indices
         {
             let v0 = vertices[c[0] as usize];
             let v1 = vertices[c[1] as usize];
@@ -145,7 +146,7 @@ impl VertexBuffer
             &wgpu::util::BufferInitDescriptor
             {
                 label: Some(index_buffer_name.as_str()),
-                contents: bytemuck::cast_slice(mesh.indices.as_slice()),
+                contents: bytemuck::cast_slice(mesh_data.indices.as_slice()),
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
@@ -154,7 +155,7 @@ impl VertexBuffer
         {
             name: name.to_string(),
             vertex_count: vertices.len() as u32,
-            index_count: (mesh.indices.len() as u32) * 3,
+            index_count: (mesh_data.indices.len() as u32) * 3,
 
             vertex_buffer: vertex_buffer,
             index_buffer: index_buffer,

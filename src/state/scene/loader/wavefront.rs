@@ -163,53 +163,55 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
 
                     let mut material_guard = material_arc.write().unwrap();
                     let any = material_guard.as_any_mut();
-                    let mut material = any.downcast_mut::<Material>().unwrap();
+                    let material = any.downcast_mut::<Material>().unwrap();
 
                     let mat: &tobj::Material = &wavefront_materials[wavefront_mat_id];
 
-                    material.name = mat.name.clone();
+                    material.set_name(mat.name.clone());
+
+                    let material_data = material.get_data_mut();
 
                     if mat.shininess.is_some()
                     {
-                        material.shininess = mat.shininess.unwrap();
+                        material_data.shininess = mat.shininess.unwrap();
                     }
 
                     if mat.ambient.is_some()
                     {
                         let ambient = mat.ambient.unwrap();
-                        material.ambient_color = Vector3::<f32>::new(ambient[0], ambient[1], ambient[2]);
+                        material_data.ambient_color = Vector3::<f32>::new(ambient[0], ambient[1], ambient[2]);
                     }
 
                     if mat.specular.is_some()
                     {
                         let specular = mat.specular.unwrap();
-                        material.specular_color = Vector3::<f32>::new(specular[0], specular[1], specular[2]);
+                        material_data.specular_color = Vector3::<f32>::new(specular[0], specular[1], specular[2]);
                     }
 
                     if mat.diffuse.is_some()
                     {
                         let diffuse = mat.diffuse.unwrap();
-                        material.base_color = Vector3::<f32>::new(diffuse[0], diffuse[1], diffuse[2]);
+                        material_data.base_color = Vector3::<f32>::new(diffuse[0], diffuse[1], diffuse[2]);
                     }
 
                     if mat.optical_density.is_some()
                     {
-                        material.refraction_index = mat.optical_density.unwrap();
+                        material_data.refraction_index = mat.optical_density.unwrap();
                     }
 
                     if mat.dissolve.is_some()
                     {
-                        material.alpha = mat.dissolve.unwrap();
+                        material_data.alpha = mat.dissolve.unwrap();
                     }
 
 
-                    material.ambient_color = material.base_color * 0.01;
+                    material_data.ambient_color = material_data.base_color * 0.01;
 
                     if let Some(illumination) = mat.illumination_model
                     {
                         if illumination > 2
                         {
-                            material.reflectivity = 0.5;
+                            material_data.reflectivity = 0.5;
                         }
                     }
 
@@ -253,7 +255,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                         material.set_texture(tex, TextureType::Specular);
                     }
 
-                    // specular texture
+                    // dissolve texture
                     if mat.dissolve_texture.is_some()
                     {
                         println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
@@ -263,7 +265,15 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
                         material.set_texture(tex, TextureType::Alpha);
                     }
 
-                    // shininess_texture is not supported -> TODO
+                    // shininess_texture
+                    if mat.shininess_texture.is_some()
+                    {
+                        println!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
+                        let shininess_texture = mat.shininess_texture.clone().unwrap();
+                        let tex_path = get_texture_path(&shininess_texture, path);
+                        let tex = scene.load_texture_or_reuse(tex_path.as_str()).await?;
+                        material.set_texture(tex, TextureType::Shininess);
+                    }
 
                     scene.add_material(material_id, &material_arc);
                     double_check_materials.push((wavefront_mat_id, material_id));

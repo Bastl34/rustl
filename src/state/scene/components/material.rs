@@ -25,6 +25,7 @@ pub enum TextureType
     Roughness,
     AmbientOcclusion,
     Reflectivity,
+    Shininess
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -35,11 +36,8 @@ pub enum TextureFiltering
 }
 
 #[derive(Debug)]
-pub struct Material
+pub struct MaterialData
 {
-    pub id: u32,
-    pub name: String,
-
     pub ambient_color: Vector3<f32>,
     pub base_color: Vector3<f32>,
     pub specular_color: Vector3<f32>,
@@ -52,6 +50,7 @@ pub struct Material
     pub texture_roughness: Option<TextureItem>,
     pub texture_ambient_occlusion: Option<TextureItem>,
     pub texture_reflectivity: Option<TextureItem>,
+    pub texture_shininess: Option<TextureItem>,
 
     pub filtering_mode: TextureFiltering,
 
@@ -76,15 +75,20 @@ pub struct Material
     pub backface_cullig: bool
 }
 
+pub struct Material
+{
+    id: u32,
+    name: String,
+
+    data: MaterialData,
+}
+
 impl Material
 {
     pub fn new(id: u32, name: &str) -> Material
     {
-        Material
+        let material_data = MaterialData
         {
-            id: id,
-            name: name.to_string(),
-
             ambient_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             base_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             specular_color: Vector3::<f32>::new(0.8, 0.8, 0.8),
@@ -97,6 +101,7 @@ impl Material
             texture_roughness: None,
             texture_ambient_occlusion: None,
             texture_reflectivity: None,
+            texture_shininess: None,
 
             filtering_mode: TextureFiltering::Linear,
 
@@ -119,70 +124,101 @@ impl Material
 
             reflection_only: false,
             backface_cullig: true,
+        };
+
+        Material
+        {
+            id: id,
+            name: name.to_string(),
+
+            data: material_data
         }
+    }
+
+    pub fn get_name(&self) -> &String
+    {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: String)
+    {
+        self.name = name;
+    }
+
+    pub fn get_data(&self) -> &MaterialData
+    {
+        &self.data
+    }
+
+    pub fn get_data_mut(&mut self) -> &mut MaterialData
+    {
+        &mut self.data
     }
 
     pub fn apply_diff_without_textures(&mut self, new_mat: &Material)
     {
         let default_material = Material::new(0, "");
+        let default_material_data = new_mat.get_data();
+
+        let new_mat_data = new_mat.get_data();
 
         // ********** colors **********
 
         // ambient
         if
-            !helper::math::approx_equal(default_material.ambient_color.x, new_mat.ambient_color.x)
+            !helper::math::approx_equal(default_material_data.ambient_color.x, new_mat_data.ambient_color.x)
             ||
-            !helper::math::approx_equal(default_material.ambient_color.y, new_mat.ambient_color.y)
+            !helper::math::approx_equal(default_material_data.ambient_color.y, new_mat_data.ambient_color.y)
             ||
-            !helper::math::approx_equal(default_material.ambient_color.z, new_mat.ambient_color.z)
+            !helper::math::approx_equal(default_material_data.ambient_color.z, new_mat_data.ambient_color.z)
         {
-            self.ambient_color = new_mat.ambient_color;
+            self.data.ambient_color = new_mat_data.ambient_color;
         }
 
         // base
         if
-            !helper::math::approx_equal(default_material.base_color.x, new_mat.base_color.x)
+            !helper::math::approx_equal(default_material_data.base_color.x, new_mat_data.base_color.x)
             ||
-            !helper::math::approx_equal(default_material.base_color.y, new_mat.base_color.y)
+            !helper::math::approx_equal(default_material_data.base_color.y, new_mat_data.base_color.y)
             ||
-            !helper::math::approx_equal(default_material.base_color.z, new_mat.base_color.z)
+            !helper::math::approx_equal(default_material_data.base_color.z, new_mat_data.base_color.z)
         {
-            self.base_color = new_mat.base_color;
+            self.data.base_color = new_mat_data.base_color;
         }
 
         // specular
         if
-            !helper::math::approx_equal(default_material.specular_color.x, new_mat.specular_color.x)
+            !helper::math::approx_equal(default_material_data.specular_color.x, new_mat_data.specular_color.x)
             ||
-            !helper::math::approx_equal(default_material.specular_color.y, new_mat.specular_color.y)
+            !helper::math::approx_equal(default_material_data.specular_color.y, new_mat_data.specular_color.y)
             ||
-            !helper::math::approx_equal(default_material.specular_color.z, new_mat.specular_color.z)
+            !helper::math::approx_equal(default_material_data.specular_color.z, new_mat_data.specular_color.z)
         {
-            self.specular_color = new_mat.specular_color;
+            self.data.specular_color = new_mat_data.specular_color;
         }
 
         // ********** other attributes **********
-        if default_material.filtering_mode != new_mat.filtering_mode { self.filtering_mode = new_mat.filtering_mode; }
+        if default_material_data.filtering_mode != new_mat_data.filtering_mode { self.data.filtering_mode = new_mat_data.filtering_mode; }
 
-        if !helper::math::approx_equal(default_material.alpha, new_mat.alpha) { self.alpha = new_mat.alpha; }
-        if !helper::math::approx_equal(default_material.shininess, new_mat.shininess) { self.shininess = new_mat.shininess; }
-        if !helper::math::approx_equal(default_material.reflectivity, new_mat.reflectivity) { self.reflectivity = new_mat.reflectivity; }
-        if !helper::math::approx_equal(default_material.refraction_index, new_mat.refraction_index) { self.refraction_index = new_mat.refraction_index; }
+        if !helper::math::approx_equal(default_material_data.alpha, new_mat_data.alpha) { self.data.alpha = new_mat_data.alpha; }
+        if !helper::math::approx_equal(default_material_data.shininess, new_mat_data.shininess) { self.data.shininess = new_mat_data.shininess; }
+        if !helper::math::approx_equal(default_material_data.reflectivity, new_mat_data.reflectivity) { self.data.reflectivity = new_mat_data.reflectivity; }
+        if !helper::math::approx_equal(default_material_data.refraction_index, new_mat_data.refraction_index) { self.data.refraction_index = new_mat_data.refraction_index; }
 
-        if !helper::math::approx_equal(default_material.normal_map_strength, new_mat.normal_map_strength) { self.normal_map_strength = new_mat.normal_map_strength; }
+        if !helper::math::approx_equal(default_material_data.normal_map_strength, new_mat_data.normal_map_strength) { self.data.normal_map_strength = new_mat_data.normal_map_strength; }
 
-        if default_material.cast_shadow != new_mat.cast_shadow { self.cast_shadow = new_mat.cast_shadow; }
-        if default_material.receive_shadow != new_mat.receive_shadow { self.receive_shadow = new_mat.receive_shadow; }
-        if !helper::math::approx_equal(default_material.shadow_softness, new_mat.shadow_softness) { self.shadow_softness = new_mat.shadow_softness; }
+        if default_material_data.cast_shadow != new_mat_data.cast_shadow { self.data.cast_shadow = new_mat_data.cast_shadow; }
+        if default_material_data.receive_shadow != new_mat_data.receive_shadow { self.data.receive_shadow = new_mat_data.receive_shadow; }
+        if !helper::math::approx_equal(default_material_data.shadow_softness, new_mat_data.shadow_softness) { self.data.shadow_softness = new_mat_data.shadow_softness; }
 
-        if !helper::math::approx_equal(default_material.roughness, new_mat.roughness) { self.roughness = new_mat.roughness; }
+        if !helper::math::approx_equal(default_material_data.roughness, new_mat_data.roughness) { self.data.roughness = new_mat_data.roughness; }
 
-        if default_material.monte_carlo != new_mat.monte_carlo { self.monte_carlo = new_mat.monte_carlo; }
+        if default_material_data.monte_carlo != new_mat_data.monte_carlo { self.data.monte_carlo = new_mat_data.monte_carlo; }
 
-        if default_material.smooth_shading != new_mat.smooth_shading { self.smooth_shading = new_mat.smooth_shading; }
+        if default_material_data.smooth_shading != new_mat_data.smooth_shading { self.data.smooth_shading = new_mat_data.smooth_shading; }
 
-        if default_material.reflection_only != new_mat.reflection_only { self.reflection_only = new_mat.reflection_only; }
-        if default_material.backface_cullig != new_mat.backface_cullig { self.backface_cullig = new_mat.backface_cullig; }
+        if default_material_data.reflection_only != new_mat_data.reflection_only { self.data.reflection_only = new_mat_data.reflection_only; }
+        if default_material_data.backface_cullig != new_mat_data.backface_cullig { self.data.backface_cullig = new_mat_data.backface_cullig; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -192,6 +228,9 @@ impl Material
 
         // ********** textures **********
         let default_material = Material::new(0, "");
+        let default_material_data = default_material.data;
+
+        let new_mat_data = new_mat.get_data();
 
         macro_rules! compare_and_apply_texture_diff
         {
@@ -210,52 +249,54 @@ impl Material
             };
         }
 
-        compare_and_apply_texture_diff!(self.texture_ambient, default_material.texture_ambient, new_mat.texture_ambient.clone());
-        compare_and_apply_texture_diff!(self.texture_base, default_material.texture_base, new_mat.texture_base.clone());
-        compare_and_apply_texture_diff!(self.texture_specular, default_material.texture_specular, new_mat.texture_specular.clone());
-        compare_and_apply_texture_diff!(self.texture_normal, default_material.texture_normal, new_mat.texture_normal.clone());
-        compare_and_apply_texture_diff!(self.texture_alpha, default_material.texture_alpha, new_mat.texture_alpha.clone());
-        compare_and_apply_texture_diff!(self.texture_roughness, default_material.texture_roughness, new_mat.texture_roughness.clone());
-        compare_and_apply_texture_diff!(self.texture_ambient_occlusion, default_material.texture_ambient_occlusion, new_mat.texture_ambient_occlusion.clone());
-        compare_and_apply_texture_diff!(self.texture_reflectivity, default_material.texture_reflectivity, new_mat.texture_reflectivity.clone());
+        compare_and_apply_texture_diff!(self.data.texture_ambient, default_material_data.texture_ambient, new_mat_data.texture_ambient.clone());
+        compare_and_apply_texture_diff!(self.data.texture_base, default_material_data.texture_base, new_mat_data.texture_base.clone());
+        compare_and_apply_texture_diff!(self.data.texture_specular, default_material_data.texture_specular, new_mat_data.texture_specular.clone());
+        compare_and_apply_texture_diff!(self.data.texture_normal, default_material_data.texture_normal, new_mat_data.texture_normal.clone());
+        compare_and_apply_texture_diff!(self.data.texture_alpha, default_material_data.texture_alpha, new_mat_data.texture_alpha.clone());
+        compare_and_apply_texture_diff!(self.data.texture_roughness, default_material_data.texture_roughness, new_mat_data.texture_roughness.clone());
+        compare_and_apply_texture_diff!(self.data.texture_ambient_occlusion, default_material_data.texture_ambient_occlusion, new_mat_data.texture_ambient_occlusion.clone());
+        compare_and_apply_texture_diff!(self.data.texture_reflectivity, default_material_data.texture_reflectivity, new_mat_data.texture_reflectivity.clone());
+        compare_and_apply_texture_diff!(self.data.texture_shininess, default_material_data.texture_shininess, new_mat_data.texture_shininess.clone());
 
     }
 
     pub fn print(&self)
     {
-        println!("ambient_color: {:?}", self.ambient_color);
-        println!("base_color: {:?}", self.base_color);
-        println!("specular_color: {:?}", self.specular_color);
+        println!("ambient_color: {:?}", self.data.ambient_color);
+        println!("base_color: {:?}", self.data.base_color);
+        println!("specular_color: {:?}", self.data.specular_color);
 
-        println!("texture_base: {:?}", self.texture_base.is_some());
-        println!("texture_specular: {:?}", self.texture_specular.is_some());
-        println!("texture_normal: {:?}", self.texture_normal.is_some());
-        println!("texture_alpha: {:?}", self.texture_alpha.is_some());
-        println!("texture_roughness: {:?}", self.texture_roughness.is_some());
-        println!("texture_ambient_occlusion: {:?}", self.texture_ambient_occlusion.is_some());
-        println!("texture_reflectivity: {:?}", self.texture_reflectivity.is_some());
+        println!("texture_base: {:?}", self.data.texture_base.is_some());
+        println!("texture_specular: {:?}", self.data.texture_specular.is_some());
+        println!("texture_normal: {:?}", self.data.texture_normal.is_some());
+        println!("texture_alpha: {:?}", self.data.texture_alpha.is_some());
+        println!("texture_roughness: {:?}", self.data.texture_roughness.is_some());
+        println!("texture_ambient_occlusion: {:?}", self.data.texture_ambient_occlusion.is_some());
+        println!("texture_reflectivity: {:?}", self.data.texture_reflectivity.is_some());
+        println!("texture_shininess: {:?}", self.data.texture_shininess.is_some());
 
-        println!("filtering_mode: {:?}", self.filtering_mode);
+        println!("filtering_mode: {:?}", self.data.filtering_mode);
 
-        println!("alpha: {:?}", self.alpha);
-        println!("shininess: {:?}", self.shininess);
-        println!("reflectivity: {:?}", self.reflectivity);
-        println!("refraction_index: {:?}", self.refraction_index);
+        println!("alpha: {:?}", self.data.alpha);
+        println!("shininess: {:?}", self.data.shininess);
+        println!("reflectivity: {:?}", self.data.reflectivity);
+        println!("refraction_index: {:?}", self.data.refraction_index);
 
-        println!("normal_map_strength: {:?}", self.normal_map_strength);
+        println!("normal_map_strength: {:?}", self.data.normal_map_strength);
 
-        println!("cast_shadow: {:?}", self.cast_shadow);
-        println!("receive_shadow: {:?}", self.receive_shadow);
-        println!("shadow_softness: {:?}", self.shadow_softness);
+        println!("cast_shadow: {:?}", self.data.cast_shadow);
+        println!("receive_shadow: {:?}", self.data.receive_shadow);
+        println!("shadow_softness: {:?}", self.data.shadow_softness);
 
-        println!("roughness: {:?}", self.roughness);
+        println!("roughness: {:?}", self.data.roughness);
 
-        println!("monte_carlo: {:?}", self.monte_carlo);
+        println!("monte_carlo: {:?}", self.data.monte_carlo);
 
-        println!("smooth_shading: {:?}", self.smooth_shading);
+        println!("smooth_shading: {:?}", self.data.smooth_shading);
 
-        println!("reflection_only: {:?}", self.reflection_only);
-        println!("backface_cullig: {:?}", self.backface_cullig);
+        println!("reflection_only: {:?}", self.data.reflection_only);
+        println!("backface_cullig: {:?}", self.data.backface_cullig);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -264,35 +305,39 @@ impl Material
         {
             TextureType::Base =>
             {
-                self.texture_base = None;
+                self.data.texture_base = None;
             },
             TextureType::AmbientEmissive =>
             {
-                self.texture_ambient = None;
+                self.data.texture_ambient = None;
             },
             TextureType::Specular =>
             {
-                self.texture_specular = None;
+                self.data.texture_specular = None;
             },
             TextureType::Normal =>
             {
-                self.texture_normal = None;
+                self.data.texture_normal = None;
             },
             TextureType::Alpha =>
             {
-                self.texture_alpha = None;
+                self.data.texture_alpha = None;
             },
             TextureType::Roughness =>
             {
-                self.texture_roughness = None;
+                self.data.texture_roughness = None;
             },
             TextureType::AmbientOcclusion =>
             {
-                self.texture_ambient_occlusion = None;
+                self.data.texture_ambient_occlusion = None;
             },
             TextureType::Reflectivity =>
             {
-                self.texture_reflectivity = None;
+                self.data.texture_reflectivity = None;
+            },
+            TextureType::Shininess =>
+            {
+                self.data.texture_shininess = None;
             },
         }
     }
@@ -303,56 +348,62 @@ impl Material
         {
             TextureType::Base =>
             {
-                self.texture_base = Some(tex.clone());
+                self.data.texture_base = Some(tex.clone());
             },
             TextureType::AmbientEmissive =>
             {
-                self.texture_ambient = Some(tex.clone());
+                self.data.texture_ambient = Some(tex.clone());
             },
             TextureType::Specular =>
             {
-                self.texture_specular = Some(tex.clone());
+                self.data.texture_specular = Some(tex.clone());
             },
             TextureType::Normal =>
             {
-                self.texture_normal = Some(tex.clone());
+                self.data.texture_normal = Some(tex.clone());
             },
             TextureType::Alpha =>
             {
-                self.texture_alpha = Some(tex.clone());
+                self.data.texture_alpha = Some(tex.clone());
             },
             TextureType::Roughness =>
             {
-                self.texture_roughness = Some(tex.clone());
+                self.data.texture_roughness = Some(tex.clone());
             },
             TextureType::AmbientOcclusion =>
             {
-                self.texture_ambient_occlusion = Some(tex.clone());
+                self.data.texture_ambient_occlusion = Some(tex.clone());
             },
             TextureType::Reflectivity =>
             {
-                self.texture_reflectivity = Some(tex.clone());
+                self.data.texture_reflectivity = Some(tex.clone());
+            },
+            TextureType::Shininess =>
+            {
+                self.data.texture_shininess = Some(tex.clone());
             },
         }
     }
 
     pub fn has_any_texture(&self) -> bool
     {
-        self.texture_base.is_some()
+        self.data.texture_base.is_some()
         ||
-        self.texture_ambient.is_some()
+        self.data.texture_ambient.is_some()
         ||
-        self.texture_specular.is_some()
+        self.data.texture_specular.is_some()
         ||
-        self.texture_normal.is_some()
+        self.data.texture_normal.is_some()
         ||
-        self.texture_alpha.is_some()
+        self.data.texture_alpha.is_some()
         ||
-        self.texture_roughness.is_some()
+        self.data.texture_roughness.is_some()
         ||
-        self.texture_ambient_occlusion.is_some()
+        self.data.texture_ambient_occlusion.is_some()
         ||
-        self.texture_reflectivity.is_some()
+        self.data.texture_reflectivity.is_some()
+        ||
+        self.data.texture_shininess.is_some()
     }
 
     fn get_texture_by_type(&self, tex_type: TextureType) -> Option<Arc<RwLock<Box<Texture>>>>
@@ -361,14 +412,15 @@ impl Material
 
         match tex_type
         {
-            TextureType::Base => { tex = self.texture_base.clone() },
-            TextureType::AmbientEmissive => { tex = self.texture_ambient.clone() },
-            TextureType::Specular => { tex = self.texture_specular.clone() },
-            TextureType::Normal => { tex = self.texture_normal.clone() },
-            TextureType::Alpha => { tex = self.texture_alpha.clone() },
-            TextureType::Roughness => { tex = self.texture_roughness.clone() },
-            TextureType::AmbientOcclusion => { tex = self.texture_ambient_occlusion.clone() },
-            TextureType::Reflectivity => { tex = self.texture_reflectivity.clone() },
+            TextureType::Base => { tex = self.data.texture_base.clone() },
+            TextureType::AmbientEmissive => { tex = self.data.texture_ambient.clone() },
+            TextureType::Specular => { tex = self.data.texture_specular.clone() },
+            TextureType::Normal => { tex = self.data.texture_normal.clone() },
+            TextureType::Alpha => { tex = self.data.texture_alpha.clone() },
+            TextureType::Roughness => { tex = self.data.texture_roughness.clone() },
+            TextureType::AmbientOcclusion => { tex = self.data.texture_ambient_occlusion.clone() },
+            TextureType::Reflectivity => { tex = self.data.texture_reflectivity.clone() },
+            TextureType::Shininess => { tex = self.data.texture_shininess.clone() },
         }
 
         tex

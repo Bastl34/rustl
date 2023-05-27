@@ -60,8 +60,9 @@ impl Scene
         {
             let mat = node.write().unwrap().find_shared_component_mut::<MaterialComponent>().unwrap();
             shared_component_write!(mat, MaterialComponent, mat);
+            let mat_data = mat.get_data_mut();
 
-            mat.alpha = 0.0;
+            mat_data.alpha = 1.0;
         }
 
         let buffer;
@@ -88,9 +89,10 @@ impl Scene
             let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
             let mat = mat.read().unwrap();
             let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+            let mat_data = mat.get_data();
 
-            let base_tex = mat.texture_base.as_ref().unwrap().read().unwrap();
-            let normal_tex = mat.texture_normal.as_ref().unwrap().read().unwrap();
+            let base_tex = mat_data.texture_base.as_ref().unwrap().read().unwrap();
+            let normal_tex = mat_data.texture_normal.as_ref().unwrap().read().unwrap();
 
             base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
             normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
