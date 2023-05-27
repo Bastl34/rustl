@@ -518,7 +518,7 @@ impl Component for Material
         true
     }
 
-    fn name(&self) -> &'static str
+    fn component_name(&self) -> &'static str
     {
         "Material"
     }

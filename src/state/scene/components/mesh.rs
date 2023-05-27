@@ -156,7 +156,7 @@ impl Component for Mesh
         true
     }
 
-    fn name(&self) -> &'static str
+    fn component_name(&self) -> &'static str
     {
         "Mesh"
     }

@@ -105,7 +105,7 @@ impl Component for Transformation
         true
     }
 
-    fn name(&self) -> &'static str
+    fn component_name(&self) -> &'static str
     {
         "Transformation"
     }

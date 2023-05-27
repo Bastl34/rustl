@@ -9,12 +9,18 @@ pub trait Component: Any
 {
     fn is_enabled(&self) -> bool;
 
-    fn name(&self) -> &'static str;
+    fn component_name(&self) -> &'static str;
 
     fn update(&mut self, time_delta: f32);
 
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    //fn get_data_<T: Component, U>(&self) -> &U;
+    //fn get_data_mut_<T: Component, U>(&mut self) -> &U;
+
+    //fn bla(&self);
+    //fn bla<T: Component, U>(&self) -> &U;
 }
 
 /*
