@@ -33,14 +33,12 @@ impl Instance
 
         let mut rotation = rotation_x;
         rotation = rotation * rotation_y;
-        rotation = rotation * rotation_x;
+        rotation = rotation * rotation_z;
 
         let mut trans = Matrix4::<f32>::identity();
         trans = trans * translation;
         trans = trans * scale;
-        trans = trans * rotation_z;
-        trans = trans * rotation_y;
-        trans = trans * rotation_x;
+        trans = trans * rotation;
 
         let col0 = rotation.column(0).xyz();
         let col1 = rotation.column(1).xyz();

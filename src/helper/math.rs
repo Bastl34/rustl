@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use nalgebra::Vector4;
+use nalgebra::{Vector4, Matrix4};
 
 pub fn approx_equal(a: f32, b: f32) -> bool
 {
@@ -28,3 +28,10 @@ pub fn interpolate_vec4(a: Vector4<f32>, b: Vector4<f32>, f: f32) -> Vector4<f32
         interpolate(a.w, b.w, f)
     )
 }
+/*
+pub fn extract_rotation(matrix: Matrix4<f32>) -> Matrix3<f32>
+{
+    let submatrix = matrix.fixed_slice::<nalgebra::U3, nalgebra::U3>(0, 0);
+    submatrix.into_owned()
+}
+*/
