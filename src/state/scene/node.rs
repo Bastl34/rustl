@@ -276,30 +276,30 @@ impl Node
         self.instances.push(instance);
     }
 
-    pub fn update(&mut self, time_delta: f32)
+    pub fn update(&mut self, frame_scale: f32)
     {
         // update components
         for component in &mut self.components
         {
-            component.update(time_delta);
+            component.update(frame_scale);
         }
 
         for component in &mut self.shared_components
         {
             let mut component_write = component.write().unwrap();
-            component_write.update(time_delta);
+            component_write.update(frame_scale);
         }
 
         // update instances
         for instance in &mut self.instances
         {
-            instance.update(time_delta);
+            instance.update(frame_scale);
         }
 
         // update nodes
         for node in &mut self.nodes
         {
-            node.write().unwrap().update(time_delta);
+            node.write().unwrap().update(frame_scale);
         }
 
     }

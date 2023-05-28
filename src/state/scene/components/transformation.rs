@@ -212,7 +212,7 @@ impl Component for Transformation
         &mut self.base
     }
 
-    fn update(&mut self, time_delta: f32)
+    fn update(&mut self, frame_scale: f32)
     {
     }
 

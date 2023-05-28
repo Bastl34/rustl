@@ -58,12 +58,12 @@ impl Scene
         Ok(vec![])
     }
 
-    pub fn update(&mut self, time_delta: f32)
+    pub fn update(&mut self, frame_scale: f32)
     {
         // update nodes
         for node in &self.nodes
         {
-            node.write().unwrap().update(time_delta);
+            node.write().unwrap().update(frame_scale);
         }
     }
 

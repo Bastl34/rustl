@@ -12,7 +12,7 @@ pub trait Component: Any
     fn get_base(&self) -> &ComponentBase;
     fn get_base_mut(&mut self) -> &mut ComponentBase;
 
-    fn update(&mut self, time_delta: f32);
+    fn update(&mut self, frame_scale: f32);
 
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
