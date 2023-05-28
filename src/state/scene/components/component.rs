@@ -9,20 +9,43 @@ pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
 
 pub trait Component: Any
 {
-    fn is_enabled(&self) -> bool;
-
-    fn component_name(&self) -> &'static str;
+    fn get_base(&self) -> &ComponentBase;
+    fn get_base_mut(&mut self) -> &mut ComponentBase;
 
     fn update(&mut self, time_delta: f32);
 
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
+    fn id(&self) -> u64
+    {
+        self.get_base().id
+    }
+
+    fn is_enabled(&self) -> bool
+    {
+        self.get_base().is_enabled
+    }
+
+    fn component_name(&self) -> &str
+    {
+        self.get_base().name.as_str()
+    }
+
     //fn get_data_<T: Component, U>(&self) -> &U;
     //fn get_data_mut_<T: Component, U>(&mut self) -> &U;
 
     //fn bla(&self);
     //fn bla<T: Component, U>(&self) -> &U;
+}
+
+
+pub struct ComponentBase
+{
+    pub id: u64,
+    pub is_enabled: bool,
+    pub name: String,
+    pub component_name: String,
 }
 
 /*

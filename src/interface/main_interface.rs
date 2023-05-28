@@ -42,17 +42,19 @@ impl MainInterface
             let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
 
             // ********** models **********
-            //scene.load("objects/cube/cube.obj").await.unwrap();
-            //scene.load("objects/plane/plane.obj").await.unwrap();
             scene.load("objects/bastl/bastl.obj").await.unwrap();
+            scene.load("objects/cube/cube.obj").await.unwrap();
+            scene.load("objects/plane/plane.obj").await.unwrap();
 
             {
                 let node_id = 1;
                 let node = scene.nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();
-                node.add_component(Box::new(Transformation::identity()));
+                node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 0.0, -15.0));
+
+                //node.remove_component_by_type::<Transformation>();
             }
 
             let mut node1 = Node::new(scene.id_manager.get_next_node_id(), "test1");
@@ -85,6 +87,8 @@ impl MainInterface
 
             // ********** scene add **********
             state.scenes.push(Box::new(scene));
+
+            state.print();
         }
 
         let render_scene;

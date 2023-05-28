@@ -4,7 +4,7 @@ use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
 use crate::state::scene::node::{NodeItem, Node};
 
-use super::component::Component;
+use super::component::{Component, ComponentBase};
 
 pub struct TransformationData
 {
@@ -22,13 +22,13 @@ pub struct TransformationData
 
 pub struct Transformation
 {
-    pub is_enabled: bool,
+    base: ComponentBase,
     data: TransformationData
 }
 
 impl Transformation
 {
-    pub fn new(position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
+    pub fn new(id: u64, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
     {
         let data = TransformationData
         {
@@ -46,7 +46,13 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            is_enabled: true,
+            base: ComponentBase
+            {
+                id: id,
+                is_enabled: true,
+                component_name: "Transformation".to_string(),
+                name: "".to_string(),
+            },
             data: data
         };
         transform.calc_transform();
@@ -54,7 +60,7 @@ impl Transformation
         transform
     }
 
-    pub fn identity() -> Transformation
+    pub fn identity(id: u64) -> Transformation
     {
         let data = TransformationData
         {
@@ -72,7 +78,13 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            is_enabled: true,
+            base: ComponentBase
+            {
+                id: id,
+                is_enabled: true,
+                component_name: "Transformation".to_string(),
+                name: "".to_string(),
+            },
             data: data
         };
         transform.calc_transform();
@@ -80,6 +92,7 @@ impl Transformation
         transform
     }
 
+    /*
     pub fn get_data(&self) -> &TransformationData
     {
         &self.data
@@ -89,6 +102,7 @@ impl Transformation
     {
         &mut self.data
     }
+    */
 
     pub fn has_parent_inheritance(&self) -> bool
     {
@@ -188,14 +202,14 @@ impl Transformation
 
 impl Component for Transformation
 {
-    fn is_enabled(&self) -> bool
+    fn get_base(&self) -> &ComponentBase
     {
-        self.is_enabled
+        &self.base
     }
 
-    fn component_name(&self) -> &'static str
+    fn get_base_mut(&mut self) -> &mut ComponentBase
     {
-        "Transformation"
+        &mut self.base
     }
 
     fn update(&mut self, time_delta: f32)

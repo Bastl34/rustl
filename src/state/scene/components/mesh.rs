@@ -5,7 +5,7 @@ use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
 use crate::state::scene::node::{NodeItem, Node};
 
-use super::component::Component;
+use super::component::{Component, ComponentBase};
 
 pub struct MeshData
 {
@@ -26,12 +26,13 @@ pub struct MeshData
 
 pub struct Mesh
 {
+    base: ComponentBase,
     data: MeshData,
 }
 
 impl Mesh
 {
-    pub fn new_with_data(vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
+    pub fn new_with_data(id: u64, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
         let mut mesh_data = MeshData
         {
@@ -48,14 +49,24 @@ impl Mesh
             b_box: Aabb::new_invalid(),
         };
 
-        let mut mesh = Mesh { data: mesh_data };
+        let mut mesh = Mesh
+        {
+            base: ComponentBase
+            {
+                id: id,
+                is_enabled: true,
+                component_name: "Mesh".to_string(),
+                name: "".to_string()
+            },
+            data: mesh_data
+        };
 
         mesh.calc_bbox();
 
         mesh
     }
 
-    pub fn new_plane(x0: Point3<f32>, x1: Point3<f32>, x2: Point3<f32>, x3: Point3<f32>) -> Mesh
+    pub fn new_plane(id: u64, x0: Point3<f32>, x1: Point3<f32>, x2: Point3<f32>, x3: Point3<f32>) -> Mesh
     {
         let points = vec![ x0, x1, x2, x3, ];
 
@@ -70,7 +81,7 @@ impl Mesh
         let indices = vec![[0u32, 1, 2], [0, 2, 3]];
         let uv_indices = vec![[0u32, 1, 2], [0, 2, 3]];
 
-        let mut mesh = Mesh::new_with_data(points, indices, uvs, uv_indices, vec![], vec![]);
+        let mut mesh = Mesh::new_with_data(id,points, indices, uvs, uv_indices, vec![], vec![]);
 
         mesh.calc_bbox();
 
@@ -153,14 +164,14 @@ impl Mesh
 
 impl Component for Mesh
 {
-    fn is_enabled(&self) -> bool
+    fn get_base(&self) -> &ComponentBase
     {
-        true
+        &self.base
     }
 
-    fn component_name(&self) -> &'static str
+    fn get_base_mut(&mut self) -> &mut ComponentBase
     {
-        "Mesh"
+        &mut self.base
     }
 
     fn update(&mut self, time_delta: f32)

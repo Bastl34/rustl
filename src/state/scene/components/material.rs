@@ -7,7 +7,7 @@ use parry3d::partitioning::NodeIndex;
 use crate::state::scene::node::{Node, NodeItem};
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
-use super::component::{Component, SharedComponentItem};
+use super::component::{Component, SharedComponentItem, ComponentBase};
 
 //pub type MaterialItem = Arc<RwLock<Box<Material>>>;
 //pub type MaterialItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -79,9 +79,7 @@ pub struct MaterialData
 
 pub struct Material
 {
-    id: u64,
-    name: String,
-
+    base: ComponentBase,
     data: MaterialData,
 }
 
@@ -130,8 +128,13 @@ impl Material
 
         Material
         {
-            id: id,
-            name: name.to_string(),
+            base: ComponentBase
+            {
+                id: id,
+                is_enabled: true,
+                component_name: "Transformation".to_string(),
+                name: name.to_string(),
+            },
 
             data: material_data
         }
@@ -139,12 +142,12 @@ impl Material
 
     pub fn get_name(&self) -> &String
     {
-        &self.name
+        &self.base.name
     }
 
     pub fn set_name(&mut self, name: String)
     {
-        self.name = name;
+        self.base.name = name;
     }
 
     pub fn get_data(&self) -> &MaterialData
@@ -515,14 +518,14 @@ impl Material
 
 impl Component for Material
 {
-    fn is_enabled(&self) -> bool
+    fn get_base(&self) -> &ComponentBase
     {
-        true
+        &self.base
     }
 
-    fn component_name(&self) -> &'static str
+    fn get_base_mut(&mut self) -> &mut ComponentBase
     {
-        "Material"
+        &mut self.base
     }
 
     fn update(&mut self, time_delta: f32)

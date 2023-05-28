@@ -66,6 +66,39 @@ impl Node
         self.components.push(component);
     }
 
+    pub fn remove_component_by_type<T>(&mut self) where T: 'static
+    {
+        let index = self.components.iter().position
+        (
+            |c|
+            {
+                let component_item = c.as_any();
+                component_item.is::<T>()
+            }
+        );
+
+        if let Some(index) = index
+        {
+            self.components.remove(index);
+        }
+    }
+
+    pub fn remove_component_by_id(&mut self, id: u64)
+    {
+        let index = self.components.iter().position
+        (
+            |c|
+            {
+                c.id() == id
+            }
+        );
+
+        if let Some(index) = index
+        {
+            self.components.remove(index);
+        }
+    }
+
     pub fn find_component<'a, T>(&'a self) -> Option<Box<&'a T>> where T: 'static
     {
         let value = self.components.iter().find
@@ -150,6 +183,41 @@ impl Node
         Some(value.unwrap().clone())
     }
 
+    pub fn remove_shared_component_by_type<T>(&mut self) where T: 'static
+    {
+        let index = self.shared_components.iter().position
+        (
+            |c|
+            {
+                let component = c.read().unwrap();
+                let component_item = component.as_any();
+                component_item.is::<T>()
+            }
+        );
+
+        if let Some(index) = index
+        {
+            self.shared_components.remove(index);
+        }
+    }
+
+    pub fn remove_shared_component_by_id(&mut self, id: u64)
+    {
+        let index = self.shared_components.iter().position
+        (
+            |c|
+            {
+                let component = c.read().unwrap();
+                component.id() == id
+            }
+        );
+
+        if let Some(index) = index
+        {
+            self.components.remove(index);
+        }
+    }
+
     pub fn add_shared_component(&mut self, component: SharedComponentItem)
     {
         self.shared_components.push(component);
@@ -166,8 +234,7 @@ impl Node
 
         if let Some(transform_component) = transform_component
         {
-
-            if transform_component.is_enabled
+            if transform_component.get_base().is_enabled
             {
                 return
                 (
@@ -235,6 +302,17 @@ impl Node
             node.write().unwrap().update(time_delta);
         }
 
+    }
+
+    pub fn print(&self, level: usize)
+    {
+        let spaces = " ".repeat(level * 2);
+        println!("{} - (NODE) id={} name={} visible={} components={}, shared_components={}", spaces, self.id, self.name, self.visible, self.components.len(), self.shared_components.len());
+
+        for node in &self.nodes
+        {
+            node.read().unwrap().print(level + 1);
+        }
     }
 }
 

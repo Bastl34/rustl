@@ -72,10 +72,20 @@ impl State
 
     pub fn update(&mut self, time_delta: f32)
     {
-        // update scnes
+        // update scenes
         for scene in &mut self.scenes
         {
             scene.update(time_delta);
+        }
+    }
+
+    pub fn print(&self)
+    {
+        println!("SCENES:");
+        // update scnes
+        for scene in &self.scenes
+        {
+            scene.print();
         }
     }
 }

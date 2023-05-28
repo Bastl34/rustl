@@ -27,6 +27,7 @@ impl Instance
             node: node,
             transform: Transformation::new
             (
+                0,
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::new(1.0, 1.0, 1.0)
@@ -56,7 +57,7 @@ impl Instance
             id: id,
             name: name,
             node: node,
-            transform: Transformation::new(position, rotation, scale)
+            transform: Transformation::new(0, position, rotation, scale)
         };
 
         instance

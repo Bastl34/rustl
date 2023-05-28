@@ -1,11 +1,11 @@
 pub struct IdManager
 {
-    material_id: u64,
     texture_id: u64,
     node_id: u64,
     instance_id: u64,
     camera_id: u64,
     light_id: u64,
+    component_id: u64,
 }
 
 impl IdManager
@@ -14,20 +14,13 @@ impl IdManager
     {
         Self
         {
-            material_id: 0,
             texture_id: 0,
             node_id: 0,
             instance_id: 0,
             camera_id: 0,
-            light_id: 0
+            light_id: 0,
+            component_id: 0
         }
-    }
-
-    pub fn get_next_material_id(&mut self) -> u64
-    {
-        self.material_id = self.material_id + 1;
-
-        self.material_id
     }
 
     pub fn get_next_texture_id(&mut self) -> u64
@@ -63,6 +56,13 @@ impl IdManager
         self.light_id = self.light_id + 1;
 
         self.light_id
+    }
+
+    pub fn get_next_component_id(&mut self) -> u64
+    {
+        self.component_id = self.component_id + 1;
+
+        self.component_id
     }
 
 }

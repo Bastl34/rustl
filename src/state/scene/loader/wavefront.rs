@@ -158,8 +158,8 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                 }
                 else
                 {
-                    let material_id = scene.id_manager.get_next_material_id();
-                    material_arc = new_shared_component!(Material::new(material_id, ""));
+                    let component_id = scene.id_manager.get_next_component_id();
+                    material_arc = new_shared_component!(Material::new(component_id, ""));
 
                     let mut material_guard = material_arc.write().unwrap();
                     let any = material_guard.as_any_mut();
@@ -275,13 +275,13 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         material.set_texture(tex, TextureType::Shininess);
                     }
 
-                    scene.add_material(material_id, &material_arc);
-                    double_check_materials.push((wavefront_mat_id, material_id));
+                    scene.add_material(component_id, &material_arc);
+                    double_check_materials.push((wavefront_mat_id, component_id));
                 }
             }
             else
             {
-                let material_id = scene.id_manager.get_next_material_id();
+                let material_id = scene.id_manager.get_next_component_id();
                 material_arc = Arc::new(RwLock::new(Box::new(Material::new(material_id, ""))));
             }
 
@@ -295,7 +295,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                 normals_indices = indices.clone();
             }
 
-            let item = Mesh::new_with_data(verts, indices, uvs, uv_indices, normals, normals_indices);
+            let item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), verts, indices, uvs, uv_indices, normals, normals_indices);
 
             let id = scene.id_manager.get_next_node_id();
             loaded_ids.push(id);

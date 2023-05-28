@@ -60,16 +60,21 @@ impl Scene
 
     pub fn update(&mut self, time_delta: f32)
     {
-
-
-
-
         // update nodes
-        //for node in &mut self.nodes
         for node in &self.nodes
         {
-            //Node::update(node.clone(), time_delta);
             node.write().unwrap().update(time_delta);
+        }
+    }
+
+    pub fn print(&self)
+    {
+        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.len(), self.materials.len(), self.textures.len());
+
+        // print
+        for node in &self.nodes
+        {
+            node.read().unwrap().print(2);
         }
     }
 
@@ -85,13 +90,18 @@ impl Scene
 
         if self.textures.contains_key(&hash)
         {
+            println!("reusing texture {}", path);
             return Ok(self.textures.get_mut(&hash).unwrap().clone());
         }
 
         let id = self.id_manager.get_next_texture_id();
         let texture = Texture::new(id, path, &image_bytes);
 
-        Ok(Arc::new(RwLock::new(Box::new(texture))))
+        let arc = Arc::new(RwLock::new(Box::new(texture)));
+
+        self.textures.insert(hash, arc.clone());
+
+        Ok(arc)
     }
 
     pub fn add_material(&mut self, id: u64, material: &MaterialItem)
