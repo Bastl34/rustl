@@ -1,10 +1,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 use std::vec;
 
 use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
+use crate::helper;
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene, self};
 
@@ -16,10 +18,13 @@ use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::state::{State, StateItem};
 
+const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
+
 pub struct MainInterface
 {
     state: StateItem,
     render_scene: Scene,
+    start_time: Instant,
 
     wgpu: WGpu,
     window: Window,
@@ -105,6 +110,8 @@ impl MainInterface
             state,
             render_scene,
 
+            start_time: Instant::now(),
+
             wgpu,
             window,
             egui,
@@ -158,6 +165,17 @@ impl MainInterface
             {
                 state.fps += 1;
             }
+
+            // frame scale
+            let elapsed = self.start_time.elapsed();
+            let now = elapsed.as_micros();
+
+            if state.frame_update_time > 0 && now - state.frame_update_time > 0
+            {
+                state.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.frame_update_time) as f32);
+            }
+
+            state.frame_update_time = now;
         }
 
         // update scene
@@ -167,7 +185,7 @@ impl MainInterface
             let scene_id: usize = 0;
             self.render_scene.update(&mut self.wgpu, state, scene_id);
 
-            state.update(1.0); //todo: delta time
+            state.update(state.frame_scale);
         }
 
         // build ui

@@ -212,7 +212,8 @@ impl Scene
                 {
                     for instance in instances
                     {
-                        instance.apply_rotation(Vector3::<f32>::new(0.0, state.rotation_speed, 0.0));
+                        let rotation = state.rotation_speed * state.frame_scale;
+                        instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
                     }
                 }
             }

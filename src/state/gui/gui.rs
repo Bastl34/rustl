@@ -50,7 +50,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             ui.horizontal(|ui|
             {
                 ui.label("rotation speed:");
-                ui.add(egui::Slider::new(&mut state.rotation_speed, 0.0..=0.4));
+                ui.add(egui::Slider::new(&mut state.rotation_speed, 0.0..=2.0));
             });
 
             ui.horizontal(|ui|

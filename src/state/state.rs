@@ -35,6 +35,9 @@ pub struct State
     pub last_time: u128,
     pub fps: u32,
     pub last_fps: u32,
+
+    pub frame_update_time: u128,
+    pub frame_scale: f32
 }
 
 impl State
@@ -66,7 +69,10 @@ impl State
             fps_timer: Instant::now(),
             last_time: 0,
             fps: 0,
-            last_fps: 0
+            last_fps: 0,
+
+            frame_update_time: 0,
+            frame_scale: 0.0
         }
     }
 
