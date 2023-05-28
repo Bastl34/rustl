@@ -38,7 +38,7 @@ pub type CameraItem = Box<Camera>;
 #[derive(Debug, Copy, Clone)]
 pub struct Camera
 {
-    pub id: u32,
+    pub id: u64,
 
     pub width: u32,
     pub height: u32,
@@ -63,7 +63,7 @@ pub struct Camera
 
 impl Camera
 {
-    pub fn new(id: u32) -> Camera
+    pub fn new(id: u64) -> Camera
     {
         Camera
         {

@@ -8,7 +8,7 @@ pub type InstanceItem = Box<Instance>;
 
 pub struct Instance
 {
-    id: u32,
+    id: u64,
     name: String,
 
     node: NodeItem,
@@ -18,7 +18,7 @@ pub struct Instance
 
 impl Instance
 {
-    pub fn new(id: u32, name: String, node: NodeItem) -> Instance
+    pub fn new(id: u64, name: String, node: NodeItem) -> Instance
     {
         let instance = Instance
         {
@@ -36,7 +36,7 @@ impl Instance
         instance
     }
 
-    pub fn new_with_transform(id: u32, name: String, node: NodeItem, transform: Transformation) -> Instance
+    pub fn new_with_transform(id: u64, name: String, node: NodeItem, transform: Transformation) -> Instance
     {
         let instance = Instance
         {
@@ -49,7 +49,7 @@ impl Instance
         instance
     }
 
-    pub fn new_with_data(id: u32, name: String, node: NodeItem, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Instance
+    pub fn new_with_data(id: u64, name: String, node: NodeItem, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Instance
     {
         let instance = Instance
         {

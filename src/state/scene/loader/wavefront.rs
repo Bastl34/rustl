@@ -20,9 +20,9 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
+pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
-    let mut loaded_ids: Vec<u32> = vec![];
+    let mut loaded_ids: Vec<u64> = vec![];
 
     let obj_text = load_string_async(path).await?;
     let obj_cursor = Cursor::new(obj_text);
@@ -54,7 +54,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u32>>
 
     let wavefront_materials = materials.unwrap();
 
-    let mut double_check_materials: Vec<(usize, u32)> = vec![];
+    let mut double_check_materials: Vec<(usize, u64)> = vec![];
 
     for (_i, m) in models.iter().enumerate()
     {

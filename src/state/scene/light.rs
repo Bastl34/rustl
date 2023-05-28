@@ -17,7 +17,7 @@ pub enum LightType
 pub struct Light
 {
     pub enabled: bool,
-    pub id: u32,
+    pub id: u64,
     pub pos: Point3<f32>,
     pub dir: Vector3<f32>,
     pub color: Vector3<f32>,
@@ -28,7 +28,7 @@ pub struct Light
 
 impl Light
 {
-    pub fn new_point(id: u32, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_point(id: u64, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {

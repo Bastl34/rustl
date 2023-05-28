@@ -12,19 +12,19 @@ pub struct Scene
 {
     pub id_manager: IdManager,
 
-    pub id: u32,
+    pub id: u64,
     pub name: String,
 
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: Vec<LightItem>,
     pub textures: HashMap<String, TextureItem>,
-    pub materials: HashMap<u32, MaterialItem>,
+    pub materials: HashMap<u64, MaterialItem>,
 }
 
 impl Scene
 {
-    pub fn new(id: u32, name: &str) -> Scene
+    pub fn new(id: u64, name: &str) -> Scene
     {
         Self
         {
@@ -39,7 +39,7 @@ impl Scene
         }
     }
 
-    pub async fn load(&mut self, path: &str) -> anyhow::Result<Vec<u32>>
+    pub async fn load(&mut self, path: &str) -> anyhow::Result<Vec<u64>>
     {
         let extension = Path::new(path).extension();
 
@@ -94,12 +94,12 @@ impl Scene
         Ok(Arc::new(RwLock::new(Box::new(texture))))
     }
 
-    pub fn add_material(&mut self, id: u32, material: &MaterialItem)
+    pub fn add_material(&mut self, id: u64, material: &MaterialItem)
     {
         self.materials.insert(id, material.clone());
     }
 
-    pub fn get_material_by_id(&self, id: u32) -> Option<MaterialItem>
+    pub fn get_material_by_id(&self, id: u64) -> Option<MaterialItem>
     {
         if self.materials.contains_key(&id)
         {
@@ -110,7 +110,7 @@ impl Scene
         None
     }
 
-    pub fn get_material_by_id_mut(&mut self, id: u32) -> Option<MaterialItem>
+    pub fn get_material_by_id_mut(&mut self, id: u64) -> Option<MaterialItem>
     {
         if self.materials.contains_key(&id)
         {

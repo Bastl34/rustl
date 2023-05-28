@@ -81,7 +81,7 @@ impl Scene
         {
             let instance = Instance::new_with_data
             (
-                scene.id_manager.get_next_node_id(),
+                scene.id_manager.get_next_instance_id(),
                 "instance".to_string(),
                 node.clone(),
                 Vector3::<f32>::new(0.0, 0.0, 0.0),
@@ -197,7 +197,7 @@ impl Scene
 
                         let instance = Instance::new_with_data
                         (
-                            scene.id_manager.get_next_node_id(),
+                            scene.id_manager.get_next_instance_id(),
                             "instance".to_string(),
                             node_arc.clone(),
                             Vector3::<f32>::new(x, 0.0, 0.0),

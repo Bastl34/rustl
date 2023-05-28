@@ -9,7 +9,7 @@ pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
 pub struct Node
 {
-    id: u32,
+    id: u64,
     name: String,
     pub visible: bool,
 
@@ -27,7 +27,7 @@ pub struct Node
 
 impl Node
 {
-    pub fn new(id: u32, name: &str) -> NodeItem
+    pub fn new(id: u64, name: &str) -> NodeItem
     {
         let node = Self
         {

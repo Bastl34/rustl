@@ -79,7 +79,7 @@ pub struct MaterialData
 
 pub struct Material
 {
-    id: u32,
+    id: u64,
     name: String,
 
     data: MaterialData,
@@ -87,7 +87,7 @@ pub struct Material
 
 impl Material
 {
-    pub fn new(id: u32, name: &str) -> Material
+    pub fn new(id: u64, name: &str) -> Material
     {
         let material_data = MaterialData
         {

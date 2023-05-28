@@ -10,7 +10,7 @@ pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 #[derive(Debug)]
 pub struct Texture
 {
-    pub id: u32,
+    pub id: u64,
     pub name: String,
     pub hash: String,
 
@@ -31,7 +31,7 @@ impl Texture
         }
     }
 
-    pub fn new(id: u32, name: &str, image_bytes: &Vec<u8>) -> Texture
+    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>) -> Texture
     {
         let image = image::load_from_memory(image_bytes.as_slice()).unwrap();
         let rgba = image.to_rgba8();
