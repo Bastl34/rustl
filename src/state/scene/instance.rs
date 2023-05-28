@@ -2,59 +2,99 @@ use nalgebra::{Rotation3, Matrix3, Matrix4, Vector3};
 
 use crate::rendering::instance::InstanceRaw;
 
+use super::{node::{NodeItem, Node}, components::{component::ComponentItem, transformation::{Transformation, self}}};
+
+pub type InstanceItem = Box<Instance>;
+
 pub struct Instance
 {
-    pub position: Vector3<f32>,
-    pub rotation: Vector3<f32>,
-    pub scale: Vector3<f32>,
+    id: u32,
+    name: String,
+
+    node: NodeItem,
+
+    transform: Transformation
 }
 
 impl Instance
 {
-    pub fn new(position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Instance
+    pub fn new(id: u32, name: String, node: NodeItem) -> Instance
     {
-        Instance
+        let instance = Instance
         {
-            position,
-            rotation,
-            scale
-        }
+            id: id,
+            name: name,
+            node: node,
+            transform: Transformation::new
+            (
+                Vector3::<f32>::zeros(),
+                Vector3::<f32>::zeros(),
+                Vector3::<f32>::new(1.0, 1.0, 1.0)
+            )
+        };
+
+        instance
     }
 
-    pub fn get_transform(&self) -> InstanceRaw
+    pub fn new_with_transform(id: u32, name: String, node: NodeItem, transform: Transformation) -> Instance
     {
-        let translation = nalgebra::Isometry3::translation(self.position.x, self.position.y, self.position.z).to_homogeneous();
-
-        let scale = Matrix4::new_nonuniform_scaling(&self.scale);
-
-        let rotation_x  = Rotation3::from_euler_angles(self.rotation.x, 0.0, 0.0).to_homogeneous();
-        let rotation_y  = Rotation3::from_euler_angles(0.0, self.rotation.y, 0.0).to_homogeneous();
-        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, self.rotation.z).to_homogeneous();
-
-        let mut rotation = rotation_x;
-        rotation = rotation * rotation_y;
-        rotation = rotation * rotation_z;
-
-        let mut trans = Matrix4::<f32>::identity();
-        trans = trans * translation;
-        trans = trans * scale;
-        trans = trans * rotation;
-
-        let col0 = rotation.column(0).xyz();
-        let col1 = rotation.column(1).xyz();
-        let col2 = rotation.column(2).xyz();
-
-        let normal_matrix = Matrix3::from_columns
-        (&[
-            col0,
-            col1,
-            col2
-        ]);
-
-        InstanceRaw
+        let instance = Instance
         {
-            model: trans.into(),
-            normal: normal_matrix.into()
-        }
+            id: id,
+            name: name,
+            node: node,
+            transform: transform
+        };
+
+        instance
     }
+
+    pub fn new_with_data(id: u32, name: String, node: NodeItem, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Instance
+    {
+        let instance = Instance
+        {
+            id: id,
+            name: name,
+            node: node,
+            transform: Transformation::new(position, rotation, scale)
+        };
+
+        instance
+    }
+
+    pub fn get_transform(&self) -> (Matrix4::<f32>, Matrix3::<f32>)
+    {
+        let node_transform = Node::get_full_transform(self.node.clone());
+
+        (
+            node_transform.0 * self.transform.get_transform(),
+            node_transform.1 * self.transform.get_normal_matrix(),
+        )
+    }
+
+    pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)
+    {
+        self.transform.apply_transformation(position, scale, rotation);
+    }
+
+    pub fn apply_translation(&mut self, translation: Vector3<f32>)
+    {
+        self.transform.apply_translation(translation);
+    }
+
+    pub fn apply_scale(&mut self, scale: Vector3<f32>)
+    {
+        self.transform.apply_scale(scale);
+    }
+
+    pub fn apply_rotation(&mut self, rotation: Vector3<f32>)
+    {
+        self.transform.apply_rotation(rotation);
+        self.transform.calc_transform();
+    }
+
+    pub fn update(&mut self, time_delta: f32)
+    {
+    }
+
 }

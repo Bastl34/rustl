@@ -9,7 +9,7 @@ use super::wgpu::WGpu;
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceRaw
 {
-    pub model: [[f32; 4]; 4],
+    pub transform: [[f32; 4]; 4],
     pub normal: [[f32; 3]; 3],
 }
 
@@ -69,9 +69,20 @@ impl InstanceRaw
     }
 }
 
-pub fn instances_to_buffer(wgpu: &mut WGpu, instances: &Vec<Instance>) -> Buffer
+pub fn instances_to_buffer(wgpu: &mut WGpu, instances: &Vec<Box<Instance>>) -> Buffer
 {
-    let instance_data = instances.iter().map(Instance::get_transform).collect::<Vec<_>>();
+    //let instance_data = instances.iter().map(Instance::get_transform).collect::<Vec<_>>();
+
+    let instance_data = instances.iter().map(|instance|
+    {
+        let (transform, normal) = instance.get_transform();
+
+        InstanceRaw
+        {
+            transform: transform.into(),
+            normal: normal.into()
+        }
+    }).collect::<Vec<_>>();
 
     wgpu.device().create_buffer_init
     (

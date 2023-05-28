@@ -1,6 +1,8 @@
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
+use crate::state::scene::node::{NodeItem, Node};
+
 pub type ComponentItem = Box<dyn Component + Send + Sync>;
 pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
 //pub type SharedComponentItem = Arc<RwLock<Box<dyn Any + Send + Sync>>>;

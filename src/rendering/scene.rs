@@ -2,7 +2,7 @@ use log::info;
 use nalgebra::{Vector3, Point3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{camera::Camera, instance::Instance}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
+use crate::{state::{state::{State}, scene::{camera::Camera, instance::{Instance, self}, components::transformation::Transformation}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -24,7 +24,7 @@ pub struct Scene
 
     buffer: VertexBuffer,
 
-    instances: Vec<Instance>,
+    instance_amount: u32,
     instance_buffer: wgpu::Buffer,
 
     camera_uniform: CameraUniform,
@@ -78,10 +78,27 @@ impl Scene
         let light = &scene.lights[0]; // TODO
         let mut light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
 
-        let mut instances = vec![];
-        instances.push(Instance::new(Vector3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(0.0, 2.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
+        {
+            let instance = Instance::new_with_data
+            (
+                scene.id_manager.get_next_node_id(),
+                "instance".to_string(),
+                node.clone(),
+                Vector3::<f32>::new(0.0, 0.0, 0.0),
+                Vector3::<f32>::new(0.0, 2.0, 0.0),
+                Vector3::<f32>::new(1.0, 1.0, 1.0)
+            );
 
-        let instance_buffer = instances_to_buffer(wgpu, &instances);
+            node.write().unwrap().add_instance(Box::new(instance));
+        }
+
+        let instance_buffer;
+        let instance_amount;
+        {
+            let node = node.read().unwrap();
+            instance_buffer = instances_to_buffer(wgpu, &node.instances);
+            instance_amount = node.instances.len();
+        }
 
         let base_texture;
         let normal_texture;
@@ -129,7 +146,8 @@ impl Scene
             depth_buffer_texture,
             depth_pass_buffer_texture,
             buffer,
-            instances,
+
+            instance_amount: instance_amount as u32,
             instance_buffer,
 
             camera_uniform: camera_uniform,
@@ -160,27 +178,69 @@ impl Scene
         self.color_pipe.update_camera(wgpu, &self.camera_uniform);
         self.depth_pipe.update_camera(wgpu, &self.camera_uniform);
 
-        if self.instances.len() != state.instances as usize
-        {
-            self.instances.clear();
+        let node_id = 1;
 
-            for i in 0..state.instances
+        {
+            let node_arc = scene.nodes.get_mut(node_id).unwrap();
+            let mut node = node_arc.write().unwrap();
+
             {
-                let x = (i as f32 * 5.0) - ((state.instances - 1) as f32 * 5.0) / 2.0;
-                self.instances.push(Instance::new(Vector3::<f32>::new(x, 0.0, 0.0), Vector3::<f32>::new(0.0, i as f32, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0)));
+                let instances = &mut node.instances;
+
+                if instances.len() != state.instances as usize
+                {
+                    instances.clear();
+
+                    for i in 0..state.instances
+                    {
+                        let x = (i as f32 * 5.0) - ((state.instances - 1) as f32 * 5.0) / 2.0;
+
+                        let instance = Instance::new_with_data
+                        (
+                            scene.id_manager.get_next_node_id(),
+                            "instance".to_string(),
+                            node_arc.clone(),
+                            Vector3::<f32>::new(x, 0.0, 0.0),
+                            Vector3::<f32>::new(0.0, i as f32, 0.0),
+                            Vector3::<f32>::new(1.0, 1.0, 1.0)
+                        );
+
+                        node.add_instance(Box::new(instance));
+                    }
+                }
+                else
+                {
+                    for instance in instances
+                    {
+                        instance.apply_rotation(Vector3::<f32>::new(0.0, state.rotation_speed, 0.0));
+                    }
+                }
             }
         }
-        else
         {
-            for instance in &mut self.instances
+            let node_arc = scene.nodes.get_mut(node_id).unwrap();
+            let node = node_arc.read().unwrap();
+
+            if node.instances.len() > 0
             {
-                instance.rotation.y += state.rotation_speed;
+                self.instance_buffer = instances_to_buffer(wgpu, &node.instances);
             }
+
+            self.instance_amount = node.instances.len() as u32;
         }
 
-        if self.instances.len() > 0
         {
-            self.instance_buffer = instances_to_buffer(wgpu, &self.instances);
+            /*
+            let node_arc = scene.nodes.get_mut(node_id).unwrap();
+            let mut node_write = node_arc.write().unwrap();
+
+            let transform = node_write.find_component_mut::<Transformation>();
+            */
+            //transform.unwrap().calc_full_transform(node_arc.clone());
+            //transform.unwrap().calc_full_transform(node_write.as_mut());
+            //transform.unwrap().calc_full_transform(node_arc.clone());
+
+            let node_arc = scene.nodes.get_mut(node_id).unwrap();
         }
 
         // light
@@ -290,7 +350,7 @@ impl Scene
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
         render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instances.len() as _);
+        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
     }
 
     fn render_color(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
@@ -334,7 +394,7 @@ impl Scene
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
         render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instances.len() as _);
+        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
     }
 }
 

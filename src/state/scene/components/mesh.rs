@@ -3,6 +3,8 @@ use std::any::Any;
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
+use crate::state::scene::node::{NodeItem, Node};
+
 use super::component::Component;
 
 pub struct MeshData

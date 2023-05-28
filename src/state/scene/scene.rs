@@ -60,9 +60,15 @@ impl Scene
 
     pub fn update(&mut self, time_delta: f32)
     {
+
+
+
+
         // update nodes
-        for node in &mut self.nodes
+        //for node in &mut self.nodes
+        for node in &self.nodes
         {
+            //Node::update(node.clone(), time_delta);
             node.write().unwrap().update(time_delta);
         }
     }

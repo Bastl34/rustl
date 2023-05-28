@@ -1,8 +1,8 @@
-use std::any::Any;
+use std::{any::Any, ops::Mul};
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::state::scene::node::NodeItem;
+use crate::state::scene::node::{NodeItem, Node};
 
 use super::component::Component;
 
@@ -22,6 +22,7 @@ pub struct TransformationData
 
 pub struct Transformation
 {
+    pub is_enabled: bool,
     data: TransformationData
 }
 
@@ -43,7 +44,40 @@ impl Transformation
             normal: Matrix3::<f32>::identity(),
         };
 
-        Transformation { data: data }
+        let mut transform = Transformation
+        {
+            is_enabled: true,
+            data: data
+        };
+        transform.calc_transform();
+
+        transform
+    }
+
+    pub fn identity() -> Transformation
+    {
+        let data = TransformationData
+        {
+            parent_inheritance: true,
+
+            position: Vector3::<f32>::new(0.0, 0.0, 0.0),
+            rotation: Vector3::<f32>::new(0.0, 0.0, 0.0),
+            scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
+
+            trans: Matrix4::<f32>::identity(),
+            tran_inverse: Matrix4::<f32>::identity(),
+
+            normal: Matrix3::<f32>::identity(),
+        };
+
+        let mut transform = Transformation
+        {
+            is_enabled: true,
+            data: data
+        };
+        transform.calc_transform();
+
+        transform
     }
 
     pub fn get_data(&self) -> &TransformationData
@@ -56,7 +90,12 @@ impl Transformation
         &mut self.data
     }
 
-    pub fn calc_transform(&self) -> (Matrix4::<f32>, Matrix3::<f32>)
+    pub fn has_parent_inheritance(&self) -> bool
+    {
+        self.data.parent_inheritance
+    }
+
+    pub fn calc_transform(&mut self)
     {
         let translation = nalgebra::Isometry3::translation(self.data.position.x, self.data.position.y, self.data.position.z).to_homogeneous();
 
@@ -91,47 +130,10 @@ impl Transformation
             col2
         ]);
 
-        (trans, normal_matrix)
-    }
-
-    fn get_full_transform(&self, node: NodeItem) -> (Matrix4::<f32>, Matrix3::<f32>)
-    {
-        let transform = self.calc_transform();
-
-        let mut parent_transform = (Matrix4::<f32>::identity(), Matrix3::<f32>::identity());
-
-        let node = node.read().unwrap();
-        if node.parent.is_some()
-        {
-            let parent_node = node.parent.clone().unwrap();
-            let parent_read = parent_node.read().unwrap();
-
-            let parent_transform_component = parent_read.find_component::<Transformation>();
-
-            if let Some(parent_transform_component) = parent_transform_component
-            {
-                let data = parent_transform_component.get_data();
-
-                if data.parent_inheritance
-                {
-                    parent_transform = parent_transform_component.get_full_transform(parent_node.clone()).clone();
-                }
-            }
-        }
-
-        // 0 = transformation, 1 = normal matrix
-        (
-            parent_transform.0 * transform.0,
-            parent_transform.1 * transform.1,
-        )
-    }
-
-    pub fn calc_full_transform(&mut self, node: NodeItem)
-    {
-        let trans = self.get_full_transform(node);
-        self.data.trans = trans.0;
-        self.data.normal = trans.1;
+        self.data.trans = trans;
+        self.data.normal = normal_matrix;
         self.data.tran_inverse = self.data.trans.try_inverse().unwrap();
+
     }
 
     pub fn get_transform(&self) -> &Matrix4::<f32>
@@ -148,13 +150,47 @@ impl Transformation
     {
         &self.data.normal
     }
+
+    pub fn apply_transformation(&mut self, translation: Vector3<f32>, scale: Vector3<f32>, rotation: Vector3<f32>)
+    {
+        self.data.position += translation;
+        self.data.scale.x *= scale.x;
+        self.data.scale.y *= scale.y;
+        self.data.scale.z *= scale.z;
+        self.data.rotation += rotation;
+
+        self.calc_transform();
+    }
+
+    pub fn apply_translation(&mut self, translation: Vector3<f32>)
+    {
+        self.data.position += translation;
+
+        self.calc_transform();
+    }
+
+    pub fn apply_scale(&mut self, scale: Vector3<f32>)
+    {
+        self.data.scale.x *= scale.x;
+        self.data.scale.y *= scale.y;
+        self.data.scale.z *= scale.z;
+
+        self.calc_transform();
+    }
+
+    pub fn apply_rotation(&mut self, rotation: Vector3<f32>)
+    {
+        self.data.rotation += rotation;
+
+        self.calc_transform();
+    }
 }
 
 impl Component for Transformation
 {
     fn is_enabled(&self) -> bool
     {
-        true
+        self.is_enabled
     }
 
     fn component_name(&self) -> &'static str
@@ -164,7 +200,6 @@ impl Component for Transformation
 
     fn update(&mut self, time_delta: f32)
     {
-        // TODO
     }
 
     fn as_any(&self) -> &dyn Any

@@ -3,6 +3,7 @@ pub struct IdManager
     material_id: u32,
     texture_id: u32,
     node_id: u32,
+    instance_id: u32,
     camera_id: u32,
     light_id: u32,
 }
@@ -16,6 +17,7 @@ impl IdManager
             material_id: 0,
             texture_id: 0,
             node_id: 0,
+            instance_id: 0,
             camera_id: 0,
             light_id: 0
         }
@@ -40,6 +42,13 @@ impl IdManager
         self.node_id = self.node_id + 1;
 
         self.node_id
+    }
+
+    pub fn get_next_instance_id(&mut self) -> u32
+    {
+        self.instance_id = self.instance_id + 1;
+
+        self.instance_id
     }
 
     pub fn get_next_camera_id(&mut self) -> u32

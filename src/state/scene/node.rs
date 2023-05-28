@@ -1,9 +1,9 @@
 use std::{sync::{Arc, RwLock}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4};
+use nalgebra::{Matrix4, Matrix3};
 
-use super::components::{component::{ComponentItem, SharedComponentItem}, mesh::Mesh, transformation::Transformation};
+use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation}, instance::InstanceItem};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
@@ -16,9 +16,10 @@ pub struct Node
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
+    pub instances: Vec<InstanceItem>,
 
-    components: Vec<ComponentItem>,
-    shared_components: Vec<SharedComponentItem>,
+    pub components: Vec<ComponentItem>,
+    pub shared_components: Vec<SharedComponentItem>,
 
     // bounding box
     b_box_node_index: usize,
@@ -39,6 +40,7 @@ impl Node
 
             parent: None,
             nodes: vec![],
+            instances: vec![],
 
             b_box_node_index: 0
         };
@@ -153,6 +155,60 @@ impl Node
         self.shared_components.push(component);
     }
 
+    fn get_mesh(&self) -> Option<Box<&Mesh>>
+    {
+        self.find_component::<Mesh>()
+    }
+
+    pub fn get_transform(&self) -> (Matrix4<f32>, Matrix3<f32>)
+    {
+        let transform_component = self.find_component::<Transformation>();
+
+        if let Some(transform_component) = transform_component
+        {
+
+            if transform_component.is_enabled
+            {
+                return
+                (
+                    transform_component.get_transform().clone(),
+                    transform_component.get_normal_matrix().clone()
+                );
+            }
+        }
+
+        (
+            Matrix4::<f32>::identity(),
+            Matrix3::<f32>::identity()
+        )
+    }
+
+    pub fn get_full_transform(node: NodeItem) -> (Matrix4<f32>, Matrix3<f32>)
+    {
+        let node = node.read().unwrap();
+
+        let node_transform = node.get_transform();
+        let mut parent_transform = (Matrix4::<f32>::identity(), Matrix3::<f32>::identity());
+
+        if let Some(parent_node) = &node.parent
+        {
+            let parent = parent_node.read().unwrap();
+
+            parent_transform = parent.get_transform();
+        }
+
+        // 0 = transformation, 1 = normal matrix
+        (
+            parent_transform.0 * node_transform.0,
+            parent_transform.1 * node_transform.1,
+        )
+    }
+
+    pub fn add_instance(&mut self, instance: InstanceItem)
+    {
+        self.instances.push(instance);
+    }
+
     pub fn update(&mut self, time_delta: f32)
     {
         // update components
@@ -167,11 +223,18 @@ impl Node
             component_write.update(time_delta);
         }
 
+        // update instances
+        for instance in &mut self.instances
+        {
+            instance.update(time_delta);
+        }
+
         // update nodes
         for node in &mut self.nodes
         {
             node.write().unwrap().update(time_delta);
         }
+
     }
 }
 
@@ -180,21 +243,16 @@ impl Bounded for Node
 {
     fn aabb(&self) -> bvh::aabb::AABB
     {
-        let mesh_component = self.find_component::<Mesh>();
-        let transform_component = self.find_component::<Transformation>();
+        let mesh = self.get_mesh();
 
-        if mesh_component.is_none()
+        if mesh.is_none()
         {
             return bvh::aabb::AABB::empty();
         }
 
-        let mut trans = Matrix4::<f32>::identity();
-        if transform_component.is_some()
-        {
-            trans = transform_component.unwrap().get_transform().clone();
-        }
+        let (trans, _) = self.get_transform();
 
-        let mesh_data = mesh_component.unwrap().get_data();
+        let mesh_data = mesh.unwrap().get_data();
 
         let aabb = mesh_data.b_box;
         let verts = aabb.vertices();
