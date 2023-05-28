@@ -32,7 +32,6 @@ impl Vertex
     }
 }
 
-
 pub struct VertexBuffer
 {
     pub name: String,
