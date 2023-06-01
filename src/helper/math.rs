@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use nalgebra::{Vector4, Matrix4};
+use nalgebra::{Vector4};
 
 pub fn approx_equal(a: f32, b: f32) -> bool
 {

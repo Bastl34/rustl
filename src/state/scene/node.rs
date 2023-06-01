@@ -301,7 +301,24 @@ impl Node
         {
             node.write().unwrap().update(frame_scale);
         }
+    }
 
+    pub fn merge_mesh(&mut self, node: &NodeItem) -> bool
+    {
+        let merge_read = node.read().unwrap();
+        let merge_mesh = merge_read.find_component::<Mesh>();
+        let current_mesh = self.find_component_mut::<Mesh>();
+
+        if current_mesh.is_none() || merge_mesh.is_none()
+        {
+            println!("can not merge node -> can not merge empty mesh");
+            return false;
+        }
+
+        let mesh_data = merge_mesh.unwrap().get_data();
+        current_mesh.unwrap().merge(mesh_data);
+
+        true
     }
 
     pub fn print(&self, level: usize)

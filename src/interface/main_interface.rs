@@ -6,7 +6,6 @@ use std::vec;
 use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
-use crate::helper;
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene, self};
 
@@ -48,11 +47,18 @@ impl MainInterface
 
             // ********** models **********
             scene.load("objects/bastl/bastl.obj").await.unwrap();
+            let n0 = scene.nodes.get(0).unwrap().clone();
+            let n1 = scene.nodes.get_mut(1).unwrap().clone();
+            n1.write().unwrap().merge_mesh(&n0);
+
+            scene.nodes.remove(0);
+
+
             scene.load("objects/cube/cube.obj").await.unwrap();
             scene.load("objects/plane/plane.obj").await.unwrap();
 
             {
-                let node_id = 1;
+                let node_id = 0;
                 let node = scene.nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();

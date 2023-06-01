@@ -35,7 +35,7 @@ impl Scene
 {
     pub async fn new(wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>) -> Scene
     {
-        let node_id = 1;
+        let node_id = 0;
         let node = scene.nodes.get_mut(node_id).unwrap();
 
         /*
@@ -178,7 +178,7 @@ impl Scene
         self.color_pipe.update_camera(wgpu, &self.camera_uniform);
         self.depth_pipe.update_camera(wgpu, &self.camera_uniform);
 
-        let node_id = 1;
+        let node_id = 0;
 
         {
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
