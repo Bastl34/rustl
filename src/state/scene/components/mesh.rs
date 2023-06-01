@@ -3,8 +3,6 @@ use std::any::Any;
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
-use crate::state::scene::node::{NodeItem, Node};
-
 use super::component::{Component, ComponentBase};
 
 pub struct MeshData
@@ -34,7 +32,7 @@ impl Mesh
 {
     pub fn new_with_data(id: u64, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
-        let mut mesh_data = MeshData
+        let mesh_data = MeshData
         {
             mesh: TriMesh::new(vertices.clone(), indices.clone()),
 

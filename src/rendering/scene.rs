@@ -397,6 +397,7 @@ impl Scene
         render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
     }
+
 }
 
 impl WGpuRendering for Scene
