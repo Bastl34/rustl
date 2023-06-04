@@ -21,6 +21,11 @@ mod state
 {
     pub(crate) mod state;
 
+    pub(crate) mod helper
+    {
+        pub(crate) mod render_item;
+    }
+
     pub(crate) mod scene
     {
         pub(crate) mod manager

@@ -3,11 +3,10 @@ use std::sync::{RwLock, Arc};
 use image::{DynamicImage, GenericImageView, Pixel};
 use nalgebra::Vector4;
 
-use crate::helper;
+use crate::{helper, state::helper::render_item::RenderItemOption};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
-#[derive(Debug)]
 pub struct Texture
 {
     pub id: u64,
@@ -15,6 +14,8 @@ pub struct Texture
     pub hash: String,
 
     pub image: DynamicImage,
+
+    pub render_item: RenderItemOption
 }
 
 impl Texture
@@ -27,7 +28,9 @@ impl Texture
             name: "empty".to_string(),
             hash: "".to_string(),
 
-            image: DynamicImage::new_rgba8(0,0)
+            image: DynamicImage::new_rgba8(0,0),
+
+            render_item: None
         }
     }
 
@@ -45,7 +48,9 @@ impl Texture
             name: name.to_string(),
             hash,
 
-            image: image::DynamicImage::ImageRgba8(rgba)
+            image: image::DynamicImage::ImageRgba8(rgba),
+
+            render_item: None
         }
     }
 

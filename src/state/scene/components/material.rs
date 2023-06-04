@@ -4,6 +4,7 @@ use std::any::Any;
 use nalgebra::{Vector3, Vector4};
 use parry3d::partitioning::NodeIndex;
 
+use crate::{component_impl_default};
 use crate::state::scene::node::{Node, NodeItem};
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
@@ -37,7 +38,6 @@ pub enum TextureFiltering
     Linear
 }
 
-#[derive(Debug)]
 pub struct MaterialData
 {
     pub ambient_color: Vector3<f32>,
@@ -128,14 +128,7 @@ impl Material
 
         Material
         {
-            base: ComponentBase
-            {
-                id: id,
-                is_enabled: true,
-                component_name: "Transformation".to_string(),
-                name: name.to_string(),
-            },
-
+            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string()),
             data: material_data
         }
     }
@@ -518,28 +511,10 @@ impl Material
 
 impl Component for Material
 {
-    fn get_base(&self) -> &ComponentBase
-    {
-        &self.base
-    }
-
-    fn get_base_mut(&mut self) -> &mut ComponentBase
-    {
-        &mut self.base
-    }
+    component_impl_default!();
 
     fn update(&mut self, frame_scale: f32)
     {
         // TODO
-    }
-
-    fn as_any(&self) -> &dyn Any
-    {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any
-    {
-        self
     }
 }

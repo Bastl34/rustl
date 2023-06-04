@@ -1,5 +1,7 @@
 use nalgebra::{Point3, Vector3};
 
+use crate::state::helper::render_item::{RenderItemOption};
+
 pub type LightItem = Box<Light>;
 
 // ******************** LightType ********************
@@ -23,7 +25,9 @@ pub struct Light
     pub color: Vector3<f32>,
     pub intensity: f32,
     pub max_angle: f32, //in rad
-    pub light_type: LightType
+    pub light_type: LightType,
+
+    pub render_item: RenderItemOption
 }
 
 impl Light
@@ -39,7 +43,9 @@ impl Light
             color: color,
             intensity: intensity,
             max_angle: 0.0,
-            light_type: LightType::Point
+            light_type: LightType::Point,
+
+            render_item: None
         }
     }
 

@@ -1,7 +1,7 @@
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance, self}}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::material::Material}, helper::render_item::{get_render_item, RenderItemType}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -18,8 +18,8 @@ pub struct Scene
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
 
-    base_texture: Texture,
-    normal_texture: Texture,
+    //base_texture: Texture,
+    //normal_texture: Texture,
 
     buffer: VertexBuffer,
 
@@ -99,45 +99,55 @@ impl Scene
             instance_amount = node.instances.len();
         }
 
-        let base_texture;
-        let normal_texture;
+        let color_pipe;
+        let depth_pipe;
+        let depth_buffer_texture;
+        let depth_pass_buffer_texture;
         {
-            let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
-            let mat = mat.read().unwrap();
-            let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
-            let mat_data = mat.get_data();
+            let mat = node.write().unwrap().find_shared_component::<MaterialComponent>().unwrap();
+            let mut mat = mat.write().unwrap();
+            let mat = mat.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+            let mat_data = mat.get_data_mut();
 
-            let base_tex = mat_data.texture_base.as_ref().unwrap().read().unwrap();
-            let normal_tex = mat_data.texture_normal.as_ref().unwrap().read().unwrap();
+            let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
+            let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();
 
-            base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
-            normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
+            let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
+            let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
+
+
+
+            depth_buffer_texture = Texture::new_depth_texture(wgpu);
+            depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
+
+            let depth_buffer_texture = Texture::new_depth_texture(wgpu);
+
+             // ********** depth pass **********
+             let mut textures = vec![];
+             textures.push(&base_texture);
+             textures.push(&normal_texture);
+
+             let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
+             depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
+
+             // ********** color pass **********
+            //let mut textures = vec![];
+            textures.push(&depth_pass_buffer_texture);
+
+            let shader_source = resources::load_string_async("shader/phong.wgsl").await.unwrap();
+            color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
+
+
+            base_tex.render_item = Some(Box::new(base_texture));
+            normal_tex.render_item = Some(Box::new(normal_texture));
         }
-
-        let depth_buffer_texture = Texture::new_depth_texture(wgpu);
-        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
-
-         // ********** depth pass **********
-         let mut textures = vec![];
-         textures.push(&base_texture);
-         textures.push(&normal_texture);
-
-         let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
-         let depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
-
-         // ********** color pass **********
-        //let mut textures = vec![];
-        textures.push(&depth_pass_buffer_texture);
-
-        let shader_source = resources::load_string_async("shader/phong.wgsl").await.unwrap();
-        let color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
 
         Self
         {
             clear_color: wgpu::Color::BLACK,
 
-            base_texture,
-            normal_texture,
+            //base_texture,
+            //normal_texture,
 
             color_pipe,
             depth_pipe,
@@ -256,11 +266,34 @@ impl Scene
 
         if state.save_image
         {
-            let img_data = self.base_texture.to_image(wgpu);
-            img_data.save("data/base_texture.png").unwrap();
+            let node_arc = scene.nodes.get(node_id).unwrap();
+            //let node = node_arc.read().unwrap();
 
-            let img_data = self.normal_texture.to_image(wgpu);
-            img_data.save("data/normal_texture.png").unwrap();
+            let mat = node_arc.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
+            let mat = mat.read().unwrap();
+            let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+
+            let data = mat.get_data();
+
+            {
+                let base_tex = data.texture_base.clone().unwrap();
+                let base_tex = base_tex.read().unwrap();
+                let render_item = base_tex.render_item.as_ref().unwrap();
+                let render_item = get_render_item::<Texture>(&render_item);
+
+                let img_data = render_item.to_image(wgpu);
+                img_data.save("data/base_texture.png").unwrap();
+            }
+
+            {
+                let base_tex = data.texture_normal.clone().unwrap();
+                let base_tex = base_tex.read().unwrap();
+                let render_item = base_tex.render_item.as_ref().unwrap();
+                let render_item = get_render_item::<Texture>(&render_item);
+
+                let img_data = render_item.to_image(wgpu);
+                img_data.save("data/normal_texture.png").unwrap();
+            }
 
             state.save_image = false;
         }

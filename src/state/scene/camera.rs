@@ -1,6 +1,6 @@
 use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3};
 
-use crate::helper::math::approx_equal;
+use crate::{helper::math::approx_equal, state::helper::render_item::{RenderItemOption}};
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -35,7 +35,6 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
 
 pub type CameraItem = Box<Camera>;
 
-#[derive(Debug, Copy, Clone)]
 pub struct Camera
 {
     pub id: u64,
@@ -59,6 +58,8 @@ pub struct Camera
 
     pub projection_inverse: Matrix4<f32>,
     pub view_inverse: Matrix4<f32>,
+
+    pub render_item: RenderItemOption
 }
 
 impl Camera
@@ -87,6 +88,8 @@ impl Camera
 
             projection_inverse: Matrix4::<f32>::identity(),
             view_inverse: Matrix4::<f32>::identity(),
+
+            render_item: None
         }
     }
 

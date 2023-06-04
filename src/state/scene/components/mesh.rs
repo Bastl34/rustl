@@ -3,6 +3,8 @@ use std::any::Any;
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
+use crate::component_impl_default;
+
 use super::component::{Component, ComponentBase};
 
 pub struct MeshData
@@ -49,13 +51,7 @@ impl Mesh
 
         let mut mesh = Mesh
         {
-            base: ComponentBase
-            {
-                id: id,
-                is_enabled: true,
-                component_name: "Mesh".to_string(),
-                name: "".to_string()
-            },
+            base: ComponentBase::new(id, "".to_string(), "Mesh".to_string()),
             data: mesh_data
         };
 
@@ -231,28 +227,10 @@ impl Mesh
 
 impl Component for Mesh
 {
-    fn get_base(&self) -> &ComponentBase
-    {
-        &self.base
-    }
-
-    fn get_base_mut(&mut self) -> &mut ComponentBase
-    {
-        &mut self.base
-    }
+    component_impl_default!();
 
     fn update(&mut self, frame_scale: f32)
     {
         // TODO
-    }
-
-    fn as_any(&self) -> &dyn Any
-    {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any
-    {
-        self
     }
 }

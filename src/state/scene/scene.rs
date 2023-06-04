@@ -2,7 +2,7 @@ use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}};
 
 use anyhow::Ok;
 
-use crate::{resources::resources, helper};
+use crate::{resources::resources, helper, state::helper::render_item::RenderItemOption};
 
 use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
 
@@ -20,6 +20,8 @@ pub struct Scene
     pub lights: Vec<LightItem>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
+
+    pub render_item: RenderItemOption
 }
 
 impl Scene
@@ -36,6 +38,8 @@ impl Scene
             lights: vec![],
             textures: HashMap::new(),
             materials: HashMap::new(),
+
+            render_item: None
         }
     }
 

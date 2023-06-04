@@ -1,8 +1,8 @@
-use nalgebra::{Rotation3, Matrix3, Matrix4, Vector3};
+use nalgebra::{Matrix3, Matrix4, Vector3};
 
-use crate::rendering::instance::InstanceRaw;
+use crate::{state::helper::render_item::{RenderItemOption}};
 
-use super::{node::{NodeItem, Node}, components::{component::ComponentItem, transformation::{Transformation, self}}};
+use super::{node::{NodeItem, Node}, components::{transformation::{Transformation}}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -13,7 +13,9 @@ pub struct Instance
 
     node: NodeItem,
 
-    transform: Transformation
+    transform: Transformation,
+
+    pub render_item: RenderItemOption
 }
 
 impl Instance
@@ -31,7 +33,8 @@ impl Instance
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::new(1.0, 1.0, 1.0)
-            )
+            ),
+            render_item: None
         };
 
         instance
@@ -44,7 +47,8 @@ impl Instance
             id: id,
             name: name,
             node: node,
-            transform: transform
+            transform: transform,
+            render_item: None
         };
 
         instance
@@ -57,7 +61,8 @@ impl Instance
             id: id,
             name: name,
             node: node,
-            transform: Transformation::new(0, position, rotation, scale)
+            transform: Transformation::new(0, position, rotation, scale),
+            render_item: None
         };
 
         instance

@@ -1,7 +1,7 @@
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
-use crate::state::scene::node::{NodeItem, Node};
+use crate::state::helper::render_item::{RenderItemOption};
 
 pub type ComponentItem = Box<dyn Component + Send + Sync>;
 pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -11,11 +11,10 @@ pub trait Component: Any
 {
     fn get_base(&self) -> &ComponentBase;
     fn get_base_mut(&mut self) -> &mut ComponentBase;
-
-    fn update(&mut self, frame_scale: f32);
-
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn update(&mut self, frame_scale: f32);
 
     fn id(&self) -> u64
     {
@@ -46,17 +45,54 @@ pub struct ComponentBase
     pub is_enabled: bool,
     pub name: String,
     pub component_name: String,
+
+    pub render_item: RenderItemOption
 }
 
-/*
-impl<T: Component + 'static> Component for T
+impl ComponentBase
 {
-    fn as_any(&self) -> &dyn Any
+    pub fn new(id: u64, name: String, component_name: String) -> ComponentBase
     {
-        self
+        ComponentBase
+        {
+            id,
+            name,
+            component_name,
+            is_enabled: true,
+            render_item: None
+        }
     }
 }
-*/
+
+
+//https://stackoverflow.com/questions/65380698/trait-with-default-implementation-and-required-struct-member
+#[macro_export]
+macro_rules! component_impl_default
+{
+    () =>
+    {
+        fn as_any(&self) -> &dyn Any
+        {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any
+        {
+            self
+        }
+
+        fn get_base(&self) -> &ComponentBase
+        {
+            &self.base
+        }
+
+        fn get_base_mut(&mut self) -> &mut ComponentBase
+        {
+            &mut self.base
+        }
+    };
+}
+
 
 /*
 #[macro_export]

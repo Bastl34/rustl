@@ -1,6 +1,8 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
+use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
+
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
 pub struct Texture
@@ -16,6 +18,11 @@ pub struct Texture
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     sampler: wgpu::Sampler,
+}
+
+impl RenderItem for Texture
+{
+    render_item_impl_default!();
 }
 
 impl Texture

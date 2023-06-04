@@ -2,7 +2,7 @@ use std::{any::Any, ops::Mul};
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::state::scene::node::{NodeItem, Node};
+use crate::{state::scene::node::{NodeItem, Node}, component_impl_default};
 
 use super::component::{Component, ComponentBase};
 
@@ -46,13 +46,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase
-            {
-                id: id,
-                is_enabled: true,
-                component_name: "Transformation".to_string(),
-                name: "".to_string(),
-            },
+            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
             data: data
         };
         transform.calc_transform();
@@ -78,13 +72,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase
-            {
-                id: id,
-                is_enabled: true,
-                component_name: "Transformation".to_string(),
-                name: "".to_string(),
-            },
+            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
             data: data
         };
         transform.calc_transform();
@@ -147,7 +135,6 @@ impl Transformation
         self.data.trans = trans;
         self.data.normal = normal_matrix;
         self.data.tran_inverse = self.data.trans.try_inverse().unwrap();
-
     }
 
     pub fn get_transform(&self) -> &Matrix4::<f32>
@@ -202,27 +189,9 @@ impl Transformation
 
 impl Component for Transformation
 {
-    fn get_base(&self) -> &ComponentBase
-    {
-        &self.base
-    }
-
-    fn get_base_mut(&mut self) -> &mut ComponentBase
-    {
-        &mut self.base
-    }
+    component_impl_default!();
 
     fn update(&mut self, frame_scale: f32)
     {
-    }
-
-    fn as_any(&self) -> &dyn Any
-    {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any
-    {
-        self
     }
 }
