@@ -1,7 +1,7 @@
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::material::Material}, helper::render_item::{get_render_item, RenderItemType}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::material::Material}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -26,8 +26,8 @@ pub struct Scene
     instance_amount: u32,
     instance_buffer: wgpu::Buffer,
 
-    camera_uniform: CameraUniform,
-    light_uniform: LightUniform,
+    //camera_uniform: CameraUniform,
+    //light_uniform: LightUniform,
 }
 
 impl Scene
@@ -71,11 +71,29 @@ impl Scene
             buffer = VertexBuffer::new(wgpu, "test", *mesh);
         }
 
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&scene.cameras[0]); // TODO
+        // camera
+        let mut camera_uniform;
+        {
+            let cam_id = 0; // TODO
+            let mut cam = scene.cameras.get_mut(cam_id).unwrap();
 
-        let light = &scene.lights[0]; // TODO
-        let mut light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
+            camera_uniform = CameraUniform::new();
+            camera_uniform.update_view_proj(cam.eye_pos, cam.webgpu_projection(), cam.view);
+
+            cam.render_item = Some(Box::new(camera_uniform));
+        }
+
+        // light
+        let light_uniform;
+        {
+            let light_id = 0; // TODO
+            let mut light = &mut scene.lights.get_mut(light_id).unwrap();
+
+            light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
+            light.render_item = Some(Box::new(light_uniform));
+
+            //let mut light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
+        }
 
         {
             let instance = Instance::new_with_data
@@ -159,8 +177,8 @@ impl Scene
             instance_amount: instance_amount as u32,
             instance_buffer,
 
-            camera_uniform: camera_uniform,
-            light_uniform: light_uniform
+            //camera_uniform: camera_uniform,
+            //light_uniform: light_uniform
         }
     }
 
@@ -181,11 +199,16 @@ impl Scene
             cam.eye_pos = state.camera_pos;
             cam.fovy = state.cam_fov.to_radians();
             cam.init_matrices();
-            self.camera_uniform.update_view_proj(&cam);
-        }
 
-        self.color_pipe.update_camera(wgpu, &self.camera_uniform);
-        self.depth_pipe.update_camera(wgpu, &self.camera_uniform);
+            let projection = cam.webgpu_projection().clone();
+            let view = cam.view.clone();
+
+            let render_item = get_render_item_mut::<CameraUniform>(cam.render_item.as_mut().unwrap());
+            render_item.update_view_proj(cam.eye_pos, projection, view);
+
+            self.color_pipe.update_camera(wgpu, *render_item);
+            self.depth_pipe.update_camera(wgpu, *render_item);
+        }
 
         let node_id = 0;
 
@@ -259,9 +282,12 @@ impl Scene
             let mut light = scene.lights.get_mut(0).unwrap();
             light.color = state.light_color.clone();
             light.pos = state.light_pos.clone();
-            self.light_uniform.color = [light.color.x, light.color.y, light.color.z, 1.0];
-            self.light_uniform.position =  [light.pos.x, light.pos.y, light.pos.z, 1.0];
-            self.color_pipe.update_light(wgpu, &self.light_uniform);
+
+            let render_item = get_render_item_mut::<LightUniform>(light.render_item.as_mut().unwrap());
+
+            render_item.color = [light.color.x, light.color.y, light.color.z, 1.0];
+            render_item.position =  [light.pos.x, light.pos.y, light.pos.z, 1.0];
+            self.color_pipe.update_light(wgpu, *render_item);
         }
 
         if state.save_image

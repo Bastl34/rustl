@@ -1,4 +1,4 @@
-use std::{fs, borrow::Cow};
+use std::{borrow::Cow};
 
 use wgpu::BindGroup;
 use wgpu::util::DeviceExt;

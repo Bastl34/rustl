@@ -8,6 +8,8 @@
 
 use nalgebra::{Vector3, Point3};
 
+use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightUniform
@@ -18,6 +20,10 @@ pub struct LightUniform
     _padding: [f32; 3],
 }
 
+impl RenderItem for LightUniform
+{
+    render_item_impl_default!();
+}
 
 impl LightUniform
 {
