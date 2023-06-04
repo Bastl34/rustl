@@ -1,8 +1,7 @@
-use log::info;
-use nalgebra::{Vector3, Point3};
+use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{camera::Camera, instance::{Instance, self}, components::transformation::Transformation}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
 use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -302,7 +301,7 @@ impl Scene
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
     }
 
-    fn render_depth(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let clear_color = wgpu::Color::BLACK;
 
@@ -340,21 +339,10 @@ impl Scene
             })
         });
 
-        render_pass.set_pipeline(&self.depth_pipe.get());
-        render_pass.set_bind_group(0, &self.depth_pipe.get_textures_bind_group(), &[]);
-        render_pass.set_bind_group(1, &self.depth_pipe.get_camera_bind_group(), &[]);
-        render_pass.set_bind_group(2, &self.depth_pipe.get_light_bind_group(), &[]);
-
-        render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
-
-        // instancing
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-
-        render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
+        self.draw_phase(&mut render_pass, &self.depth_pipe);
     }
 
-    fn render_color(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -384,18 +372,23 @@ impl Scene
             })
         });
 
-        render_pass.set_pipeline(&self.color_pipe.get());
-        render_pass.set_bind_group(0, &self.color_pipe.get_textures_bind_group(), &[]);
-        render_pass.set_bind_group(1, &self.color_pipe.get_camera_bind_group(), &[]);
-        render_pass.set_bind_group(2, &self.color_pipe.get_light_bind_group(), &[]);
+        self.draw_phase(&mut render_pass, &self.color_pipe);
+    }
 
-        render_pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline)
+    {
+        pass.set_pipeline(&pipeline.get());
+        pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
+        pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
+        pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
+
+        pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
 
         // instancing
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-        render_pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
+        pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
     }
 
 }
