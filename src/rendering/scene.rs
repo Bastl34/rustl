@@ -1,9 +1,9 @@
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::material::Material}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
 
-use super::{wgpu::{WGpuRendering, WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -21,7 +21,7 @@ pub struct Scene
     //base_texture: Texture,
     //normal_texture: Texture,
 
-    buffer: VertexBuffer,
+    //buffer: VertexBuffer,
 
     instance_amount: u32,
     instance_buffer: wgpu::Buffer,
@@ -50,6 +50,8 @@ impl Scene
         }
         */
 
+        /*
+        just as reference
         {
 
             let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
@@ -63,12 +65,16 @@ impl Scene
 
             mat_data.alpha = 1.0;
         }
+        */
 
-        let buffer;
+        // vertex buffer
+        let vertex_buffer;
         {
-            let node = node.read().unwrap();
-            let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
-            buffer = VertexBuffer::new(wgpu, "test", *mesh);
+            let mut node = node.write().unwrap();
+            let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
+            vertex_buffer = VertexBuffer::new(wgpu, "test", *mesh);
+
+            mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
         }
 
         // camera
@@ -146,14 +152,14 @@ impl Scene
              textures.push(&normal_texture);
 
              let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
-             depth_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
+             depth_pipe = Pipeline::new(wgpu, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
 
              // ********** color pass **********
             //let mut textures = vec![];
             textures.push(&depth_pass_buffer_texture);
 
             let shader_source = resources::load_string_async("shader/phong.wgsl").await.unwrap();
-            color_pipe = Pipeline::new(wgpu, &buffer, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
+            color_pipe = Pipeline::new(wgpu, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
 
 
             base_tex.render_item = Some(Box::new(base_texture));
@@ -172,7 +178,7 @@ impl Scene
 
             depth_buffer_texture,
             depth_pass_buffer_texture,
-            buffer,
+            //buffer,
 
             instance_amount: instance_amount as u32,
             instance_buffer,
@@ -360,7 +366,13 @@ impl Scene
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
     }
 
-    fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    {
+        self.render_depth(wgpu, view, encoder);
+        self.render_color(wgpu, view, encoder);
+    }
+
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let clear_color = wgpu::Color::BLACK;
 
@@ -401,7 +413,7 @@ impl Scene
         self.draw_phase(&mut render_pass, &self.depth_pipe);
     }
 
-    fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -436,6 +448,7 @@ impl Scene
 
     fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline)
     {
+        /*
         pass.set_pipeline(&pipeline.get());
         pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
         pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
@@ -448,10 +461,12 @@ impl Scene
 
         pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
+        */
     }
 
 }
 
+/*
 impl WGpuRendering for Scene
 {
     fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
@@ -460,3 +475,4 @@ impl WGpuRendering for Scene
         self.render_color(wgpu, view, encoder);
     }
 }
+*/

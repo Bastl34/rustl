@@ -1,16 +1,9 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView};
+use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
 use crate::helper::image::brga_to_rgba;
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
-
-pub trait WGpuRendering
-{
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder);
-}
-
-pub type WGpuRenderingItem = dyn WGpuRendering;
 
 pub struct WGpu
 {
@@ -28,7 +21,7 @@ impl WGpu
     {
         let dimensions = window.inner_size();
 
-        let mut instance_desc = wgpu::InstanceDescriptor::default();
+        let instance_desc = wgpu::InstanceDescriptor::default();
         //instance_desc.backends = wgpu::Backends::DX12;
 
         let instance = wgpu::Instance::new(instance_desc);
@@ -129,23 +122,23 @@ impl WGpu
         self.surface.configure(&self.device, &self.surface_config);
     }
 
-    pub fn render(&mut self, render_passes: &mut Vec<&mut WGpuRenderingItem>)
+    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, CommandEncoder)
     {
         let output = self.surface.get_current_texture().unwrap();
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        for pass in render_passes
-        {
-            pass.render_pass(self, &view, &mut encoder);
-        }
+        (output, view, encoder)
+    }
 
+    pub fn end_render(&mut self, output: SurfaceTexture, encoder: CommandEncoder)
+    {
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
     }
 
-    pub fn get_screenshot(&mut self, render_passes: &mut Vec<&mut WGpuRenderingItem>) -> DynamicImage
+    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, CommandEncoder)
     {
         let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
 
@@ -179,12 +172,19 @@ impl WGpu
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        for pass in render_passes
+        (buffer_dimensions, output_buffer, texture, view, encoder)
+    }
+
+    pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, view: TextureView, mut encoder: CommandEncoder) -> DynamicImage
+    {
+        let texture_extent = wgpu::Extent3d
         {
-            pass.render_pass(self, &view, &mut encoder);
-        }
+            width: buffer_dimensions.width as u32,
+            height: buffer_dimensions.height as u32,
+            depth_or_array_layers: 1,
+        };
 
         // Copy the data from the texture to the buffer
         encoder.copy_texture_to_buffer
@@ -220,4 +220,5 @@ impl WGpu
         let img = DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(buffer_dimensions.width as u32, buffer_dimensions.height as u32, data).unwrap());
         brga_to_rgba(img)
     }
+
 }

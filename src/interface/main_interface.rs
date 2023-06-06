@@ -9,7 +9,7 @@ use winit::window::{Window, Fullscreen};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene, self};
 
-use crate::rendering::wgpu::{WGpu, WGpuRenderingItem};
+use crate::rendering::wgpu::{WGpu};
 use crate::state::gui::gui::build_gui;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::transformation::Transformation;
@@ -205,11 +205,12 @@ impl MainInterface
         }
 
         // render
-        let mut render_passes: Vec<&mut WGpuRenderingItem> = vec![];
-        render_passes.push(&mut self.render_scene);
-        render_passes.push(&mut self.egui);
-
-        self.wgpu.render(&mut render_passes);
+        let (output, view, mut encoder) = self.wgpu.start_render();
+        {
+            self.render_scene.render(&mut self.wgpu, &view, &mut encoder);
+            self.egui.render(&mut self.wgpu, &view, &mut encoder);
+        }
+        self.wgpu.end_render(output, encoder);
 
         // screenshot
         {
@@ -217,7 +218,13 @@ impl MainInterface
 
             if state.save_screenshot
             {
-                let img_data = self.wgpu.get_screenshot(&mut render_passes);
+                let (buffer_dimensions, output_buffer, texture, view, mut encoder) = self.wgpu.start_screenshot_render();
+                {
+                    self.render_scene.render(&mut self.wgpu, &view, &mut encoder);
+                    self.egui.render(&mut self.wgpu, &view, &mut encoder);
+                }
+                let img_data = self.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, view, encoder);
+
                 img_data.save("data/screenshot.png").unwrap();
                 state.save_screenshot = false;
             }

@@ -23,7 +23,7 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, buffer: &VertexBuffer, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, light: &LightUniform, depth_stencil: bool, fragment_attachment: bool) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, light: &LightUniform, depth_stencil: bool, fragment_attachment: bool) -> Pipeline
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();

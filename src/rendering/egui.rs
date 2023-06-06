@@ -2,7 +2,7 @@ use egui::{FullOutput};
 use egui_winit::{winit};
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::{rendering::wgpu::{WGpu, WGpuRendering}};
+use crate::{rendering::wgpu::{WGpu}};
 
 pub struct EGui
 {
@@ -80,8 +80,37 @@ impl EGui
     {
         self.ctx.request_repaint();
     }
+
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    {
+        let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            {
+                label: None,
+                color_attachments:
+                &[
+                    Some(wgpu::RenderPassColorAttachment
+                    {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations
+                        {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        }
+                    })
+                ],
+                depth_stencil_attachment: None,
+            });
+
+            self.renderer.render(&mut pass, &primitives, &self.screen_descriptor);
+        }
+    }
 }
 
+/*
 impl WGpuRendering for EGui
 {
     fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
@@ -112,3 +141,4 @@ impl WGpuRendering for EGui
         }
     }
 }
+*/

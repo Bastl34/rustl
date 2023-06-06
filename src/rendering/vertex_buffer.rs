@@ -1,4 +1,4 @@
-use crate::state::scene::components::mesh::Mesh;
+use crate::{state::{scene::components::mesh::Mesh, helper::render_item::RenderItem}, render_item_impl_default};
 
 use super::wgpu::WGpu;
 use nalgebra::{Vector3, Vector2};
@@ -39,6 +39,11 @@ pub struct VertexBuffer
     index_count: u32,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+}
+
+impl RenderItem for VertexBuffer
+{
+    render_item_impl_default!();
 }
 
 impl VertexBuffer
