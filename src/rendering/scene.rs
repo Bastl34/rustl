@@ -1,7 +1,7 @@
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -28,6 +28,11 @@ pub struct Scene
 
     //camera_uniform: CameraUniform,
     //light_uniform: LightUniform,
+}
+
+impl RenderItem for Scene
+{
+    render_item_impl_default!();
 }
 
 impl Scene

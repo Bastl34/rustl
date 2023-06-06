@@ -177,7 +177,7 @@ impl WGpu
         (buffer_dimensions, output_buffer, texture, view, encoder)
     }
 
-    pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, view: TextureView, mut encoder: CommandEncoder) -> DynamicImage
+    pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
     {
         let texture_extent = wgpu::Extent3d
         {

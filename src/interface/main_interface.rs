@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::mem::take;
 use std::rc::Rc;
 use std::time::Instant;
 use std::vec;
@@ -11,10 +12,12 @@ use crate::rendering::scene::{Scene, self};
 
 use crate::rendering::wgpu::{WGpu};
 use crate::state::gui::gui::build_gui;
+use crate::state::helper::render_item::{get_render_item, get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
+use crate::state::scene::scene::SceneItem;
 use crate::state::state::{State, StateItem};
 
 const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
@@ -22,7 +25,7 @@ const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 pub struct MainInterface
 {
     state: StateItem,
-    render_scene: Scene,
+    //render_scene: Scene,
     start_time: Instant,
 
     wgpu: WGpu,
@@ -102,6 +105,16 @@ impl MainInterface
             state.print();
         }
 
+        {
+            let state = &mut *(state.borrow_mut());
+            for scene in state.scenes.iter_mut()
+            {
+                let render_item = Scene::new(&mut wgpu, scene).await;
+                scene.render_item = Some(Box::new(render_item));
+            }
+        }
+
+        /*
         let render_scene;
         {
             let state = &mut *(state.borrow_mut());
@@ -109,12 +122,15 @@ impl MainInterface
             let graph_scene = state.scenes.get_mut(0);
 
             render_scene = Scene::new(&mut wgpu, graph_scene.unwrap()).await;
+
+
         }
+        */
 
         Self
         {
             state,
-            render_scene,
+            //render_scene,
 
             start_time: Instant::now(),
 
@@ -138,8 +154,15 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let scene_id: usize = 0;
-            self.render_scene.resize(&mut self.wgpu, &mut state.scenes[scene_id]);
+            for scene in &mut state.scenes
+            {
+                let mut render_item = scene.render_item.take();
+
+                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                render_scene.resize(&mut self.wgpu, scene);
+
+                scene.render_item = render_item;
+            }
         }
     }
 
@@ -188,8 +211,24 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let scene_id: usize = 0;
-            self.render_scene.update(&mut self.wgpu, state, scene_id);
+            let mut scene_id: usize = 0;
+
+            let mut empty_vec: Vec<SceneItem> = vec![];
+            let mut scenes = take(&mut empty_vec);
+
+            for scene in &mut scenes
+            {
+                let mut render_item = scene.render_item.take();
+
+                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                render_scene.update(&mut self.wgpu, state, scene_id);
+
+                scene.render_item = render_item;
+
+                scene_id += 1;
+            }
+
+            state.scenes = scenes;
 
             state.update(state.frame_scale);
         }
@@ -207,7 +246,21 @@ impl MainInterface
         // render
         let (output, view, mut encoder) = self.wgpu.start_render();
         {
-            self.render_scene.render(&mut self.wgpu, &view, &mut encoder);
+            // render scenes
+            let state = &mut *(self.state.borrow_mut());
+
+
+            for scene in &mut state.scenes
+            {
+                let mut render_item = scene.render_item.take();
+
+                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                render_scene.render(&mut self.wgpu, &view, &mut encoder);
+
+                scene.render_item = render_item;
+            }
+
+            // render egui
             self.egui.render(&mut self.wgpu, &view, &mut encoder);
         }
         self.wgpu.end_render(output, encoder);
@@ -220,10 +273,19 @@ impl MainInterface
             {
                 let (buffer_dimensions, output_buffer, texture, view, mut encoder) = self.wgpu.start_screenshot_render();
                 {
-                    self.render_scene.render(&mut self.wgpu, &view, &mut encoder);
+                    for scene in &mut state.scenes
+                    {
+                        let mut render_item = scene.render_item.take();
+
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.render(&mut self.wgpu, &view, &mut encoder);
+
+                        scene.render_item = render_item;
+                    }
+
                     self.egui.render(&mut self.wgpu, &view, &mut encoder);
                 }
-                let img_data = self.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, view, encoder);
+                let img_data = self.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
                 state.save_screenshot = false;
