@@ -457,7 +457,6 @@ impl Scene
     {
         for node in &scene.nodes
         {
-            let node = Cow::Borrowed(&node);
             let node = node.read().unwrap();
 
             let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
