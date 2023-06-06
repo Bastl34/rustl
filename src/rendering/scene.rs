@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
@@ -371,13 +373,13 @@ impl Scene
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
     }
 
-    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
     {
-        self.render_depth(wgpu, view, encoder);
-        self.render_color(wgpu, view, encoder);
+        self.render_depth(wgpu, view, encoder, scene);
+        self.render_color(wgpu, view, encoder, scene);
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
     {
         let clear_color = wgpu::Color::BLACK;
 
@@ -415,10 +417,10 @@ impl Scene
             })
         });
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe);
+        self.draw_phase(&mut render_pass, &self.depth_pipe, scene);
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -448,11 +450,38 @@ impl Scene
             })
         });
 
-        self.draw_phase(&mut render_pass, &self.color_pipe);
+        self.draw_phase(&mut render_pass, &self.color_pipe, scene);
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline)
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, scene: &'a Box<crate::state::scene::scene::Scene>)
     {
+        for node in &scene.nodes
+        {
+            let node = Cow::Borrowed(&node);
+            let node = node.read().unwrap();
+
+            let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
+
+            if let Some(render_item) = mesh.get_base().render_item.as_ref()
+            {
+                let buffer = get_render_item::<VertexBuffer>(&render_item);
+
+                pass.set_pipeline(&pipeline.get());
+                pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
+                pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
+                pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
+
+                pass.set_vertex_buffer(0, buffer.get_vertex_buffer().slice(..));
+
+                // instancing
+                pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+
+                pass.set_index_buffer(buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..buffer.get_index_count(), 0, 0..self.instance_amount as _);
+            }
+
+        }
+
         /*
         pass.set_pipeline(&pipeline.get());
         pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);

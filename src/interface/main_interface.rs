@@ -25,7 +25,6 @@ const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 pub struct MainInterface
 {
     state: StateItem,
-    //render_scene: Scene,
     start_time: Instant,
 
     wgpu: WGpu,
@@ -57,8 +56,8 @@ impl MainInterface
             scene.nodes.remove(0);
 
 
-            scene.load("objects/cube/cube.obj").await.unwrap();
-            scene.load("objects/plane/plane.obj").await.unwrap();
+            //scene.load("objects/cube/cube.obj").await.unwrap();
+            //scene.load("objects/plane/plane.obj").await.unwrap();
 
             {
                 let node_id = 0;
@@ -114,24 +113,9 @@ impl MainInterface
             }
         }
 
-        /*
-        let render_scene;
-        {
-            let state = &mut *(state.borrow_mut());
-
-            let graph_scene = state.scenes.get_mut(0);
-
-            render_scene = Scene::new(&mut wgpu, graph_scene.unwrap()).await;
-
-
-        }
-        */
-
         Self
         {
             state,
-            //render_scene,
-
             start_time: Instant::now(),
 
             wgpu,
@@ -149,7 +133,6 @@ impl MainInterface
     {
         self.wgpu.resize(dimensions);
         self.egui.resize(dimensions, scale_factor);
-
 
         {
             let state = &mut *(self.state.borrow_mut());
@@ -255,7 +238,7 @@ impl MainInterface
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.render(&mut self.wgpu, &view, &mut encoder);
+                render_scene.render(&mut self.wgpu, &view, &mut encoder, scene);
 
                 scene.render_item = render_item;
             }
@@ -278,7 +261,7 @@ impl MainInterface
                         let mut render_item = scene.render_item.take();
 
                         let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                        render_scene.render(&mut self.wgpu, &view, &mut encoder);
+                        render_scene.render(&mut self.wgpu, &view, &mut encoder, scene);
 
                         scene.render_item = render_item;
                     }
