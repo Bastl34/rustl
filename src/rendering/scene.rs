@@ -1,9 +1,9 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::RwLockReadGuard};
 
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}, node::Node}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -375,11 +375,18 @@ impl Scene
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
     {
-        self.render_depth(wgpu, view, encoder, scene);
-        self.render_color(wgpu, view, encoder, scene);
+        let mut nodes = vec![];
+
+        for node in &scene.nodes
+        {
+            nodes.push(node.read().unwrap());
+        }
+
+        self.render_depth(wgpu, view, encoder, &nodes);
+        self.render_color(wgpu, view, encoder, &nodes);
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>)
     {
         let clear_color = wgpu::Color::BLACK;
 
@@ -417,10 +424,10 @@ impl Scene
             })
         });
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe, scene);
+        self.draw_phase(&mut render_pass, &self.depth_pipe, nodes);
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -450,16 +457,46 @@ impl Scene
             })
         });
 
-        self.draw_phase(&mut render_pass, &self.color_pipe, scene);
+        self.draw_phase(&mut render_pass, &self.color_pipe, nodes);
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, scene: &'a Box<crate::state::scene::scene::Scene>)
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>)
     {
-        for node in &scene.nodes
+        for node in nodes
         {
-            let node = node.read().unwrap();
+            //let node = node.read().unwrap();
+            //let node_lock: std::sync::RwLockReadGuard<'a, Box<Node>> = node.read().unwrap();
+            //let node_ref: &Node = &*node_lock;
 
-            let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
+            //let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
+
+            /*
+            let mesh = node.components.iter().find
+            (
+                |c|
+                {
+                    let component_item = c.as_any();
+                    component_item.is::<MeshComponent>()
+                }
+            );
+
+            if mesh.is_none()
+            {
+                continue;
+            }
+
+            let any = mesh.unwrap().as_any();
+            let mesh = Box::new(any.downcast_ref::<MeshComponent>().unwrap());
+            */
+
+            let mesh = node.get_mesh();
+
+            if mesh.is_none()
+            {
+                continue;
+            }
+
+            let mesh = mesh.unwrap();
 
             if let Some(render_item) = mesh.get_base().render_item.as_ref()
             {

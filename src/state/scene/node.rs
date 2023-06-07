@@ -223,7 +223,7 @@ impl Node
         self.shared_components.push(component);
     }
 
-    fn get_mesh(&self) -> Option<Box<&Mesh>>
+    pub fn get_mesh(&self) -> Option<Box<&Mesh>>
     {
         self.find_component::<Mesh>()
     }

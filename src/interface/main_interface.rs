@@ -113,6 +113,7 @@ impl MainInterface
             }
         }
 
+
         Self
         {
             state,
@@ -231,7 +232,6 @@ impl MainInterface
         {
             // render scenes
             let state = &mut *(self.state.borrow_mut());
-
 
             for scene in &mut state.scenes
             {
