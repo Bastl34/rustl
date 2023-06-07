@@ -195,7 +195,7 @@ impl Scene
         }
     }
 
-    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene_id: usize)
+    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {
         self.clear_color = wgpu::Color
         {
@@ -204,8 +204,6 @@ impl Scene
             g: state.clear_color.y as f64,
             b: state.clear_color.z as f64,
         };
-
-        let scene = state.scenes.get_mut(scene_id).unwrap();
 
         for cam in &mut scene.cameras
         {
@@ -464,31 +462,6 @@ impl Scene
     {
         for node in nodes
         {
-            //let node = node.read().unwrap();
-            //let node_lock: std::sync::RwLockReadGuard<'a, Box<Node>> = node.read().unwrap();
-            //let node_ref: &Node = &*node_lock;
-
-            //let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
-
-            /*
-            let mesh = node.components.iter().find
-            (
-                |c|
-                {
-                    let component_item = c.as_any();
-                    component_item.is::<MeshComponent>()
-                }
-            );
-
-            if mesh.is_none()
-            {
-                continue;
-            }
-
-            let any = mesh.unwrap().as_any();
-            let mesh = Box::new(any.downcast_ref::<MeshComponent>().unwrap());
-            */
-
             let mesh = node.get_mesh();
 
             if mesh.is_none()
@@ -517,32 +490,6 @@ impl Scene
             }
 
         }
-
-        /*
-        pass.set_pipeline(&pipeline.get());
-        pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
-        pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
-        pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
-
-        pass.set_vertex_buffer(0, self.buffer.get_vertex_buffer().slice(..));
-
-        // instancing
-        pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-
-        pass.set_index_buffer(self.buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..self.buffer.get_index_count(), 0, 0..self.instance_amount as _);
-        */
     }
 
 }
-
-/*
-impl WGpuRendering for Scene
-{
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
-    {
-        self.render_depth(wgpu, view, encoder);
-        self.render_color(wgpu, view, encoder);
-    }
-}
-*/

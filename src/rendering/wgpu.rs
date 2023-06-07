@@ -114,10 +114,10 @@ impl WGpu
         &self.surface_config
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>)
+    pub fn resize(&mut self, width: u32, height: u32)
     {
-        self.surface_config.width = dimensions.width;
-        self.surface_config.height = dimensions.height;
+        self.surface_config.width = width;
+        self.surface_config.height = height;
 
         self.surface.configure(&self.device, &self.surface_config);
     }

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::mem::take;
+use std::mem::{take, swap};
 use std::rc::Rc;
 use std::time::Instant;
 use std::vec;
@@ -132,8 +132,19 @@ impl MainInterface
 
     pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
     {
-        self.wgpu.resize(dimensions);
-        self.egui.resize(dimensions, scale_factor);
+        let mut width = dimensions.width;
+        let mut height = dimensions.height;
+
+        if width == 0 {
+            width = 1;
+        }
+
+        if height == 0 {
+            height = 1;
+        }
+
+        self.wgpu.resize(width, height);
+        self.egui.resize(width, height, scale_factor);
 
         {
             let state = &mut *(self.state.borrow_mut());
@@ -195,24 +206,22 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let mut scene_id: usize = 0;
-
-            let mut empty_vec: Vec<SceneItem> = vec![];
-            let mut scenes = take(&mut empty_vec);
+            // move out scenes from state to prevent using multiple mut borrows
+            let mut scenes = vec![];
+            swap(&mut state.scenes, &mut scenes);
 
             for scene in &mut scenes
             {
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.update(&mut self.wgpu, state, scene_id);
+                render_scene.update(&mut self.wgpu, state, scene);
 
                 scene.render_item = render_item;
-
-                scene_id += 1;
             }
 
-            state.scenes = scenes;
+            //state.scenes = scenes;
+            swap(&mut scenes, &mut state.scenes);
 
             state.update(state.frame_scale);
         }

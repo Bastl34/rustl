@@ -58,10 +58,10 @@ impl EGui
         clipped_primitives
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
+    pub fn resize(&mut self, width: u32, height: u32, scale_factor: Option<f64>)
     {
-        self.screen_descriptor.size_in_pixels[0] = dimensions.width;
-        self.screen_descriptor.size_in_pixels[1] = dimensions.height;
+        self.screen_descriptor.size_in_pixels[0] = width;
+        self.screen_descriptor.size_in_pixels[1] = height;
 
         if scale_factor.is_some()
         {
