@@ -1,9 +1,11 @@
 use std::{sync::{Arc, RwLock}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Matrix3};
+use nalgebra::{Matrix4, Matrix3, Vector3};
 
-use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation}, instance::InstanceItem};
+use crate::{state::helper::render_item::RenderItemOption};
+
+use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
@@ -20,6 +22,9 @@ pub struct Node
 
     pub components: Vec<ComponentItem>,
     pub shared_components: Vec<SharedComponentItem>,
+
+
+    pub instance_render_item: RenderItemOption,
 
     // bounding box
     b_box_node_index: usize,
@@ -41,6 +46,8 @@ impl Node
             parent: None,
             nodes: vec![],
             instances: vec![],
+
+            instance_render_item: None,
 
             b_box_node_index: 0
         };
@@ -269,6 +276,21 @@ impl Node
             parent_transform.0 * node_transform.0,
             parent_transform.1 * node_transform.1,
         )
+    }
+
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)
+    {
+        let instance = Instance::new_with_data
+        (
+            instance_id,
+            "instance".to_string(),
+            self_node_item,
+            Vector3::<f32>::new(0.0, 0.0, 0.0),
+            Vector3::<f32>::new(0.0, 0.0, 0.0),
+            Vector3::<f32>::new(1.0, 1.0, 1.0)
+        );
+
+        self.add_instance(Box::new(instance));
     }
 
     pub fn add_instance(&mut self, instance: InstanceItem)

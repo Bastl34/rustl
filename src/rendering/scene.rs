@@ -5,7 +5,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
 use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}, node::Node}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::instances_to_buffer, vertex_buffer::VertexBuffer, light::LightUniform};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightUniform};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -25,8 +25,8 @@ pub struct Scene
 
     //buffer: VertexBuffer,
 
-    instance_amount: u32,
-    instance_buffer: wgpu::Buffer,
+    //instance_amount: u32,
+    //instance_buffer: wgpu::Buffer,
 
     //camera_uniform: CameraUniform,
     //light_uniform: LightUniform,
@@ -79,9 +79,22 @@ impl Scene
         {
             let mut node = node.write().unwrap();
             let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
-            vertex_buffer = VertexBuffer::new(wgpu, "test", *mesh);
+            vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", *mesh);
 
             mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
+        }
+
+        // instance
+        {
+            let instance_buffer;
+            {
+                let node_read = node.read().unwrap();
+
+                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", &node_read.instances);
+            }
+
+            let mut node = node.write().unwrap();
+            node.instance_render_item = Some(Box::new(instance_buffer));
         }
 
         // camera
@@ -108,27 +121,6 @@ impl Scene
             //let mut light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
         }
 
-        {
-            let instance = Instance::new_with_data
-            (
-                scene.id_manager.get_next_instance_id(),
-                "instance".to_string(),
-                node.clone(),
-                Vector3::<f32>::new(0.0, 0.0, 0.0),
-                Vector3::<f32>::new(0.0, 2.0, 0.0),
-                Vector3::<f32>::new(1.0, 1.0, 1.0)
-            );
-
-            node.write().unwrap().add_instance(Box::new(instance));
-        }
-
-        let instance_buffer;
-        let instance_amount;
-        {
-            let node = node.read().unwrap();
-            instance_buffer = instances_to_buffer(wgpu, &node.instances);
-            instance_amount = node.instances.len();
-        }
 
         let color_pipe;
         let depth_pipe;
@@ -187,8 +179,8 @@ impl Scene
             depth_pass_buffer_texture,
             //buffer,
 
-            instance_amount: instance_amount as u32,
-            instance_buffer,
+            //instance_amount: instance_amount as u32,
+            //instance_buffer,
 
             //camera_uniform: camera_uniform,
             //light_uniform: light_uniform
@@ -263,14 +255,15 @@ impl Scene
         }
         {
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
-            let node = node_arc.read().unwrap();
 
-            if node.instances.len() > 0
+            let instance_buffer;
             {
-                self.instance_buffer = instances_to_buffer(wgpu, &node.instances);
+                let mut node = node_arc.read().unwrap();
+
+                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", &node.instances);
             }
 
-            self.instance_amount = node.instances.len() as u32;
+            node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
         }
 
         {
@@ -473,20 +466,23 @@ impl Scene
 
             if let Some(render_item) = mesh.get_base().render_item.as_ref()
             {
-                let buffer = get_render_item::<VertexBuffer>(&render_item);
+                let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);
+
+                let instance_render_item = node.instance_render_item.as_ref().unwrap();
+                let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
                 pass.set_pipeline(&pipeline.get());
                 pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
                 pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
                 pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
 
-                pass.set_vertex_buffer(0, buffer.get_vertex_buffer().slice(..));
+                pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
 
                 // instancing
-                pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                pass.set_vertex_buffer(1, instance_buffer.get_buffer().slice(..));
 
-                pass.set_index_buffer(buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..buffer.get_index_count(), 0, 0..self.instance_amount as _);
+                pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
             }
 
         }

@@ -15,6 +15,7 @@ use crate::state::gui::gui::build_gui;
 use crate::state::helper::render_item::{get_render_item, get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::transformation::Transformation;
+use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene::SceneItem;
@@ -54,6 +55,26 @@ impl MainInterface
             n1.write().unwrap().merge_mesh(&n0);
 
             scene.nodes.remove(0);
+
+            //instance
+            {
+                let node = scene.nodes.get_mut(0).unwrap();
+                node.write().unwrap().create_default_instance(node.clone(), scene.id_manager.get_next_instance_id());
+
+                /*
+                let instance = Instance::new_with_data
+                (
+                    scene.id_manager.get_next_instance_id(),
+                    "instance".to_string(),
+                    node.clone(),
+                    Vector3::<f32>::new(0.0, 0.0, 0.0),
+                    Vector3::<f32>::new(0.0, 2.0, 0.0),
+                    Vector3::<f32>::new(1.0, 1.0, 1.0)
+                );
+
+                node.write().unwrap().add_instance(Box::new(instance));
+                 */
+            }
 
 
             //scene.load("objects/cube/cube.obj").await.unwrap();
