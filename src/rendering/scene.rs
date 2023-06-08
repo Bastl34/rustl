@@ -3,7 +3,7 @@ use std::{borrow::Cow, sync::RwLockReadGuard};
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}, node::Node}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{instance::{Instance, self}, components::{material::Material, component::Component}, node::{Node, NodeItem}}, helper::render_item::{get_render_item, RenderItemType, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, shared_component_write, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraUniform}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightUniform};
 
@@ -117,8 +117,6 @@ impl Scene
 
             light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
             light.render_item = Some(Box::new(light_uniform));
-
-            //let mut light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
         }
 
 
@@ -137,8 +135,6 @@ impl Scene
 
             let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
             let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
-
-
 
             depth_buffer_texture = Texture::new_depth_texture(wgpu);
             depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
@@ -165,7 +161,7 @@ impl Scene
             normal_tex.render_item = Some(Box::new(normal_texture));
         }
 
-        Self
+        let render_scene = Self
         {
             clear_color: wgpu::Color::BLACK,
 
@@ -184,8 +180,18 @@ impl Scene
 
             //camera_uniform: camera_uniform,
             //light_uniform: light_uniform
-        }
+        };
+
+        //render_scene.prepare(wgpu, scene);
+
+        render_scene
     }
+
+    /*
+    pub fn prepare(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
+    {
+    }
+    */
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {
@@ -364,20 +370,73 @@ impl Scene
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
     }
 
-    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>)
+    //fn get_all_nodes(&self, nodes: &Vec<NodeItem>, read_nodes: &mut Vec<RwLockReadGuard<Box<Node>>>)
+    /*
+    fn get_all_nodes<'a>(&'a self, nodes: &'a Vec<NodeItem>) -> Vec<RwLockReadGuard<Box<Node>>>
+    {
+        let mut read_nodes = vec![];
+
+        for node in nodes
+        {
+            //let clone = node.clone();
+
+            read_nodes.push(node.read().unwrap());
+
+
+            //self.get_all_nodes(&node.read().unwrap().nodes, read_nodes);
+
+            let read = node.read().unwrap();
+            let child_nodes = self.get_all_nodes(&read.nodes);
+            read_nodes.extend(child_nodes);
+        }
+
+        read_nodes
+    }
+    */
+
+    /*
+    fn get_all_child_nodes<'a>(&'a self, node: NodeItem) -> Vec<RwLockReadGuard<'a, Box<Node>>>
+    {
+        let mut read_nodes = vec![];
+        let read = node.read().unwrap();
+
+        for node in &read.nodes
+        {
+            //let clone = node.clone();
+
+            read_nodes.push(node.clone().read().unwrap());
+
+
+            //self.get_all_nodes(&node.read().unwrap().nodes, read_nodes);
+
+            //let read = node.read().unwrap();
+            //let child_nodes = get_all_nodes(&read.nodes);
+            //read_nodes.extend(child_nodes);
+        }
+
+        read_nodes
+    }
+    */
+
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
         let mut nodes = vec![];
+        //self.get_all_nodes(&scene.nodes, &mut nodes);
 
         for node in &scene.nodes
         {
             nodes.push(node.read().unwrap());
         }
 
-        self.render_depth(wgpu, view, encoder, &nodes);
-        self.render_color(wgpu, view, encoder, &nodes);
+
+        let mut draw_calls: u32 = 0;
+        draw_calls += self.render_depth(wgpu, view, encoder, &nodes);
+        draw_calls += self.render_color(wgpu, view, encoder, &nodes);
+
+        draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>)
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
     {
         let clear_color = wgpu::Color::BLACK;
 
@@ -415,10 +474,10 @@ impl Scene
             })
         });
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe, nodes);
+        self.draw_phase(&mut render_pass, &self.depth_pipe, nodes)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>)
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -448,11 +507,13 @@ impl Scene
             })
         });
 
-        self.draw_phase(&mut render_pass, &self.color_pipe, nodes);
+        self.draw_phase(&mut render_pass, &self.color_pipe, nodes)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>)
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>) -> u32
     {
+        let mut draw_calls: u32 = 0;
+
         for node in nodes
         {
             let mesh = node.get_mesh();
@@ -483,9 +544,12 @@ impl Scene
 
                 pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
-            }
 
+                draw_calls += 1;
+            }
         }
+
+        draw_calls
     }
 
 }

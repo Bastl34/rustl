@@ -13,6 +13,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
         egui::Window::new("Settings").show(ctx, |ui|
         {
             ui.label(format!("fps: {}", state.last_fps));
+            ui.label(format!("draw calls: {}", state.draw_calls));
 
             ui.horizontal(|ui|
             {

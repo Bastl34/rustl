@@ -1,4 +1,6 @@
 todo:
+ * active camera
+ * dynamic light amount
  * consider using ComponentBase for all state structs
  * everything should be dynamic
  * buffer update on model matrix change

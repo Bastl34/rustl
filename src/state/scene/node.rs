@@ -55,6 +55,11 @@ impl Node
         Arc::new(RwLock::new(Box::new(node)))
     }
 
+    pub fn get_name(&self) -> &String
+    {
+        &self.name
+    }
+
     pub fn add_node(node: NodeItem, child_node: NodeItem)
     {
         {
@@ -346,7 +351,7 @@ impl Node
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);
-        println!("{} - (NODE) id={} name={} visible={} components={}, shared_components={}", spaces, self.id, self.name, self.visible, self.components.len(), self.shared_components.len());
+        println!("{} - (NODE) id={} name={} visible={} components={}, shared_components={} instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.shared_components.len(), self.instances.len());
 
         for node in &self.nodes
         {

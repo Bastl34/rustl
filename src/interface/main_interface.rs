@@ -56,28 +56,8 @@ impl MainInterface
 
             scene.nodes.remove(0);
 
-            //instance
-            {
-                let node = scene.nodes.get_mut(0).unwrap();
-                node.write().unwrap().create_default_instance(node.clone(), scene.id_manager.get_next_instance_id());
 
-                /*
-                let instance = Instance::new_with_data
-                (
-                    scene.id_manager.get_next_instance_id(),
-                    "instance".to_string(),
-                    node.clone(),
-                    Vector3::<f32>::new(0.0, 0.0, 0.0),
-                    Vector3::<f32>::new(0.0, 2.0, 0.0),
-                    Vector3::<f32>::new(1.0, 1.0, 1.0)
-                );
-
-                node.write().unwrap().add_instance(Box::new(instance));
-                 */
-            }
-
-
-            //scene.load("objects/cube/cube.obj").await.unwrap();
+            scene.load("objects/cube/cube.obj").await.unwrap();
             //scene.load("objects/plane/plane.obj").await.unwrap();
 
             {
@@ -87,6 +67,17 @@ impl MainInterface
                 let mut node = node.write().unwrap();
                 node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 0.0, -15.0));
+
+                //node.remove_component_by_type::<Transformation>();
+            }
+
+            {
+                let node_id = 1;
+                let node = scene.nodes.get_mut(node_id).unwrap();
+
+                let mut node = node.write().unwrap();
+                node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(4.0, 4.0, 4.0));
 
                 //node.remove_component_by_type::<Transformation>();
             }
@@ -262,13 +253,14 @@ impl MainInterface
         {
             // render scenes
             let state = &mut *(self.state.borrow_mut());
+            state.draw_calls = 0;
 
             for scene in &mut state.scenes
             {
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.render(&mut self.wgpu, &view, &mut encoder, scene);
+                state.draw_calls += render_scene.render(&mut self.wgpu, &view, &mut encoder, scene);
 
                 scene.render_item = render_item;
             }

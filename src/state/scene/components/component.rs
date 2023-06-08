@@ -5,7 +5,6 @@ use crate::state::helper::render_item::{RenderItemOption};
 
 pub type ComponentItem = Box<dyn Component + Send + Sync>;
 pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
-//pub type SharedComponentItem = Arc<RwLock<Box<dyn Any + Send + Sync>>>;
 
 pub trait Component: Any
 {
@@ -30,12 +29,6 @@ pub trait Component: Any
     {
         self.get_base().name.as_str()
     }
-
-    //fn get_data_<T: Component, U>(&self) -> &U;
-    //fn get_data_mut_<T: Component, U>(&mut self) -> &U;
-
-    //fn bla(&self);
-    //fn bla<T: Component, U>(&self) -> &U;
 }
 
 

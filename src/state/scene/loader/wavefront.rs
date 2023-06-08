@@ -300,16 +300,20 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
             let id = scene.id_manager.get_next_node_id();
             loaded_ids.push(id);
 
-            let node = Node::new(id, m.name.as_str());
+            let node_arc = Node::new(id, m.name.as_str());
             {
-                let mut node = node.write().unwrap();
+                let mut node = node_arc.write().unwrap();
                 node.add_component(Box::new(item));
 
                 // add material
                 node.add_shared_component(material_arc);
+
+                // add default instance
+                //let node = scene.nodes.get_mut(0).unwrap();
+                node.create_default_instance(node_arc.clone(), scene.id_manager.get_next_instance_id());
             }
 
-            scene.add_node(node);
+            scene.add_node(node_arc);
         }
 
     }

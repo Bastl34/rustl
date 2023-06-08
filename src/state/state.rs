@@ -31,6 +31,7 @@ pub struct State
 
     pub save_screenshot: bool,
 
+    pub draw_calls: u32,
     pub fps_timer: Instant,
     pub last_time: u128,
     pub fps: u32,
@@ -66,6 +67,7 @@ impl State
             save_depth_buffer_image: false,
             save_screenshot: false,
 
+            draw_calls: 0,
             fps_timer: Instant::now(),
             last_time: 0,
             fps: 0,
