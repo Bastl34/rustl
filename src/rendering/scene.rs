@@ -370,68 +370,39 @@ impl Scene
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu);
     }
 
-    //fn get_all_nodes(&self, nodes: &Vec<NodeItem>, read_nodes: &mut Vec<RwLockReadGuard<Box<Node>>>)
-    /*
-    fn get_all_nodes<'a>(&'a self, nodes: &'a Vec<NodeItem>) -> Vec<RwLockReadGuard<Box<Node>>>
+    fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
     {
-        let mut read_nodes = vec![];
+        let mut all_nodes = vec![];
 
         for node in nodes
         {
-            //let clone = node.clone();
+            let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
 
-            read_nodes.push(node.read().unwrap());
-
-
-            //self.get_all_nodes(&node.read().unwrap().nodes, read_nodes);
-
-            let read = node.read().unwrap();
-            let child_nodes = self.get_all_nodes(&read.nodes);
-            read_nodes.extend(child_nodes);
+            if node.read().unwrap().render_children_first {
+                all_nodes.extend(child_nodes);
+                all_nodes.push(node.clone());
+            } else {
+                all_nodes.push(node.clone());
+                all_nodes.extend(child_nodes);
+            }
         }
 
-        read_nodes
+        all_nodes
     }
-    */
-
-    /*
-    fn get_all_child_nodes<'a>(&'a self, node: NodeItem) -> Vec<RwLockReadGuard<'a, Box<Node>>>
-    {
-        let mut read_nodes = vec![];
-        let read = node.read().unwrap();
-
-        for node in &read.nodes
-        {
-            //let clone = node.clone();
-
-            read_nodes.push(node.clone().read().unwrap());
-
-
-            //self.get_all_nodes(&node.read().unwrap().nodes, read_nodes);
-
-            //let read = node.read().unwrap();
-            //let child_nodes = get_all_nodes(&read.nodes);
-            //read_nodes.extend(child_nodes);
-        }
-
-        read_nodes
-    }
-    */
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
-        let mut nodes = vec![];
-        //self.get_all_nodes(&scene.nodes, &mut nodes);
+        let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+        let mut read_nodes = vec![];
 
-        for node in &scene.nodes
+        for node in &all_nodes
         {
-            nodes.push(node.read().unwrap());
+            read_nodes.push(node.read().unwrap());
         }
 
-
         let mut draw_calls: u32 = 0;
-        draw_calls += self.render_depth(wgpu, view, encoder, &nodes);
-        draw_calls += self.render_color(wgpu, view, encoder, &nodes);
+        draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes);
+        draw_calls += self.render_color(wgpu, view, encoder, &read_nodes);
 
         draw_calls
     }

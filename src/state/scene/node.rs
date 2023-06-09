@@ -15,6 +15,8 @@ pub struct Node
     name: String,
     pub visible: bool,
 
+    pub render_children_first: bool,
+
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
@@ -39,6 +41,8 @@ impl Node
             id: id,
             name: name.to_string(),
             visible: true,
+
+            render_children_first: false,
 
             components: vec![],
             shared_components: vec![],
