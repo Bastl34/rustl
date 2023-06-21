@@ -249,7 +249,7 @@ impl MainInterface
         }
 
         // render
-        let (output, view, mut encoder) = self.wgpu.start_render();
+        let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
         {
             // render scenes
             let state = &mut *(self.state.borrow_mut());
@@ -260,7 +260,7 @@ impl MainInterface
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                state.draw_calls += render_scene.render(&mut self.wgpu, &view, &mut encoder, scene);
+                state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                 scene.render_item = render_item;
             }
@@ -276,14 +276,14 @@ impl MainInterface
 
             if state.save_screenshot
             {
-                let (buffer_dimensions, output_buffer, texture, view, mut encoder) = self.wgpu.start_screenshot_render();
+                let (buffer_dimensions, output_buffer, texture, view, msaa_view, mut encoder) = self.wgpu.start_screenshot_render();
                 {
                     for scene in &mut state.scenes
                     {
                         let mut render_item = scene.render_item.take();
 
                         let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                        render_scene.render(&mut self.wgpu, &view, &mut encoder, scene);
+                        render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;
                     }

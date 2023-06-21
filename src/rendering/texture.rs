@@ -139,7 +139,7 @@ impl Texture
             label: Some("depth texture"),
             size,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: 8,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,

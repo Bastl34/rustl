@@ -11,6 +11,9 @@ pub struct WGpu
     queue: Queue,
     surface: Surface,
 
+    msaa_samples: u32,
+    msaa_texture: Option<wgpu::Texture>,
+
     surface_config: SurfaceConfiguration,
     pub surface_caps: SurfaceCapabilities,
 }
@@ -49,7 +52,8 @@ impl WGpu
             &wgpu::DeviceDescriptor
             {
                 label: None,
-                features: wgpu::Features::empty(),
+                //features: wgpu::Features::empty(),
+                features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
                 limits: if cfg!(target_arch = "wasm32")
                 {
@@ -89,14 +93,22 @@ impl WGpu
 
         surface.configure(&device, &surface_config);
 
-        Self
+        let msaa_samples = 8;
+
+        let mut wgpu = Self
         {
             device,
             surface,
+            msaa_samples,
+            msaa_texture: None,
             queue,
             surface_caps,
             surface_config
-        }
+        };
+
+        wgpu.create_msaa_texture(msaa_samples);
+
+        wgpu
     }
 
     pub fn device(&self) -> &Device
@@ -114,22 +126,59 @@ impl WGpu
         &self.surface_config
     }
 
+    pub fn create_msaa_texture(&mut self, sample_count: u32)
+    {
+        if sample_count <= 1
+        {
+            self.msaa_texture = None;
+            return;
+        }
+
+        let msaa_texture = self.device.create_texture(&wgpu::TextureDescriptor
+        {
+            label: Some("msaa_texture"),
+            size: wgpu::Extent3d
+            {
+                width: self.surface_config.width,
+                height: self.surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &self.surface_config.view_formats,
+        });
+
+        self.msaa_texture = Some(msaa_texture);
+
+    }
+
     pub fn resize(&mut self, width: u32, height: u32)
     {
         self.surface_config.width = width;
         self.surface_config.height = height;
 
         self.surface.configure(&self.device, &self.surface_config);
+        self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, CommandEncoder)
+    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>, CommandEncoder)
     {
         let output = self.surface.get_current_texture().unwrap();
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        (output, view, encoder)
+        let mut msaa_view = None;
+        if self.msaa_texture.is_some()
+        {
+            msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
+        }
+
+        (output, view, msaa_view, encoder)
     }
 
     pub fn end_render(&mut self, output: SurfaceTexture, encoder: CommandEncoder)
@@ -138,7 +187,7 @@ impl WGpu
         output.present();
     }
 
-    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, CommandEncoder)
+    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>, CommandEncoder)
     {
         let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
 
@@ -170,11 +219,30 @@ impl WGpu
             view_formats: &[],
         });
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let mut msaa_texture_view: Option<TextureView> = None;
+        if self.msaa_samples > 1
+        {
+            let msaa_texture = self.device.create_texture(&wgpu::TextureDescriptor
+            {
+                size: texture_extent,
+                mip_level_count: 1,
+                sample_count: self.msaa_samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                label: None,
+                view_formats: &[],
+            });
+
+            msaa_texture_view = Some(msaa_texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        }
+
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        (buffer_dimensions, output_buffer, texture, view, encoder)
+        (buffer_dimensions, output_buffer, texture, view, msaa_texture_view, encoder)
     }
 
     pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage

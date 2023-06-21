@@ -1,6 +1,6 @@
 use std::{borrow::Cow};
 
-use wgpu::BindGroup;
+use wgpu::{BindGroup, TextureView};
 use wgpu::util::DeviceExt;
 
 use super::{wgpu::WGpu, vertex_buffer::{Vertex, VertexBuffer}, texture::{Texture, self}, camera::CameraUniform, uniform, instance::Instance, light::LightUniform};
@@ -217,7 +217,7 @@ impl Pipeline
             depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState
             {
-                count: 1,
+                count: 8,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },

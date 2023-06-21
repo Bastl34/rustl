@@ -151,7 +151,7 @@ impl Scene
 
              // ********** color pass **********
             //let mut textures = vec![];
-            textures.push(&depth_pass_buffer_texture);
+            //textures.push(&depth_pass_buffer_texture);
 
             let shader_source = resources::load_string_async("shader/phong.wgsl").await.unwrap();
             color_pipe = Pipeline::new(wgpu, "test", &shader_source, &textures, &camera_uniform, &light_uniform, true, true);
@@ -390,7 +390,7 @@ impl Scene
         all_nodes
     }
 
-    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
         let mut read_nodes = vec![];
@@ -401,21 +401,29 @@ impl Scene
         }
 
         let mut draw_calls: u32 = 0;
-        draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes);
-        draw_calls += self.render_color(wgpu, view, encoder, &read_nodes);
+        draw_calls += self.render_depth(wgpu, view, msaa_view, encoder, &read_nodes);
+        draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes);
 
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
     {
         let clear_color = wgpu::Color::BLACK;
+
+        let mut render_pass_view = view;
+        let mut render_pass_resolve_target = None;
+        if msaa_view.is_some()
+        {
+            render_pass_view = msaa_view.as_ref().unwrap();
+            render_pass_resolve_target = Some(view);
+        }
 
         let mut color_attachments: &[Option<RenderPassColorAttachment>] = &[
             Some(wgpu::RenderPassColorAttachment
             {
-                view: &view,
-                resolve_target: None,
+                view: render_pass_view,
+                resolve_target: render_pass_resolve_target,
                 ops: wgpu::Operations
                 {
                     load: wgpu::LoadOp::Clear(clear_color),
@@ -448,8 +456,16 @@ impl Scene
         self.draw_phase(&mut render_pass, &self.depth_pipe, nodes)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
     {
+        let mut render_pass_view = view;
+        let mut render_pass_resolve_target = None;
+        if msaa_view.is_some()
+        {
+            render_pass_view = msaa_view.as_ref().unwrap();
+            render_pass_resolve_target = Some(view);
+        }
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: Some("color pass"),
@@ -457,8 +473,8 @@ impl Scene
             &[
                 Some(wgpu::RenderPassColorAttachment
                 {
-                    view: &view,
-                    resolve_target: None,
+                    view: render_pass_view,
+                    resolve_target: render_pass_resolve_target,
                     ops: wgpu::Operations
                     {
                         load: wgpu::LoadOp::Clear(self.clear_color),
