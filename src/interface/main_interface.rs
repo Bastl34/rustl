@@ -37,10 +37,23 @@ impl MainInterface
 {
     pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
     {
-        let mut wgpu: WGpu = WGpu::new(&window).await;
-        let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
-
         let state = Rc::new(RefCell::new(State::new()));
+
+        let samlpes;
+        {
+            let state = & *(state.borrow());
+            samlpes = state.msaa as u32;
+        }
+
+
+        let mut wgpu: WGpu;
+        {
+            let state = &mut *(state.borrow_mut());
+            wgpu = WGpu::new(&window, state).await;
+            wgpu.create_msaa_texture(samlpes);
+        }
+
+        let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
         //init scene
         {
@@ -92,7 +105,7 @@ impl MainInterface
             state.camera_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
 
             let cam_id = scene.id_manager.get_next_camera_id();
-            let mut cam = Camera::new(cam_id);
+            let mut cam = Camera::new(cam_id, "main cam".to_string());
             cam.fovy = 45.0f32.to_radians();
             cam.eye_pos = state.camera_pos;
             cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
@@ -120,7 +133,7 @@ impl MainInterface
             let state = &mut *(state.borrow_mut());
             for scene in state.scenes.iter_mut()
             {
-                let render_item = Scene::new(&mut wgpu, scene).await;
+                let render_item = Scene::new(&mut wgpu, scene, samlpes).await;
                 scene.render_item = Some(Box::new(render_item));
             }
         }

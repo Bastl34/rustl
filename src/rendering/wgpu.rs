@@ -1,7 +1,7 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::helper::image::brga_to_rgba;
+use crate::{helper::image::brga_to_rgba, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -20,7 +20,7 @@ pub struct WGpu
 
 impl WGpu
 {
-    pub async fn new(window: &winit::window::Window) -> Self
+    pub async fn new(window: &winit::window::Window, state: &mut State) -> Self
     {
         let dimensions = window.inner_size();
 
@@ -93,7 +93,14 @@ impl WGpu
 
         surface.configure(&device, &surface_config);
 
-        let msaa_samples = 8;
+        let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
+
+        if texture_features.flags.sample_count_supported(2) { state.msaa_max = 2; }
+        if texture_features.flags.sample_count_supported(4) { state.msaa_max = 4; }
+        if texture_features.flags.sample_count_supported(8) { state.msaa_max = 8; }
+        if texture_features.flags.sample_count_supported(16) { state.msaa_max = 16; }
+
+        let msaa_samples = state.msaa as u32;
 
         let mut wgpu = Self
         {
@@ -106,7 +113,7 @@ impl WGpu
             surface_config
         };
 
-        wgpu.create_msaa_texture(msaa_samples);
+        wgpu.create_msaa_texture(1);
 
         wgpu
     }

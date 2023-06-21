@@ -1,8 +1,10 @@
 use std::{borrow::Cow};
 
-use wgpu::{BindGroup, TextureView};
+use wgpu::{BindGroup, TextureView, ShaderModule, Device, RenderPipeline};
 use wgpu::util::DeviceExt;
 
+use super::camera::CameraBuffer;
+use super::light::LightBuffer;
 use super::{wgpu::WGpu, vertex_buffer::{Vertex, VertexBuffer}, texture::{Texture, self}, camera::CameraUniform, uniform, instance::Instance, light::LightUniform};
 
 pub struct Pipeline
@@ -10,30 +12,48 @@ pub struct Pipeline
     pub name: String,
     pub fragment_attachment: bool,
 
+    shader: ShaderModule,
     pipe: wgpu::RenderPipeline,
 
     textures_bind_group: BindGroup,
 
-    camera_buffer: wgpu::Buffer,
     camera_bind_group: BindGroup,
 
-    light_buffer: wgpu::Buffer,
     light_bind_group: BindGroup
 }
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraUniform, light: &LightUniform, depth_stencil: bool, fragment_attachment: bool) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraBuffer, light: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    {
+        let device = wgpu.device();
+
+        // ******************** shader ********************
+        let shader = Pipeline::create_shader(device, name, shader_source);
+
+        let (render_pipeline, fragment_attachment, textures_bind_group, camera_bind_group, light_bind_group) = Pipeline::create(wgpu, name, &shader, textures, cam, light, depth_stencil, fragment_attachment, samples);
+
+        Self
+        {
+            name: name.to_string(),
+            shader,
+            pipe: render_pipeline,
+
+            fragment_attachment,
+
+            textures_bind_group,
+
+            camera_bind_group,
+
+            //light_buffer,
+            light_bind_group,
+        }
+    }
+
+    pub fn create(wgpu: &mut WGpu, name: &str, shader: &ShaderModule, textures: &Vec<&Texture>, cam: &CameraBuffer, light: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> (RenderPipeline, bool, BindGroup, BindGroup, BindGroup)
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
-
-        // ******************** shader ********************
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
-        {
-            label: Some(name),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_source)).into(),
-        });
 
         // ******************** textures ********************
         let mut textures_layout_group_vec = vec![];
@@ -70,17 +90,6 @@ impl Pipeline
         );
 
         // ******************** camera ********************
-        let camera_buffer_name = format!("{} Camera Buffer", name);
-        let camera_buffer = device.create_buffer_init
-        (
-            &wgpu::util::BufferInitDescriptor
-            {
-                label: Some(camera_buffer_name.as_str()),
-                contents: bytemuck::cast_slice(&[*cam]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
         let camera_bind_group_layout_name = format!("{} camera_bind_group_layout", name);
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
@@ -97,23 +106,12 @@ impl Pipeline
             layout: &camera_bind_group_layout,
             entries:
             &[
-                uniform::uniform_bind_group(0, &camera_buffer)
+                uniform::uniform_bind_group(0, &cam.get_buffer())
             ],
             label: Some(camera_bind_group_name.as_str()),
         });
 
         // ******************** light ********************
-        let light_buffer_name = format!("{} Light Buffer", name);
-        let light_buffer = device.create_buffer_init
-        (
-            &wgpu::util::BufferInitDescriptor
-            {
-                label: Some(light_buffer_name.as_str()),
-                contents: bytemuck::cast_slice(&[*light]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
         let light_bind_group_layout_name = format!("{} light_bind_group_layout", name);
         let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
@@ -130,7 +128,7 @@ impl Pipeline
             layout: &light_bind_group_layout,
             entries:
             &[
-                uniform::uniform_bind_group(0, &light_buffer)
+                uniform::uniform_bind_group(0, &light.get_buffer())
             ],
             label: Some(light_bind_group_name.as_str()),
         });
@@ -217,7 +215,7 @@ impl Pipeline
             depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState
             {
-                count: 8,
+                count: samples,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -226,31 +224,31 @@ impl Pipeline
             multiview: None,
         });
 
-        Self
+        (render_pipeline, fragment_attachment, textures_bind_group, camera_bind_group, light_bind_group)
+    }
+
+    pub fn re_create(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, light: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    {
+        let (render_pipeline, fragment_attachment, textures_bind_group, camera_bind_group, light_bind_group) = Pipeline::create(wgpu, &self.name, &self.shader, textures, cam, light, depth_stencil, fragment_attachment, samples);
+
+        self.pipe = render_pipeline;
+
+        self.fragment_attachment = fragment_attachment;
+
+        self.textures_bind_group = textures_bind_group;
+
+        self.camera_bind_group = camera_bind_group;
+
+        self.light_bind_group = light_bind_group;
+    }
+
+    pub fn create_shader(device: &Device, name: &str, shader_source: &String) -> ShaderModule
+    {
+        device.create_shader_module(wgpu::ShaderModuleDescriptor
         {
-            name: name.to_string(),
-            pipe: render_pipeline,
-
-            fragment_attachment,
-
-            textures_bind_group,
-
-            camera_buffer,
-            camera_bind_group,
-
-            light_buffer,
-            light_bind_group,
-        }
-    }
-
-    pub fn update_camera(&self, wgpu: &mut WGpu, cam: &CameraUniform)
-    {
-        wgpu.queue_mut().write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*cam]));
-    }
-
-    pub fn update_light(&self, wgpu: &mut WGpu, light: &LightUniform)
-    {
-        wgpu.queue_mut().write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[*light]));
+            label: Some(name),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_source)).into(),
+        })
     }
 
     pub fn get(&self) -> &wgpu::RenderPipeline

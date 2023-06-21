@@ -120,7 +120,7 @@ impl Texture
         }
     }
 
-    pub fn new_depth_texture(wgpu: &mut WGpu) -> Texture
+    pub fn new_depth_texture(wgpu: &mut WGpu, samples: u32) -> Texture
     {
         // shadow
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/shader.wgsl
@@ -139,7 +139,7 @@ impl Texture
             label: Some("depth texture"),
             size,
             mip_level_count: 1,
-            sample_count: 8,
+            sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,

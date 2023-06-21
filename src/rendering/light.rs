@@ -7,8 +7,11 @@
 // https://www.w3.org/TR/WGSL/#alignment-and-size
 
 use nalgebra::{Vector3, Point3};
+use wgpu::util::DeviceExt;
 
-use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{state::{helper::render_item::RenderItem, scene::light::Light}, render_item_impl_default};
+
+use super::wgpu::WGpu;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -20,10 +23,12 @@ pub struct LightUniform
     _padding: [f32; 3],
 }
 
+/*
 impl RenderItem for LightUniform
 {
     render_item_impl_default!();
 }
+*/
 
 impl LightUniform
 {
@@ -36,5 +41,67 @@ impl LightUniform
             intensity,
             _padding: [0.0, 0.0, 0.0]
         }
+    }
+}
+
+pub struct LightBuffer
+{
+    pub name: String,
+    buffer: wgpu::Buffer,
+}
+
+impl RenderItem for LightBuffer
+{
+    render_item_impl_default!();
+}
+
+impl LightBuffer
+{
+    pub fn new(wgpu: &mut WGpu, light: &Light) -> LightBuffer
+    {
+        let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("Empty Buffer"),
+            size: 0,
+            usage: wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut buffer = LightBuffer
+        {
+            name: light.name(),
+            buffer: empty_buffer
+        };
+
+        buffer.to_buffer(wgpu, light);
+
+        buffer
+    }
+
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, light: &Light)
+    {
+        let light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
+
+        self.buffer = wgpu.device().create_buffer_init
+        (
+            &wgpu::util::BufferInitDescriptor
+            {
+                label: Some(&self.name),
+                contents: bytemuck::cast_slice(&[light_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+    }
+
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, light: &Light)
+    {
+        let light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
+
+        wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[light_uniform]));
+    }
+
+    pub fn get_buffer(&self) -> &wgpu::Buffer
+    {
+        &self.buffer
     }
 }
