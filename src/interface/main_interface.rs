@@ -251,6 +251,17 @@ impl MainInterface
             state.update(state.frame_scale);
         }
 
+        // msaa sample update
+        {
+            let state = &mut *(self.state.borrow_mut());
+
+            if state.msaa_changed
+            {
+                self.wgpu.create_msaa_texture(state.msaa as u32);
+                state.msaa_changed = false;
+            }
+        }
+
         // build ui
         {
             let state = &mut *(self.state.borrow_mut());

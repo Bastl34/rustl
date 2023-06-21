@@ -45,9 +45,11 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             ui.horizontal(|ui|
             {
                 ui.label("MSAA:");
-                ui.selectable_value(& mut state.msaa, 1, "1");
 
                 let mut changed = false;
+
+                changed = ui.selectable_value(& mut state.msaa, 1, "1").changed() || changed;
+
                 if state.msaa_max >= 2 { changed = ui.selectable_value(& mut state.msaa, 2, "2").changed() || changed; }
                 if state.msaa_max >= 4 { changed = ui.selectable_value(& mut state.msaa, 4, "4").changed() || changed; }
                 if state.msaa_max >= 8 { changed = ui.selectable_value(& mut state.msaa, 8, "8").changed() || changed; }

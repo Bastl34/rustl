@@ -135,6 +135,8 @@ impl WGpu
 
     pub fn create_msaa_texture(&mut self, sample_count: u32)
     {
+        self.msaa_samples = sample_count;
+
         if sample_count <= 1
         {
             self.msaa_texture = None;
