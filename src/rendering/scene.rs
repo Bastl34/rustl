@@ -14,7 +14,11 @@ pub struct Scene
 {
     clear_color: wgpu::Color,
 
+    color_shader: String,
+    depth_shader: String,
+
     samples: u32,
+
 
     depth_pipe: Option<Pipeline>,
     color_pipe: Option<Pipeline>,
@@ -106,9 +110,17 @@ impl Scene
             light.render_item = Some(Box::new(light_buffer));
         }
 
+        // shader source
+        let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
+        let depth_shader = resources::load_string_async("shader/depth.wgsl").await.unwrap();
+
         let mut render_scene = Self
         {
             clear_color: wgpu::Color::BLACK,
+
+            color_shader,
+            depth_shader,
+
             samples,
 
             color_pipe: None,
@@ -118,12 +130,12 @@ impl Scene
             depth_pass_buffer_texture: None,
         };
 
-        render_scene.create_pipelines(wgpu, scene).await;
+        render_scene.create_pipelines(wgpu, scene, false);
 
         render_scene
     }
 
-    pub async fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
+    pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
         let node_id = 0;
         let light_id = 0;
@@ -161,70 +173,27 @@ impl Scene
         textures.push(&base_texture);
         textures.push(&normal_texture);
 
-        let shader_source = resources::load_string_async("shader/depth.wgsl").await.unwrap();
-        let depth_pipe = Pipeline::new(wgpu, "test", &shader_source, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
+        if !re_create
+        {
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, &cam_render_item, &light_render_item, true, true, self.samples));
+        }
+        else
+        {
+            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
+        }
 
         // ********** color pass **********
         //let mut textures = vec![];
         //textures.push(&depth_pass_buffer_texture); // TODOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 
-        let shader_source = resources::load_string_async("shader/phong.wgsl").await.unwrap();
-        let color_pipe = Pipeline::new(wgpu, "test", &shader_source, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
-
-        base_tex.render_item = Some(Box::new(base_texture));
-        normal_tex.render_item = Some(Box::new(normal_texture));
-
-        self.color_pipe = Some(color_pipe);
-        self.depth_pipe = Some(depth_pipe);
-        self.depth_buffer_texture = Some(depth_buffer_texture);
-        self.depth_pass_buffer_texture = Some(depth_pass_buffer_texture);
-    }
-
-    pub fn re_create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
-    {
-        let node_id = 0;
-        let light_id = 0;
-        let cam_id = 0;
-
-        let node = scene.nodes.get_mut(node_id).unwrap();
-
-        // material and textures
-        let mat = node.write().unwrap().find_shared_component::<MaterialComponent>().unwrap();
-        let mut mat = mat.write().unwrap();
-        let mat = mat.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
-        let mat_data = mat.get_data_mut();
-
-        let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
-        let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();
-
-        let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
-        let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
-
-        let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-
-        let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-
-        //light
-        let light = scene.lights.get(light_id).unwrap();
-        let light_render_item = get_render_item::<LightBuffer>(light.render_item.as_ref().unwrap());
-
-        // cam
-        let cam = scene.cameras.get(cam_id).unwrap();
-        let cam_render_item = get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
-
-        // ********** depth pass **********
-        let mut textures = vec![];
-        textures.push(&base_texture);
-        textures.push(&normal_texture);
-
-        self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
-
-        // ********** color pass **********
-        //let mut textures = vec![];
-        //textures.push(&depth_pass_buffer_texture); // TODOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-
-        self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
+        if !re_create
+        {
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, &cam_render_item, &light_render_item, true, true, self.samples));
+        }
+        else
+        {
+            self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
+        }
 
         base_tex.render_item = Some(Box::new(base_texture));
         normal_tex.render_item = Some(Box::new(normal_texture));
@@ -406,7 +375,7 @@ impl Scene
     pub fn msaa_sample_size_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, samples: u32)
     {
         self.samples = samples;
-        self.re_create_pipelines(wgpu, scene);
+        self.create_pipelines(wgpu, scene, true);
     }
 
     pub fn resize(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
