@@ -63,11 +63,11 @@ impl Instance
 
     pub fn get_transform(&self) -> (Matrix4::<f32>, Matrix3::<f32>)
     {
-        let node_transform = Node::get_full_transform(self.node.clone());
+        let (trans, normal) = Node::get_full_transform(self.node.clone());
 
         (
-            node_transform.0 * self.transform.get_transform(),
-            node_transform.1 * self.transform.get_normal_matrix(),
+            trans * self.transform.get_transform(),
+            normal * self.transform.get_normal_matrix(),
         )
     }
 

@@ -23,13 +23,6 @@ pub struct LightUniform
     _padding: [f32; 3],
 }
 
-/*
-impl RenderItem for LightUniform
-{
-    render_item_impl_default!();
-}
-*/
-
 impl LightUniform
 {
     pub fn new(position: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Self

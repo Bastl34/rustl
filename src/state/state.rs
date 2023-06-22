@@ -40,9 +40,14 @@ pub struct State
     pub last_time: u128,
     pub fps: u32,
     pub last_fps: u32,
+    pub fps_absolute: u32,
 
     pub frame_update_time: u128,
-    pub frame_scale: f32
+    pub frame_scale: f32,
+
+    pub frame_time: f32,
+    pub update_time: f32,
+    pub render_time: f32,
 }
 
 impl State
@@ -58,7 +63,7 @@ impl State
             light_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             fullscreen: false,
-            msaa: Consumable::new(1),
+            msaa: Consumable::new(8),
             msaa_max: 1,
 
             cam_fov: 45.0,
@@ -79,9 +84,14 @@ impl State
             last_time: 0,
             fps: 0,
             last_fps: 0,
+            fps_absolute: 0,
 
             frame_update_time: 0,
-            frame_scale: 0.0
+            frame_scale: 0.0,
+
+            frame_time: 0.0,
+            update_time: 0.0,
+            render_time: 0.0,
         }
     }
 

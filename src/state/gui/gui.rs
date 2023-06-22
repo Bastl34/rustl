@@ -13,7 +13,11 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
         egui::Window::new("Settings").show(ctx, |ui|
         {
             ui.label(format!("fps: {}", state.last_fps));
+            ui.label(format!("absolute fps: {}", state.fps_absolute));
             ui.label(format!("draw calls: {}", state.draw_calls));
+            ui.label(format!("frame time: {:.3} ms", state.frame_time));
+            ui.label(format!("update time: {:.3} ms", state.update_time));
+            ui.label(format!("render time: {:.3} ms", state.render_time));
 
             ui.horizontal(|ui|
             {
@@ -65,7 +69,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             ui.horizontal(|ui|
             {
                 ui.label("instances:");
-                ui.add(egui::Slider::new(&mut state.instances, 1..=10));
+                ui.add(egui::Slider::new(&mut state.instances, 1..=10000));
             });
 
             ui.horizontal(|ui|

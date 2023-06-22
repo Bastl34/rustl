@@ -183,6 +183,8 @@ impl MainInterface
 
     pub fn update(&mut self)
     {
+        let frame_time = Instant::now();
+
         // update states
         {
             let state = &mut *(self.state.borrow_mut());
@@ -255,8 +257,9 @@ impl MainInterface
                 scene.render_item = render_item;
             }
 
-            //state.scenes = scenes;
             swap(&mut scenes, &mut state.scenes);
+
+            state.update_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // build ui
@@ -272,6 +275,8 @@ impl MainInterface
         // render
         let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
         {
+            let render_time = Instant::now();
+
             // render scenes
             let state = &mut *(self.state.borrow_mut());
             state.draw_calls = 0;
@@ -288,6 +293,8 @@ impl MainInterface
 
             // render egui
             self.egui.render(&mut self.wgpu, &view, &mut encoder);
+
+            state.render_time = render_time.elapsed().as_micros() as f32 / 1000.0;
         }
         self.wgpu.end_render(output, encoder);
 
@@ -316,6 +323,13 @@ impl MainInterface
                 img_data.save("data/screenshot.png").unwrap();
                 state.save_screenshot = false;
             }
+        }
+
+        {
+            let state = &mut *(self.state.borrow_mut());
+            state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+
+            state.fps_absolute = (1000.0 / (state.render_time + state.update_time)) as u32;
         }
     }
 
