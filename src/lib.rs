@@ -77,6 +77,7 @@ mod helper
     pub(crate) mod math;
     pub(crate) mod image;
     pub(crate) mod crypto;
+    pub(crate) mod consumable;
 }
 
 mod resources

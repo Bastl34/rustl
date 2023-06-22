@@ -47,15 +47,19 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                 ui.label("MSAA:");
 
                 let mut changed = false;
+                let mut msaa = *state.msaa.get();
 
-                changed = ui.selectable_value(& mut state.msaa, 1, "1").changed() || changed;
+                changed = ui.selectable_value(& mut msaa, 1, "1").changed() || changed;
 
-                if state.msaa_max >= 2 { changed = ui.selectable_value(& mut state.msaa, 2, "2").changed() || changed; }
-                if state.msaa_max >= 4 { changed = ui.selectable_value(& mut state.msaa, 4, "4").changed() || changed; }
-                if state.msaa_max >= 8 { changed = ui.selectable_value(& mut state.msaa, 8, "8").changed() || changed; }
-                if state.msaa_max >= 16 { changed = ui.selectable_value(& mut state.msaa, 16, "16").changed() || changed; }
+                if state.msaa_max >= 2 { changed = ui.selectable_value(& mut msaa, 2, "2").changed() || changed; }
+                if state.msaa_max >= 4 { changed = ui.selectable_value(& mut msaa, 4, "4").changed() || changed; }
+                if state.msaa_max >= 8 { changed = ui.selectable_value(& mut msaa, 8, "8").changed() || changed; }
+                if state.msaa_max >= 16 { changed = ui.selectable_value(& mut msaa, 16, "16").changed() || changed; }
 
-                state.msaa_changed = changed;
+                if changed
+                {
+                    state.msaa.set(msaa)
+                }
             });
 
             ui.horizontal(|ui|

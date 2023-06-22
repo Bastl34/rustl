@@ -100,7 +100,7 @@ impl WGpu
         if texture_features.flags.sample_count_supported(8) { state.msaa_max = 8; }
         if texture_features.flags.sample_count_supported(16) { state.msaa_max = 16; }
 
-        let msaa_samples = state.msaa as u32;
+        let msaa_samples = *state.msaa.get();
 
         let mut wgpu = Self
         {

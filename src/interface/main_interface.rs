@@ -42,7 +42,7 @@ impl MainInterface
         let samlpes;
         {
             let state = & *(state.borrow());
-            samlpes = state.msaa as u32;
+            samlpes = *state.msaa.get();
         }
 
 
@@ -160,13 +160,8 @@ impl MainInterface
         let mut width = dimensions.width;
         let mut height = dimensions.height;
 
-        if width == 0 {
-            width = 1;
-        }
-
-        if height == 0 {
-            height = 1;
-        }
+        if width == 0 { width = 1; }
+        if height == 0 { height = 1; }
 
         self.wgpu.resize(width, height);
         self.egui.resize(width, height, scale_factor);
@@ -231,6 +226,16 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
+            // msaa
+            let (msaa_samples, msaa_changed) = state.msaa.consume();
+
+            if msaa_changed
+            {
+                self.wgpu.create_msaa_texture(msaa_samples);
+            }
+
+            state.update(state.frame_scale);
+
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
             swap(&mut state.scenes, &mut scenes);
@@ -240,6 +245,11 @@ impl MainInterface
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+
+                if msaa_changed
+                {
+                    render_scene.msaa_sample_size_update(&mut self.wgpu, scene, msaa_samples);
+                }
                 render_scene.update(&mut self.wgpu, state, scene);
 
                 scene.render_item = render_item;
@@ -247,19 +257,6 @@ impl MainInterface
 
             //state.scenes = scenes;
             swap(&mut scenes, &mut state.scenes);
-
-            state.update(state.frame_scale);
-        }
-
-        // msaa sample update
-        {
-            let state = &mut *(self.state.borrow_mut());
-
-            if state.msaa_changed
-            {
-                self.wgpu.create_msaa_texture(state.msaa as u32);
-                state.msaa_changed = false;
-            }
         }
 
         // build ui

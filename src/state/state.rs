@@ -3,6 +3,8 @@ use std::{cell::RefCell, rc::Rc};
 use instant::Instant;
 use nalgebra::{Vector3, Point3};
 
+use crate::helper::consumable::Consumable;
+
 use super::scene::scene::SceneItem;
 
 pub type StateItem = Rc<RefCell<State>>;
@@ -18,9 +20,8 @@ pub struct State
     pub cam_fov: f32,
 
     pub fullscreen: bool,
-    pub msaa: u8,
+    pub msaa: Consumable<u32>,
     pub msaa_max: u8,
-    pub msaa_changed: bool,
 
     pub instances: u32,
     pub rotation_speed: f32,
@@ -57,9 +58,8 @@ impl State
             light_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             fullscreen: false,
-            msaa: 1,
+            msaa: Consumable::new(1),
             msaa_max: 1,
-            msaa_changed: false,
 
             cam_fov: 45.0,
 

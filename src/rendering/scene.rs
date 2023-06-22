@@ -245,12 +245,6 @@ impl Scene
             b: state.clear_color.z as f64,
         };
 
-        if state.msaa_changed
-        {
-            self.samples = state.msaa as u32;
-            self.re_create_pipelines(wgpu, scene);
-        }
-
         for cam in &mut scene.cameras
         {
             cam.eye_pos = state.camera_pos;
@@ -407,7 +401,12 @@ impl Scene
 
             state.save_depth_buffer_image = false;
         }
+    }
 
+    pub fn msaa_sample_size_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, samples: u32)
+    {
+        self.samples = samples;
+        self.re_create_pipelines(wgpu, scene);
     }
 
     pub fn resize(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
