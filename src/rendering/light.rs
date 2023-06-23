@@ -6,16 +6,16 @@
 // https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#the-blinn-phong-model
 // https://www.w3.org/TR/WGSL/#alignment-and-size
 
-use std::mem;
+use std::{mem, cell::RefCell};
 
 use nalgebra::{Vector3, Point3};
 use wgpu::util::DeviceExt;
 
-use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, LightItem}}, render_item_impl_default};
+use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, LightItem}}, render_item_impl_default, helper::change_tracker::ChangeTracker};
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
-const MAX_LIGHTS: usize = 10;
+const MAX_LIGHTS: usize = 1;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -78,7 +78,7 @@ impl RenderItem for LightBuffer
 
 impl LightBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: String, lights: &Vec<LightItem>) -> LightBuffer
+    pub fn new(wgpu: &mut WGpu, name: String, lights: &Vec<RefCell<ChangeTracker<LightItem>>>) -> LightBuffer
     {
         let mut buffer = LightBuffer
         {
@@ -97,16 +97,8 @@ impl LightBuffer
         (MAX_LIGHTS * mem::size_of::<LightsUniform>()) as wgpu::BufferAddress
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<LightItem>)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>)
     {
-        /*
-        let lights_buffer_data = vec![];
-        for light in lights
-        {
-            lights_buffer_data.push(LightUniform::new(light.pos, light.color, light.intensity));
-        }
-        */
-
         let amount = lights.len() as u32;
         self.lights_amount = wgpu.device().create_buffer_init
         (
@@ -128,6 +120,14 @@ impl LightBuffer
 
         for (i, light) in lights.iter().enumerate()
         {
+            if i + 1 > MAX_LIGHTS
+            {
+                println!("only {} lights are supported", MAX_LIGHTS);
+                continue;
+            }
+
+            let light = light.borrow();
+            let light = light.get_ref();
             let data = LightUniform::new(light.pos, light.color, light.intensity);
 
             wgpu.queue_mut().write_buffer
@@ -137,20 +137,6 @@ impl LightBuffer
                 bytemuck::bytes_of(&data),
             );
         }
-
-        /*
-        let light_uniform = LightUniform::new(light.pos, light.color, light.intensity);
-
-        self.buffer = wgpu.device().create_buffer_init
-        (
-            &wgpu::util::BufferInitDescriptor
-            {
-                label: Some(&self.name),
-                contents: bytemuck::cast_slice(&[light_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-        */
     }
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, light: &Light, index: usize)

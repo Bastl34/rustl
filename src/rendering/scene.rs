@@ -3,7 +3,7 @@ use std::{sync::RwLockReadGuard};
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}, light}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}};
 
@@ -18,7 +18,6 @@ pub struct Scene
     depth_shader: String,
 
     samples: u32,
-
 
     depth_pipe: Option<Pipeline>,
     color_pipe: Option<Pipeline>,
@@ -103,16 +102,10 @@ impl Scene
 
         // lights
         {
-            let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), &scene.lights);
+            let lights = scene.lights.consume();
+            let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), lights);
             scene.lights_render_item = Some(Box::new(lights_buffer));
         }
-        /*
-        for light in scene.lights.iter_mut()
-        {
-            let light_buffer = LightBuffer::new(wgpu, &light);
-            light.render_item = Some(Box::new(light_buffer));
-        }
-        */
 
         // shader source
         let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
@@ -163,15 +156,6 @@ impl Scene
 
         //light
         let lights_render_item = get_render_item::<LightBuffer>(scene.lights_render_item.as_ref().unwrap());
-
-        /*
-        let mut lights: Vec<Box<&LightBuffer>> = vec![];
-        for light in &scene.lights
-        {
-            let render_item = get_render_item::<LightBuffer>(light.render_item.as_ref().unwrap());
-            lights.push(render_item);
-        }
-        */
 
         // cam
         let cam = scene.cameras.get(cam_id).unwrap();
@@ -316,8 +300,31 @@ impl Scene
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
         }
 
-        // light
-        if scene.lights.len() > 0
+        // all lights
+        let (lights, lights_changed) = scene.lights.consume_borrow();
+        if lights_changed
+        {
+            let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), lights);
+            scene.lights_render_item = Some(Box::new(lights_buffer));
+
+            dbg!(" ============ lights updated");
+        }
+
+        // check each light
+        for (i, light) in lights.iter().enumerate()
+        {
+            let mut light = light.borrow_mut();
+            let (light, light_changed) = light.consume_borrow();
+            if light_changed
+            {
+                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                render_item.update_buffer(wgpu, light, i);
+
+                dbg!(" ============ ONE lights updated");
+            }
+        }
+        /*
+        if scene.lights.get_ref().len() > 0
         {
             {
                 let light_id = 0;
@@ -328,18 +335,6 @@ impl Scene
 
                 let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
                 render_item.update_buffer(wgpu, light, light_id);
-
-                /*
-
-                let mut render_item = light.render_item.take();
-
-                {
-                    let render_item = get_render_item_mut::<LightBuffer>(render_item.as_mut().unwrap());
-                    render_item.update_buffer(wgpu, light.as_ref());
-                }
-
-                light.render_item = render_item;
-                */
             }
 
             {
@@ -351,19 +346,9 @@ impl Scene
 
                 let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
                 render_item.update_buffer(wgpu, light, light_id);
-
-                /*
-                let mut render_item = light.render_item.take();
-
-                {
-                    let render_item = get_render_item_mut::<LightBuffer>(render_item.as_mut().unwrap());
-                    render_item.update_buffer(wgpu, light.as_ref());
-                }
-
-                light.render_item = render_item;
-                */
             }
         }
+        */
 
         if state.save_image
         {
@@ -472,13 +457,13 @@ impl Scene
         }
 
         let mut draw_calls: u32 = 0;
-        draw_calls += self.render_depth(wgpu, view, msaa_view, encoder, &read_nodes);
+        draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes);
         draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes);
 
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
     {
         let clear_color = wgpu::Color::BLACK;
 

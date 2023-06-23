@@ -1,5 +1,5 @@
 use egui::{FullOutput, RichText, Color32};
-use nalgebra::Vector3;
+use nalgebra::{Vector3, Point3};
 
 use crate::{state::state::State, rendering::egui::EGui};
 
@@ -86,52 +86,53 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                 ui.add(egui::DragValue::new(&mut state.camera_pos.z).speed(0.1).prefix("z: "));
             });
 
-            ui.horizontal(|ui|
+            let mut lights: Vec<(usize, usize, String, Point3<f32>, Color32)> = vec![];
+
+            for (s, scene) in state.scenes.iter().enumerate()
             {
-                ui.label("light 1:");
-                ui.add(egui::DragValue::new(&mut state.light1_pos.x).speed(0.1).prefix("x: "));
-                ui.add(egui::DragValue::new(&mut state.light1_pos.y).speed(0.1).prefix("y: "));
-                ui.add(egui::DragValue::new(&mut state.light1_pos.z).speed(0.1).prefix("z: "));
-
-                let r = (state.light1_color.x * 255.0) as u8;
-                let g = (state.light1_color.y * 255.0) as u8;
-                let b = (state.light1_color.z * 255.0) as u8;
-                let mut color = Color32::from_rgb(r, g, b);
-
-                let changed = ui.color_edit_button_srgba(&mut color).changed();
-
-                if changed
+                for (l, light) in scene.lights.get_ref().iter().enumerate()
                 {
-                    let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
-                    let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
-                    let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
-                    state.light1_color = Vector3::<f32>::new(r, g, b);
+                    let light = light.borrow();
+                    let light = light.get_ref();
+
+                    let r = (light.color.x * 255.0) as u8;
+                    let g = (light.color.y * 255.0) as u8;
+                    let b = (light.color.z * 255.0) as u8;
+                    let color = Color32::from_rgb(r, g, b);
+
+                    lights.push((s, l, light.name().clone(), light.pos.clone(), color));
                 }
-            });
+            }
 
-
-            ui.horizontal(|ui|
+            for light in lights.iter_mut()
             {
-                ui.label("light 2:");
-                ui.add(egui::DragValue::new(&mut state.light2_pos.x).speed(0.1).prefix("x: "));
-                ui.add(egui::DragValue::new(&mut state.light2_pos.y).speed(0.1).prefix("y: "));
-                ui.add(egui::DragValue::new(&mut state.light2_pos.z).speed(0.1).prefix("z: "));
+                let (scene_id, light_id, name, pos, mut color) = light;
 
-                let r = (state.light2_color.x * 255.0) as u8;
-                let g = (state.light2_color.y * 255.0) as u8;
-                let b = (state.light2_color.z * 255.0) as u8;
-                let mut color = Color32::from_rgb(r, g, b);
-
-                let changed = ui.color_edit_button_srgba(&mut color).changed();
-
-                if changed
+                ui.horizontal(|ui|
                 {
-                    let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
-                    let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
-                    let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
-                    state.light2_color = Vector3::<f32>::new(r, g, b);
-                }
-            });
+                    let mut changed = false;
+
+                    ui.label(name.as_str());
+                    changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    changed = ui.color_edit_button_srgba(&mut color).changed() || changed;
+
+                    if changed
+                    {
+                        let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                        let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                        let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+
+                        let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+                        let light = scene.lights.get_ref().get(light_id.clone()).unwrap();
+                        let mut light = light.borrow_mut();
+                        let light = light.get_mut();
+                        light.pos = pos.clone();
+                        light.color = Vector3::<f32>::new(r, g, b);
+                    }
+                });
+            }
 
             // just some tests
             ui.horizontal(|ui|

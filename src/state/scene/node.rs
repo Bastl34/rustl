@@ -25,7 +25,6 @@ pub struct Node
     pub components: Vec<ComponentItem>,
     pub shared_components: Vec<SharedComponentItem>,
 
-
     pub instance_render_item: RenderItemOption,
 
     // bounding box

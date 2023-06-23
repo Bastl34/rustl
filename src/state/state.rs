@@ -39,11 +39,13 @@ pub struct State
 
     pub camera_pos: Point3<f32>,
 
+    /*
     pub light1_pos: Point3<f32>,
     pub light1_color: Vector3<f32>,
 
     pub light2_pos: Point3<f32>,
     pub light2_color: Vector3<f32>,
+    */
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -96,11 +98,13 @@ impl State
 
             camera_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
 
+            /*
             light1_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             light1_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
 
             light2_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             light2_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
+            */
 
             save_image: false,
             save_depth_pass_image: false,

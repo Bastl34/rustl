@@ -1,8 +1,8 @@
-use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}};
+use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell};
 
 use anyhow::Ok;
 
-use crate::{resources::resources, helper, state::helper::render_item::RenderItemOption};
+use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
 use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
 
@@ -17,7 +17,7 @@ pub struct Scene
 
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
-    pub lights: Vec<LightItem>,
+    pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
 
@@ -36,7 +36,7 @@ impl Scene
             name: name.to_string(),
             nodes: vec![],
             cameras: vec![],
-            lights: vec![],
+            lights: ChangeTracker::new(vec![]),
             textures: HashMap::new(),
             materials: HashMap::new(),
 
@@ -75,7 +75,7 @@ impl Scene
 
     pub fn print(&self)
     {
-        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.len(), self.materials.len(), self.textures.len());
+        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len(), self.textures.len());
 
         // print
         for node in &self.nodes

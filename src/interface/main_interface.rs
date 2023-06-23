@@ -7,6 +7,7 @@ use std::vec;
 use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
+use crate::helper::change_tracker::ChangeTracker;
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene, self};
 
@@ -119,16 +120,14 @@ impl MainInterface
 
             // ********** light **********
             {
-                state.light1_pos = Point3::<f32>::new(2.0, 5.0, 2.0);
                 let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, state.light1_pos, Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.push(Box::new(light));
+                let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
             {
-                state.light2_pos = Point3::<f32>::new(-2.0, 5.0, 2.0);
                 let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, state.light2_pos, Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.push(Box::new(light));
+                let light = Light::new_point(light_id, Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 
             // ********** scene add **********

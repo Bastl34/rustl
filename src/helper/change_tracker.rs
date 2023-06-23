@@ -35,6 +35,13 @@ impl<T> ChangeTracker<T>
         self.changed
     }
 
+    pub fn consume(&mut self) -> &T
+    {
+        self.changed = false;
+
+        &self.data
+    }
+
     pub fn consume_borrow(&mut self) -> (&T, bool)
     {
         let has_changed = self.changed;
