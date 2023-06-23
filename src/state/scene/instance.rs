@@ -91,9 +91,4 @@ impl Instance
         self.transform.apply_rotation(rotation);
         self.transform.calc_transform();
     }
-
-    pub fn update(&mut self, time_delta: f32)
-    {
-    }
-
 }

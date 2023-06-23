@@ -1,9 +1,9 @@
-use std::{sync::{Arc, RwLock}};
+use std::{sync::{Arc, RwLock}, cell::{Cell, RefCell}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Matrix3, Vector3};
 
-use crate::{state::helper::render_item::RenderItemOption};
+use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker};
 
 use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation}, instance::{InstanceItem, Instance}};
 
@@ -20,7 +20,7 @@ pub struct Node
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
-    pub instances: Vec<InstanceItem>,
+    pub instances: ChangeTracker<Vec<InstanceItem>>,
 
     pub components: Vec<ComponentItem>,
     pub shared_components: Vec<SharedComponentItem>,
@@ -49,7 +49,7 @@ impl Node
 
             parent: None,
             nodes: vec![],
-            instances: vec![],
+            instances: ChangeTracker::new(vec![]),
 
             instance_render_item: None,
 
@@ -304,7 +304,7 @@ impl Node
 
     pub fn add_instance(&mut self, instance: InstanceItem)
     {
-        self.instances.push(instance);
+        self.instances.get_mut().push(instance);
     }
 
     pub fn update(&mut self, frame_scale: f32)
@@ -319,12 +319,6 @@ impl Node
         {
             let mut component_write = component.write().unwrap();
             component_write.update(frame_scale);
-        }
-
-        // update instances
-        for instance in &mut self.instances
-        {
-            instance.update(frame_scale);
         }
 
         // update nodes
@@ -355,7 +349,7 @@ impl Node
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);
-        println!("{} - (NODE) id={} name={} visible={} components={}, shared_components={} instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.shared_components.len(), self.instances.len());
+        println!("{} - (NODE) id={} name={} visible={} components={}, shared_components={} instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.shared_components.len(), self.instances.get_ref().len());
 
         for node in &self.nodes
         {

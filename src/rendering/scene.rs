@@ -85,7 +85,7 @@ impl Scene
             {
                 let node_read = node.read().unwrap();
 
-                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", &node_read.instances);
+                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node_read.instances.get_ref());
             }
 
             let mut node = node.write().unwrap();
@@ -238,9 +238,11 @@ impl Scene
             {
                 let instances = &mut node.instances;
 
-                if instances.len() != state.instances as usize
+                if instances.get_ref().len() != state.instances as usize
                 {
-                    instances.clear();
+                    dbg!("recreate instances");
+
+                    instances.get_mut().clear();
 
                     for i in 0..state.instances
                     {
@@ -261,25 +263,34 @@ impl Scene
                 }
                 else
                 {
-                    for instance in instances
+                    for instance in instances.get_mut()
                     {
-                        let rotation = state.rotation_speed * state.frame_scale;
+                        let rotation: f32 = state.rotation_speed * state.frame_scale;
                         instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
                     }
                 }
             }
         }
+
         {
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
 
-            let instance_buffer;
+            let changed;
             {
-                let mut node = node_arc.read().unwrap();
-
-                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", &node.instances);
+                let mut write = node_arc.write().unwrap();
+                (_, changed) = write.instances.consume_borrow();
             }
 
-            node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
+            if changed
+            {
+                let instance_buffer;
+                {
+                    let node = node_arc.read().unwrap();
+                    instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node.instances.get_ref());
+                }
+
+                node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
+            }
         }
 
         {
