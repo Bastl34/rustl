@@ -27,7 +27,7 @@ pub struct Light
     pub max_angle: f32, //in rad
     pub light_type: LightType,
 
-    pub render_item: RenderItemOption
+    //pub render_item: RenderItemOption
 }
 
 impl Light
@@ -45,7 +45,7 @@ impl Light
             max_angle: 0.0,
             light_type: LightType::Point,
 
-            render_item: None
+            //render_item: None
         }
     }
 

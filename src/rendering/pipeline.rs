@@ -1,6 +1,7 @@
 use std::{borrow::Cow};
 
-use wgpu::{BindGroup, ShaderModule, Device, BindGroupLayout};
+use wgpu::util::DeviceExt;
+use wgpu::{BindGroup, ShaderModule, Device, BindGroupLayout, Buffer};
 
 use super::camera::CameraBuffer;
 use super::light::LightBuffer;
@@ -14,6 +15,8 @@ pub struct Pipeline
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
 
+    //lights_amount_buffer: Buffer,
+
     textures_bind_group: Option<BindGroup>,
     camera_bind_group: Option<BindGroup>,
     light_bind_group: Option<BindGroup>,
@@ -25,7 +28,7 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraBuffer, light: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraBuffer, lights: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
     {
         let shader;
         {
@@ -34,6 +37,8 @@ impl Pipeline
             // shader
             shader = Pipeline::create_shader(device, name, shader_source);
         }
+
+        //let lights_amount_buffer = Pipeline::create_lights_buffer(wgpu, lights.len() as u32);
 
         // create pipe
         let mut pipe = Self
@@ -44,6 +49,8 @@ impl Pipeline
             shader,
             pipeline: None,
 
+            //lights_amount_buffer,
+
             textures_bind_group: None,
             camera_bind_group: None,
             light_bind_group: None,
@@ -53,13 +60,28 @@ impl Pipeline
             light_bind_group_layout: None,
         };
 
-        pipe.create_binding_groups(wgpu, textures, cam, light);
+        pipe.create_binding_groups(wgpu, textures, cam, lights);
         pipe.create(wgpu, depth_stencil, fragment_attachment, samples);
 
         pipe
     }
 
-    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, light: &LightBuffer)
+    /*
+    pub fn create_lights_buffer(wgpu: &mut WGpu, amount: u32) -> Buffer
+    {
+        wgpu.device().create_buffer_init
+        (
+            &wgpu::util::BufferInitDescriptor
+            {
+                label: Some("lights amount buffer"),
+                contents: bytemuck::bytes_of(&amount),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        )
+    }
+    */
+
+    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, lights: &LightBuffer)
     {
         let device = wgpu.device();
 
@@ -119,13 +141,33 @@ impl Pipeline
             label: Some(camera_bind_group_name.as_str()),
         });
 
-        // ******************** light ********************
+        // ******************** lights ********************
         let light_bind_group_layout_name = format!("{} light_bind_group_layout", self.name);
+
+        /*
+        let mut light_bind_group_layout_entries = vec![];
+        let mut light_bind_group_entries = vec![];
+
+        let mut light_id = 0;
+
+        light_bind_group_layout_entries.push(uniform::uniform_bind_group_layout_entry(0, true, true));
+        light_bind_group_entries.push(uniform::uniform_bind_group(light_id, &self.lights_amount_buffer));
+
+        for light in lights
+        {
+            light_bind_group_layout_entries.push(uniform::uniform_bind_group_layout_entry(light_id + 1, true, true));
+            light_bind_group_entries.push(uniform::uniform_bind_group(light_id + 1, &light.get_buffer()));
+
+            light_id += 1;
+        }
+        */
+
         let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
             &[
-                uniform::uniform_bind_group_layout_entry(0, true, true)
+                uniform::uniform_bind_group_layout_entry(0, true, true),
+                uniform::uniform_bind_group_layout_entry(1, true, true),
             ],
             label: Some(light_bind_group_layout_name.as_str()),
         });
@@ -136,7 +178,8 @@ impl Pipeline
             layout: &light_bind_group_layout,
             entries:
             &[
-                uniform::uniform_bind_group(0, &light.get_buffer())
+                uniform::uniform_bind_group(0, &lights.get_amount_buffer()),
+                uniform::uniform_bind_group(1, &lights.get_lights_buffer()),
             ],
             label: Some(light_bind_group_name.as_str()),
         });
@@ -240,19 +283,18 @@ impl Pipeline
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
             multiview: None,
         });
 
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, light: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn re_create(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, lights: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32)
     {
         dbg!("recreating pipeline");
 
-        self.create_binding_groups(wgpu, textures, cam, light);
+        //self.lights_amount_buffer = Pipeline::create_lights_buffer(wgpu, lights.len() as u32);
+        self.create_binding_groups(wgpu, textures, cam, lights);
         self.create(wgpu, depth_stencil, fragment_attachment, samples);
     }
 

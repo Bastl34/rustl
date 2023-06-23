@@ -55,10 +55,10 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
 
                 changed = ui.selectable_value(& mut msaa, 1, "1").changed() || changed;
 
-                if state.msaa_max >= 2 { changed = ui.selectable_value(& mut msaa, 2, "2").changed() || changed; }
-                if state.msaa_max >= 4 { changed = ui.selectable_value(& mut msaa, 4, "4").changed() || changed; }
-                if state.msaa_max >= 8 { changed = ui.selectable_value(& mut msaa, 8, "8").changed() || changed; }
-                if state.msaa_max >= 16 { changed = ui.selectable_value(& mut msaa, 16, "16").changed() || changed; }
+                if state.adapter.msaa_samples >= 2 { changed = ui.selectable_value(& mut msaa, 2, "2").changed() || changed; }
+                if state.adapter.msaa_samples >= 4 { changed = ui.selectable_value(& mut msaa, 4, "4").changed() || changed; }
+                if state.adapter.msaa_samples >= 8 { changed = ui.selectable_value(& mut msaa, 8, "8").changed() || changed; }
+                if state.adapter.msaa_samples >= 16 { changed = ui.selectable_value(& mut msaa, 16, "16").changed() || changed; }
 
                 if changed
                 {
@@ -88,20 +88,16 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
 
             ui.horizontal(|ui|
             {
-                ui.label("light pos:");
-                ui.add(egui::DragValue::new(&mut state.light_pos.x).speed(0.1).prefix("x: "));
-                ui.add(egui::DragValue::new(&mut state.light_pos.y).speed(0.1).prefix("y: "));
-                ui.add(egui::DragValue::new(&mut state.light_pos.z).speed(0.1).prefix("z: "));
-            });
+                ui.label("light 1:");
+                ui.add(egui::DragValue::new(&mut state.light1_pos.x).speed(0.1).prefix("x: "));
+                ui.add(egui::DragValue::new(&mut state.light1_pos.y).speed(0.1).prefix("y: "));
+                ui.add(egui::DragValue::new(&mut state.light1_pos.z).speed(0.1).prefix("z: "));
 
-            ui.horizontal(|ui|
-            {
-                let r = (state.light_color.x * 255.0) as u8;
-                let g = (state.light_color.y * 255.0) as u8;
-                let b = (state.light_color.z * 255.0) as u8;
+                let r = (state.light1_color.x * 255.0) as u8;
+                let g = (state.light1_color.y * 255.0) as u8;
+                let b = (state.light1_color.z * 255.0) as u8;
                 let mut color = Color32::from_rgb(r, g, b);
 
-                ui.label("light color:");
                 let changed = ui.color_edit_button_srgba(&mut color).changed();
 
                 if changed
@@ -109,7 +105,31 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
                     let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
                     let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
-                    state.light_color = Vector3::<f32>::new(r, g, b);
+                    state.light1_color = Vector3::<f32>::new(r, g, b);
+                }
+            });
+
+
+            ui.horizontal(|ui|
+            {
+                ui.label("light 2:");
+                ui.add(egui::DragValue::new(&mut state.light2_pos.x).speed(0.1).prefix("x: "));
+                ui.add(egui::DragValue::new(&mut state.light2_pos.y).speed(0.1).prefix("y: "));
+                ui.add(egui::DragValue::new(&mut state.light2_pos.z).speed(0.1).prefix("z: "));
+
+                let r = (state.light2_color.x * 255.0) as u8;
+                let g = (state.light2_color.y * 255.0) as u8;
+                let b = (state.light2_color.z * 255.0) as u8;
+                let mut color = Color32::from_rgb(r, g, b);
+
+                let changed = ui.color_edit_button_srgba(&mut color).changed();
+
+                if changed
+                {
+                    let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                    let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                    let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                    state.light2_color = Vector3::<f32>::new(r, g, b);
                 }
             });
 

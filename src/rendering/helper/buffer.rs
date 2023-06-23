@@ -2,6 +2,8 @@ use std::mem::size_of;
 
 use wgpu::BufferView;
 
+use crate::rendering::wgpu::WGpu;
+
 // wgpu requires texture -> buffer copies to be aligned using wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
 // Because of this its needed to save both the padded_bytes_per_row as well as the unpadded_bytes_per_row
 
@@ -41,4 +43,15 @@ pub fn remove_padding(padded_data: &BufferView, buffer_dimensions: &BufferDimens
         .flatten()
         .map(|x| { *x })
         .collect::<Vec<_>>()
+}
+
+pub fn create_empty_buffer(wgpu: &mut WGpu) -> wgpu::Buffer
+{
+    wgpu.device().create_buffer(&wgpu::BufferDescriptor
+    {
+        label: Some("Empty Buffer"),
+        size: 0,
+        usage: wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }

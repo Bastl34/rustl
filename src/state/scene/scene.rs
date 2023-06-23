@@ -21,7 +21,8 @@ pub struct Scene
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
 
-    pub render_item: RenderItemOption
+    pub render_item: RenderItemOption,
+    pub lights_render_item: RenderItemOption,
 }
 
 impl Scene
@@ -39,7 +40,8 @@ impl Scene
             textures: HashMap::new(),
             materials: HashMap::new(),
 
-            render_item: None
+            render_item: None,
+            lights_render_item: None,
         }
     }
 

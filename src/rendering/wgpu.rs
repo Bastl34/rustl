@@ -39,6 +39,7 @@ impl WGpu
         .unwrap();
 
         println!(" ********** info **********");
+        let adapter_info = adapter.get_info();
         dbg!(adapter.get_info());
 
         println!(" ********** features possible **********");
@@ -93,14 +94,35 @@ impl WGpu
 
         surface.configure(&device, &surface_config);
 
+        // msaa
         let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
 
-        if texture_features.flags.sample_count_supported(2) { state.msaa_max = 2; }
-        if texture_features.flags.sample_count_supported(4) { state.msaa_max = 4; }
-        if texture_features.flags.sample_count_supported(8) { state.msaa_max = 8; }
-        if texture_features.flags.sample_count_supported(16) { state.msaa_max = 16; }
+        if texture_features.flags.sample_count_supported(2) { state.adapter.msaa_samples = 2; }
+        if texture_features.flags.sample_count_supported(4) { state.adapter.msaa_samples = 4; }
+        if texture_features.flags.sample_count_supported(8) { state.adapter.msaa_samples = 8; }
+        if texture_features.flags.sample_count_supported(16) { state.adapter.msaa_samples = 16; }
 
         let msaa_samples = *state.msaa.get();
+
+        // storage support
+        let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
+        state.adapter.storage_buffer_array_support = supports_storage_resources;
+
+        // apply adapter infos
+        state.adapter.name = adapter_info.name.clone();
+        state.adapter.driver = adapter_info.driver.clone();
+        state.adapter.driver_info = adapter_info.driver_info.clone();
+
+        match adapter_info.backend
+        {
+            wgpu::Backend::Empty => state.adapter.backend = "Empty".to_string(),
+            wgpu::Backend::Vulkan => state.adapter.backend = "Vulkan".to_string(),
+            wgpu::Backend::Metal => state.adapter.backend = "Metal".to_string(),
+            wgpu::Backend::Dx12 => state.adapter.backend = "Dx12".to_string(),
+            wgpu::Backend::Dx11 => state.adapter.backend = "Dx11".to_string(),
+            wgpu::Backend::Gl => state.adapter.backend = "Gl".to_string(),
+            wgpu::Backend::BrowserWebGpu => state.adapter.backend = "BrowserWebGpu".to_string(),
+        }
 
         let mut wgpu = Self
         {

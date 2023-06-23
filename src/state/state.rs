@@ -9,25 +9,41 @@ use super::scene::scene::SceneItem;
 
 pub type StateItem = Rc<RefCell<State>>;
 
+pub struct AdapterFeatures
+{
+    pub name: String,
+    pub driver: String,
+    pub driver_info: String,
+    pub backend: String,
+
+    pub storage_buffer_array_support: bool,
+    pub msaa_samples: u32
+}
+
 pub struct State
 {
+    pub adapter: AdapterFeatures,
+
     pub running: bool,
     pub scenes: Vec<SceneItem>,
 
     pub clear_color: Vector3<f32>,
-    pub light_color: Vector3<f32>,
 
     pub cam_fov: f32,
 
     pub fullscreen: bool,
     pub msaa: Consumable<u32>,
-    pub msaa_max: u8,
 
     pub instances: u32,
     pub rotation_speed: f32,
 
     pub camera_pos: Point3<f32>,
-    pub light_pos: Point3<f32>,
+
+    pub light1_pos: Point3<f32>,
+    pub light1_color: Vector3<f32>,
+
+    pub light2_pos: Point3<f32>,
+    pub light2_color: Vector3<f32>,
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -56,15 +72,22 @@ impl State
     {
         Self
         {
+            adapter: AdapterFeatures
+            {
+                name: String::new(),
+                driver: String::new(),
+                driver_info: String::new(),
+                backend: String::new(),
+                storage_buffer_array_support: false,
+                msaa_samples: 1
+            },
             running: false,
             scenes: vec![],
 
             clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
-            light_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             fullscreen: false,
             msaa: Consumable::new(8),
-            msaa_max: 1,
 
             cam_fov: 45.0,
 
@@ -72,7 +95,12 @@ impl State
             rotation_speed: 0.01,
 
             camera_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
-            light_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
+
+            light1_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
+            light1_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
+
+            light2_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
+            light2_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
 
             save_image: false,
             save_depth_pass_image: false,
@@ -106,6 +134,17 @@ impl State
 
     pub fn print(&self)
     {
+        println!("");
+        println!("ADAPTER:");
+        println!(" - adapter: {}", self.adapter.name);
+        println!(" - driver: {}", self.adapter.driver);
+        println!(" - driver info: {}", self.adapter.driver_info);
+        println!(" - backend: {}", self.adapter.backend);
+        println!(" - storage_buffer_array_support: {}", self.adapter.storage_buffer_array_support);
+        println!(" - msaa_samples: {}", self.adapter.msaa_samples);
+
+        println!("");
+
         println!("SCENES:");
         // update scnes
         for scene in &self.scenes

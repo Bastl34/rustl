@@ -101,14 +101,18 @@ impl Scene
             cam.render_item = Some(Box::new(camera_buffer));
         }
 
-        // light
-        let light_id = 0; // TODO
+        // lights
         {
-            let mut light = &mut scene.lights.get_mut(light_id).unwrap();
-
+            let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), &scene.lights);
+            scene.lights_render_item = Some(Box::new(lights_buffer));
+        }
+        /*
+        for light in scene.lights.iter_mut()
+        {
             let light_buffer = LightBuffer::new(wgpu, &light);
             light.render_item = Some(Box::new(light_buffer));
         }
+        */
 
         // shader source
         let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
@@ -138,7 +142,6 @@ impl Scene
     pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
         let node_id = 0;
-        let light_id = 0;
         let cam_id = 0;
 
         let node = scene.nodes.get_mut(node_id).unwrap();
@@ -159,8 +162,16 @@ impl Scene
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
 
         //light
-        let light = scene.lights.get(light_id).unwrap();
-        let light_render_item = get_render_item::<LightBuffer>(light.render_item.as_ref().unwrap());
+        let lights_render_item = get_render_item::<LightBuffer>(scene.lights_render_item.as_ref().unwrap());
+
+        /*
+        let mut lights: Vec<Box<&LightBuffer>> = vec![];
+        for light in &scene.lights
+        {
+            let render_item = get_render_item::<LightBuffer>(light.render_item.as_ref().unwrap());
+            lights.push(render_item);
+        }
+        */
 
         // cam
         let cam = scene.cameras.get(cam_id).unwrap();
@@ -173,11 +184,11 @@ impl Scene
 
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, &cam_render_item, &light_render_item, true, true, 1));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, &cam_render_item, &lights_render_item, true, true, 1));
         }
         else
         {
-            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, 1);
+            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &lights_render_item, true, true, 1);
         }
 
         // ********** color pass **********
@@ -186,11 +197,11 @@ impl Scene
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, &cam_render_item, &light_render_item, true, true, self.samples));
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, &cam_render_item, &lights_render_item, true, true, self.samples));
         }
         else
         {
-            self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
+            self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &lights_render_item, true, true, self.samples);
         }
 
         base_tex.render_item = Some(Box::new(base_texture));
@@ -308,20 +319,50 @@ impl Scene
         // light
         if scene.lights.len() > 0
         {
-            let light_id = 0;
-
-            let mut light = scene.lights.get_mut(light_id).unwrap();
-            light.color = state.light_color.clone();
-            light.pos = state.light_pos.clone();
-
-            let mut render_item = light.render_item.take();
-
             {
-                let render_item = get_render_item_mut::<LightBuffer>(render_item.as_mut().unwrap());
-                render_item.update_buffer(wgpu, light.as_ref());
+                let light_id = 0;
+
+                let mut light = scene.lights.get_mut(light_id).unwrap();
+                light.color = state.light1_color.clone();
+                light.pos = state.light1_pos.clone();
+
+                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                render_item.update_buffer(wgpu, light, light_id);
+
+                /*
+
+                let mut render_item = light.render_item.take();
+
+                {
+                    let render_item = get_render_item_mut::<LightBuffer>(render_item.as_mut().unwrap());
+                    render_item.update_buffer(wgpu, light.as_ref());
+                }
+
+                light.render_item = render_item;
+                */
             }
 
-            light.render_item = render_item;
+            {
+                let light_id = 1;
+
+                let mut light = scene.lights.get_mut(light_id).unwrap();
+                light.color = state.light2_color.clone();
+                light.pos = state.light2_pos.clone();
+
+                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                render_item.update_buffer(wgpu, light, light_id);
+
+                /*
+                let mut render_item = light.render_item.take();
+
+                {
+                    let render_item = get_render_item_mut::<LightBuffer>(render_item.as_mut().unwrap());
+                    render_item.update_buffer(wgpu, light.as_ref());
+                }
+
+                light.render_item = render_item;
+                */
+            }
         }
 
         if state.save_image

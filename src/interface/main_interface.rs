@@ -118,10 +118,18 @@ impl MainInterface
             scene.cameras.push(Box::new(cam));
 
             // ********** light **********
-            state.light_pos = Point3::<f32>::new(2.0, 5.0, 2.0);
-            let light_id = scene.id_manager.get_next_light_id();
-            let light = Light::new_point(light_id, state.light_pos, Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.push(Box::new(light));
+            {
+                state.light1_pos = Point3::<f32>::new(2.0, 5.0, 2.0);
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, state.light1_pos, Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.push(Box::new(light));
+            }
+            {
+                state.light2_pos = Point3::<f32>::new(-2.0, 5.0, 2.0);
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, state.light2_pos, Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.push(Box::new(light));
+            }
 
             // ********** scene add **********
             state.scenes.push(Box::new(scene));

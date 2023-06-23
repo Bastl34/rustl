@@ -1,3 +1,5 @@
+const MAX_LIGHTS = 10;
+
 // ********** vertex **********
 
 struct CameraUniform
@@ -15,7 +17,10 @@ struct LightUniform
     lintensity: f32,
 };
 @group(2) @binding(0)
-var<uniform> light: LightUniform;
+var<uniform> light_amount: i32;
+
+@group(2) @binding(1)
+var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
 
 struct VertexInput
 {
@@ -83,7 +88,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     out.tangent_position = tangent_matrix * world_position.xyz;
     out.tangent_view_position = tangent_matrix * camera.view_pos.xyz;
-    out.tangent_light_position = tangent_matrix * light.position.xyz;
+    out.tangent_light_position = tangent_matrix * lights[0].position.xyz;
 
     return out;
 }
@@ -118,7 +123,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     let tangent_normal = object_normal.xyz * 2.0 - 1.0;
 
-    let light_color = light.color.xyz;
+    let light_color = lights[0].color.xyz;
     let ambient_strength = 0.1;
     let ambient_color = (light_color * ambient_strength).xyz;
 
@@ -130,11 +135,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let half_dir = normalize(view_dir + light_dir);
 
     let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
-    let diffuse_color = (light.color * diffuse_strength).xyz;
+    let diffuse_color = (lights[0].color * diffuse_strength).xyz;
 
     let shininess = 32.0;
     let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), shininess);
-    let specular_color = (specular_strength * light.color).xyz;
+    let specular_color = (specular_strength * lights[0].color).xyz;
 
     let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
 
