@@ -156,9 +156,7 @@ impl Scene
         let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
 
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-
-        let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
+        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
 
         //light
         let light = scene.lights.get(light_id).unwrap();
@@ -175,16 +173,16 @@ impl Scene
 
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, &cam_render_item, &light_render_item, true, true, self.samples));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, &cam_render_item, &light_render_item, true, true, 1));
         }
         else
         {
-            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, self.samples);
+            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &light_render_item, true, true, 1);
         }
 
         // ********** color pass **********
         //let mut textures = vec![];
-        //textures.push(&depth_pass_buffer_texture); // TODOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+        textures.push(&depth_pass_buffer_texture);
 
         if !re_create
         {
@@ -391,6 +389,7 @@ impl Scene
 
     pub fn resize(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
     {
+        dbg!("resize");
         for cam in &mut scene.cameras
         {
             cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
@@ -398,7 +397,7 @@ impl Scene
         }
 
         self.depth_buffer_texture = Some(Texture::new_depth_texture(wgpu, self.samples));
-        self.depth_pass_buffer_texture = Some(Texture::new_depth_texture(wgpu, self.samples));
+        self.depth_pass_buffer_texture = Some(Texture::new_depth_texture(wgpu, 1));
     }
 
     fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
@@ -442,19 +441,14 @@ impl Scene
     {
         let clear_color = wgpu::Color::BLACK;
 
-        let mut render_pass_view = view;
-        let mut render_pass_resolve_target = None;
-        if msaa_view.is_some()
-        {
-            render_pass_view = msaa_view.as_ref().unwrap();
-            render_pass_resolve_target = Some(view);
-        }
+        // todo: replace with internal texture?
+        let render_pass_view = view;
 
         let mut color_attachments: &[Option<RenderPassColorAttachment>] = &[
             Some(wgpu::RenderPassColorAttachment
             {
                 view: render_pass_view,
-                resolve_target: render_pass_resolve_target,
+                resolve_target: None,
                 ops: wgpu::Operations
                 {
                     load: wgpu::LoadOp::Clear(clear_color),
