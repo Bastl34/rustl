@@ -122,8 +122,8 @@ impl LightBuffer
         {
             if i + 1 > MAX_LIGHTS
             {
-                println!("only {} lights are supported", MAX_LIGHTS);
-                continue;
+                println!("only {} lights are supported".red(), MAX_LIGHTS);
+                break;
             }
 
             let light = light.borrow();
