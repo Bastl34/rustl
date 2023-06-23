@@ -19,6 +19,11 @@ impl<T> ChangeTracker<T>
         self.changed = true;
     }
 
+    pub fn force_change(&mut self)
+    {
+        self.changed = true;
+    }
+
     pub fn get_ref(&self) -> &T
     {
         &self.data

@@ -1,4 +1,4 @@
-use std::{sync::RwLockReadGuard};
+use std::{sync::RwLockReadGuard, mem::swap};
 
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
@@ -83,12 +83,30 @@ impl Scene
             let instance_buffer;
             {
                 let node_read = node.read().unwrap();
+                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node_read.instances.get_ref());
+            }
+
+            let mut node = node.write().unwrap();
+            node.instances.consume();
+            node.instance_render_item = Some(Box::new(instance_buffer));
+
+            /*
+            let mut node = node.write().unwrap();
+            let instances = node.instances.consume();
+            let instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
+            node.instance_render_item = Some(Box::new(instance_buffer));
+            */
+            /*
+            let instance_buffer;
+            {
+                let node_read = node.read().unwrap();
 
                 instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node_read.instances.get_ref());
             }
 
             let mut node = node.write().unwrap();
             node.instance_render_item = Some(Box::new(instance_buffer));
+            */
         }
 
         // camera
@@ -224,6 +242,7 @@ impl Scene
         }
 
 
+        /*
         {
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
             let mut node = node_arc.write().unwrap();
@@ -259,23 +278,26 @@ impl Scene
                     for instance in instances.get_mut()
                     {
                         let rotation: f32 = state.rotation_speed * state.frame_scale;
-                        instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
+                        instance.borrow_mut().get_mut().apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
                     }
                 }
             }
         }
+        */
 
+        // ********** instances all **********
+        let all_instances_changed;
         {
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
 
-            let changed;
             {
                 let mut write = node_arc.write().unwrap();
-                (_, changed) = write.instances.consume_borrow();
+                (_, all_instances_changed) = write.instances.consume_borrow();
             }
 
-            if changed
+            if all_instances_changed
             {
+                //dbg!(" ============ instances updated");
                 let instance_buffer;
                 {
                     let node = node_arc.read().unwrap();
@@ -297,30 +319,75 @@ impl Scene
             //transform.unwrap().calc_full_transform(node_write.as_mut());
             //transform.unwrap().calc_full_transform(node_arc.clone());
 
-            let node_arc = scene.nodes.get_mut(node_id).unwrap();
+            //let node_arc = scene.nodes.get_mut(node_id).unwrap();
         }
 
-        // all lights
-        let (lights, lights_changed) = scene.lights.consume_borrow();
-        if lights_changed
+        // ********** instances check each **********
+        if !all_instances_changed
+        {
+            let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+            {
+                let node = scene.nodes.get_mut(node_id).unwrap();
+                let mut node = node.write().unwrap();
+
+                //render_item = node.instance_render_item;
+                //node.instance_render_item = None;
+                swap(&mut node.instance_render_item, &mut render_item);
+            }
+
+            {
+                let node = scene.nodes.get(node_id).unwrap();
+                let node = node.read().unwrap();
+                let node_ref = node.instances.get_ref();
+
+                for (i, instance) in node_ref.iter().enumerate()
+                {
+                    let mut instance = instance.borrow_mut();
+                    let (instance, instance_changed) = instance.consume_borrow();
+                    if instance_changed
+                    {
+                        //let render_item = get_render_item_mut::<InstanceBuffer>(node.instance_render_item.as_mut().unwrap());
+                        let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
+                        //render_item.update_buffer(wgpu, light, i);
+                        render_item.update_buffer(wgpu, instance, i);
+
+                        //dbg!(" ============ ONE instance updated");
+                    }
+                }
+            }
+
+            {
+                let node = scene.nodes.get_mut(node_id).unwrap();
+                let mut node = node.write().unwrap();
+
+                swap(&mut render_item, &mut node.instance_render_item);
+            }
+        }
+
+        // ********** lights: all **********
+        let (lights, all_lights_changed) = scene.lights.consume_borrow();
+        if all_lights_changed
         {
             let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
             render_item.to_buffer(wgpu, lights);
 
-            dbg!(" ============ lights updated");
+            //dbg!(" ============ lights updated");
         }
 
-        // check each light
-        for (i, light) in lights.iter().enumerate()
+        // ********** light: check each**********
+        if !all_lights_changed
         {
-            let mut light = light.borrow_mut();
-            let (light, light_changed) = light.consume_borrow();
-            if light_changed
+            for (i, light) in lights.iter().enumerate()
             {
-                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                render_item.update_buffer(wgpu, light, i);
+                let mut light = light.borrow_mut();
+                let (light, light_changed) = light.consume_borrow();
+                if light_changed
+                {
+                    let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                    render_item.update_buffer(wgpu, light, i);
 
-                dbg!(" ============ ONE lights updated");
+                    //dbg!(" ============ ONE lights updated");
+                }
             }
         }
 
@@ -408,10 +475,13 @@ impl Scene
         {
             let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
 
-            if node.read().unwrap().render_children_first {
+            if node.read().unwrap().render_children_first
+            {
                 all_nodes.extend(child_nodes);
                 all_nodes.push(node.clone());
-            } else {
+            }
+            else
+            {
                 all_nodes.push(node.clone());
                 all_nodes.extend(child_nodes);
             }

@@ -20,7 +20,7 @@ pub struct Node
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
-    pub instances: ChangeTracker<Vec<InstanceItem>>,
+    pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
 
     pub components: Vec<ComponentItem>,
     pub shared_components: Vec<SharedComponentItem>,
@@ -303,7 +303,7 @@ impl Node
 
     pub fn add_instance(&mut self, instance: InstanceItem)
     {
-        self.instances.get_mut().push(instance);
+        self.instances.get_mut().push(RefCell::new(ChangeTracker::new(instance)));
     }
 
     pub fn update(&mut self, frame_scale: f32)

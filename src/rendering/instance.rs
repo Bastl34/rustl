@@ -1,12 +1,16 @@
 use std::borrow::Borrow;
 use std::cell::{Cell, RefCell};
+use std::mem;
 
+use colored::Colorize;
 use wgpu::util::DeviceExt;
 
+use crate::helper::change_tracker::ChangeTracker;
 use crate::render_item_impl_default;
 use crate::state::helper::render_item::RenderItem;
 use crate::state::scene::instance::InstanceItem;
 
+use super::helper::buffer::create_empty_buffer;
 use super::wgpu::WGpu;
 
 #[repr(C)]
@@ -95,21 +99,13 @@ impl RenderItem for InstanceBuffer
 
 impl InstanceBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, instances: &Vec<InstanceItem>) -> InstanceBuffer
+    pub fn new(wgpu: &mut WGpu, name: &str, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>) -> InstanceBuffer
     {
-        let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
-        {
-            label: Some("Empty Buffer"),
-            size: 0,
-            usage: wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         let mut instance_buffer = InstanceBuffer
         {
             name: name.to_string(),
             count: instances.len() as u32,
-            buffer: empty_buffer
+            buffer: create_empty_buffer(wgpu)
         };
 
         instance_buffer.to_buffer(wgpu, instances);
@@ -117,11 +113,11 @@ impl InstanceBuffer
         instance_buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<InstanceItem>)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>)
     {
         let instance_data = instances.iter().map(|instance|
         {
-            let (transform, normal) = instance.get_transform();
+            let (transform, normal) = instance.borrow().get_ref().get_transform();
 
             Instance
             {
@@ -136,11 +132,36 @@ impl InstanceBuffer
             {
                 label: Some(&self.name),
                 contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }
         );
 
         self.count = instances.len() as u32;
+    }
+
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)
+    {
+        if index + 1 > self.count as usize
+        {
+            let warning = format!("index {} out of range {} lights are supported", index, self.count);
+            println!("{}", warning.bright_yellow());
+            return;
+        }
+
+        let (transform, normal) = instance.get_transform();
+
+        let data = Instance
+        {
+            transform: transform.into(),
+            normal: normal.into()
+        };
+
+        wgpu.queue_mut().write_buffer
+        (
+            &self.buffer,
+            (index * mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            bytemuck::bytes_of(&data),
+        );
     }
 
     pub fn get_buffer(&self) -> &wgpu::Buffer

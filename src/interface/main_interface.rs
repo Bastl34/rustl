@@ -9,6 +9,7 @@ use winit::window::{Window, Fullscreen};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::rendering::egui::EGui;
+use crate::rendering::instance;
 use crate::rendering::scene::{Scene, self};
 
 use crate::rendering::wgpu::{WGpu};
@@ -188,6 +189,72 @@ impl MainInterface
         }
     }
 
+    pub fn app_update(&mut self)
+    {
+        let scene_id = 0;
+        let node_id = 0;
+
+        let state = &mut *(self.state.borrow_mut());
+
+        let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+        let node_arc = scene.nodes.get_mut(node_id).unwrap();
+        let mut node = node_arc.write().unwrap();
+
+        {
+            let instances = &mut node.instances;
+
+            if instances.get_ref().len() != state.instances as usize
+            {
+                //dbg!("recreate instances");
+
+                instances.get_mut().clear();
+
+                for i in 0..state.instances
+                {
+                    let x = (i as f32 * 5.0) - ((state.instances - 1) as f32 * 5.0) / 2.0;
+
+                    let instance = Instance::new_with_data
+                    (
+                        scene.id_manager.get_next_instance_id(),
+                        "instance".to_string(),
+                        node_arc.clone(),
+                        Vector3::<f32>::new(x, 0.0, 0.0),
+                        Vector3::<f32>::new(0.0, i as f32, 0.0),
+                        Vector3::<f32>::new(1.0, 1.0, 1.0)
+                    );
+
+                    node.add_instance(Box::new(instance));
+                }
+            }
+            else
+            {
+                /*
+                for instance in instances.get_mut()
+                {
+                    let rotation: f32 = state.rotation_speed * state.frame_scale;
+                    instance.borrow_mut().get_mut().apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
+                }
+                */
+
+                // just update some
+                for (i, instance) in instances.get_ref().iter().enumerate()
+                {
+                    if i > 100
+                    {
+                        break;
+                    }
+
+                    let mut instance = instance.borrow_mut();
+                    let instance = instance.get_mut();
+
+                    let rotation: f32 = state.rotation_speed * state.frame_scale;
+
+                    instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
+                }
+            }
+        }
+    }
+
     pub fn update(&mut self)
     {
         let frame_time = Instant::now();
@@ -230,6 +297,9 @@ impl MainInterface
 
             state.frame_update_time = now;
         }
+
+        // app update
+        self.app_update();
 
         // update scene
         {
