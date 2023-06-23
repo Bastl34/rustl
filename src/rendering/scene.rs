@@ -304,8 +304,8 @@ impl Scene
         let (lights, lights_changed) = scene.lights.consume_borrow();
         if lights_changed
         {
-            let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), lights);
-            scene.lights_render_item = Some(Box::new(lights_buffer));
+            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+            render_item.to_buffer(wgpu, lights);
 
             dbg!(" ============ lights updated");
         }
@@ -323,32 +323,6 @@ impl Scene
                 dbg!(" ============ ONE lights updated");
             }
         }
-        /*
-        if scene.lights.get_ref().len() > 0
-        {
-            {
-                let light_id = 0;
-
-                let mut light = scene.lights.get_mut(light_id).unwrap();
-                light.color = state.light1_color.clone();
-                light.pos = state.light1_pos.clone();
-
-                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                render_item.update_buffer(wgpu, light, light_id);
-            }
-
-            {
-                let light_id = 1;
-
-                let mut light = scene.lights.get_mut(light_id).unwrap();
-                light.color = state.light2_color.clone();
-                light.pos = state.light2_pos.clone();
-
-                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                render_item.update_buffer(wgpu, light, light_id);
-            }
-        }
-        */
 
         if state.save_image
         {

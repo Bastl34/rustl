@@ -8,6 +8,7 @@
 
 use std::{mem, cell::RefCell};
 
+use colored::Colorize;
 use nalgebra::{Vector3, Point3};
 use wgpu::util::DeviceExt;
 
@@ -15,7 +16,7 @@ use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, Light
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
-const MAX_LIGHTS: usize = 1;
+const MAX_LIGHTS: usize = 10;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -87,6 +88,8 @@ impl LightBuffer
             lights_buffer: create_empty_buffer(wgpu),
         };
 
+
+        buffer.create_buffer(wgpu);
         buffer.to_buffer(wgpu, lights);
 
         buffer
@@ -97,18 +100,15 @@ impl LightBuffer
         (MAX_LIGHTS * mem::size_of::<LightsUniform>()) as wgpu::BufferAddress
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>)
+    pub fn create_buffer(&mut self, wgpu: &mut WGpu)
     {
-        let amount = lights.len() as u32;
-        self.lights_amount = wgpu.device().create_buffer_init
-        (
-            &wgpu::util::BufferInitDescriptor
-            {
-                label: Some("lights amount buffer"),
-                contents: bytemuck::bytes_of(&amount),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+        self.lights_amount = wgpu.device().create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("lights amount buffer"),
+            size: mem::size_of::<u32>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         self.lights_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -117,12 +117,25 @@ impl LightBuffer
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+    }
+
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>)
+    {
+        let amount = lights.len().min(MAX_LIGHTS) as u32;
+
+        wgpu.queue_mut().write_buffer
+        (
+            &self.lights_amount,
+            0,
+            bytemuck::bytes_of(&amount),
+        );
 
         for (i, light) in lights.iter().enumerate()
         {
             if i + 1 > MAX_LIGHTS
             {
-                println!("only {} lights are supported".red(), MAX_LIGHTS);
+                let warning = format!("only {} lights are supported", MAX_LIGHTS);
+                println!("{}", warning.bright_yellow());
                 break;
             }
 
@@ -141,6 +154,13 @@ impl LightBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, light: &Light, index: usize)
     {
+        if index + 1 > MAX_LIGHTS
+        {
+            let warning = format!("only {} lights are supported", MAX_LIGHTS);
+            println!("{}", warning.bright_yellow());
+            return;
+        }
+
         let data = LightUniform::new(light.pos, light.color, light.intensity);
 
         wgpu.queue_mut().write_buffer

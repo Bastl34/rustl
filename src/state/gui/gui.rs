@@ -1,7 +1,9 @@
+use std::cell::RefCell;
+
 use egui::{FullOutput, RichText, Color32};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::state::State, rendering::egui::EGui};
+use crate::{state::{state::State, scene::light::Light}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
 
 
 pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -131,8 +133,27 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                         light.pos = pos.clone();
                         light.color = Vector3::<f32>::new(r, g, b);
                     }
+
+                    if ui.button("🗑").clicked()
+                    {
+                        let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+                        scene.lights.get_mut().remove(light_id.clone());
+                    }
                 });
             }
+
+            ui.horizontal(|ui|
+            {
+                ui.label("add light: ");
+                if ui.button("+").clicked()
+                {
+                    let scene = state.scenes.get_mut(0).unwrap();
+
+                    let light_id = scene.id_manager.get_next_light_id();
+                    let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                }
+            });
 
             // just some tests
             ui.horizontal(|ui|
