@@ -3,7 +3,7 @@ use std::{sync::RwLockReadGuard, mem::swap};
 use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}, light}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}, light, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}};
 
@@ -455,7 +455,7 @@ impl Scene
         dbg!("resize");
         for cam in &mut scene.cameras
         {
-            cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.init(0, 0, wgpu.surface_config().width, wgpu.surface_config().height);
             cam.init_matrices();
         }
 
@@ -497,13 +497,17 @@ impl Scene
         }
 
         let mut draw_calls: u32 = 0;
-        draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes);
-        draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes);
+
+        for cam in &scene.cameras
+        {
+            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam);
+        }
 
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>) -> u32
     {
         let clear_color = wgpu::Color::BLACK;
 
@@ -544,10 +548,12 @@ impl Scene
             })
         });
 
+        render_pass.set_viewport(cam.viewport_x as f32, cam.viewport_y as f32, cam.viewport_width as f32, cam.viewport_height as f32, 0.0, 1.0);
+
         self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -584,6 +590,8 @@ impl Scene
                 stencil_ops: None,
             })
         });
+
+        render_pass.set_viewport(cam.viewport_x as f32, cam.viewport_y as f32, cam.viewport_width as f32, cam.viewport_height as f32, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes)
     }

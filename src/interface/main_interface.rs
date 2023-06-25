@@ -114,7 +114,7 @@ impl MainInterface
             cam.clipping_near = 0.1;
             cam.clipping_far = 100.0;
 
-            cam.init(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.init(0, 0, wgpu.surface_config().width, wgpu.surface_config().height);
             cam.init_matrices();
 
             scene.cameras.push(Box::new(cam));

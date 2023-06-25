@@ -39,9 +39,13 @@ pub struct Camera
 {
     pub id: u64,
     pub name: String,
+    pub enabled: bool,
 
-    pub width: u32,
-    pub height: u32,
+    pub viewport_x: u32,
+    pub viewport_y: u32,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+
     pub aspect_ratio: f32,
 
     pub fovy: f32,
@@ -71,9 +75,12 @@ impl Camera
         {
             id: id,
             name: name,
+            enabled: true,
 
-            width: 0,
-            height: 0,
+            viewport_x: 0,
+            viewport_y: 0,
+            viewport_width: 0,
+            viewport_height: 0,
             aspect_ratio: 0.0,
 
             fovy: DEFAULT_FOVY.to_radians(),
@@ -96,10 +103,12 @@ impl Camera
         }
     }
 
-    pub fn init(&mut self, width: u32, height: u32)
+    pub fn init(&mut self, x: u32, y: u32, width: u32, height: u32)
     {
-        self.width = width;
-        self.height = height;
+        self.viewport_x = x;
+        self.viewport_y = y;
+        self.viewport_width = width;
+        self.viewport_height = height;
 
         self.aspect_ratio = width as f32 / height as f32;
 
@@ -176,8 +185,15 @@ impl Camera
 
     pub fn print(&self)
     {
-        println!("width: {:?}", self.width);
-        println!("height: {:?}", self.height);
+        println!("id: {:?}", self.id);
+        println!("name: {:?}", self.name);
+        println!("enabled: {:?}", self.enabled);
+
+
+        println!("viewport x: {:?}", self.viewport_x);
+        println!("viewport y: {:?}", self.viewport_y);
+        println!("viewport width: {:?}", self.viewport_width);
+        println!("viewport height: {:?}", self.viewport_height);
         println!("aspect_ratio: {:?}", self.aspect_ratio);
 
         println!("fov: {:?}", self.fovy);
