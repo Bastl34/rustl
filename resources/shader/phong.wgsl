@@ -1,6 +1,6 @@
 const MAX_LIGHTS = 10;
 
-// ********** vertex **********
+// ****************************** vertex ******************************
 
 struct CameraUniform
 {
@@ -48,8 +48,12 @@ struct VertexOutput
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) tangent_position: vec3<f32>,
-    @location(2) tangent_light_position: vec3<f32>,
-    @location(3) tangent_view_position: vec3<f32>,
+    @location(2) tangent_view_position: vec3<f32>,
+    //@location(3) tangent_light_position: vec3<f32>,
+
+    @location(3) world_tangent: vec3<f32>,
+    @location(4) world_bitangent: vec3<f32>,
+    @location(5) world_normal: vec3<f32>,
 };
 
 @vertex
@@ -88,13 +92,17 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     out.tangent_position = tangent_matrix * world_position.xyz;
     out.tangent_view_position = tangent_matrix * camera.view_pos.xyz;
-    out.tangent_light_position = tangent_matrix * lights[0].position.xyz;
+    //out.tangent_light_position = tangent_matrix * lights[0].position.xyz;
+
+    out.world_tangent = world_tangent;
+    out.world_bitangent = world_bitangent;
+    out.world_normal = world_normal;
 
     return out;
 }
 
 
-// ********** fragment **********
+// ****************************** fragment ******************************
 
 @group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
@@ -118,32 +126,46 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
     var uvs = in.tex_coords;
 
+    let tangent_matrix = transpose(mat3x3<f32>
+    (
+        in.world_tangent,
+        in.world_bitangent,
+        in.world_normal,
+    ));
+
     let object_color = textureSample(t_diffuse, s_diffuse, uvs);
     let object_normal = textureSample(t_normal, s_normal, uvs);
 
     let tangent_normal = object_normal.xyz * 2.0 - 1.0;
 
-    let light_color = lights[0].color.xyz;
-    let ambient_strength = 0.1;
-    let ambient_color = (light_color * ambient_strength).xyz;
+    let shininess = 32.0;
 
-    //let light_dir = normalize(light.position.xyz - in.world_position);
-    //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
-    let light_dir = normalize(in.tangent_light_position - in.tangent_position);
+    var res = vec3<f32>(0.0, 0.0, 0.0);
+
     let view_dir = normalize(in.tangent_view_position - in.tangent_position);
 
-    let half_dir = normalize(view_dir + light_dir);
+    for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
+    {
+        let light_color = lights[i].color.xyz;
+        let ambient_strength = 0.1;
+        let ambient_color = (light_color * ambient_strength).xyz;
 
-    let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
-    let diffuse_color = (lights[0].color * diffuse_strength).xyz;
+        //let light_dir = normalize(light.position.xyz - in.world_position);
+        //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
+        let light_dir = normalize((tangent_matrix * lights[i].position.xyz) - in.tangent_position);
 
-    let shininess = 32.0;
-    let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), shininess);
-    let specular_color = (specular_strength * lights[0].color).xyz;
+        let half_dir = normalize(view_dir + light_dir);
 
-    let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+        let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
+        let diffuse_color = (lights[i].color * diffuse_strength).xyz;
 
-    return vec4<f32>(result, object_color.a);
+        let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), shininess);
+        let specular_color = (specular_strength * lights[i].color).xyz;
+
+        res += (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+    }
+
+    return vec4<f32>(res, object_color.a);
 
     //return textureSample(t_diffuse, s_diffuse, uvs);
 

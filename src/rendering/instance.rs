@@ -173,8 +173,6 @@ impl InstanceBuffer
             return;
         }
 
-        //let (transform, normal) = instance.get_transform();
-
         let slice = &instances[range.clone()];
 
         let instance_data = slice.iter().map(|instance|

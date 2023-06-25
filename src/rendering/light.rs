@@ -42,28 +42,6 @@ impl LightUniform
     }
 }
 
-pub struct LightsUniform
-{
-    pub position: [f32; 4],
-    pub color: [f32; 4],
-    pub intensity: f32,
-    _padding: [f32; 3],
-}
-
-impl LightsUniform
-{
-    pub fn new(position: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Self
-    {
-        Self
-        {
-            position: [position.x, position.y, position.z, 1.0],
-            color: [color.x, color.y, color.z, 1.0],
-            intensity,
-            _padding: [0.0, 0.0, 0.0]
-        }
-    }
-}
-
 pub struct LightBuffer
 {
     pub name: String,
@@ -97,7 +75,7 @@ impl LightBuffer
 
     fn uniform_size() -> wgpu::BufferAddress
     {
-        (MAX_LIGHTS * mem::size_of::<LightsUniform>()) as wgpu::BufferAddress
+        (MAX_LIGHTS * mem::size_of::<LightUniform>()) as wgpu::BufferAddress
     }
 
     pub fn create_buffer(&mut self, wgpu: &mut WGpu)
@@ -146,7 +124,7 @@ impl LightBuffer
             wgpu.queue_mut().write_buffer
             (
                 &self.lights_buffer,
-                (i * mem::size_of::<LightsUniform>()) as wgpu::BufferAddress,
+                (i * mem::size_of::<LightUniform>()) as wgpu::BufferAddress,
                 bytemuck::bytes_of(&data),
             );
         }
@@ -166,7 +144,7 @@ impl LightBuffer
         wgpu.queue_mut().write_buffer
         (
             &self.lights_buffer,
-            (index * mem::size_of::<LightsUniform>()) as wgpu::BufferAddress,
+            (index * mem::size_of::<LightUniform>()) as wgpu::BufferAddress,
             bytemuck::bytes_of(&data),
         );
     }
