@@ -158,6 +158,57 @@ impl Node
         Some(downcast)
     }
 
+    pub fn find_components<'a, T>(&'a self) -> Option<Vec<Box<&'a T>>> where T: 'static
+    {
+        let values:Vec<_>  = self.components.iter().filter
+        (
+            |c|
+            {
+                let component_item = c.as_any();
+                component_item.is::<T>()
+            }
+        ) .collect();
+
+        if values.len() == 0
+        {
+            return None;
+        }
+
+        let res = values.iter().map(|component|
+        {
+            let any = component.as_any();
+            Box::new(any.downcast_ref::<T>().unwrap())
+        }).collect::<Vec<Box<&'a T>>>();
+
+        Some(res)
+    }
+
+    pub fn find_components_mut<'a, T>(&'a mut self) -> Option<Vec<Box<&'a mut T>>> where T: 'static
+    {
+        let values:Vec<_>  = self.components.iter_mut().filter
+        (
+            |c|
+            {
+                let component_item = c.as_any();
+                component_item.is::<T>()
+            }
+        ) .collect();
+
+        if values.len() == 0
+        {
+            return None;
+        }
+
+        let mut res: Vec<Box<&mut T>> = vec![];
+        for component in values
+        {
+            let any = component.as_any_mut();
+            res.push(Box::new(any.downcast_mut::<T>().unwrap()))
+        }
+
+        Some(res)
+    }
+
     pub fn find_shared_component<T>(&self) -> Option<SharedComponentItem> where T: 'static
     {
         let value = self.shared_components.iter().find
@@ -241,6 +292,11 @@ impl Node
     pub fn get_mesh(&self) -> Option<Box<&Mesh>>
     {
         self.find_component::<Mesh>()
+    }
+
+    pub fn get_meshes(&self) -> Option<Vec<Box<&Mesh>>>
+    {
+        self.find_components::<Mesh>()
     }
 
     pub fn get_transform(&self) -> (Matrix4<f32>, Matrix3<f32>)

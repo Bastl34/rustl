@@ -164,6 +164,38 @@ impl InstanceBuffer
         );
     }
 
+    pub fn update_buffer_range(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>, range: std::ops::Range<usize>)
+    {
+        if range.start + 1 > self.count as usize
+        {
+            let warning = format!("index {} out of range {} lights are supported", range.start, self.count);
+            println!("{}", warning.bright_yellow());
+            return;
+        }
+
+        //let (transform, normal) = instance.get_transform();
+
+        let slice = &instances[range.clone()];
+
+        let instance_data = slice.iter().map(|instance|
+        {
+            let (transform, normal) = instance.borrow().get_ref().get_transform();
+
+            Instance
+            {
+                transform: transform.into(),
+                normal: normal.into()
+            }
+        }).collect::<Vec<_>>();
+
+        wgpu.queue_mut().write_buffer
+        (
+            &self.buffer,
+            (range.start * mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            bytemuck::cast_slice(&instance_data),
+        );
+    }
+
     pub fn get_buffer(&self) -> &wgpu::Buffer
     {
         &self.buffer

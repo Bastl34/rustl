@@ -228,22 +228,9 @@ impl MainInterface
             }
             else
             {
-                /*
-                for instance in instances.get_mut()
-                {
-                    let rotation: f32 = state.rotation_speed * state.frame_scale;
-                    instance.borrow_mut().get_mut().apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
-                }
-                */
-
                 // just update some
                 for (i, instance) in instances.get_ref().iter().enumerate()
                 {
-                    if i > 100
-                    {
-                        break;
-                    }
-
                     let mut instance = instance.borrow_mut();
                     let instance = instance.get_mut();
 

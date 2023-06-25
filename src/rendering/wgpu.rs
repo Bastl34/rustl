@@ -25,7 +25,7 @@ impl WGpu
         let dimensions = window.inner_size();
 
         let instance_desc = wgpu::InstanceDescriptor::default();
-        //instance_desc.backends = wgpu::Backends::DX12;
+        //instance_desc.backends = wgpu::Backends::VULKAN;
 
         let instance = wgpu::Instance::new(instance_desc);
         let surface = unsafe { instance.create_surface(window) }.unwrap();

@@ -330,8 +330,6 @@ impl Scene
                 let node = scene.nodes.get_mut(node_id).unwrap();
                 let mut node = node.write().unwrap();
 
-                //render_item = node.instance_render_item;
-                //node.instance_render_item = None;
                 swap(&mut node.instance_render_item, &mut render_item);
             }
 
@@ -346,9 +344,7 @@ impl Scene
                     let (instance, instance_changed) = instance.consume_borrow();
                     if instance_changed
                     {
-                        //let render_item = get_render_item_mut::<InstanceBuffer>(node.instance_render_item.as_mut().unwrap());
                         let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
-                        //render_item.update_buffer(wgpu, light, i);
                         render_item.update_buffer(wgpu, instance, i);
 
                         //dbg!(" ============ ONE instance updated");
@@ -598,36 +594,39 @@ impl Scene
 
         for node in nodes
         {
-            let mesh = node.get_mesh();
+            let meshes = node.get_meshes();
 
-            if mesh.is_none()
+            if meshes.is_none()
             {
                 continue;
             }
 
-            let mesh = mesh.unwrap();
+            let meshes = meshes.unwrap();
 
-            if let Some(render_item) = mesh.get_base().render_item.as_ref()
+            for mesh in meshes
             {
-                let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);
+                if let Some(render_item) = mesh.get_base().render_item.as_ref()
+                {
+                    let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);
 
-                let instance_render_item = node.instance_render_item.as_ref().unwrap();
-                let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
+                    let instance_render_item = node.instance_render_item.as_ref().unwrap();
+                    let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                pass.set_pipeline(&pipeline.get());
-                pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
-                pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
-                pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
+                    pass.set_pipeline(&pipeline.get());
+                    pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
+                    pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
+                    pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
 
-                pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
+                    pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
 
-                // instancing
-                pass.set_vertex_buffer(1, instance_buffer.get_buffer().slice(..));
+                    // instancing
+                    pass.set_vertex_buffer(1, instance_buffer.get_buffer().slice(..));
 
-                pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
+                    pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
 
-                draw_calls += 1;
+                    draw_calls += 1;
+                }
             }
         }
 
