@@ -20,24 +20,33 @@ pub struct AdapterFeatures
     pub msaa_samples: u32
 }
 
+pub struct Rendering
+{
+    pub clear_color: Vector3<f32>,
+
+    pub fullscreen: bool,
+    pub msaa: Consumable<u32>,
+}
+
 pub struct State
 {
     pub adapter: AdapterFeatures,
+    pub rendering: Rendering,
 
     pub running: bool,
     pub scenes: Vec<SceneItem>,
 
-    pub clear_color: Vector3<f32>,
 
+
+    /*
     pub cam_fov: f32,
+    pub camera_pos: Point3<f32>,
+    */
 
-    pub fullscreen: bool,
-    pub msaa: Consumable<u32>,
+
 
     pub instances: u32,
     pub rotation_speed: f32,
-
-    pub camera_pos: Point3<f32>,
 
     /*
     pub light1_pos: Point3<f32>,
@@ -83,20 +92,25 @@ impl State
                 storage_buffer_array_support: false,
                 msaa_samples: 1
             },
+
+            rendering: Rendering
+            {
+                clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
+
+                fullscreen: false,
+                msaa: Consumable::new(8),
+            },
+
             running: false,
             scenes: vec![],
 
-            clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
-
-            fullscreen: false,
-            msaa: Consumable::new(8),
-
+            /*
             cam_fov: 45.0,
+            camera_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
+            */
 
             instances: 3,
             rotation_speed: 0.01,
-
-            camera_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
 
             /*
             light1_color: Vector3::<f32>::new(1.0, 1.0, 1.0),

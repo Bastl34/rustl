@@ -110,6 +110,22 @@ impl Scene
         }
 
         // camera
+        for cam in &scene.cameras
+        {
+            let mut cam = cam.borrow_mut();
+            let (cam, _) = cam.consume_borrow_mut();
+
+            let camera_buffer = CameraBuffer::new(wgpu, &cam);
+            cam.render_item = Some(Box::new(camera_buffer));
+        }
+        /*
+        for cam in scene.cameras.iter_mut()
+        {
+            let camera_buffer = CameraBuffer::new(wgpu, &cam);
+            cam.render_item = Some(Box::new(camera_buffer));
+        }
+        */
+        /*
         let cam_id = 0; // TODO
         {
             let mut cam = scene.cameras.get_mut(cam_id).unwrap();
@@ -117,6 +133,7 @@ impl Scene
             let camera_buffer = CameraBuffer::new(wgpu, &cam);
             cam.render_item = Some(Box::new(camera_buffer));
         }
+        */
 
         // lights
         {
@@ -176,8 +193,9 @@ impl Scene
         let lights_render_item = get_render_item::<LightBuffer>(scene.lights_render_item.as_ref().unwrap());
 
         // cam
-        let cam = scene.cameras.get(cam_id).unwrap();
-        let cam_render_item = get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
+        let cam = scene.cameras.get(cam_id).unwrap(); // TODO
+        let cam = cam.borrow();
+        let cam_render_item = get_render_item::<CameraBuffer>(cam.get_ref().render_item.as_ref().unwrap());
 
         // ********** depth pass **********
         let mut textures = vec![];
@@ -220,17 +238,41 @@ impl Scene
         self.clear_color = wgpu::Color
         {
             a: 1.0,
-            r: state.clear_color.x as f64,
-            g: state.clear_color.y as f64,
-            b: state.clear_color.z as f64,
+            r: state.rendering.clear_color.x as f64,
+            g: state.rendering.clear_color.y as f64,
+            b: state.rendering.clear_color.z as f64,
         };
 
+
+        // ********** cameras **********
         for cam in &mut scene.cameras
         {
-            cam.eye_pos = state.camera_pos;
-            cam.fovy = state.cam_fov.to_radians();
-            cam.init_matrices();
+            let mut cam = cam.borrow_mut();
+            let (cam, cam_changed) = cam.consume_borrow_mut();
 
+            if cam.render_item.is_none()
+            {
+                let camera_buffer = CameraBuffer::new(wgpu, &cam);
+                cam.render_item = Some(Box::new(camera_buffer));
+            }
+            else if cam_changed
+            {
+                let mut render_item = cam.render_item.take();
+
+                {
+                    let render_item = get_render_item_mut::<CameraBuffer>(render_item.as_mut().unwrap());
+                    render_item.update_buffer(wgpu, cam.as_ref());
+                    dbg!(cam.as_ref().fovy);
+                }
+
+                cam.render_item = render_item;
+            }
+        }
+
+
+        /*
+        for cam in &mut scene.cameras
+        {
             let mut render_item = cam.render_item.take();
 
             {
@@ -240,6 +282,7 @@ impl Scene
 
             cam.render_item = render_item;
         }
+        */
 
 
         /*
@@ -455,8 +498,8 @@ impl Scene
         dbg!("resize");
         for cam in &mut scene.cameras
         {
-            cam.init(0, 0, wgpu.surface_config().width, wgpu.surface_config().height);
-            cam.init_matrices();
+            cam.borrow_mut().get_mut().update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.borrow_mut().get_mut().init_matrices();
         }
 
         self.depth_buffer_texture = Some(Texture::new_depth_texture(wgpu, self.samples));
@@ -498,18 +541,35 @@ impl Scene
 
         let mut draw_calls: u32 = 0;
 
+        let mut i = 0;
         for cam in &scene.cameras
         {
-            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam);
+            let cam = cam.borrow();
+            let cam = cam.get_ref();
+            if !cam.enabled { continue; }
+
+            let clear;
+            if i == 0 { clear = true; } else { clear = false; }
+
+            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, clear);
+
+            i += 1;
         }
 
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, clear: bool) -> u32
     {
-        let clear_color = wgpu::Color::BLACK;
+        let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
+        let mut clear_depth = wgpu::LoadOp::Clear(1.0);
+
+        if !clear
+        {
+            clear_color = wgpu::LoadOp::Load;
+            clear_depth = wgpu::LoadOp::Load;
+        }
 
         // todo: replace with internal texture?
         let render_pass_view = view;
@@ -521,7 +581,7 @@ impl Scene
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(clear_color),
+                    load: clear_color,
                     store: true,
                 },
             })
@@ -541,19 +601,25 @@ impl Scene
                 view: &self.depth_pass_buffer_texture.as_ref().unwrap().get_view(),
                 depth_ops: Some(wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: clear_depth,
                     store: true,
                 }),
                 stencil_ops: None,
             })
         });
 
-        render_pass.set_viewport(cam.viewport_x as f32, cam.viewport_y as f32, cam.viewport_width as f32, cam.viewport_height as f32, 0.0, 1.0);
+        let x = cam.viewport_x * cam.resolution_width as f32;
+        let y = cam.viewport_y * cam.resolution_height as f32;
+
+        let width = cam.viewport_width * cam.resolution_width as f32;
+        let height = cam.viewport_height * cam.resolution_height as f32;
+
+        render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, clear: bool) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -561,6 +627,15 @@ impl Scene
         {
             render_pass_view = msaa_view.as_ref().unwrap();
             render_pass_resolve_target = Some(view);
+        }
+
+        let mut clear_color = wgpu::LoadOp::Clear(self.clear_color);
+        let mut clear_depth = wgpu::LoadOp::Clear(1.0);
+
+        if !clear
+        {
+            clear_color = wgpu::LoadOp::Load;
+            clear_depth = wgpu::LoadOp::Load;
         }
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
@@ -574,7 +649,7 @@ impl Scene
                     resolve_target: render_pass_resolve_target,
                     ops: wgpu::Operations
                     {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        load: clear_color,
                         store: true,
                     },
                 })
@@ -584,14 +659,20 @@ impl Scene
                 view: &self.depth_buffer_texture.as_ref().unwrap().get_view(),
                 depth_ops: Some(wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: clear_depth,
                     store: true,
                 }),
                 stencil_ops: None,
             })
         });
 
-        render_pass.set_viewport(cam.viewport_x as f32, cam.viewport_y as f32, cam.viewport_width as f32, cam.viewport_height as f32, 0.0, 1.0);
+        let x = cam.viewport_x * cam.resolution_width as f32;
+        let y = cam.viewport_y * cam.resolution_height as f32;
+
+        let width = cam.viewport_width * cam.resolution_width as f32;
+        let height = cam.viewport_height * cam.resolution_height as f32;
+
+        render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes)
     }

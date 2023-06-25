@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use egui::{FullOutput, RichText, Color32};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::light::Light}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
+use crate::{state::{state::State, scene::{light::Light, camera::Camera}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
 
 
 pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -23,9 +23,9 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
 
             ui.horizontal(|ui|
             {
-                let r = (state.clear_color.x * 255.0) as u8;
-                let g = (state.clear_color.y * 255.0) as u8;
-                let b = (state.clear_color.z * 255.0) as u8;
+                let r = (state.rendering.clear_color.x * 255.0) as u8;
+                let g = (state.rendering.clear_color.y * 255.0) as u8;
+                let b = (state.rendering.clear_color.z * 255.0) as u8;
                 let mut color = Color32::from_rgb(r, g, b);
 
                 ui.label("clear color:");
@@ -36,24 +36,17 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
                     let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
                     let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
-                    state.clear_color = Vector3::<f32>::new(r, g, b);
+                    state.rendering.clear_color = Vector3::<f32>::new(r, g, b);
                 }
             });
-
-            ui.horizontal(|ui|
-            {
-                ui.label("fov:");
-                ui.add(egui::Slider::new(&mut state.cam_fov, 0.0..=90.0));
-            });
-
-            ui.checkbox(&mut state.fullscreen, "Fullscreen");
+            ui.checkbox(&mut state.rendering.fullscreen, "Fullscreen");
 
             ui.horizontal(|ui|
             {
                 ui.label("MSAA:");
 
                 let mut changed = false;
-                let mut msaa = *state.msaa.get();
+                let mut msaa = *state.rendering.msaa.get();
 
                 changed = ui.selectable_value(& mut msaa, 1, "1").changed() || changed;
 
@@ -64,7 +57,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
 
                 if changed
                 {
-                    state.msaa.set(msaa)
+                    state.rendering.msaa.set(msaa)
                 }
             });
 
@@ -80,13 +73,49 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                 ui.add(egui::Slider::new(&mut state.rotation_speed, 0.0..=2.0));
             });
 
-            ui.horizontal(|ui|
+            // camera stuff
+            let mut cams: Vec<(usize, usize, String, Point3<f32>, f32)> = vec![];
+
+            for (s, scene) in state.scenes.iter().enumerate()
             {
-                ui.label("camera pos:");
-                ui.add(egui::DragValue::new(&mut state.camera_pos.x).speed(0.1).prefix("x: "));
-                ui.add(egui::DragValue::new(&mut state.camera_pos.y).speed(0.1).prefix("y: "));
-                ui.add(egui::DragValue::new(&mut state.camera_pos.z).speed(0.1).prefix("z: "));
-            });
+                for (c, cam) in scene.cameras.iter().enumerate()
+                {
+                    let cam = cam.borrow();
+                    let cam = cam.get_ref();
+
+                    cams.push((s, c, cam.name.clone(), cam.eye_pos.clone(), cam.fovy));
+                }
+            }
+
+            for cam in cams.iter_mut()
+            {
+                let (scene_id, cam_id, name, pos, mut fov) = cam;
+
+                fov = fov.to_degrees();
+
+                ui.horizontal(|ui|
+                {
+                    let mut changed = false;
+
+                    ui.label(name.as_str());
+                    changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    changed = ui.add(egui::Slider::new(&mut fov, 0.0..=90.0)).changed() || changed;
+
+                    if changed
+                    {
+                        let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+                        let cam = scene.cameras.get(cam_id.clone()).unwrap();
+                        let mut cam = cam.borrow_mut();
+                        let cam = cam.get_mut();
+
+                        cam.eye_pos = pos.clone();
+                        cam.fovy = fov.to_radians();
+                        cam.init_matrices();
+                    }
+                });
+            }
 
             let mut lights: Vec<(usize, usize, String, Point3<f32>, Color32)> = vec![];
 
@@ -158,8 +187,8 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             // just some tests
             ui.horizontal(|ui|
             {
-                ui.selectable_value(& mut state.fullscreen, true, RichText::new("⛶").size(20.0));
-                ui.selectable_value(& mut state.fullscreen, false, RichText::new("↕").size(20.0));
+                ui.selectable_value(& mut state.rendering.fullscreen, true, RichText::new("⛶").size(20.0));
+                ui.selectable_value(& mut state.rendering.fullscreen, false, RichText::new("↕").size(20.0));
             });
 
             if ui.button("save image").clicked()

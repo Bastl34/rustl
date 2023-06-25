@@ -143,25 +143,6 @@ impl Pipeline
 
         // ******************** lights ********************
         let light_bind_group_layout_name = format!("{} light_bind_group_layout", self.name);
-
-        /*
-        let mut light_bind_group_layout_entries = vec![];
-        let mut light_bind_group_entries = vec![];
-
-        let mut light_id = 0;
-
-        light_bind_group_layout_entries.push(uniform::uniform_bind_group_layout_entry(0, true, true));
-        light_bind_group_entries.push(uniform::uniform_bind_group(light_id, &self.lights_amount_buffer));
-
-        for light in lights
-        {
-            light_bind_group_layout_entries.push(uniform::uniform_bind_group_layout_entry(light_id + 1, true, true));
-            light_bind_group_entries.push(uniform::uniform_bind_group(light_id + 1, &light.get_buffer()));
-
-            light_id += 1;
-        }
-        */
-
         let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:

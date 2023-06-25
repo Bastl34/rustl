@@ -44,7 +44,7 @@ impl MainInterface
         let samlpes;
         {
             let state = & *(state.borrow());
-            samlpes = *state.msaa.get();
+            samlpes = *state.rendering.msaa.get();
         }
 
 
@@ -97,27 +97,35 @@ impl MainInterface
                 //node.remove_component_by_type::<Transformation>();
             }
 
-            let mut node1 = Node::new(scene.id_manager.get_next_node_id(), "test1");
-            let mut node2 = Node::new(scene.id_manager.get_next_node_id(), "test2");
+            let node1 = Node::new(scene.id_manager.get_next_node_id(), "test1");
+            let node2 = Node::new(scene.id_manager.get_next_node_id(), "test2");
 
             scene.add_node(node1.clone());
             Node::add_node(node1, node2);
 
             // ********** cam **********
-            state.camera_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
+            //state.camera_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
 
-            let cam_id = scene.id_manager.get_next_camera_id();
-            let mut cam = Camera::new(cam_id, "main cam".to_string());
-            cam.fovy = 45.0f32.to_radians();
-            cam.eye_pos = state.camera_pos;
-            cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
-            cam.clipping_near = 0.1;
-            cam.clipping_far = 100.0;
+            for i in 0..4
+            {
+                let cam_id = scene.id_manager.get_next_camera_id();
+                let mut cam = Camera::new(cam_id, format!("cam {}", i).to_string());
+                cam.fovy = 45.0f32.to_radians();
+                cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
+                cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
+                cam.clipping_near = 0.1;
+                cam.clipping_far = 1000.0;
 
-            cam.init(0, 0, wgpu.surface_config().width, wgpu.surface_config().height);
-            cam.init_matrices();
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            }
 
-            scene.cameras.push(Box::new(cam));
+            scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+            scene.cameras[1].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+            scene.cameras[2].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+            scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+
+            //cam.init(0.0, 0.0, 1.0, 1.0, wgpu.surface_config().width, wgpu.surface_config().height);
+            //cam.init_matrices();
 
             // ********** light **********
             {
@@ -240,6 +248,18 @@ impl MainInterface
                 }
             }
         }
+
+        /*
+        for cam in &scene.cameras
+        {
+            let mut cam = cam.borrow_mut();
+            let mut cam = cam.get_mut();
+
+            cam.eye_pos = state.camera_pos;
+            cam.fovy = state.cam_fov.to_radians();
+            cam.init_matrices();
+        }
+        */
     }
 
     pub fn update(&mut self)
@@ -251,7 +271,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
 
             let mut fullscreen_new = None;
-            if state.fullscreen
+            if state.rendering.fullscreen
             {
                 fullscreen_new = Some(Fullscreen::Borderless(None));
             }
@@ -293,7 +313,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
 
             // msaa
-            let (msaa_samples, msaa_changed) = state.msaa.consume();
+            let (msaa_samples, msaa_changed) = state.rendering.msaa.consume();
 
             if msaa_changed
             {

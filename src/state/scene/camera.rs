@@ -41,12 +41,15 @@ pub struct Camera
     pub name: String,
     pub enabled: bool,
 
-    pub viewport_x: u32,
-    pub viewport_y: u32,
-    pub viewport_width: u32,
-    pub viewport_height: u32,
+    pub viewport_x: f32,    // 0.0-1.0
+    pub viewport_y: f32, // 0.0-1.0
+    pub viewport_width: f32, // 0.0-1.0
+    pub viewport_height: f32, // 0.0-1.0
 
-    pub aspect_ratio: f32,
+    pub resolution_aspect_ratio: f32,
+
+    pub resolution_width: u32,
+    pub resolution_height: u32,
 
     pub fovy: f32,
 
@@ -77,11 +80,15 @@ impl Camera
             name: name,
             enabled: true,
 
-            viewport_x: 0,
-            viewport_y: 0,
-            viewport_width: 0,
-            viewport_height: 0,
-            aspect_ratio: 0.0,
+            viewport_x: 0.0,
+            viewport_y: 0.0,
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+
+            resolution_aspect_ratio: 0.0,
+
+            resolution_width: 0,
+            resolution_height: 0,
 
             fovy: DEFAULT_FOVY.to_radians(),
 
@@ -103,21 +110,32 @@ impl Camera
         }
     }
 
-    pub fn init(&mut self, x: u32, y: u32, width: u32, height: u32)
+    pub fn init(&mut self, viewport_x: f32, viewport_y: f32, viewport_width: f32, viewport_height: f32, resolution_width: u32, resolution_height: u32)
     {
-        self.viewport_x = x;
-        self.viewport_y = y;
-        self.viewport_width = width;
-        self.viewport_height = height;
+        self.viewport_x = viewport_x;
+        self.viewport_y = viewport_y;
+        self.viewport_width = viewport_width;
+        self.viewport_height = viewport_height;
 
-        self.aspect_ratio = width as f32 / height as f32;
+        self.resolution_width = resolution_width;
+        self.resolution_height = resolution_height;
+
+        self.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
 
         self.init_matrices();
     }
 
+    pub fn update_resolution(&mut self, resolution_width: u32, resolution_height: u32)
+    {
+        self.resolution_width = resolution_width;
+        self.resolution_height = resolution_height;
+
+        self.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
+    }
+
     pub fn init_matrices(&mut self)
     {
-        self.projection = Perspective3::new(self.aspect_ratio, self.fovy, self.clipping_near, self.clipping_far);
+        self.projection = Perspective3::new(self.resolution_aspect_ratio, self.fovy, self.clipping_near, self.clipping_far);
 
         //let target = Point3::<f32>::new(self.dir.x, self.dir.y, self.dir.z);
         let target = self.eye_pos + self.dir;
@@ -185,16 +203,21 @@ impl Camera
 
     pub fn print(&self)
     {
+        println!("name: {:?}", self.name);
+
         println!("id: {:?}", self.id);
         println!("name: {:?}", self.name);
         println!("enabled: {:?}", self.enabled);
-
 
         println!("viewport x: {:?}", self.viewport_x);
         println!("viewport y: {:?}", self.viewport_y);
         println!("viewport width: {:?}", self.viewport_width);
         println!("viewport height: {:?}", self.viewport_height);
-        println!("aspect_ratio: {:?}", self.aspect_ratio);
+
+        println!("resolution aspect_ratio: {:?}", self.resolution_aspect_ratio);
+
+        println!("resolution width: {:?}", self.resolution_width);
+        println!("resolution height: {:?}", self.resolution_height);
 
         println!("fov: {:?}", self.fovy);
 
@@ -208,5 +231,10 @@ impl Camera
 
         println!("projection: {:?}", self.projection);
         println!("view: {:?}", self.view);
+    }
+
+    pub fn print_short(&self)
+    {
+        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}],[{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, self.viewport_x, self.viewport_y, self.viewport_width, self.viewport_height, self.resolution_width, self.resolution_height, self.fovy, self.eye_pos, self.clipping_near, self.clipping_far);
     }
 }

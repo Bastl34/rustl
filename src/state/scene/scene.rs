@@ -16,7 +16,7 @@ pub struct Scene
     pub name: String,
 
     pub nodes: Vec<NodeItem>,
-    pub cameras: Vec<CameraItem>,
+    pub cameras: Vec<RefCell<ChangeTracker<CameraItem>>>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
@@ -77,10 +77,16 @@ impl Scene
     {
         println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len(), self.textures.len());
 
-        // print
+        //nodes
         for node in &self.nodes
         {
             node.read().unwrap().print(2);
+        }
+
+        // camera
+        for cam in &self.cameras
+        {
+            cam.borrow().get_ref().print_short();
         }
     }
 

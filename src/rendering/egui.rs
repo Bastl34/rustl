@@ -109,36 +109,3 @@ impl EGui
         }
     }
 }
-
-/*
-impl WGpuRendering for EGui
-{
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
-    {
-        let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
-            {
-                label: None,
-                color_attachments:
-                &[
-                    Some(wgpu::RenderPassColorAttachment
-                    {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations
-                        {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        }
-                    })
-                ],
-                depth_stencil_attachment: None,
-            });
-
-            self.renderer.render(&mut pass, &primitives, &self.screen_descriptor);
-        }
-    }
-}
-*/

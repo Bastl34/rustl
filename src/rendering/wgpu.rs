@@ -102,7 +102,7 @@ impl WGpu
         if texture_features.flags.sample_count_supported(8) { state.adapter.msaa_samples = 8; }
         if texture_features.flags.sample_count_supported(16) { state.adapter.msaa_samples = 16; }
 
-        let msaa_samples = *state.msaa.get();
+        let msaa_samples = *state.rendering.msaa.get();
 
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
@@ -197,6 +197,8 @@ impl WGpu
 
     pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>, CommandEncoder)
     {
+        // TODO: this can be timeout
+        // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
         let output = self.surface.get_current_texture().unwrap();
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
