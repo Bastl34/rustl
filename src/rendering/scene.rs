@@ -262,7 +262,6 @@ impl Scene
                 {
                     let render_item = get_render_item_mut::<CameraBuffer>(render_item.as_mut().unwrap());
                     render_item.update_buffer(wgpu, cam.as_ref());
-                    dbg!(cam.as_ref().fovy);
                 }
 
                 cam.render_item = render_item;

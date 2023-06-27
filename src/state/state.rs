@@ -17,7 +17,7 @@ pub struct AdapterFeatures
     pub backend: String,
 
     pub storage_buffer_array_support: bool,
-    pub msaa_samples: u32
+    pub max_msaa_samples: u32
 }
 
 pub struct Rendering
@@ -90,7 +90,7 @@ impl State
                 driver_info: String::new(),
                 backend: String::new(),
                 storage_buffer_array_support: false,
-                msaa_samples: 1
+                max_msaa_samples: 1
             },
 
             rendering: Rendering
@@ -159,7 +159,7 @@ impl State
         println!(" - driver info: {}", self.adapter.driver_info);
         println!(" - backend: {}", self.adapter.backend);
         println!(" - storage_buffer_array_support: {}", self.adapter.storage_buffer_array_support);
-        println!(" - msaa_samples: {}", self.adapter.msaa_samples);
+        println!(" - max msaa_samples: {}", self.adapter.max_msaa_samples);
 
         println!("");
 

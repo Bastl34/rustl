@@ -1,5 +1,7 @@
+use std::panic;
+
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
+use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture, TextureFormat, Backend};
 
 use crate::{helper::image::brga_to_rgba, state::state::State};
 
@@ -97,10 +99,10 @@ impl WGpu
         // msaa
         let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
 
-        if texture_features.flags.sample_count_supported(2) { state.adapter.msaa_samples = 2; }
-        if texture_features.flags.sample_count_supported(4) { state.adapter.msaa_samples = 4; }
-        if texture_features.flags.sample_count_supported(8) { state.adapter.msaa_samples = 8; }
-        if texture_features.flags.sample_count_supported(16) { state.adapter.msaa_samples = 16; }
+        if texture_features.flags.sample_count_supported(2) { state.adapter.max_msaa_samples = 2; }
+        if texture_features.flags.sample_count_supported(4) { state.adapter.max_msaa_samples = 4; }
+        if texture_features.flags.sample_count_supported(8) { state.adapter.max_msaa_samples = 8; }
+        if texture_features.flags.sample_count_supported(16) { state.adapter.max_msaa_samples = 16; }
 
         let msaa_samples = *state.rendering.msaa.get();
 
@@ -183,7 +185,6 @@ impl WGpu
         });
 
         self.msaa_texture = Some(msaa_texture);
-
     }
 
     pub fn resize(&mut self, width: u32, height: u32)

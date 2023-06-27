@@ -2,12 +2,13 @@ use std::cell::RefCell;
 use std::mem::{take, swap};
 use std::rc::Rc;
 use std::time::Instant;
-use std::vec;
+use std::{vec, cmp};
 
 use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
 use crate::helper::change_tracker::ChangeTracker;
+use crate::helper::consumable::Consumable;
 use crate::rendering::egui::EGui;
 use crate::rendering::instance;
 use crate::rendering::scene::{Scene, self};
@@ -42,16 +43,15 @@ impl MainInterface
         let state = Rc::new(RefCell::new(State::new()));
 
         let samlpes;
-        {
-            let state = & *(state.borrow());
-            samlpes = *state.rendering.msaa.get();
-        }
-
-
         let mut wgpu: WGpu;
         {
             let state = &mut *(state.borrow_mut());
             wgpu = WGpu::new(&window, state).await;
+
+            dbg!(state.adapter.max_msaa_samples);
+            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get().clone(), state.adapter.max_msaa_samples));
+            samlpes = *(state.rendering.msaa.get());
+
             wgpu.create_msaa_texture(samlpes);
         }
 
