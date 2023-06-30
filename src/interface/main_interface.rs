@@ -120,8 +120,8 @@ impl MainInterface
             }
 
             scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
-            scene.cameras[1].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
-            scene.cameras[2].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+            scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+            scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
             scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
 
             //cam.init(0.0, 0.0, 1.0, 1.0, wgpu.surface_config().width, wgpu.surface_config().height);

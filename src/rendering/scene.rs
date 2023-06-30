@@ -615,7 +615,7 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes)
+        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, cam)
     }
 
     pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, clear: bool) -> u32
@@ -673,10 +673,10 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes)
+        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, cam)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>, cam: &'a Box<Camera>) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -700,9 +700,12 @@ impl Scene
                     let instance_render_item = node.instance_render_item.as_ref().unwrap();
                     let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
+                    let camera_render_item = cam.render_item.as_ref().unwrap();
+                    let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
+
                     pass.set_pipeline(&pipeline.get());
                     pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
-                    pass.set_bind_group(1, pipeline.get_camera_bind_group(), &[]);
+                    pass.set_bind_group(1, camera_buffer.get_bind_group(), &[]);
                     pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
