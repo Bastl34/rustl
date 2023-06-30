@@ -1,5 +1,14 @@
 use wgpu::{BindGroupLayoutEntry, BindGroupEntry, Buffer};
 
+/*
+ Bind Group layout:
+
+ - Materials + Textures
+ - Lights, Camera
+ - Dynamics (Like timestamp)
+ - Custom
+ */
+
 pub fn uniform_bind_group_layout_entry(index: u32, vertex: bool, fragment: bool) -> BindGroupLayoutEntry
 {
     let mut shader_visibility = wgpu::ShaderStages::NONE;
