@@ -2,10 +2,8 @@ use std::sync::{RwLock, Arc};
 use std::any::Any;
 
 use nalgebra::{Vector3, Vector4};
-use parry3d::partitioning::NodeIndex;
 
 use crate::{component_impl_default};
-use crate::state::scene::node::{Node, NodeItem};
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
 use super::component::{Component, SharedComponentItem, ComponentBase};

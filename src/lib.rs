@@ -10,6 +10,7 @@ mod rendering
     pub(crate) mod camera;
     pub(crate) mod uniform;
     pub(crate) mod light;
+    pub(crate) mod material;
 
     pub(crate) mod bind_groups
     {
