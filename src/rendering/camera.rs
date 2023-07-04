@@ -36,8 +36,8 @@ pub struct CameraBuffer
     pub name: String,
     buffer: wgpu::Buffer,
 
-    bind_group_layout: Option<BindGroupLayout>,
-    bind_group: Option<BindGroup>,
+    //bind_group_layout: Option<BindGroupLayout>,
+    //bind_group: Option<BindGroup>,
 }
 
 impl RenderItem for CameraBuffer
@@ -62,8 +62,8 @@ impl CameraBuffer
             name: cam.name.clone(),
             buffer: empty_buffer,
 
-            bind_group_layout: None,
-            bind_group: None
+            //bind_group_layout: None,
+            //bind_group: None
         };
 
         buffer.to_buffer(wgpu, cam);
@@ -86,7 +86,7 @@ impl CameraBuffer
             }
         );
 
-        self.create_binding_group(wgpu);
+        //self.create_binding_group(wgpu);
     }
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
@@ -102,6 +102,7 @@ impl CameraBuffer
         &self.buffer
     }
 
+    /*
     pub fn create_binding_group(&mut self, wgpu: &mut WGpu)
     {
         let bind_group_layout_name = format!("{} camera_bind_group_layout", self.name);
@@ -138,4 +139,5 @@ impl CameraBuffer
     {
         self.bind_group.as_ref().unwrap()
     }
+    */
 }

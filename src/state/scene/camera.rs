@@ -67,7 +67,8 @@ pub struct Camera
     pub projection_inverse: Matrix4<f32>,
     pub view_inverse: Matrix4<f32>,
 
-    pub render_item: RenderItemOption
+    pub render_item: RenderItemOption,
+    pub bind_group_render_item: RenderItemOption,
 }
 
 impl Camera
@@ -106,7 +107,8 @@ impl Camera
             projection_inverse: Matrix4::<f32>::identity(),
             view_inverse: Matrix4::<f32>::identity(),
 
-            render_item: None
+            render_item: None,
+            bind_group_render_item: None
         }
     }
 

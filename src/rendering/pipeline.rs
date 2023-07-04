@@ -3,6 +3,7 @@ use std::{borrow::Cow};
 use wgpu::util::DeviceExt;
 use wgpu::{BindGroup, ShaderModule, Device, BindGroupLayout, Buffer};
 
+use super::bind_groups::light_cam::LightCamBindGroup;
 use super::camera::CameraBuffer;
 use super::light::LightBuffer;
 use super::{wgpu::WGpu, vertex_buffer::{Vertex}, texture::{Texture, self}, uniform, instance::Instance};
@@ -16,15 +17,15 @@ pub struct Pipeline
     pipeline: Option<wgpu::RenderPipeline>,
 
     textures_bind_group: Option<BindGroup>,
-    light_bind_group: Option<BindGroup>,
+    //light_bind_group: Option<BindGroup>,
 
     textures_bind_group_layout: Option<BindGroupLayout>,
-    light_bind_group_layout: Option<BindGroupLayout>,
+    //light_bind_group_layout: Option<BindGroupLayout>,
 }
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam: &CameraBuffer, lights: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam_light_bind_group: &LightCamBindGroup, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
     {
         let shader;
         {
@@ -44,19 +45,19 @@ impl Pipeline
             pipeline: None,
 
             textures_bind_group: None,
-            light_bind_group: None,
+            //light_bind_group: None,
 
             textures_bind_group_layout: None,
-            light_bind_group_layout: None,
+            //light_bind_group_layout: None,
         };
 
-        pipe.create_binding_groups(wgpu, textures, lights);
-        pipe.create(wgpu, cam, depth_stencil, fragment_attachment, samples);
+        pipe.create_binding_groups(wgpu, textures);
+        pipe.create(wgpu, cam_light_bind_group, depth_stencil, fragment_attachment, samples);
 
         pipe
     }
 
-    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, lights: &LightBuffer)
+    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>)
     {
         let device = wgpu.device();
 
@@ -95,6 +96,7 @@ impl Pipeline
         );
 
         // ******************** lights ********************
+        /*
         let light_bind_group_layout_name = format!("{} light_bind_group_layout", self.name);
         let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
@@ -117,15 +119,16 @@ impl Pipeline
             ],
             label: Some(light_bind_group_name.as_str()),
         });
+        */
 
         self.textures_bind_group = Some(textures_bind_group);
-        self.light_bind_group = Some(light_bind_group);
+        //self.light_bind_group = Some(light_bind_group);
 
         self.textures_bind_group_layout = Some(textures_bind_group_layout);
-        self.light_bind_group_layout = Some(light_bind_group_layout);
+        //self.light_bind_group_layout = Some(light_bind_group_layout);
     }
 
-    pub fn create(&mut self, wgpu: &mut WGpu, cam: &CameraBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn create(&mut self, wgpu: &mut WGpu, cam_light_bind_group: &LightCamBindGroup, depth_stencil: bool, fragment_attachment: bool, samples: u32)
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -137,8 +140,7 @@ impl Pipeline
             bind_group_layouts:
             &[
                 self.textures_bind_group_layout.as_ref().unwrap(),
-                cam.get_bind_group_layout(),
-                self.light_bind_group_layout.as_ref().unwrap(),
+                &cam_light_bind_group.layout
             ],
             push_constant_ranges: &[],
         });
@@ -221,12 +223,12 @@ impl Pipeline
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, lights: &LightBuffer, depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn re_create(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam_light_bind_group: &LightCamBindGroup, depth_stencil: bool, fragment_attachment: bool, samples: u32)
     {
         dbg!("recreating pipeline");
 
-        self.create_binding_groups(wgpu, textures, lights);
-        self.create(wgpu, cam, depth_stencil, fragment_attachment, samples);
+        self.create_binding_groups(wgpu, textures);
+        self.create(wgpu, cam_light_bind_group, depth_stencil, fragment_attachment, samples);
     }
 
     pub fn create_shader(device: &Device, name: &str, shader_source: &String) -> ShaderModule
@@ -248,9 +250,11 @@ impl Pipeline
         self.textures_bind_group.as_ref().unwrap()
     }
 
+    /*
     pub fn get_light_bind_group(&self) -> &BindGroup
     {
         self.light_bind_group.as_ref().unwrap()
     }
+    */
 
 }

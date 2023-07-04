@@ -17,10 +17,10 @@ struct LightUniform
     lintensity: f32,
 };
 
-@group(2) @binding(0)
+@group(1) @binding(1)
 var<uniform> light_amount: i32;
 
-@group(2) @binding(1)
+@group(1) @binding(2)
 var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
 
 struct VertexInput

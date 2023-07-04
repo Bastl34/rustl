@@ -5,7 +5,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
 use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}, light, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, uniform};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, uniform, bind_groups::light_cam::LightCamBindGroup};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -198,12 +198,19 @@ impl Scene
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
 
         //light
+        /*
         let lights_render_item = get_render_item::<LightBuffer>(scene.lights_render_item.as_ref().unwrap());
 
         // cam
         let cam = scene.cameras.get(cam_id).unwrap(); // TODO
         let cam = cam.borrow();
         let cam_render_item = get_render_item::<CameraBuffer>(cam.get_ref().render_item.as_ref().unwrap());
+        */
+
+        // cam/light
+        let cam = scene.cameras.get(cam_id).unwrap(); // TODO
+        let cam = cam.borrow();
+        let light_cam_bind_group = get_render_item::<LightCamBindGroup>(cam.get_ref().bind_group_render_item.as_ref().unwrap());
 
         // ********** depth pass **********
         let mut textures = vec![];
@@ -212,11 +219,11 @@ impl Scene
 
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, &cam_render_item, &lights_render_item, true, true, 1));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, *light_cam_bind_group, true, true, 1));
         }
         else
         {
-            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &lights_render_item, true, true, 1);
+            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, *light_cam_bind_group, true, true, 1);
         }
 
         // ********** color pass **********
@@ -225,11 +232,11 @@ impl Scene
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, &cam_render_item, &lights_render_item, true, true, self.samples));
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, *light_cam_bind_group, true, true, self.samples));
         }
         else
         {
-            self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, &cam_render_item, &lights_render_item, true, true, self.samples);
+            self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, *light_cam_bind_group, true, true, self.samples);
         }
 
         base_tex.render_item = Some(Box::new(base_texture));
@@ -251,13 +258,62 @@ impl Scene
             b: state.rendering.clear_color.z as f64,
         };
 
+        // ********** lights: all **********
+        let (lights, all_lights_changed) = scene.lights.consume_borrow();
+        if all_lights_changed
+        {
+            if scene.lights_render_item.is_none()
+            {
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
+                scene.lights_render_item = Some(Box::new(lights_buffer));
+            }
 
-        // ********** cameras **********
+            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+            render_item.to_buffer(wgpu, lights);
+
+            dbg!(" ============ lights updated");
+        }
+
+        // ********** light: check each **********
+        if !all_lights_changed
+        {
+            for (i, light) in lights.iter().enumerate()
+            {
+                let mut light = light.borrow_mut();
+                let (light, light_changed) = light.consume_borrow();
+                if light_changed
+                {
+                    let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                    render_item.update_buffer(wgpu, light, i);
+
+                    dbg!(" ============ ONE light updated");
+                }
+            }
+        }
+
+        // ********** lights and cameras **********
+        /*
+        if all_lights_changed
+        {
+            if scene.lights_render_item.is_none()
+            {
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
+                scene.lights_render_item = Some(Box::new(lights_buffer));
+            }
+
+            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+            render_item.to_buffer(wgpu, lights);
+
+            dbg!(" ============ lights updated");
+        }
+        */
+
         for cam in &mut scene.cameras
         {
             let mut cam = cam.borrow_mut();
             let (cam, cam_changed) = cam.consume_borrow_mut();
 
+            // create cam render item
             if cam.render_item.is_none()
             {
                 let camera_buffer = CameraBuffer::new(wgpu, &cam);
@@ -274,7 +330,56 @@ impl Scene
 
                 cam.render_item = render_item;
             }
+
+            // create cam/light bind group
+            if cam.bind_group_render_item.is_none() || all_lights_changed
+            {
+                let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
+                let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+
+                let light_cam_bind_group = LightCamBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer);
+
+                cam.bind_group_render_item = Some(Box::new(light_cam_bind_group));
+            }
+
         }
+
+        // ********** lights: all **********
+
+        /*
+        if all_lights_changed
+        {
+            if scene.lights_render_item.is_none()
+            {
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
+                scene.lights_render_item = Some(Box::new(lights_buffer));
+            }
+
+            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+            render_item.to_buffer(wgpu, lights);
+
+            //dbg!(" ============ lights updated");
+        }
+        */
+
+        // ********** light: check each**********
+        /*
+        if !all_lights_changed
+        {
+            for (i, light) in lights.iter().enumerate()
+            {
+                let mut light = light.borrow_mut();
+                let (light, light_changed) = light.consume_borrow();
+                if light_changed
+                {
+                    let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                    render_item.update_buffer(wgpu, light, i);
+
+                    //dbg!(" ============ ONE lights updated");
+                }
+            }
+        }
+        */
 
 
         /*
@@ -426,39 +531,6 @@ impl Scene
             }
         }
 
-        // ********** lights: all **********
-        let (lights, all_lights_changed) = scene.lights.consume_borrow();
-        if all_lights_changed
-        {
-            if scene.lights_render_item.is_none()
-            {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
-                scene.lights_render_item = Some(Box::new(lights_buffer));
-            }
-
-            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-            render_item.to_buffer(wgpu, lights);
-
-            //dbg!(" ============ lights updated");
-        }
-
-        // ********** light: check each**********
-        if !all_lights_changed
-        {
-            for (i, light) in lights.iter().enumerate()
-            {
-                let mut light = light.borrow_mut();
-                let (light, light_changed) = light.consume_borrow();
-                if light_changed
-                {
-                    let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                    render_item.update_buffer(wgpu, light, i);
-
-                    //dbg!(" ============ ONE lights updated");
-                }
-            }
-        }
-
         if state.save_image
         {
             let node_arc = scene.nodes.get(node_id).unwrap();
@@ -581,9 +653,10 @@ impl Scene
             if i == 0 { clear = true; } else { clear = false; }
 
             // create bind groups
-            let camera_render_item = cam.render_item.as_ref().unwrap();
-            let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
+            let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
+            let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
 
+            /*
             let cam_bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
             {
                 layout: &camera_buffer.get_bind_group_layout(),
@@ -593,9 +666,10 @@ impl Scene
                 ],
                 label: None,
             });
+            */
 
-            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, &cam_bind_group, clear);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, &cam_bind_group, clear);
+            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, &bind_group_render_item.bind_group, clear);
 
             i += 1;
         }
@@ -603,7 +677,7 @@ impl Scene
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
         let mut clear_depth = wgpu::LoadOp::Clear(1.0);
@@ -659,10 +733,10 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, cam_bind_group)
+        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -717,10 +791,10 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, cam_bind_group)
+        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>, cam_bind_group: &'a BindGroup) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>, light_cam_bind_group: &'a BindGroup) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -751,8 +825,8 @@ impl Scene
                     pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
                     //pass.set_bind_group(1, camera_buffer.get_bind_group(), &[]);
                     //pass.set_bind_group(1, bind_group, &[]);
-                    pass.set_bind_group(1, cam_bind_group, &[]);
-                    pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
+                    pass.set_bind_group(1, light_cam_bind_group, &[]);
+                    //pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
 
