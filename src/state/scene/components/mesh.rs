@@ -3,7 +3,7 @@ use std::any::Any;
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
-use crate::component_impl_default;
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker};
 
 use super::component::{Component, ComponentBase};
 
@@ -27,7 +27,7 @@ pub struct MeshData
 pub struct Mesh
 {
     base: ComponentBase,
-    data: MeshData,
+    data: ChangeTracker<MeshData>,
 }
 
 impl Mesh
@@ -52,7 +52,7 @@ impl Mesh
         let mut mesh = Mesh
         {
             base: ComponentBase::new(id, "".to_string(), "Mesh".to_string()),
-            data: mesh_data
+            data: ChangeTracker::new(mesh_data)
         };
 
         mesh.calc_bbox();
@@ -93,10 +93,10 @@ impl Mesh
 
     pub fn get_data(&self) -> &MeshData
     {
-        &self.data
+        &self.data.get_ref()
     }
 
-    pub fn get_data_mut(&mut self) -> &mut MeshData
+    pub fn get_data_mut(&mut self) -> &mut ChangeTracker<MeshData>
     {
         &mut self.data
     }
@@ -104,12 +104,15 @@ impl Mesh
     fn calc_bbox(&mut self)
     {
         let trans = Isometry3::<f32>::identity();
-        self.data.b_box = self.data.mesh.aabb(&trans);
+        let mut data = self.data.get_mut();
+        data.b_box = data.mesh.aabb(&trans);
     }
 
     fn apply_transform(&mut self, trasform: &Matrix4<f32>)
     {
-        for v in &mut self.data.vertices
+        let mut data = self.data.get_mut();
+
+        for v in &mut data.vertices
         {
             let new_pos = trasform * v.to_homogeneous();
             v.x = new_pos.x;
@@ -118,50 +121,52 @@ impl Mesh
         }
 
         // clear trimesh and rebuild
-        self.data.mesh = TriMesh::new(self.data.vertices.clone(), self.data.indices.clone());
+        data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone());
 
         self.calc_bbox();
     }
 
     pub fn merge(&mut self, mesh_data: &MeshData)
     {
+        let mut data = self.data.get_mut();
+
         // tri mesh
-        self.data.mesh.append(&mesh_data.mesh);
+        data.mesh.append(&mesh_data.mesh);
 
         // vertices and indices
-        self.data.vertices.extend(&mesh_data.vertices);
+        data.vertices.extend(&mesh_data.vertices);
 
-        let index_offset = self.data.indices.len() as u32;
+        let index_offset = data.indices.len() as u32;
         for i in &mesh_data.indices
         {
             let i0 = i[0] + index_offset;
             let i1 = i[1] + index_offset;
             let i2 = i[2] + index_offset;
-            self.data.indices.push([i0, i1, i2]);
+            data.indices.push([i0, i1, i2]);
         }
 
         // uvs and uv indices
-        self.data.uvs.extend(&mesh_data.uvs);
+        data.uvs.extend(&mesh_data.uvs);
 
-        let uv_index_offset = self.data.uv_indices.len() as u32;
+        let uv_index_offset = data.uv_indices.len() as u32;
         for i in &mesh_data.uv_indices
         {
             let i0 = i[0] + uv_index_offset;
             let i1 = i[1] + uv_index_offset;
             let i2 = i[2] + uv_index_offset;
-            self.data.uv_indices.push([i0, i1, i2]);
+            data.uv_indices.push([i0, i1, i2]);
         }
 
         // normals
-        self.data.normals.extend(&mesh_data.normals);
+        data.normals.extend(&mesh_data.normals);
 
-        let normal_index_offset = self.data.normals_indices.len() as u32;
+        let normal_index_offset = data.normals_indices.len() as u32;
         for i in &mesh_data.normals_indices
         {
             let i0 = i[0] + normal_index_offset;
             let i1 = i[1] + normal_index_offset;
             let i2 = i[2] + normal_index_offset;
-            self.data.normals_indices.push([i0, i1, i2]);
+            data.normals_indices.push([i0, i1, i2]);
         }
 
         self.calc_bbox();
@@ -169,6 +174,8 @@ impl Mesh
 
     pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>) -> Vector3<f32>
     {
+        let mut data = self.data.get_ref();
+
         // https://stackoverflow.com/questions/23980748/triangle-texture-mapping-with-barycentric-coordinates
         // https://answers.unity.com/questions/383804/calculate-uv-coordinates-of-3d-point-on-plane-of-m.html
 
@@ -176,10 +183,10 @@ impl Mesh
         let hit_pos_local = tran_inverse * hit.to_homogeneous();
         let hit_pos_local = Point3::<f32>::from_homogeneous(hit_pos_local).unwrap();
 
-        let f_id = (face_id % self.data.mesh.indices().len() as u32) as usize;
+        let f_id = (face_id % data.mesh.indices().len() as u32) as usize;
 
-        let face = self.data.mesh.indices()[f_id];
-        let normal_face = self.data.normals_indices[f_id];
+        let face = data.mesh.indices()[f_id];
+        let normal_face = data.normals_indices[f_id];
 
         let i0 = face[0] as usize;
         let i1 = face[1] as usize;
@@ -189,13 +196,13 @@ impl Mesh
         let i_normal_1 = normal_face[1] as usize;
         let i_normal_2 = normal_face[2] as usize;
 
-        let a = self.data.mesh.vertices()[i0].to_homogeneous();
-        let b = self.data.mesh.vertices()[i1].to_homogeneous();
-        let c = self.data.mesh.vertices()[i2].to_homogeneous();
+        let a = data.mesh.vertices()[i0].to_homogeneous();
+        let b = data.mesh.vertices()[i1].to_homogeneous();
+        let c = data.mesh.vertices()[i2].to_homogeneous();
 
-        let a_t = self.data.normals[i_normal_0];
-        let b_t = self.data.normals[i_normal_1];
-        let c_t = self.data.normals[i_normal_2];
+        let a_t = data.normals[i_normal_0];
+        let b_t = data.normals[i_normal_1];
+        let c_t = data.normals[i_normal_2];
 
         let a = Point3::<f32>::from_homogeneous(a).unwrap();
         let b = Point3::<f32>::from_homogeneous(b).unwrap();
@@ -229,8 +236,7 @@ impl Component for Mesh
 {
     component_impl_default!();
 
-    fn update(&mut self, frame_scale: f32)
+    fn update(&mut self, _frame_scale: f32)
     {
-        // TODO
     }
 }

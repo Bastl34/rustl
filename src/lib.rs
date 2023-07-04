@@ -11,6 +11,11 @@ mod rendering
     pub(crate) mod uniform;
     pub(crate) mod light;
 
+    pub(crate) mod bind_groups
+    {
+        pub(crate) mod light_cam;
+    }
+
     pub(crate) mod helper
     {
         pub(crate) mod buffer;

@@ -191,7 +191,7 @@ impl Component for Transformation
 {
     component_impl_default!();
 
-    fn update(&mut self, frame_scale: f32)
+    fn update(&mut self, _frame_scale: f32)
     {
     }
 }

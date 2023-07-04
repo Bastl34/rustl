@@ -1,11 +1,11 @@
 use std::{sync::RwLockReadGuard, mem::swap};
 
 use nalgebra::{Vector3};
-use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment};
+use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
 use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}, light, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, uniform};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -33,7 +33,7 @@ impl RenderItem for Scene
 
 impl Scene
 {
-    pub async fn new(wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>, samples: u32) -> Scene
+    pub async fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
         let node_id = 0;
         let node = scene.nodes.get_mut(node_id).unwrap();
@@ -69,17 +69,19 @@ impl Scene
         */
 
         // vertex buffer
-        let vertex_buffer;
+        /*
         {
             let mut node = node.write().unwrap();
             let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
-            vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", *mesh);
+            let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", *mesh);
 
             mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
         }
+        */
 
         // instance
         {
+            /*
             let instance_buffer;
             {
                 let node_read = node.read().unwrap();
@@ -89,6 +91,7 @@ impl Scene
             let mut node = node.write().unwrap();
             node.instances.consume();
             node.instance_render_item = Some(Box::new(instance_buffer));
+            */
 
             /*
             let mut node = node.write().unwrap();
@@ -110,6 +113,7 @@ impl Scene
         }
 
         // camera
+        /*
         for cam in &scene.cameras
         {
             let mut cam = cam.borrow_mut();
@@ -118,6 +122,7 @@ impl Scene
             let camera_buffer = CameraBuffer::new(wgpu, &cam);
             cam.render_item = Some(Box::new(camera_buffer));
         }
+        */
         /*
         for cam in scene.cameras.iter_mut()
         {
@@ -136,11 +141,13 @@ impl Scene
         */
 
         // lights
+        /*
         {
             let lights = scene.lights.consume();
             let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), lights);
             scene.lights_render_item = Some(Box::new(lights_buffer));
         }
+        */
 
         // shader source
         let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
@@ -162,6 +169,7 @@ impl Scene
             depth_pass_buffer_texture: None,
         };
 
+        render_scene.update(wgpu, state, scene);
         render_scene.create_pipelines(wgpu, scene, false);
 
         render_scene
@@ -327,6 +335,22 @@ impl Scene
         }
         */
 
+        // ********** vertex buffer **********
+        {
+            let node = scene.nodes.get_mut(node_id).unwrap();
+
+            let mut node = node.write().unwrap();
+            let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
+
+            let (mesh_data, mesh_data_changed) = mesh.get_data_mut().consume_borrow_mut();
+
+            if mesh_data_changed
+            {
+                let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh_data);
+                mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
+            }
+        }
+
         // ********** instances all **********
         let all_instances_changed;
         {
@@ -406,6 +430,12 @@ impl Scene
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
         if all_lights_changed
         {
+            if scene.lights_render_item.is_none()
+            {
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
+                scene.lights_render_item = Some(Box::new(lights_buffer));
+            }
+
             let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
             render_item.to_buffer(wgpu, lights);
 
@@ -550,8 +580,22 @@ impl Scene
             let clear;
             if i == 0 { clear = true; } else { clear = false; }
 
-            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, clear);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, clear);
+            // create bind groups
+            let camera_render_item = cam.render_item.as_ref().unwrap();
+            let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
+
+            let cam_bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
+            {
+                layout: &camera_buffer.get_bind_group_layout(),
+                entries:
+                &[
+                    uniform::uniform_bind_group(0, &camera_buffer.get_buffer())
+                ],
+                label: None,
+            });
+
+            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, &cam_bind_group, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, &cam_bind_group, clear);
 
             i += 1;
         }
@@ -559,7 +603,7 @@ impl Scene
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, clear: bool) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
         let mut clear_depth = wgpu::LoadOp::Clear(1.0);
@@ -615,10 +659,10 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, cam)
+        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, cam_bind_group)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, clear: bool) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -673,10 +717,10 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, cam)
+        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, cam_bind_group)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>, cam: &'a Box<Camera>) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>, cam_bind_group: &'a BindGroup) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -700,12 +744,14 @@ impl Scene
                     let instance_render_item = node.instance_render_item.as_ref().unwrap();
                     let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                    let camera_render_item = cam.render_item.as_ref().unwrap();
-                    let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
+                    //let camera_render_item = cam.render_item.as_ref().unwrap();
+                    //let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
 
                     pass.set_pipeline(&pipeline.get());
                     pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
-                    pass.set_bind_group(1, camera_buffer.get_bind_group(), &[]);
+                    //pass.set_bind_group(1, camera_buffer.get_bind_group(), &[]);
+                    //pass.set_bind_group(1, bind_group, &[]);
+                    pass.set_bind_group(1, cam_bind_group, &[]);
                     pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));

@@ -147,11 +147,19 @@ impl MainInterface
 
         {
             let state = &mut *(state.borrow_mut());
-            for scene in state.scenes.iter_mut()
+
+            // move out scenes from state to prevent using multiple mut borrows
+            let mut scenes = vec![];
+            swap(&mut state.scenes, &mut scenes);
+
+            for scene in &mut scenes
             {
-                let render_item = Scene::new(&mut wgpu, scene, samlpes).await;
+                //let render_item = Scene::new(&mut wgpu, scene, samlpes).await;
+                let render_item = Scene::new(&mut wgpu, state, scene, samlpes).await;
                 scene.render_item = Some(Box::new(render_item));
             }
+
+            swap(&mut scenes, &mut state.scenes);
         }
 
 
@@ -236,30 +244,20 @@ impl MainInterface
             }
             else
             {
-                // just update some
-                for (i, instance) in instances.get_ref().iter().enumerate()
+                if state.rotation_speed > 0.0
                 {
-                    let mut instance = instance.borrow_mut();
-                    let instance = instance.get_mut();
+                    for instance in instances.get_ref()
+                    {
+                        let mut instance = instance.borrow_mut();
+                        let instance = instance.get_mut();
 
-                    let rotation: f32 = state.rotation_speed * state.frame_scale;
+                        let rotation: f32 = state.rotation_speed * state.frame_scale;
 
-                    instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
+                        instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
+                    }
                 }
             }
         }
-
-        /*
-        for cam in &scene.cameras
-        {
-            let mut cam = cam.borrow_mut();
-            let mut cam = cam.get_mut();
-
-            cam.eye_pos = state.camera_pos;
-            cam.fovy = state.cam_fov.to_radians();
-            cam.init_matrices();
-        }
-        */
     }
 
     pub fn update(&mut self)

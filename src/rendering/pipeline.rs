@@ -50,13 +50,13 @@ impl Pipeline
             light_bind_group_layout: None,
         };
 
-        pipe.create_binding_groups(wgpu, textures, cam, lights);
+        pipe.create_binding_groups(wgpu, textures, lights);
         pipe.create(wgpu, cam, depth_stencil, fragment_attachment, samples);
 
         pipe
     }
 
-    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, cam: &CameraBuffer, lights: &LightBuffer)
+    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>, lights: &LightBuffer)
     {
         let device = wgpu.device();
 
@@ -225,7 +225,7 @@ impl Pipeline
     {
         dbg!("recreating pipeline");
 
-        self.create_binding_groups(wgpu, textures, cam, lights);
+        self.create_binding_groups(wgpu, textures, lights);
         self.create(wgpu, cam, depth_stencil, fragment_attachment, samples);
     }
 
