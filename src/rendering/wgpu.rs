@@ -1,7 +1,5 @@
-use std::panic;
-
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture, TextureFormat, Backend};
+use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
 use crate::{helper::image::brga_to_rgba, state::state::State};
 

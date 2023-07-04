@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::mem::{take, swap};
+use std::mem::{swap};
 use std::rc::Rc;
 use std::time::Instant;
 use std::{vec, cmp};
@@ -8,20 +8,17 @@ use nalgebra::{Point3, Vector3};
 use winit::window::{Window, Fullscreen};
 
 use crate::helper::change_tracker::ChangeTracker;
-use crate::helper::consumable::Consumable;
 use crate::rendering::egui::EGui;
-use crate::rendering::instance;
-use crate::rendering::scene::{Scene, self};
+use crate::rendering::scene::{Scene};
 
 use crate::rendering::wgpu::{WGpu};
 use crate::state::gui::gui::build_gui;
-use crate::state::helper::render_item::{get_render_item, get_render_item_mut};
+use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
-use crate::state::scene::scene::SceneItem;
 use crate::state::state::{State, StateItem};
 
 const REFERENCE_UPDATE_FRAMES: f32 = 60.0;

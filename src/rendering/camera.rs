@@ -1,9 +1,9 @@
 use nalgebra::{Point3, Matrix4};
-use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout};
+use wgpu::{util::DeviceExt};
 
 use crate::{state::{helper::render_item::RenderItem, scene::camera::Camera}, render_item_impl_default};
 
-use super::{wgpu::WGpu, uniform};
+use super::{wgpu::WGpu};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -35,9 +35,6 @@ pub struct CameraBuffer
 {
     pub name: String,
     buffer: wgpu::Buffer,
-
-    //bind_group_layout: Option<BindGroupLayout>,
-    //bind_group: Option<BindGroup>,
 }
 
 impl RenderItem for CameraBuffer
@@ -61,9 +58,6 @@ impl CameraBuffer
         {
             name: cam.name.clone(),
             buffer: empty_buffer,
-
-            //bind_group_layout: None,
-            //bind_group: None
         };
 
         buffer.to_buffer(wgpu, cam);
@@ -85,8 +79,6 @@ impl CameraBuffer
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
-
-        //self.create_binding_group(wgpu);
     }
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
@@ -101,43 +93,4 @@ impl CameraBuffer
     {
         &self.buffer
     }
-
-    /*
-    pub fn create_binding_group(&mut self, wgpu: &mut WGpu)
-    {
-        let bind_group_layout_name = format!("{} camera_bind_group_layout", self.name);
-        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
-        {
-            entries:
-            &[
-                uniform::uniform_bind_group_layout_entry(0, true, true)
-            ],
-            label: Some(bind_group_layout_name.as_str()),
-        });
-
-        let bind_group_name = format!("{} camera_bind_group", self.name);
-        let bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            layout: &bind_group_layout,
-            entries:
-            &[
-                uniform::uniform_bind_group(0, &self.get_buffer())
-            ],
-            label: Some(bind_group_name.as_str()),
-        });
-
-        self.bind_group_layout = Some(bind_group_layout);
-        self.bind_group = Some(bind_group);
-    }
-
-    pub fn get_bind_group_layout(&self) -> &BindGroupLayout
-    {
-        self.bind_group_layout.as_ref().unwrap()
-    }
-
-    pub fn get_bind_group(&self) -> &BindGroup
-    {
-        self.bind_group.as_ref().unwrap()
-    }
-    */
 }

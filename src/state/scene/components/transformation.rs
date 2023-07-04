@@ -1,8 +1,8 @@
-use std::{any::Any, ops::Mul};
+use std::{any::Any};
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{state::scene::node::{NodeItem, Node}, component_impl_default};
+use crate::{component_impl_default};
 
 use super::component::{Component, ComponentBase};
 

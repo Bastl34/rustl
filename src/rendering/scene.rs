@@ -1,11 +1,10 @@
 use std::{sync::RwLockReadGuard, mem::swap};
 
-use nalgebra::{Vector3};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::{State}, scene::{instance::{Instance}, components::{component::Component}, node::{Node, NodeItem}, light, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{components::{component::Component}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, uniform, bind_groups::light_cam::LightCamBindGroup};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, bind_groups::light_cam::LightCamBindGroup};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -35,120 +34,6 @@ impl Scene
 {
     pub async fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
-        let node_id = 0;
-        let node = scene.nodes.get_mut(node_id).unwrap();
-
-        /*
-        {
-            let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>().unwrap();
-            dbg!(&mesh.normals);
-        }
-
-        {
-            let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
-            mesh.normals.clear();
-            dbg!(&mesh.normals);
-        }
-        */
-
-        /*
-        just as reference
-        {
-
-            let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
-            let mat = mat.read().unwrap().as_any().downcast_ref::<MaterialComponent>().unwrap();
-        }
-
-        {
-            let mat = node.write().unwrap().find_shared_component_mut::<MaterialComponent>().unwrap();
-            shared_component_write!(mat, MaterialComponent, mat);
-            let mat_data = mat.get_data_mut();
-
-            mat_data.alpha = 1.0;
-        }
-        */
-
-        // vertex buffer
-        /*
-        {
-            let mut node = node.write().unwrap();
-            let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
-            let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", *mesh);
-
-            mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
-        }
-        */
-
-        // instance
-        {
-            /*
-            let instance_buffer;
-            {
-                let node_read = node.read().unwrap();
-                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node_read.instances.get_ref());
-            }
-
-            let mut node = node.write().unwrap();
-            node.instances.consume();
-            node.instance_render_item = Some(Box::new(instance_buffer));
-            */
-
-            /*
-            let mut node = node.write().unwrap();
-            let instances = node.instances.consume();
-            let instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
-            node.instance_render_item = Some(Box::new(instance_buffer));
-            */
-            /*
-            let instance_buffer;
-            {
-                let node_read = node.read().unwrap();
-
-                instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node_read.instances.get_ref());
-            }
-
-            let mut node = node.write().unwrap();
-            node.instance_render_item = Some(Box::new(instance_buffer));
-            */
-        }
-
-        // camera
-        /*
-        for cam in &scene.cameras
-        {
-            let mut cam = cam.borrow_mut();
-            let (cam, _) = cam.consume_borrow_mut();
-
-            let camera_buffer = CameraBuffer::new(wgpu, &cam);
-            cam.render_item = Some(Box::new(camera_buffer));
-        }
-        */
-        /*
-        for cam in scene.cameras.iter_mut()
-        {
-            let camera_buffer = CameraBuffer::new(wgpu, &cam);
-            cam.render_item = Some(Box::new(camera_buffer));
-        }
-        */
-        /*
-        let cam_id = 0; // TODO
-        {
-            let mut cam = scene.cameras.get_mut(cam_id).unwrap();
-
-            let camera_buffer = CameraBuffer::new(wgpu, &cam);
-            cam.render_item = Some(Box::new(camera_buffer));
-        }
-        */
-
-        // lights
-        /*
-        {
-            let lights = scene.lights.consume();
-            let lights_buffer = LightBuffer::new(wgpu, "lights buffer".to_string(), lights);
-            scene.lights_render_item = Some(Box::new(lights_buffer));
-        }
-        */
-
         // shader source
         let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
         let depth_shader = resources::load_string_async("shader/depth.wgsl").await.unwrap();
@@ -197,16 +82,6 @@ impl Scene
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
 
-        //light
-        /*
-        let lights_render_item = get_render_item::<LightBuffer>(scene.lights_render_item.as_ref().unwrap());
-
-        // cam
-        let cam = scene.cameras.get(cam_id).unwrap(); // TODO
-        let cam = cam.borrow();
-        let cam_render_item = get_render_item::<CameraBuffer>(cam.get_ref().render_item.as_ref().unwrap());
-        */
-
         // cam/light
         let cam = scene.cameras.get(cam_id).unwrap(); // TODO
         let cam = cam.borrow();
@@ -227,7 +102,6 @@ impl Scene
         }
 
         // ********** color pass **********
-        //let mut textures = vec![];
         textures.push(&depth_pass_buffer_texture);
 
         if !re_create
@@ -292,22 +166,6 @@ impl Scene
         }
 
         // ********** lights and cameras **********
-        /*
-        if all_lights_changed
-        {
-            if scene.lights_render_item.is_none()
-            {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
-                scene.lights_render_item = Some(Box::new(lights_buffer));
-            }
-
-            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-            render_item.to_buffer(wgpu, lights);
-
-            dbg!(" ============ lights updated");
-        }
-        */
-
         for cam in &mut scene.cameras
         {
             let mut cam = cam.borrow_mut();
@@ -343,102 +201,6 @@ impl Scene
             }
 
         }
-
-        // ********** lights: all **********
-
-        /*
-        if all_lights_changed
-        {
-            if scene.lights_render_item.is_none()
-            {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
-                scene.lights_render_item = Some(Box::new(lights_buffer));
-            }
-
-            let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-            render_item.to_buffer(wgpu, lights);
-
-            //dbg!(" ============ lights updated");
-        }
-        */
-
-        // ********** light: check each**********
-        /*
-        if !all_lights_changed
-        {
-            for (i, light) in lights.iter().enumerate()
-            {
-                let mut light = light.borrow_mut();
-                let (light, light_changed) = light.consume_borrow();
-                if light_changed
-                {
-                    let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                    render_item.update_buffer(wgpu, light, i);
-
-                    //dbg!(" ============ ONE lights updated");
-                }
-            }
-        }
-        */
-
-
-        /*
-        for cam in &mut scene.cameras
-        {
-            let mut render_item = cam.render_item.take();
-
-            {
-                let render_item = get_render_item_mut::<CameraBuffer>(render_item.as_mut().unwrap());
-                render_item.update_buffer(wgpu, cam.as_ref());
-            }
-
-            cam.render_item = render_item;
-        }
-        */
-
-
-        /*
-        {
-            let node_arc = scene.nodes.get_mut(node_id).unwrap();
-            let mut node = node_arc.write().unwrap();
-
-            {
-                let instances = &mut node.instances;
-
-                if instances.get_ref().len() != state.instances as usize
-                {
-                    dbg!("recreate instances");
-
-                    instances.get_mut().clear();
-
-                    for i in 0..state.instances
-                    {
-                        let x = (i as f32 * 5.0) - ((state.instances - 1) as f32 * 5.0) / 2.0;
-
-                        let instance = Instance::new_with_data
-                        (
-                            scene.id_manager.get_next_instance_id(),
-                            "instance".to_string(),
-                            node_arc.clone(),
-                            Vector3::<f32>::new(x, 0.0, 0.0),
-                            Vector3::<f32>::new(0.0, i as f32, 0.0),
-                            Vector3::<f32>::new(1.0, 1.0, 1.0)
-                        );
-
-                        node.add_instance(Box::new(instance));
-                    }
-                }
-                else
-                {
-                    for instance in instances.get_mut()
-                    {
-                        let rotation: f32 = state.rotation_speed * state.frame_scale;
-                        instance.borrow_mut().get_mut().apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
-                    }
-                }
-            }
-        }
-        */
 
         // ********** vertex buffer **********
         {

@@ -1,12 +1,9 @@
 use std::{borrow::Cow};
 
-use wgpu::util::DeviceExt;
-use wgpu::{BindGroup, ShaderModule, Device, BindGroupLayout, Buffer};
+use wgpu::{BindGroup, ShaderModule, Device, BindGroupLayout};
 
 use super::bind_groups::light_cam::LightCamBindGroup;
-use super::camera::CameraBuffer;
-use super::light::LightBuffer;
-use super::{wgpu::WGpu, vertex_buffer::{Vertex}, texture::{Texture, self}, uniform, instance::Instance};
+use super::{wgpu::WGpu, vertex_buffer::{Vertex}, texture::{Texture, self}, instance::Instance};
 
 pub struct Pipeline
 {
@@ -17,10 +14,7 @@ pub struct Pipeline
     pipeline: Option<wgpu::RenderPipeline>,
 
     textures_bind_group: Option<BindGroup>,
-    //light_bind_group: Option<BindGroup>,
-
     textures_bind_group_layout: Option<BindGroupLayout>,
-    //light_bind_group_layout: Option<BindGroupLayout>,
 }
 
 impl Pipeline
@@ -45,10 +39,8 @@ impl Pipeline
             pipeline: None,
 
             textures_bind_group: None,
-            //light_bind_group: None,
 
             textures_bind_group_layout: None,
-            //light_bind_group_layout: None,
         };
 
         pipe.create_binding_groups(wgpu, textures);
@@ -95,37 +87,9 @@ impl Pipeline
             }
         );
 
-        // ******************** lights ********************
-        /*
-        let light_bind_group_layout_name = format!("{} light_bind_group_layout", self.name);
-        let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
-        {
-            entries:
-            &[
-                uniform::uniform_bind_group_layout_entry(0, true, true),
-                uniform::uniform_bind_group_layout_entry(1, true, true),
-            ],
-            label: Some(light_bind_group_layout_name.as_str()),
-        });
-
-        let light_bind_group_name = format!("{} light_bind_group", self.name);
-        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            layout: &light_bind_group_layout,
-            entries:
-            &[
-                uniform::uniform_bind_group(0, &lights.get_amount_buffer()),
-                uniform::uniform_bind_group(1, &lights.get_lights_buffer()),
-            ],
-            label: Some(light_bind_group_name.as_str()),
-        });
-        */
-
         self.textures_bind_group = Some(textures_bind_group);
-        //self.light_bind_group = Some(light_bind_group);
 
         self.textures_bind_group_layout = Some(textures_bind_group_layout);
-        //self.light_bind_group_layout = Some(light_bind_group_layout);
     }
 
     pub fn create(&mut self, wgpu: &mut WGpu, cam_light_bind_group: &LightCamBindGroup, depth_stencil: bool, fragment_attachment: bool, samples: u32)
@@ -249,12 +213,4 @@ impl Pipeline
     {
         self.textures_bind_group.as_ref().unwrap()
     }
-
-    /*
-    pub fn get_light_bind_group(&self) -> &BindGroup
-    {
-        self.light_bind_group.as_ref().unwrap()
-    }
-    */
-
 }

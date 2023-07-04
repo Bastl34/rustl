@@ -299,7 +299,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_transform(&self) -> (Matrix4<f32>, Matrix3<f32>)
+    pub fn get_transform(&self) -> (Matrix4<f32>, Matrix3<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
 
@@ -310,14 +310,16 @@ impl Node
                 return
                 (
                     transform_component.get_transform().clone(),
-                    transform_component.get_normal_matrix().clone()
+                    transform_component.get_normal_matrix().clone(),
+                    transform_component.has_parent_inheritance()
                 );
             }
         }
 
         (
             Matrix4::<f32>::identity(),
-            Matrix3::<f32>::identity()
+            Matrix3::<f32>::identity(),
+            true
         )
     }
 
@@ -325,21 +327,30 @@ impl Node
     {
         let node = node.read().unwrap();
 
-        let node_transform = node.get_transform();
-        let mut parent_transform = (Matrix4::<f32>::identity(), Matrix3::<f32>::identity());
+        let (node_transform, node_normal_matrix, node_parent_inheritance) = node.get_transform();
+        let (mut parent_trans, mut parent_normal_matrix) = (Matrix4::<f32>::identity(), Matrix3::<f32>::identity());
 
         if let Some(parent_node) = &node.parent
         {
             let parent = parent_node.read().unwrap();
 
-            parent_transform = parent.get_transform();
+            (parent_trans, parent_normal_matrix, _) = parent.get_transform();
         }
 
-        // 0 = transformation, 1 = normal matrix
-        (
-            parent_transform.0 * node_transform.0,
-            parent_transform.1 * node_transform.1,
-        )
+        if node_parent_inheritance
+        {
+            (
+                parent_trans * node_transform,
+                parent_normal_matrix * node_normal_matrix,
+            )
+        }
+        else
+        {
+            (
+                node_transform,
+                node_normal_matrix,
+            )
+        }
     }
 
     pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)
@@ -425,7 +436,7 @@ impl Bounded for Node
             return bvh::aabb::AABB::empty();
         }
 
-        let (trans, _) = self.get_transform();
+        let (trans, _, _) = self.get_transform();
 
         let mesh_data = mesh.unwrap().get_data();
 
