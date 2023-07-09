@@ -48,7 +48,13 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                 }
             }
 
-            ui.checkbox(&mut state.rendering.v_sync, "vSync");
+            {
+                let mut v_sync = state.rendering.v_sync.get_ref().clone();
+                if ui.checkbox(&mut v_sync, "vSync").changed()
+                {
+                    state.rendering.v_sync.set(v_sync);
+                }
+            }
 
             ui.horizontal(|ui|
             {

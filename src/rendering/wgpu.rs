@@ -79,7 +79,7 @@ impl WGpu
         let surface_caps = surface.get_capabilities(&adapter);
 
         let mut present_mode = wgpu::PresentMode::Fifo;
-        if !state.rendering.v_sync
+        if !state.rendering.v_sync.get_ref()
         {
             present_mode = wgpu::PresentMode::Immediate;
         }
@@ -193,6 +193,20 @@ impl WGpu
     {
         self.surface_config.width = width;
         self.surface_config.height = height;
+
+        self.surface.configure(&self.device, &self.surface_config);
+        self.create_msaa_texture(self.msaa_samples);
+    }
+
+    pub fn set_vsync(&mut self, v_sync: bool)
+    {
+        let mut present_mode = wgpu::PresentMode::Fifo;
+        if !v_sync
+        {
+            present_mode = wgpu::PresentMode::Immediate;
+        }
+
+        self.surface_config.present_mode = present_mode;
 
         self.surface.configure(&self.device, &self.surface_config);
         self.create_msaa_texture(self.msaa_samples);

@@ -23,7 +23,7 @@ pub struct AdapterFeatures
 pub struct Rendering
 {
     pub clear_color: Vector3<f32>,
-    pub v_sync: bool,
+    pub v_sync: ChangeTracker<bool>,
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
@@ -97,7 +97,7 @@ impl State
             rendering: Rendering
             {
                 clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
-                v_sync: true,
+                v_sync: ChangeTracker::new(true),
 
                 fullscreen: ChangeTracker::new(false),
                 msaa: ChangeTracker::new(8),

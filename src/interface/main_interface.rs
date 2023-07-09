@@ -265,14 +265,14 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            /*
-            let mut fullscreen_new = None;
-            if state.rendering.fullscreen
+            // vsync
+            let (v_sync, vsync_changed) = state.rendering.v_sync.consume_clone();
+            if vsync_changed
             {
-                fullscreen_new = Some(Fullscreen::Borderless(None));
+                self.wgpu.set_vsync(v_sync);
             }
 
-            self.window.set_fullscreen(fullscreen_new);*/
+            // fullscreen
             let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
             if fullscreen_changed
             {
