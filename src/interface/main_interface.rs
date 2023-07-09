@@ -101,8 +101,6 @@ impl MainInterface
             Node::add_node(node1, node2);
 
             // ********** cam **********
-            //state.camera_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
-
             for i in 0..4
             {
                 let cam_id = scene.id_manager.get_next_camera_id();
@@ -120,9 +118,6 @@ impl MainInterface
             scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
             scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
             scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
-
-            //cam.init(0.0, 0.0, 1.0, 1.0, wgpu.surface_config().width, wgpu.surface_config().height);
-            //cam.init_matrices();
 
             // ********** light **********
             {

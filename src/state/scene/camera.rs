@@ -237,6 +237,6 @@ impl Camera
 
     pub fn print_short(&self)
     {
-        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}],[{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, self.viewport_x, self.viewport_y, self.viewport_width, self.viewport_height, self.resolution_width, self.resolution_height, self.fovy, self.eye_pos, self.clipping_near, self.clipping_far);
+        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, self.viewport_x, self.viewport_y, self.viewport_width, self.viewport_height, self.resolution_width, self.resolution_height, self.fovy, self.eye_pos, self.clipping_near, self.clipping_far);
     }
 }

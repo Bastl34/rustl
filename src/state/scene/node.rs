@@ -1,11 +1,11 @@
-use std::{sync::{Arc, RwLock}, cell::{Cell, RefCell}};
+use std::{sync::{Arc, RwLock}, cell::{RefCell}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Matrix3, Vector3};
 
 use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker};
 
-use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation, material::Material}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
@@ -351,6 +351,32 @@ impl Node
                 node_normal_matrix,
             )
         }
+    }
+
+    pub fn get_alpha(node: NodeItem) -> f32
+    {
+        let node = node.read().unwrap();
+
+        let mat = node.find_shared_component::<Material>();
+
+        if let Some(mat) = mat
+        {
+            let mat = mat.read().unwrap();
+            let mat = mat.as_any().downcast_ref::<Material>().unwrap();
+            let mat_data = mat.get_data();
+            let alpha = mat_data.alpha;
+
+            if mat_data.alpha_inheritance && node.parent.is_some()
+            {
+                return Self::get_alpha(node.parent.as_ref().unwrap().clone()) * alpha;
+            }
+            else
+            {
+                return alpha;
+            }
+        }
+
+        1.0
     }
 
     pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)

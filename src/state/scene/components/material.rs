@@ -61,6 +61,7 @@ pub struct MaterialData
 
     pub normal_map_strength: f32,
 
+    pub alpha_inheritance: bool,
     pub cast_shadow: bool,
     pub receive_shadow: bool,
     pub shadow_softness: f32,
@@ -110,6 +111,7 @@ impl Material
 
             normal_map_strength: 1.0,
 
+            alpha_inheritance: true,
             cast_shadow: true,
             receive_shadow: true,
             shadow_softness: 0.01,
@@ -203,6 +205,7 @@ impl Material
 
         if !helper::math::approx_equal(default_material_data.normal_map_strength, new_mat_data.normal_map_strength) { self.data.normal_map_strength = new_mat_data.normal_map_strength; }
 
+        if default_material_data.alpha_inheritance != new_mat_data.alpha_inheritance { self.data.alpha_inheritance = new_mat_data.alpha_inheritance; }
         if default_material_data.cast_shadow != new_mat_data.cast_shadow { self.data.cast_shadow = new_mat_data.cast_shadow; }
         if default_material_data.receive_shadow != new_mat_data.receive_shadow { self.data.receive_shadow = new_mat_data.receive_shadow; }
         if !helper::math::approx_equal(default_material_data.shadow_softness, new_mat_data.shadow_softness) { self.data.shadow_softness = new_mat_data.shadow_softness; }
@@ -281,6 +284,7 @@ impl Material
 
         println!("normal_map_strength: {:?}", self.data.normal_map_strength);
 
+        println!("alpha_inheritance: {:?}", self.data.alpha_inheritance);
         println!("cast_shadow: {:?}", self.data.cast_shadow);
         println!("receive_shadow: {:?}", self.data.receive_shadow);
         println!("shadow_softness: {:?}", self.data.shadow_softness);

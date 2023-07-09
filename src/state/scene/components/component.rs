@@ -31,7 +31,6 @@ pub trait Component: Any
     }
 }
 
-
 pub struct ComponentBase
 {
     pub id: u64,

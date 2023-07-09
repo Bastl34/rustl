@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem}, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
