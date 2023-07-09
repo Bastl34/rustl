@@ -23,9 +23,11 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
 
             ui.horizontal(|ui|
             {
-                let r = (state.rendering.clear_color.x * 255.0) as u8;
-                let g = (state.rendering.clear_color.y * 255.0) as u8;
-                let b = (state.rendering.clear_color.z * 255.0) as u8;
+                let clear_color = state.rendering.clear_color.get_ref();
+
+                let r = (clear_color.x * 255.0) as u8;
+                let g = (clear_color.y * 255.0) as u8;
+                let b = (clear_color.z * 255.0) as u8;
                 let mut color = Color32::from_rgb(r, g, b);
 
                 ui.label("clear color:");
@@ -36,7 +38,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
                     let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
                     let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
-                    state.rendering.clear_color = Vector3::<f32>::new(r, g, b);
+                    state.rendering.clear_color.set(Vector3::<f32>::new(r, g, b));
                 }
             });
 

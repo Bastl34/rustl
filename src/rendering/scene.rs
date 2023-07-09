@@ -124,13 +124,18 @@ impl Scene
     {
         let node_id = 0;
 
-        self.clear_color = wgpu::Color
+        let (clear_color, clear_color_changed) = state.rendering.clear_color.consume_borrow();
+
+        if clear_color_changed
         {
-            a: 1.0,
-            r: state.rendering.clear_color.x as f64,
-            g: state.rendering.clear_color.y as f64,
-            b: state.rendering.clear_color.z as f64,
-        };
+            self.clear_color = wgpu::Color
+            {
+                r: clear_color.x as f64,
+                g: clear_color.y as f64,
+                b: clear_color.z as f64,
+                a: 1.0,
+            };
+        }
 
         // ********** lights: all **********
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
@@ -145,7 +150,7 @@ impl Scene
             let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
             render_item.to_buffer(wgpu, lights);
 
-            dbg!(" ============ lights updated");
+            //dbg!(" ============ lights updated");
         }
 
         // ********** light: check each **********
@@ -160,7 +165,7 @@ impl Scene
                     let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
                     render_item.update_buffer(wgpu, light, i);
 
-                    dbg!(" ============ ONE light updated");
+                    //dbg!(" ============ ONE light updated");
                 }
             }
         }
@@ -199,7 +204,6 @@ impl Scene
 
                 cam.bind_group_render_item = Some(Box::new(light_cam_bind_group));
             }
-
         }
 
         // ********** vertex buffer **********

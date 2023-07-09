@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use instant::Instant;
 use nalgebra::{Vector3};
 
-use crate::helper::{consumable::Consumable, change_tracker::ChangeTracker};
+use crate::helper::{change_tracker::ChangeTracker};
 
 use super::scene::scene::SceneItem;
 
@@ -22,7 +22,7 @@ pub struct AdapterFeatures
 
 pub struct Rendering
 {
-    pub clear_color: Vector3<f32>,
+    pub clear_color: ChangeTracker<Vector3<f32>>,
     pub v_sync: ChangeTracker<bool>,
 
     pub fullscreen: ChangeTracker<bool>,
@@ -37,25 +37,8 @@ pub struct State
     pub running: bool,
     pub scenes: Vec<SceneItem>,
 
-
-
-    /*
-    pub cam_fov: f32,
-    pub camera_pos: Point3<f32>,
-    */
-
-
-
     pub instances: u32,
     pub rotation_speed: f32,
-
-    /*
-    pub light1_pos: Point3<f32>,
-    pub light1_color: Vector3<f32>,
-
-    pub light2_pos: Point3<f32>,
-    pub light2_color: Vector3<f32>,
-    */
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -96,7 +79,7 @@ impl State
 
             rendering: Rendering
             {
-                clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
+                clear_color: ChangeTracker::new(Vector3::<f32>::new(0.0, 0.0, 0.0)),
                 v_sync: ChangeTracker::new(true),
 
                 fullscreen: ChangeTracker::new(false),
@@ -106,21 +89,8 @@ impl State
             running: false,
             scenes: vec![],
 
-            /*
-            cam_fov: 45.0,
-            camera_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
-            */
-
             instances: 3,
             rotation_speed: 0.01,
-
-            /*
-            light1_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
-            light1_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
-
-            light2_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
-            light2_pos: Point3::<f32>::new(0.0, 0.0, 0.0),
-            */
 
             save_image: false,
             save_depth_pass_image: false,
@@ -166,7 +136,8 @@ impl State
         println!("");
 
         println!("SCENES:");
-        // update scnes
+
+        // print scenes
         for scene in &self.scenes
         {
             scene.print();
