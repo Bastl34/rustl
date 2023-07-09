@@ -71,7 +71,7 @@ impl Scene
         let mat = node.write().unwrap().find_shared_component::<MaterialComponent>().unwrap();
         let mut mat = mat.write().unwrap();
         let mat = mat.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
-        let mat_data = mat.get_data_mut();
+        let mat_data = mat.get_data_mut().get_mut();
 
         let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
         let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();

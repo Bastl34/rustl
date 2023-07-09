@@ -171,7 +171,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         material.get_base_mut().name = mat.name.clone();
                     }
 
-                    let material_data = material.get_data_mut();
+                    let material_data = material.get_data_mut().get_mut();
 
                     if mat.shininess.is_some()
                     {
