@@ -106,7 +106,7 @@ impl WGpu
         if texture_features.flags.sample_count_supported(8) { state.adapter.max_msaa_samples = 8; }
         if texture_features.flags.sample_count_supported(16) { state.adapter.max_msaa_samples = 16; }
 
-        let msaa_samples = *state.rendering.msaa.get();
+        let msaa_samples = *state.rendering.msaa.get_ref();
 
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;

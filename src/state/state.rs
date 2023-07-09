@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use instant::Instant;
-use nalgebra::{Vector3, Point3};
+use nalgebra::{Vector3};
 
-use crate::helper::consumable::Consumable;
+use crate::helper::{consumable::Consumable, change_tracker::ChangeTracker};
 
 use super::scene::scene::SceneItem;
 
@@ -25,8 +25,8 @@ pub struct Rendering
     pub clear_color: Vector3<f32>,
     pub v_sync: bool,
 
-    pub fullscreen: bool,
-    pub msaa: Consumable<u32>,
+    pub fullscreen: ChangeTracker<bool>,
+    pub msaa: ChangeTracker<u32>,
 }
 
 pub struct State
@@ -99,8 +99,8 @@ impl State
                 clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
                 v_sync: true,
 
-                fullscreen: false,
-                msaa: Consumable::new(8),
+                fullscreen: ChangeTracker::new(false),
+                msaa: ChangeTracker::new(8),
             },
 
             running: false,

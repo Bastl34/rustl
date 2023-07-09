@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use egui::{FullOutput, RichText, Color32};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::{light::Light, camera::Camera}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
+use crate::{state::{state::State, scene::{light::Light}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
 
 
 pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -39,14 +39,23 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     state.rendering.clear_color = Vector3::<f32>::new(r, g, b);
                 }
             });
-            ui.checkbox(&mut state.rendering.fullscreen, "Fullscreen");
+
+            {
+                let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
+                if ui.checkbox(&mut fullscreen, "Fullscreen").changed()
+                {
+                    state.rendering.fullscreen.set(fullscreen);
+                }
+            }
+
+            ui.checkbox(&mut state.rendering.v_sync, "vSync");
 
             ui.horizontal(|ui|
             {
                 ui.label("MSAA:");
 
                 let mut changed = false;
-                let mut msaa = *state.rendering.msaa.get();
+                let mut msaa = *state.rendering.msaa.get_ref();
 
                 changed = ui.selectable_value(& mut msaa, 1, "1").changed() || changed;
 
@@ -187,8 +196,15 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             // just some tests
             ui.horizontal(|ui|
             {
-                ui.selectable_value(& mut state.rendering.fullscreen, true, RichText::new("⛶").size(20.0));
-                ui.selectable_value(& mut state.rendering.fullscreen, false, RichText::new("↕").size(20.0));
+                let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
+
+                let mut changed = ui.selectable_value(& mut fullscreen, true, RichText::new("⛶").size(20.0)).changed();
+                changed = ui.selectable_value(& mut fullscreen, false, RichText::new("↕").size(20.0)).changed() || changed;
+
+                if changed
+                {
+                    state.rendering.fullscreen.set(fullscreen);
+                }
             });
 
             if ui.button("save image").clicked()

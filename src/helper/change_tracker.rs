@@ -62,4 +62,12 @@ impl<T> ChangeTracker<T>
 
         (&mut self.data, has_changed)
     }
+
+    pub fn consume_clone(&mut self) -> (T, bool) where T: Copy
+    {
+        let has_changed = self.changed;
+        self.changed = false;
+
+        (self.data, has_changed)
+    }
 }

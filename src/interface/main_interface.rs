@@ -46,8 +46,8 @@ impl MainInterface
             wgpu = WGpu::new(&window, state).await;
 
             dbg!(state.adapter.max_msaa_samples);
-            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get().clone(), state.adapter.max_msaa_samples));
-            samlpes = *(state.rendering.msaa.get());
+            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.adapter.max_msaa_samples));
+            samlpes = *(state.rendering.msaa.get_ref());
 
             wgpu.create_msaa_texture(samlpes);
         }
@@ -265,13 +265,21 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
+            /*
             let mut fullscreen_new = None;
             if state.rendering.fullscreen
             {
                 fullscreen_new = Some(Fullscreen::Borderless(None));
             }
 
-            self.window.set_fullscreen(fullscreen_new);
+            self.window.set_fullscreen(fullscreen_new);*/
+            let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
+            if fullscreen_changed
+            {
+                let mut fullscreen_mode = None;
+                if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
+                self.window.set_fullscreen(fullscreen_mode);
+            }
 
             // fps
             let current_time = state.fps_timer.elapsed().as_millis();
@@ -308,7 +316,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
 
             // msaa
-            let (msaa_samples, msaa_changed) = state.rendering.msaa.consume();
+            let (msaa_samples, msaa_changed) = state.rendering.msaa.consume_clone();
 
             if msaa_changed
             {
