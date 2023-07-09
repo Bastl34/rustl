@@ -1,4 +1,4 @@
-const MAX_LIGHTS = 10;
+const MAX_LIGHTS = [MAX_LIGHTS];
 
 // ****************************** vertex ******************************
 

@@ -4,7 +4,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
 use crate::{state::{state::{State}, scene::{components::{component::Component, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, bind_groups::light_cam::LightCamBindGroup};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -94,7 +94,7 @@ impl Scene
 
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, *light_cam_bind_group, true, true, 1));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, *light_cam_bind_group, scene.max_lights, true, true, 1));
         }
         else
         {
@@ -106,7 +106,7 @@ impl Scene
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, *light_cam_bind_group, true, true, self.samples));
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, *light_cam_bind_group, scene.max_lights, true, true, self.samples));
         }
         else
         {
@@ -143,7 +143,7 @@ impl Scene
         {
             if scene.lights_render_item.is_none()
             {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights);
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, scene.max_lights);
                 scene.lights_render_item = Some(Box::new(lights_buffer));
             }
 

@@ -83,7 +83,7 @@ impl State
                 v_sync: ChangeTracker::new(true),
 
                 fullscreen: ChangeTracker::new(false),
-                msaa: ChangeTracker::new(8),
+                msaa: ChangeTracker::new(8)
             },
 
             running: false,

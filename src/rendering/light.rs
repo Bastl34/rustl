@@ -16,8 +16,6 @@ use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, Light
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
-const MAX_LIGHTS: usize = 10;
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightUniform
@@ -46,6 +44,8 @@ pub struct LightBuffer
 {
     pub name: String,
 
+    max_lights: usize,
+
     lights_amount: wgpu::Buffer,
     lights_buffer: wgpu::Buffer,
 }
@@ -57,11 +57,12 @@ impl RenderItem for LightBuffer
 
 impl LightBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: String, lights: &Vec<RefCell<ChangeTracker<LightItem>>>) -> LightBuffer
+    pub fn new(wgpu: &mut WGpu, name: String, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: u32) -> LightBuffer
     {
         let mut buffer = LightBuffer
         {
             name: name,
+            max_lights: max_lights as usize,
             lights_amount: create_empty_buffer(wgpu),
             lights_buffer: create_empty_buffer(wgpu),
         };
@@ -73,9 +74,9 @@ impl LightBuffer
         buffer
     }
 
-    fn uniform_size() -> wgpu::BufferAddress
+    fn uniform_size(max_lights: usize) -> wgpu::BufferAddress
     {
-        (MAX_LIGHTS * mem::size_of::<LightUniform>()) as wgpu::BufferAddress
+        (max_lights * mem::size_of::<LightUniform>()) as wgpu::BufferAddress
     }
 
     pub fn create_buffer(&mut self, wgpu: &mut WGpu)
@@ -91,7 +92,7 @@ impl LightBuffer
         self.lights_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
             label: Some(&self.name),
-            size: Self::uniform_size(),
+            size: Self::uniform_size(self.max_lights),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -99,7 +100,7 @@ impl LightBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>)
     {
-        let amount = lights.len().min(MAX_LIGHTS) as u32;
+        let amount = lights.len().min(self.max_lights) as u32;
 
         wgpu.queue_mut().write_buffer
         (
@@ -110,9 +111,9 @@ impl LightBuffer
 
         for (i, light) in lights.iter().enumerate()
         {
-            if i + 1 > MAX_LIGHTS
+            if i + 1 > self.max_lights
             {
-                let warning = format!("only {} lights are supported", MAX_LIGHTS);
+                let warning = format!("only {} lights are supported", self.max_lights);
                 println!("{}", warning.bright_yellow());
                 break;
             }
@@ -132,9 +133,9 @@ impl LightBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, light: &Light, index: usize)
     {
-        if index + 1 > MAX_LIGHTS
+        if index + 1 > self.max_lights
         {
-            let warning = format!("only {} lights are supported", MAX_LIGHTS);
+            let warning = format!("only {} lights are supported", self.max_lights);
             println!("{}", warning.bright_yellow());
             return;
         }

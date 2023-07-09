@@ -15,6 +15,8 @@ pub struct Scene
     pub id: u64,
     pub name: String,
 
+    pub max_lights: u32,
+
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<RefCell<ChangeTracker<CameraItem>>>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
@@ -32,8 +34,12 @@ impl Scene
         Self
         {
             id_manager: IdManager::new(),
+
             id: id,
             name: name.to_string(),
+
+            max_lights: 10,
+
             nodes: vec![],
             cameras: vec![],
             lights: ChangeTracker::new(vec![]),

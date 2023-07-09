@@ -39,7 +39,6 @@ impl Texture
         let image = image::load_from_memory(image_bytes.as_slice()).unwrap();
         let rgba = image.to_rgba8();
 
-
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
 
         Texture

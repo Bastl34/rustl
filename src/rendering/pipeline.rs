@@ -10,6 +10,8 @@ pub struct Pipeline
     pub name: String,
     pub fragment_attachment: bool,
 
+    max_lights: u32,
+
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
 
@@ -19,14 +21,15 @@ pub struct Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam_light_bind_group: &LightCamBindGroup, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, textures: &Vec<&Texture>, cam_light_bind_group: &LightCamBindGroup, max_lights: u32, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
     {
         let shader;
         {
             let device = wgpu.device();
 
             // shader
-            shader = Pipeline::create_shader(device, name, shader_source);
+            let prepared_shader = Self::prepare_shader(shader_source, max_lights);
+            shader = Pipeline::create_shader(device, name, &prepared_shader);
         }
 
         // create pipe
@@ -34,6 +37,8 @@ impl Pipeline
         {
             name: name.to_string(),
             fragment_attachment,
+
+            max_lights: max_lights,
 
             shader,
             pipeline: None,
@@ -47,6 +52,18 @@ impl Pipeline
         pipe.create(wgpu, cam_light_bind_group, depth_stencil, fragment_attachment, samples);
 
         pipe
+    }
+
+    pub fn prepare_shader(shader_source: &String, max_lights: u32) -> String
+    {
+        let mut shader = shader_source.clone();
+
+        shader = shader.replace("[TEXTURE_AMBIENT]", format!("true").as_str());
+        shader = shader.replace("[TEXTURE_AMBIENT_BIND]", format!("1").as_str());
+
+        shader = shader.replace("[MAX_LIGHTS]", format!("{}", max_lights).as_str());
+
+        shader
     }
 
     pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, textures: &Vec<&Texture>)
