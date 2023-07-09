@@ -78,14 +78,18 @@ impl WGpu
 
         let surface_caps = surface.get_capabilities(&adapter);
 
+        let mut present_mode = wgpu::PresentMode::Fifo;
+        if !state.rendering.v_sync
+        {
+            present_mode = wgpu::PresentMode::Immediate;
+        }
+
         let surface_config = wgpu::SurfaceConfiguration
         {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             width: dimensions.width,
             height: dimensions.height,
-            //present_mode: surface_caps.present_modes[0], //wgpu::PresentMode::Fifo
-            //present_mode: wgpu::PresentMode::AutoNoVsync,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: present_mode,
             //alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],

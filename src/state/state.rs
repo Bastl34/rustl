@@ -23,6 +23,7 @@ pub struct AdapterFeatures
 pub struct Rendering
 {
     pub clear_color: Vector3<f32>,
+    pub v_sync: bool,
 
     pub fullscreen: bool,
     pub msaa: Consumable<u32>,
@@ -96,6 +97,7 @@ impl State
             rendering: Rendering
             {
                 clear_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
+                v_sync: true,
 
                 fullscreen: false,
                 msaa: Consumable::new(8),

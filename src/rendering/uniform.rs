@@ -3,10 +3,10 @@ use wgpu::{BindGroupLayoutEntry, BindGroupEntry, Buffer};
 /*
  Bind Group layout:
 
- - Materials + Textures
- - Lights, Camera
- - Dynamics (Like timestamp)
- - Custom
+ - Materials + Textures (node)
+ - Lights, Camera (scene)
+ - Dynamics (Like timestamp) (node)
+ - Custom (node)
  */
 
 pub fn uniform_bind_group_layout_entry(index: u32, vertex: bool, fragment: bool) -> BindGroupLayoutEntry
