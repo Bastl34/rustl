@@ -115,11 +115,6 @@ impl Transformation
         trans = trans * translation;
         trans = trans * scale;
         trans = trans * rotation;
-        /*
-        trans = trans * rotation_z;
-        trans = trans * rotation_y;
-        trans = trans * rotation_x;
-         */
 
         let col0 = rotation.column(0).xyz();
         let col1 = rotation.column(1).xyz();

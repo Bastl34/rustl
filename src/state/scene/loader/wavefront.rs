@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}}, scene::Scene, node::Node}, helper, new_shared_component};
+use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node}, helper, new_shared_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -167,7 +167,9 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
                     let mat: &tobj::Material = &wavefront_materials[wavefront_mat_id];
 
-                    material.set_name(mat.name.clone());
+                    {
+                        material.get_base_mut().name = mat.name.clone();
+                    }
 
                     let material_data = material.get_data_mut();
 

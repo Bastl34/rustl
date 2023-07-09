@@ -133,16 +133,6 @@ impl Material
         }
     }
 
-    pub fn get_name(&self) -> &String
-    {
-        &self.base.name
-    }
-
-    pub fn set_name(&mut self, name: String)
-    {
-        self.base.name = name;
-    }
-
     pub fn get_data(&self) -> &MaterialData
     {
         &self.data
