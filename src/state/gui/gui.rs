@@ -1,9 +1,9 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, fmt::format};
 
 use egui::{FullOutput, RichText, Color32};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::{light::Light}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
+use crate::{state::{state::State, scene::{light::Light, components::transformation::Transformation}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
 
 
 pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -198,6 +198,43 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     let light_id = scene.id_manager.get_next_light_id();
                     let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                }
+            });
+
+            // change transform
+            ui.horizontal(|ui|
+            {
+                let scene_id = 0;
+                let node_id = 0;
+
+                let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+                let node = scene.nodes.get_mut(node_id).unwrap();
+                let mut node = node.write().unwrap();
+
+                let name = node.get_name().clone();
+                let trans_component = node.find_component_mut::<Transformation>().unwrap();
+
+                let mut changed = false;
+
+
+                let mut pos;
+                {
+                    let data = trans_component.get_data();
+
+                    pos = data.position;
+
+                    ui.label(format!("node {} pos",name));
+
+                    changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                }
+
+                if changed
+                {
+                    let data = trans_component.get_data_mut();
+                    data.get_mut().position = pos;
+                    trans_component.calc_transform();
                 }
             });
 

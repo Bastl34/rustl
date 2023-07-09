@@ -2,17 +2,17 @@ use std::{any::Any};
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{component_impl_default};
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker};
 
 use super::component::{Component, ComponentBase};
 
 pub struct TransformationData
 {
-    parent_inheritance: bool,
+    pub parent_inheritance: bool,
 
-    position: Vector3<f32>,
-    rotation: Vector3<f32>,
-    scale: Vector3<f32>,
+    pub position: Vector3<f32>,
+    pub rotation: Vector3<f32>,
+    pub scale: Vector3<f32>,
 
     trans: Matrix4<f32>,
     tran_inverse: Matrix4<f32>,
@@ -23,7 +23,7 @@ pub struct TransformationData
 pub struct Transformation
 {
     base: ComponentBase,
-    data: TransformationData
+    data: ChangeTracker<TransformationData>
 }
 
 impl Transformation
@@ -47,7 +47,7 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
-            data: data
+            data: ChangeTracker::new(data)
         };
         transform.calc_transform();
 
@@ -73,39 +73,39 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
-            data: data
+            data: ChangeTracker::new(data)
         };
         transform.calc_transform();
 
         transform
     }
 
-    /*
     pub fn get_data(&self) -> &TransformationData
     {
-        &self.data
+        &self.data.get_ref()
     }
 
-    pub fn get_data_mut(&mut self) -> &mut TransformationData
+    pub fn get_data_mut(&mut self) -> &mut ChangeTracker<TransformationData>
     {
         &mut self.data
     }
-    */
 
     pub fn has_parent_inheritance(&self) -> bool
     {
-        self.data.parent_inheritance
+        self.data.get_ref().parent_inheritance
     }
 
     pub fn calc_transform(&mut self)
     {
-        let translation = nalgebra::Isometry3::translation(self.data.position.x, self.data.position.y, self.data.position.z).to_homogeneous();
+        let data = self.data.get_mut();
 
-        let scale = Matrix4::new_nonuniform_scaling(&self.data.scale);
+        let translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
 
-        let rotation_x  = Rotation3::from_euler_angles(self.data.rotation.x, 0.0, 0.0).to_homogeneous();
-        let rotation_y  = Rotation3::from_euler_angles(0.0, self.data.rotation.y, 0.0).to_homogeneous();
-        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, self.data.rotation.z).to_homogeneous();
+        let scale = Matrix4::new_nonuniform_scaling(&data.scale);
+
+        let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
+        let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
+        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
 
         let mut rotation = rotation_x;
         rotation = rotation * rotation_y;
@@ -127,56 +127,64 @@ impl Transformation
             col2
         ]);
 
-        self.data.trans = trans;
-        self.data.normal = normal_matrix;
-        self.data.tran_inverse = self.data.trans.try_inverse().unwrap();
+        data.trans = trans;
+        data.normal = normal_matrix;
+        data.tran_inverse = data.trans.try_inverse().unwrap();
     }
 
     pub fn get_transform(&self) -> &Matrix4::<f32>
     {
-        &self.data.trans
+        &self.data.get_ref().trans
     }
 
     pub fn get_transform_inverse(&self) -> &Matrix4::<f32>
     {
-        &self.data.tran_inverse
+        &self.data.get_ref().tran_inverse
     }
 
     pub fn get_normal_matrix(&self) -> &Matrix3::<f32>
     {
-        &self.data.normal
+        &self.data.get_ref().normal
     }
 
     pub fn apply_transformation(&mut self, translation: Vector3<f32>, scale: Vector3<f32>, rotation: Vector3<f32>)
     {
-        self.data.position += translation;
-        self.data.scale.x *= scale.x;
-        self.data.scale.y *= scale.y;
-        self.data.scale.z *= scale.z;
-        self.data.rotation += rotation;
+        let data = self.data.get_mut();
+
+        data.position += translation;
+        data.scale.x *= scale.x;
+        data.scale.y *= scale.y;
+        data.scale.z *= scale.z;
+        data.rotation += rotation;
 
         self.calc_transform();
     }
 
     pub fn apply_translation(&mut self, translation: Vector3<f32>)
     {
-        self.data.position += translation;
+        let data = self.data.get_mut();
+
+        data.position += translation;
 
         self.calc_transform();
     }
 
     pub fn apply_scale(&mut self, scale: Vector3<f32>)
     {
-        self.data.scale.x *= scale.x;
-        self.data.scale.y *= scale.y;
-        self.data.scale.z *= scale.z;
+        let data = self.data.get_mut();
+
+        data.scale.x *= scale.x;
+        data.scale.y *= scale.y;
+        data.scale.z *= scale.z;
 
         self.calc_transform();
     }
 
     pub fn apply_rotation(&mut self, rotation: Vector3<f32>)
     {
-        self.data.rotation += rotation;
+        let data = self.data.get_mut();
+
+        data.rotation += rotation;
 
         self.calc_transform();
     }

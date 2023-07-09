@@ -2,7 +2,7 @@ use std::{sync::RwLockReadGuard, mem::swap};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::{State}, scene::{components::{component::Component}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{components::{component::Component, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::{CameraBuffer}, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::{LightBuffer}, bind_groups::light_cam::LightCamBindGroup};
 
@@ -223,13 +223,22 @@ impl Scene
         }
 
         // ********** instances all **********
-        let all_instances_changed;
+        let mut all_instances_changed;
         {
             let node_arc = scene.nodes.get_mut(node_id).unwrap();
 
             {
                 let mut write = node_arc.write().unwrap();
                 (_, all_instances_changed) = write.instances.consume_borrow();
+            }
+
+            {
+                let mut node = node_arc.write().unwrap();
+                let trans_component = node.find_component_mut::<Transformation>();
+                if let Some(trans_component) = trans_component
+                {
+                    all_instances_changed = trans_component.get_data_mut().consume_change() || all_instances_changed;
+                }
             }
 
             if all_instances_changed
@@ -418,21 +427,9 @@ impl Scene
             let clear;
             if i == 0 { clear = true; } else { clear = false; }
 
-            // create bind groups
+            // get bind groups
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
-
-            /*
-            let cam_bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
-            {
-                layout: &camera_buffer.get_bind_group_layout(),
-                entries:
-                &[
-                    uniform::uniform_bind_group(0, &camera_buffer.get_buffer())
-                ],
-                label: None,
-            });
-            */
 
             draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, &bind_group_render_item.bind_group, clear);
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, &bind_group_render_item.bind_group, clear);
