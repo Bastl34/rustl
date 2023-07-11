@@ -408,7 +408,7 @@ impl Material
         data.texture_shininess.is_some()
     }
 
-    fn get_texture_by_type(&self, tex_type: TextureType) -> Option<Arc<RwLock<Box<Texture>>>>
+    pub fn get_texture_by_type(&self, tex_type: TextureType) -> Option<Arc<RwLock<Box<Texture>>>>
     {
         let tex;
 
