@@ -1,4 +1,6 @@
-use wgpu::util::DeviceExt;
+use std::mem::swap;
+
+use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
 use crate::{state::{helper::render_item::{RenderItem, get_render_item}, scene::components::{material::{Material, TextureType}, component::Component}}, render_item_impl_default};
 
@@ -69,7 +71,8 @@ impl MaterialUniform
         if material.has_texture(TextureType::Alpha)             { textures_used |= 0x6; }
         if material.has_texture(TextureType::Roughness)         { textures_used |= 0x7; }
         if material.has_texture(TextureType::AmbientOcclusion)  { textures_used |= 0x8; }
-        if material.has_texture(TextureType::Shininess)         { textures_used |= 0x9; }
+        if material.has_texture(TextureType::Reflectivity)      { textures_used |= 0x9; }
+        if material.has_texture(TextureType::Shininess)         { textures_used |= 0x10; }
 
         MaterialUniform
         {
@@ -111,6 +114,9 @@ pub struct MaterialBuffer
     pub name: String,
 
     buffer: wgpu::Buffer,
+
+    pub bind_group_layout: Option<BindGroupLayout>,
+    pub bind_group: Option<BindGroup>
 }
 
 impl RenderItem for MaterialBuffer
@@ -134,9 +140,12 @@ impl MaterialBuffer
         {
             name: material.get_base().name.clone(),
             buffer: empty_buffer,
+            bind_group_layout: None,
+            bind_group: None
         };
 
         buffer.to_buffer(wgpu, material);
+        buffer.create_binding_groups(wgpu, material);
 
         buffer
     }
@@ -183,181 +192,58 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
+        let texture_types =
+        [
+            TextureType::AmbientEmissive,
+            TextureType::Base,
+            TextureType::Specular,
+            TextureType::Normal,
+            TextureType::Alpha,
+            TextureType::Roughness,
+            TextureType::AmbientOcclusion,
+            TextureType::Reflectivity,
+            TextureType::Shininess
+        ];
 
-        // ambient
-        if material.has_texture(TextureType::AmbientEmissive)
+        let mut render_items = vec![];
+
+        for texture_type in texture_types
         {
-            //let texture = material.get_data().texture_ambient.as_ref().unwrap().read().unwrap();
-            //let render_item = texture.render_item.as_ref();
-            let texture = material.get_texture_by_type(TextureType::AmbientEmissive);
-            let texture = texture.unwrap().clone();
-            let texture = texture.read().unwrap();
-            let render_item = texture.render_item.as_ref();
+            if material.has_texture(texture_type)
+            {
+                //let texture = material.get_data().texture_ambient.as_ref().unwrap().read().unwrap();
+                //let render_item = texture.render_item.as_ref();
+                let texture = material.get_texture_by_type(texture_type);
+                let texture = texture.unwrap().clone();
+                let mut texture = texture.write().unwrap();
 
+                let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+
+                swap(&mut texture.render_item, &mut render_item);
+
+                render_items.push((render_item,bind_id));
+            }
+            else
+            {
+                render_items.push((None,bind_id));
+            }
+
+            bind_id += 2;
+        }
+
+        for (render_item, id) in &render_items
+        {
             if let Some(render_item) = render_item
             {
                 let render_item = get_render_item::<Texture>(render_item);
 
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
+                let textures_layout_group = render_item.get_bind_group_layout_entries(*id);
+                let textures_group = render_item.get_bind_group_entries(*id);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
             }
         }
-        bind_id += 2;
-
-        // base
-        if material.has_texture(TextureType::Base)
-        {
-            let texture = material.get_data().texture_base.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // specular
-        if material.has_texture(TextureType::Specular)
-        {
-            let texture = material.get_data().texture_specular.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // normal
-        if material.has_texture(TextureType::Normal)
-        {
-            let texture = material.get_data().texture_normal.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // alpha
-        if material.has_texture(TextureType::Alpha)
-        {
-            let texture = material.get_data().texture_alpha.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // roughness
-        if material.has_texture(TextureType::Roughness)
-        {
-            let texture = material.get_data().texture_roughness.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // ambient occlusion
-        if material.has_texture(TextureType::AmbientOcclusion)
-        {
-            let texture = material.get_data().texture_ambient_occlusion.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // ambient occlusion
-        if material.has_texture(TextureType::Reflectivity)
-        {
-            let texture = material.get_data().texture_reflectivity.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
-
-        // shininess
-        if material.has_texture(TextureType::Shininess)
-        {
-            let texture = material.get_data().texture_shininess.unwrap().read().unwrap();
-            let render_item = texture.render_item.as_ref();
-
-            if let Some(render_item) = render_item
-            {
-                let render_item = get_render_item::<Texture>(render_item);
-
-                let textures_layout_group = render_item.get_bind_group_layout_entries(bind_id);
-                let textures_group = render_item.get_bind_group_entries(bind_id);
-
-                layout_group_vec.append(&mut textures_layout_group.to_vec());
-                group_vec.append(&mut textures_group.to_vec());
-            }
-        }
-        bind_id += 2;
 
         // ********* bind group *********
         let bind_group_layout_name = format!("{} material_bind_group_layout", self.name);
@@ -377,5 +263,24 @@ impl MaterialBuffer
                 label: Some(bind_group_name.as_str()),
             }
         );
+
+        // ********* swap back *********
+        let mut i = 0;
+        for texture_type in texture_types
+        {
+            if material.has_texture(texture_type)
+            {
+                let texture = material.get_texture_by_type(texture_type);
+                let texture = texture.unwrap().clone();
+                let mut texture = texture.write().unwrap();
+
+                swap(&mut render_items[i].0, &mut texture.render_item);
+            }
+
+            i += 1;
+        }
+
+        self.bind_group_layout = Some(bind_group_layout);
+        self.bind_group = Some(bind_group);
     }
 }
