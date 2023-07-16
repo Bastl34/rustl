@@ -126,7 +126,7 @@ impl RenderItem for MaterialBuffer
 
 impl MaterialBuffer
 {
-    pub fn new(wgpu: &mut WGpu, material: &Material) -> MaterialBuffer
+    pub fn new(wgpu: &mut WGpu, material: &Material, additional_textures: Vec<(u32, &Texture)>) -> MaterialBuffer
     {
         let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -145,7 +145,7 @@ impl MaterialBuffer
         };
 
         buffer.to_buffer(wgpu, material);
-        buffer.create_binding_groups(wgpu, material);
+        buffer.create_binding_groups(wgpu, material, additional_textures);
 
         buffer
     }
@@ -177,7 +177,7 @@ impl MaterialBuffer
         &self.buffer
     }
 
-    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material)
+    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, additional_textures: Vec<(u32, &Texture)>)
     {
         let device = wgpu.device();
 

@@ -167,11 +167,26 @@ impl Scene
 
             let material_changed = material.get_data_mut().consume_change();
 
-            if material_changed || material.get_base().render_item.is_none()
+            if material_changed && material.get_base().render_item.is_none()
             {
-                dbg!("render item material update");
-                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material);
+                dbg!("material render item recreate");
+                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, vec![]);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
+            }
+            else if material_changed
+            {
+                let mut render_item = material.get_base_mut().render_item.take();
+
+                {
+                    let render_item = get_render_item_mut::<MaterialBuffer>(render_item.as_mut().unwrap());
+                    render_item.to_buffer(wgpu, material);
+                    render_item.create_binding_groups(wgpu, material, vec![]);
+                }
+
+                material.get_base_mut().render_item = render_item;
+
+                dbg!("material render item update");
+
             }
         }
 
