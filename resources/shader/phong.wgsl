@@ -137,6 +137,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let object_normal = textureSample(t_normal, s_normal, uvs);
 
     let tangent_normal = object_normal.xyz * 2.0 - 1.0;
+    //let tangent_normal = in.world_normal;
 
     let shininess = 32.0;
 

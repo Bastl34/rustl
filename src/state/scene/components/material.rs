@@ -19,8 +19,8 @@ pub type MaterialItem = SharedComponentItem;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TextureType
 {
-    Base,
     AmbientEmissive,
+    Base,
     Specular,
     Normal,
     Alpha,
@@ -29,6 +29,19 @@ pub enum TextureType
     Reflectivity,
     Shininess
 }
+
+pub const ALL_TEXTURE_TYPES: [TextureType; 9] =
+[
+    TextureType::AmbientEmissive,
+    TextureType::Base,
+    TextureType::Specular,
+    TextureType::Normal,
+    TextureType::Alpha,
+    TextureType::Roughness,
+    TextureType::AmbientOcclusion,
+    TextureType::Reflectivity,
+    TextureType::Shininess
+];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TextureFiltering

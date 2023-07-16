@@ -1,4 +1,4 @@
-use std::{sync::RwLockReadGuard, mem::swap};
+use std::{sync::RwLockReadGuard, mem::swap, ops::Deref};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
@@ -73,11 +73,22 @@ impl Scene
         let mat = mat.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
         let mat_data = mat.get_data_mut().get_mut();
 
+        /*
         let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
         let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();
 
         let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
         let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
+        */
+
+        let base_tex = mat_data.texture_base.as_mut().unwrap().read().unwrap();
+        let normal_tex = mat_data.texture_normal.as_mut().unwrap().read().unwrap();
+
+        //let base_texture = base_tex.render_item;
+        //let normal_texture = normal_tex.render_item;
+
+        let base_texture = get_render_item::<Texture>(base_tex.render_item.as_ref().unwrap());
+        let normal_texture = get_render_item::<Texture>(normal_tex.render_item.as_ref().unwrap());
 
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
@@ -89,8 +100,8 @@ impl Scene
 
         // ********** depth pass **********
         let mut textures = vec![];
-        textures.push(&base_texture);
-        textures.push(&normal_texture);
+        textures.push(*base_texture);
+        textures.push(*normal_texture);
 
         if !re_create
         {
@@ -113,8 +124,8 @@ impl Scene
             self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, *light_cam_bind_group, true, true, self.samples);
         }
 
-        base_tex.render_item = Some(Box::new(base_texture));
-        normal_tex.render_item = Some(Box::new(normal_texture));
+        //base_tex.render_item = Some(Box::new(base_texture));
+        //normal_tex.render_item = Some(Box::new(normal_texture));
 
         self.depth_buffer_texture = Some(depth_buffer_texture);
         self.depth_pass_buffer_texture = Some(depth_pass_buffer_texture);
@@ -135,6 +146,23 @@ impl Scene
                 b: clear_color.z as f64,
                 a: 1.0,
             };
+        }
+
+        // ********** textures **********
+        for (_texture_id, texture) in &mut scene.textures
+        {
+            let mut texture = texture.write().unwrap();
+            if texture.render_item.is_none()
+            {
+                let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, true);
+                texture.render_item = Some(Box::new(render_item));
+            }
+        }
+
+        // ********** materials **********
+        for (_material_id, material) in &mut scene.materials
+        {
+
         }
 
         // ********** lights: all **********

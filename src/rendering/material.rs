@@ -2,7 +2,7 @@ use std::mem::swap;
 
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
-use crate::{state::{helper::render_item::{RenderItem, get_render_item}, scene::components::{material::{Material, TextureType}, component::Component}}, render_item_impl_default};
+use crate::{state::{helper::render_item::{RenderItem, get_render_item}, scene::components::{material::{Material, TextureType, ALL_TEXTURE_TYPES}, component::Component}}, render_item_impl_default};
 
 use super::{wgpu::WGpu, uniform, texture::Texture};
 
@@ -192,22 +192,9 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
-        let texture_types =
-        [
-            TextureType::AmbientEmissive,
-            TextureType::Base,
-            TextureType::Specular,
-            TextureType::Normal,
-            TextureType::Alpha,
-            TextureType::Roughness,
-            TextureType::AmbientOcclusion,
-            TextureType::Reflectivity,
-            TextureType::Shininess
-        ];
-
         let mut render_items = vec![];
 
-        for texture_type in texture_types
+        for texture_type in ALL_TEXTURE_TYPES
         {
             if material.has_texture(texture_type)
             {
@@ -266,7 +253,7 @@ impl MaterialBuffer
 
         // ********* swap back *********
         let mut i = 0;
-        for texture_type in texture_types
+        for texture_type in ALL_TEXTURE_TYPES
         {
             if material.has_texture(texture_type)
             {
