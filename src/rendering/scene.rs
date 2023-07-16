@@ -4,7 +4,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
 use crate::{state::{state::{State}, scene::{components::{component::Component, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup};
+use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -162,7 +162,17 @@ impl Scene
         // ********** materials **********
         for (_material_id, material) in &mut scene.materials
         {
+            let mut material = material.write().unwrap();
+            let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
 
+            let material_changed = material.get_data_mut().consume_change();
+
+            if material_changed || material.get_base().render_item.is_none()
+            {
+                dbg!("render item material update");
+                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material);
+                material.get_base_mut().render_item = Some(Box::new(render_item));
+            }
         }
 
         // ********** lights: all **********
