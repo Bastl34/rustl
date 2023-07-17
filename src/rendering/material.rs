@@ -23,19 +23,21 @@ use super::{wgpu::WGpu, uniform, texture::Texture};
     8: reflectivity
     9: shininess
 
-    10: depth
+    10: custom 0
+    11: custom 1
+    12: custom 2
+    13: custom 3
+    14: custom 4
+    15: custom 5
+    16: custom 6
+    17: custom 7
+    18: custom 8
+    19: custom 9
 
-    16: custom 1
-    17: custom 2
-    18: custom 3
-    19: custom 4
-    20: custom 5
-    21: custom 6
-    22: custom 7
-    23: custom 8
-    24: custom 9
-    25: custom 10
+    20: depth
 */
+
+pub const ADDITIONAL_START_INDEX: u32 = 20;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -73,6 +75,17 @@ impl MaterialUniform
         if material.has_texture(TextureType::AmbientOcclusion)  { textures_used |= 0x8; }
         if material.has_texture(TextureType::Reflectivity)      { textures_used |= 0x9; }
         if material.has_texture(TextureType::Shininess)         { textures_used |= 0x10; }
+
+        if material.has_texture(TextureType::Custom0)           { textures_used |= 0x11; }
+        if material.has_texture(TextureType::Custom1)           { textures_used |= 0x12; }
+        if material.has_texture(TextureType::Custom2)           { textures_used |= 0x13; }
+        if material.has_texture(TextureType::Custom3)           { textures_used |= 0x14; }
+        if material.has_texture(TextureType::Custom4)           { textures_used |= 0x15; }
+        if material.has_texture(TextureType::Custom5)           { textures_used |= 0x16; }
+        if material.has_texture(TextureType::Custom6)           { textures_used |= 0x17; }
+        if material.has_texture(TextureType::Custom7)           { textures_used |= 0x18; }
+        if material.has_texture(TextureType::Custom8)           { textures_used |= 0x19; }
+        if material.has_texture(TextureType::Custom9)           { textures_used |= 0x20; }
 
         MaterialUniform
         {
@@ -126,7 +139,7 @@ impl RenderItem for MaterialBuffer
 
 impl MaterialBuffer
 {
-    pub fn new(wgpu: &mut WGpu, material: &Material, additional_textures: Vec<(u32, &Texture)>) -> MaterialBuffer
+    pub fn new(wgpu: &mut WGpu, material: &Material, additional_textures: Option<&Vec<(&Texture, u32)>>) -> MaterialBuffer
     {
         let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -144,15 +157,23 @@ impl MaterialBuffer
             bind_group: None
         };
 
-        buffer.to_buffer(wgpu, material);
+        buffer.to_buffer(wgpu, material, additional_textures);
         buffer.create_binding_groups(wgpu, material, additional_textures);
 
         buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, material: &Material)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, material: &Material, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let mut material_uniform = MaterialUniform::new(material);
+
+        if let Some(additional_textures) = additional_textures
+        {
+            for (texture, texture_id) in additional_textures
+            {
+                material_uniform.textures_used |= 0x1 << texture_id;
+            }
+        }
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -177,7 +198,7 @@ impl MaterialBuffer
         &self.buffer
     }
 
-    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, additional_textures: Vec<(u32, &Texture)>)
+    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let device = wgpu.device();
 
@@ -215,7 +236,7 @@ impl MaterialBuffer
                 render_items.push((None,bind_id));
             }
 
-            bind_id += 2;
+            bind_id += 1;
         }
 
         for (render_item, id) in &render_items
@@ -226,6 +247,19 @@ impl MaterialBuffer
 
                 let textures_layout_group = render_item.get_bind_group_layout_entries(*id);
                 let textures_group = render_item.get_bind_group_entries(*id);
+
+                layout_group_vec.append(&mut textures_layout_group.to_vec());
+                group_vec.append(&mut textures_group.to_vec());
+            }
+        }
+
+        // additional textures
+        if let Some(additional_textures) = additional_textures
+        {
+            for (texture, id) in additional_textures
+            {
+                let textures_layout_group = texture.get_bind_group_layout_entries(*id);
+                let textures_group = texture.get_bind_group_entries(*id);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());

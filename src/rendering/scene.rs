@@ -21,8 +21,8 @@ pub struct Scene
     depth_pipe: Option<Pipeline>,
     color_pipe: Option<Pipeline>,
 
-    depth_pass_buffer_texture: Option<Texture>,
-    depth_buffer_texture: Option<Texture>,
+    depth_pass_buffer_texture: Texture,
+    depth_buffer_texture: Texture,
 }
 
 impl RenderItem for Scene
@@ -50,8 +50,8 @@ impl Scene
             color_pipe: None,
             depth_pipe: None,
 
-            depth_buffer_texture: None,
-            depth_pass_buffer_texture: None,
+            depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
+            depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
         };
 
         render_scene.update(wgpu, state, scene);
@@ -62,6 +62,7 @@ impl Scene
 
     pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
+        /*
         let node_id = 0;
         let cam_id = 0;
 
@@ -73,13 +74,11 @@ impl Scene
         let mat = mat.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
         let mat_data = mat.get_data_mut().get_mut();
 
-        /*
-        let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
-        let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();
+        //let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
+        //let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();
 
-        let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
-        let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
-        */
+        //let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
+        //let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
 
         let base_tex = mat_data.texture_base.as_mut().unwrap().read().unwrap();
         let normal_tex = mat_data.texture_normal.as_mut().unwrap().read().unwrap();
@@ -102,33 +101,67 @@ impl Scene
         let mut textures = vec![];
         textures.push(*base_texture);
         textures.push(*normal_texture);
+        */
 
+
+        // cam/light
+        /*
+        let cam_id = 0; // use first cam for bind group layout
+        let cam = scene.cameras.get(cam_id).unwrap(); // TODO
+        let cam = cam.borrow();
+        let light_cam_bind_group = get_render_item::<LightCamBindGroup>(cam.get_ref().bind_group_render_item.as_ref().unwrap());
+        */
+
+        let light_cam_bind_layout = LightCamBindGroup::bind_layout(wgpu);
+
+        let node_id = 0;
+
+        let node = scene.nodes.get_mut(node_id).unwrap();
+
+        // material and textures
+        let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
+        let mat = mat.read().unwrap();
+        let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+
+        let material_render_item = mat.get_base().render_item;
+        let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
+        let material_bind_layout = material_render_item.bind_group_layout.unwrap();
+
+        let bind_group_layouts =
+        [
+            &material_bind_layout,
+            &light_cam_bind_layout
+        ];
+
+        // ********** depth pass **********
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &textures, *light_cam_bind_group, scene.max_lights, true, true, 1));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &bind_group_layouts, scene.max_lights, true, true, 1));
         }
         else
         {
-            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &textures, *light_cam_bind_group, true, true, 1);
+            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &bind_group_layouts, true, true, 1);
         }
 
         // ********** color pass **********
-        textures.push(&depth_pass_buffer_texture);
+        //textures.push(&depth_pass_buffer_texture);
+        let mut additional_textures = vec![];
+        additional_textures.push(&self.depth_pass_buffer_texture);
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &textures, *light_cam_bind_group, scene.max_lights, true, true, self.samples));
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.max_lights, true, true, self.samples));
         }
         else
         {
-            self.color_pipe.as_mut().unwrap().re_create(wgpu, &textures, *light_cam_bind_group, true, true, self.samples);
+            self.color_pipe.as_mut().unwrap().re_create(wgpu, &bind_group_layouts, true, true, self.samples);
         }
 
         //base_tex.render_item = Some(Box::new(base_texture));
         //normal_tex.render_item = Some(Box::new(normal_texture));
 
-        self.depth_buffer_texture = Some(depth_buffer_texture);
-        self.depth_pass_buffer_texture = Some(depth_pass_buffer_texture);
+        //self.depth_buffer_texture = Some(depth_buffer_texture);
+        //self.depth_pass_buffer_texture = Some(depth_pass_buffer_texture);
     }
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
@@ -170,7 +203,7 @@ impl Scene
             if material_changed && material.get_base().render_item.is_none()
             {
                 dbg!("material render item recreate");
-                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, vec![]);
+                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
             }
             else if material_changed
@@ -179,14 +212,13 @@ impl Scene
 
                 {
                     let render_item = get_render_item_mut::<MaterialBuffer>(render_item.as_mut().unwrap());
-                    render_item.to_buffer(wgpu, material);
-                    render_item.create_binding_groups(wgpu, material, vec![]);
+                    render_item.to_buffer(wgpu, material, None);
+                    render_item.create_binding_groups(wgpu, material, None);
                 }
 
                 material.get_base_mut().render_item = render_item;
 
                 dbg!("material render item update");
-
             }
         }
 
@@ -395,7 +427,7 @@ impl Scene
 
         if state.save_depth_pass_image
         {
-            let img_data = self.depth_pass_buffer_texture.as_ref().unwrap().to_image(wgpu);
+            let img_data = self.depth_pass_buffer_texture.to_image(wgpu);
             img_data.save("data/depth_pass.png").unwrap();
 
             let img_data_gray = float32_to_grayscale(img_data);
@@ -406,7 +438,7 @@ impl Scene
 
         if state.save_depth_buffer_image
         {
-            let img_data = self.depth_buffer_texture.as_ref().unwrap().to_image(wgpu);
+            let img_data = self.depth_buffer_texture.to_image(wgpu);
             img_data.save("data/depth_buffer.png").unwrap();
 
             let img_data_gray = float32_to_grayscale(img_data);
@@ -431,8 +463,8 @@ impl Scene
             cam.borrow_mut().get_mut().init_matrices();
         }
 
-        self.depth_buffer_texture = Some(Texture::new_depth_texture(wgpu, self.samples));
-        self.depth_pass_buffer_texture = Some(Texture::new_depth_texture(wgpu, 1));
+        self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
+        self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
     }
 
     fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
@@ -520,6 +552,7 @@ impl Scene
             })
         ];
 
+        // TODO get rid of this
         if !self.depth_pipe.as_ref().unwrap().fragment_attachment
         {
             color_attachments = &[];
@@ -531,7 +564,7 @@ impl Scene
             color_attachments: color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
             {
-                view: &self.depth_pass_buffer_texture.as_ref().unwrap().get_view(),
+                view: &self.depth_pass_buffer_texture.get_view(),
                 depth_ops: Some(wgpu::Operations
                 {
                     load: clear_depth,
@@ -589,7 +622,7 @@ impl Scene
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
             {
-                view: &self.depth_buffer_texture.as_ref().unwrap().get_view(),
+                view: &self.depth_buffer_texture.get_view(),
                 depth_ops: Some(wgpu::Operations
                 {
                     load: clear_depth,
@@ -623,6 +656,14 @@ impl Scene
                 continue;
             }
 
+            let mat = node.find_shared_component::<MaterialComponent>().unwrap();
+            let mat = mat.read().unwrap();
+            let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+
+            let material_render_item = mat.get_base().render_item.as_ref();
+            let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
+            let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
+
             let meshes = meshes.unwrap();
 
             for mesh in meshes
@@ -638,7 +679,8 @@ impl Scene
                     //let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
 
                     pass.set_pipeline(&pipeline.get());
-                    pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
+                    //pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
+                    pass.set_bind_group(0, material_bind_group, &[]);
                     //pass.set_bind_group(1, camera_buffer.get_bind_group(), &[]);
                     //pass.set_bind_group(1, bind_group, &[]);
                     pass.set_bind_group(1, light_cam_bind_group, &[]);

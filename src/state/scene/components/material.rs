@@ -4,7 +4,7 @@ use std::any::Any;
 use nalgebra::{Vector3, Vector4};
 
 use crate::helper::change_tracker::ChangeTracker;
-use crate::{component_impl_default};
+use crate::component_impl_default;
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
 use super::component::{Component, SharedComponentItem, ComponentBase};
@@ -27,10 +27,21 @@ pub enum TextureType
     Roughness,
     AmbientOcclusion,
     Reflectivity,
-    Shininess
+    Shininess,
+
+    Custom0,
+    Custom1,
+    Custom2,
+    Custom3,
+    Custom4,
+    Custom5,
+    Custom6,
+    Custom7,
+    Custom8,
+    Custom9,
 }
 
-pub const ALL_TEXTURE_TYPES: [TextureType; 9] =
+pub const ALL_TEXTURE_TYPES: [TextureType; 19] =
 [
     TextureType::AmbientEmissive,
     TextureType::Base,
@@ -40,7 +51,18 @@ pub const ALL_TEXTURE_TYPES: [TextureType; 9] =
     TextureType::Roughness,
     TextureType::AmbientOcclusion,
     TextureType::Reflectivity,
-    TextureType::Shininess
+    TextureType::Shininess,
+
+    TextureType::Custom0,
+    TextureType::Custom1,
+    TextureType::Custom2,
+    TextureType::Custom3,
+    TextureType::Custom4,
+    TextureType::Custom5,
+    TextureType::Custom6,
+    TextureType::Custom7,
+    TextureType::Custom8,
+    TextureType::Custom9,
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -65,6 +87,17 @@ pub struct MaterialData
     pub texture_ambient_occlusion: Option<TextureItem>,
     pub texture_reflectivity: Option<TextureItem>,
     pub texture_shininess: Option<TextureItem>,
+
+    pub texture_custom0: Option<TextureItem>,
+    pub texture_custom1: Option<TextureItem>,
+    pub texture_custom2: Option<TextureItem>,
+    pub texture_custom3: Option<TextureItem>,
+    pub texture_custom4: Option<TextureItem>,
+    pub texture_custom5: Option<TextureItem>,
+    pub texture_custom6: Option<TextureItem>,
+    pub texture_custom7: Option<TextureItem>,
+    pub texture_custom8: Option<TextureItem>,
+    pub texture_custom9: Option<TextureItem>,
 
     pub filtering_mode: TextureFiltering,
 
@@ -115,6 +148,17 @@ impl Material
             texture_ambient_occlusion: None,
             texture_reflectivity: None,
             texture_shininess: None,
+
+            texture_custom0: None,
+            texture_custom1: None,
+            texture_custom2: None,
+            texture_custom3: None,
+            texture_custom4: None,
+            texture_custom5: None,
+            texture_custom6: None,
+            texture_custom7: None,
+            texture_custom8: None,
+            texture_custom9: None,
 
             filtering_mode: TextureFiltering::Linear,
 
@@ -265,6 +309,17 @@ impl Material
         compare_and_apply_texture_diff!(data.texture_ambient_occlusion, default_material_data.texture_ambient_occlusion.as_ref(), new_mat_data.texture_ambient_occlusion.clone());
         compare_and_apply_texture_diff!(data.texture_reflectivity, default_material_data.texture_reflectivity.as_ref(), new_mat_data.texture_reflectivity.clone());
         compare_and_apply_texture_diff!(data.texture_shininess, default_material_data.texture_shininess.as_ref(), new_mat_data.texture_shininess.clone());
+
+        compare_and_apply_texture_diff!(data.texture_custom0, default_material_data.texture_custom0.as_ref(), new_mat_data.texture_custom0.clone());
+        compare_and_apply_texture_diff!(data.texture_custom1, default_material_data.texture_custom1.as_ref(), new_mat_data.texture_custom1.clone());
+        compare_and_apply_texture_diff!(data.texture_custom2, default_material_data.texture_custom2.as_ref(), new_mat_data.texture_custom2.clone());
+        compare_and_apply_texture_diff!(data.texture_custom3, default_material_data.texture_custom3.as_ref(), new_mat_data.texture_custom3.clone());
+        compare_and_apply_texture_diff!(data.texture_custom4, default_material_data.texture_custom4.as_ref(), new_mat_data.texture_custom4.clone());
+        compare_and_apply_texture_diff!(data.texture_custom5, default_material_data.texture_custom5.as_ref(), new_mat_data.texture_custom5.clone());
+        compare_and_apply_texture_diff!(data.texture_custom6, default_material_data.texture_custom6.as_ref(), new_mat_data.texture_custom6.clone());
+        compare_and_apply_texture_diff!(data.texture_custom7, default_material_data.texture_custom7.as_ref(), new_mat_data.texture_custom7.clone());
+        compare_and_apply_texture_diff!(data.texture_custom8, default_material_data.texture_custom8.as_ref(), new_mat_data.texture_custom8.clone());
+        compare_and_apply_texture_diff!(data.texture_custom9, default_material_data.texture_custom9.as_ref(), new_mat_data.texture_custom9.clone());
     }
 
     pub fn print(&self)
@@ -283,6 +338,17 @@ impl Material
         println!("texture_ambient_occlusion: {:?}", data.texture_ambient_occlusion.is_some());
         println!("texture_reflectivity: {:?}", data.texture_reflectivity.is_some());
         println!("texture_shininess: {:?}", data.texture_shininess.is_some());
+
+        println!("texture_custom0: {:?}", data.texture_custom0.is_some());
+        println!("texture_custom1: {:?}", data.texture_custom1.is_some());
+        println!("texture_custom2: {:?}", data.texture_custom2.is_some());
+        println!("texture_custom3: {:?}", data.texture_custom3.is_some());
+        println!("texture_custom4: {:?}", data.texture_custom4.is_some());
+        println!("texture_custom5: {:?}", data.texture_custom5.is_some());
+        println!("texture_custom6: {:?}", data.texture_custom6.is_some());
+        println!("texture_custom7: {:?}", data.texture_custom7.is_some());
+        println!("texture_custom8: {:?}", data.texture_custom8.is_some());
+        println!("texture_custom9: {:?}", data.texture_custom9.is_some());
 
         println!("filtering_mode: {:?}", data.filtering_mode);
 
@@ -314,42 +380,26 @@ impl Material
 
         match tex_type
         {
-            TextureType::Base =>
-            {
-                data.texture_base = None;
-            },
-            TextureType::AmbientEmissive =>
-            {
-                data.texture_ambient = None;
-            },
-            TextureType::Specular =>
-            {
-                data.texture_specular = None;
-            },
-            TextureType::Normal =>
-            {
-                data.texture_normal = None;
-            },
-            TextureType::Alpha =>
-            {
-                data.texture_alpha = None;
-            },
-            TextureType::Roughness =>
-            {
-                data.texture_roughness = None;
-            },
-            TextureType::AmbientOcclusion =>
-            {
-                data.texture_ambient_occlusion = None;
-            },
-            TextureType::Reflectivity =>
-            {
-                data.texture_reflectivity = None;
-            },
-            TextureType::Shininess =>
-            {
-                data.texture_shininess = None;
-            },
+            TextureType::Base => { data.texture_base = None; },
+            TextureType::AmbientEmissive => { data.texture_ambient = None; },
+            TextureType::Specular => { data.texture_specular = None; },
+            TextureType::Normal => { data.texture_normal = None; },
+            TextureType::Alpha => { data.texture_alpha = None; },
+            TextureType::Roughness => { data.texture_roughness = None; },
+            TextureType::AmbientOcclusion => { data.texture_ambient_occlusion = None; },
+            TextureType::Reflectivity => { data.texture_reflectivity = None; },
+            TextureType::Shininess => { data.texture_shininess = None; },
+
+            TextureType::Custom0 => { data.texture_custom0 = None; },
+            TextureType::Custom1 => { data.texture_custom1 = None; },
+            TextureType::Custom2 => { data.texture_custom2 = None; },
+            TextureType::Custom3 => { data.texture_custom3 = None; },
+            TextureType::Custom4 => { data.texture_custom4 = None; },
+            TextureType::Custom5 => { data.texture_custom5 = None; },
+            TextureType::Custom6 => { data.texture_custom6 = None; },
+            TextureType::Custom7 => { data.texture_custom7 = None; },
+            TextureType::Custom8 => { data.texture_custom8 = None; },
+            TextureType::Custom9 => { data.texture_custom9 = None; },
         }
     }
 
@@ -359,42 +409,26 @@ impl Material
 
         match tex_type
         {
-            TextureType::Base =>
-            {
-                data.texture_base = Some(tex.clone());
-            },
-            TextureType::AmbientEmissive =>
-            {
-                data.texture_ambient = Some(tex.clone());
-            },
-            TextureType::Specular =>
-            {
-                data.texture_specular = Some(tex.clone());
-            },
-            TextureType::Normal =>
-            {
-                data.texture_normal = Some(tex.clone());
-            },
-            TextureType::Alpha =>
-            {
-                data.texture_alpha = Some(tex.clone());
-            },
-            TextureType::Roughness =>
-            {
-                data.texture_roughness = Some(tex.clone());
-            },
-            TextureType::AmbientOcclusion =>
-            {
-                data.texture_ambient_occlusion = Some(tex.clone());
-            },
-            TextureType::Reflectivity =>
-            {
-                data.texture_reflectivity = Some(tex.clone());
-            },
-            TextureType::Shininess =>
-            {
-                data.texture_shininess = Some(tex.clone());
-            },
+            TextureType::Base => { data.texture_base = Some(tex.clone()); },
+            TextureType::AmbientEmissive => { data.texture_ambient = Some(tex.clone()); },
+            TextureType::Specular => { data.texture_specular = Some(tex.clone()); },
+            TextureType::Normal => { data.texture_normal = Some(tex.clone()); },
+            TextureType::Alpha => { data.texture_alpha = Some(tex.clone()); },
+            TextureType::Roughness => { data.texture_roughness = Some(tex.clone()); },
+            TextureType::AmbientOcclusion => { data.texture_ambient_occlusion = Some(tex.clone()); },
+            TextureType::Reflectivity => { data.texture_reflectivity = Some(tex.clone()); },
+            TextureType::Shininess => { data.texture_shininess = Some(tex.clone()); },
+
+            TextureType::Custom0 => { data.texture_custom0 = Some(tex.clone()); },
+            TextureType::Custom1 => { data.texture_custom1 = Some(tex.clone()); },
+            TextureType::Custom2 => { data.texture_custom2 = Some(tex.clone()); },
+            TextureType::Custom3 => { data.texture_custom3 = Some(tex.clone()); },
+            TextureType::Custom4 => { data.texture_custom4 = Some(tex.clone()); },
+            TextureType::Custom5 => { data.texture_custom5 = Some(tex.clone()); },
+            TextureType::Custom6 => { data.texture_custom6 = Some(tex.clone()); },
+            TextureType::Custom7 => { data.texture_custom7 = Some(tex.clone()); },
+            TextureType::Custom8 => { data.texture_custom8 = Some(tex.clone()); },
+            TextureType::Custom9 => { data.texture_custom9 = Some(tex.clone()); },
         }
     }
 
@@ -402,23 +436,15 @@ impl Material
     {
         let data = self.data.get_ref();
 
-        data.texture_base.is_some()
-        ||
-        data.texture_ambient.is_some()
-        ||
-        data.texture_specular.is_some()
-        ||
-        data.texture_normal.is_some()
-        ||
-        data.texture_alpha.is_some()
-        ||
-        data.texture_roughness.is_some()
-        ||
-        data.texture_ambient_occlusion.is_some()
-        ||
-        data.texture_reflectivity.is_some()
-        ||
-        data.texture_shininess.is_some()
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if self.get_texture_by_type(texture_type).is_some()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn get_texture_by_type(&self, tex_type: TextureType) -> Option<Arc<RwLock<Box<Texture>>>>
@@ -438,6 +464,18 @@ impl Material
             TextureType::AmbientOcclusion => { tex = data.texture_ambient_occlusion.clone() },
             TextureType::Reflectivity => { tex = data.texture_reflectivity.clone() },
             TextureType::Shininess => { tex = data.texture_shininess.clone() },
+
+            TextureType::Custom0 => { tex = data.texture_custom0.clone() },
+            TextureType::Custom1 => { tex = data.texture_custom1.clone() },
+            TextureType::Custom2 => { tex = data.texture_custom2.clone() },
+            TextureType::Custom3 => { tex = data.texture_custom3.clone() },
+            TextureType::Custom4 => { tex = data.texture_custom4.clone() },
+            TextureType::Custom5 => { tex = data.texture_custom5.clone() },
+            TextureType::Custom6 => { tex = data.texture_custom6.clone() },
+            TextureType::Custom7 => { tex = data.texture_custom7.clone() },
+            TextureType::Custom8 => { tex = data.texture_custom8.clone() },
+            TextureType::Custom9 => { tex = data.texture_custom9.clone() },
+
         }
 
         tex

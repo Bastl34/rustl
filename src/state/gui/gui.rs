@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::format};
+use std::cell::RefCell;
 
 use egui::{FullOutput, RichText, Color32};
 use nalgebra::{Vector3, Point3};

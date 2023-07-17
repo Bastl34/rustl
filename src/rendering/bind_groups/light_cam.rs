@@ -15,9 +15,8 @@ impl RenderItem for LightCamBindGroup
 
 impl LightCamBindGroup
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, cam_buffer: &CameraBuffer, light_buffer: &LightBuffer) -> LightCamBindGroup
+    pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
-        let bind_group_layout_name = format!("{} light_cam_bind_group_layout", name);
         let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
@@ -26,8 +25,15 @@ impl LightCamBindGroup
                 uniform::uniform_bind_group_layout_entry(1, true, true),
                 uniform::uniform_bind_group_layout_entry(2, true, true),
             ],
-            label: Some(bind_group_layout_name.as_str()),
+            label: Some("light_cam_bind_group_layout"),
         });
+
+        bind_group_layout
+    }
+
+    pub fn new(wgpu: &mut WGpu, name: &str, cam_buffer: &CameraBuffer, light_buffer: &LightBuffer) -> LightCamBindGroup
+    {
+        let bind_group_layout = Self::bind_layout(wgpu);
 
         let bind_group_name = format!("{} light_camera_bind_group", name);
         let bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
