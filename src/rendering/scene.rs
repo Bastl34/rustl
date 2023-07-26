@@ -2,12 +2,15 @@ use std::{sync::RwLockReadGuard, mem::swap, ops::Deref};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::{State}, scene::{components::{component::Component, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::{State}, scene::{components::{component::{Component, SharedComponentItem, ComponentItem}, transformation::Transformation, material::Material}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
 use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
+
+//type RenderListType<'a> = Vec<(RwLockReadGuard<'a, Box<Node>>, Option<RwLockReadGuard<'a, Box<SharedComponentItem>>>)>;
+//type RenderListType = Vec<(RwLockReadGuard<Box<Node>>, Option<RwLockReadGuard<ComponentItem>>)>;
 
 pub struct Scene
 {
@@ -493,11 +496,38 @@ impl Scene
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
-        let mut read_nodes = vec![];
+        //let mut nodes: Vec<(RwLockReadGuard<'_, Box<Node>>, Option<RwLockReadGuard<'_, Box<dyn Component + Send + Sync>>>)> = vec![];
+        //let mut nodes: RenderListType = vec![];
+        let mut nodes_read = vec![];
+        let mut materials = vec![];
+        let mut materials_read = vec![];
 
         for node in &all_nodes
         {
-            read_nodes.push(node.read().unwrap());
+            let read_node = node.read().unwrap();
+            let mat = read_node.find_shared_component::<MaterialComponent>();
+
+            if let Some(mat) = mat
+            {
+                let mat = mat.clone();
+                //let mat_read = mat.read().unwrap();
+                //nodes.push((read_node, Some(mat), Some(mat_read)));
+                nodes_read.push(read_node);
+                materials.push(mat);
+                //materials_read.push(mat.read().unwrap());
+            }
+        }
+
+        for material in &materials
+        {
+            let material_read = material.read().unwrap();
+            materials_read.push(material_read);
+        }
+
+        let mut nodes = vec![];
+        for (i, material) in materials_read.iter().enumerate()
+        {
+            nodes.push((nodes_read.get(i).unwrap(), material));
         }
 
         let mut draw_calls: u32 = 0;
@@ -516,8 +546,8 @@ impl Scene
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
 
-            draw_calls += self.render_depth(wgpu, view, encoder, &read_nodes, cam, &bind_group_render_item.bind_group, clear);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &read_nodes, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_depth(wgpu, view, encoder, &nodes, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &nodes, cam, &bind_group_render_item.bind_group, clear);
 
             i += 1;
         }
@@ -525,7 +555,7 @@ impl Scene
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<(&RwLockReadGuard<Box<Node>>, &RwLockReadGuard<ComponentItem>)>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
         let mut clear_depth = wgpu::LoadOp::Clear(1.0);
@@ -585,7 +615,7 @@ impl Scene
         self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RwLockReadGuard<Box<Node>>>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<(&RwLockReadGuard<Box<Node>>, &RwLockReadGuard<ComponentItem>)>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -643,11 +673,11 @@ impl Scene
         self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RwLockReadGuard<Box<Node>>>, light_cam_bind_group: &'a BindGroup) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<(&RwLockReadGuard<Box<Node>>, &RwLockReadGuard<ComponentItem>)>, light_cam_bind_group: &'a BindGroup) -> u32
     {
         let mut draw_calls: u32 = 0;
 
-        for node in nodes
+        for (node, mat) in nodes
         {
             let meshes = node.get_meshes();
 
@@ -656,9 +686,9 @@ impl Scene
                 continue;
             }
 
-            let mat = node.find_shared_component::<MaterialComponent>().unwrap();
-            let mat = mat.read().unwrap();
-            let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+            //let mat = node.find_shared_component::<MaterialComponent>().unwrap();
+            //let mat = mat.read().unwrap();
+            //let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 
             let material_render_item = mat.get_base().render_item.as_ref();
             let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
