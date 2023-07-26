@@ -1,6 +1,6 @@
 const MAX_LIGHTS = [MAX_LIGHTS];
 
-// ****************************** vertex ******************************
+// ****************************** inputs ******************************
 
 struct CameraUniform
 {
@@ -56,6 +56,8 @@ struct VertexOutput
     @location(5) world_normal: vec3<f32>,
 };
 
+// ****************************** vertex ******************************
+
 @vertex
 fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 {
@@ -104,6 +106,71 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
 // ****************************** fragment ******************************
 
+struct MaterialUniform
+{
+    ambient_color: vec4<f32>,
+    base_color: vec4<f32>,
+    specular_color: vec4<f32>,
+
+    alpha: f32,
+    shininess: f32,
+    reflectivity: f32,
+    refraction_index: f32,
+
+    normal_map_strength: f32,
+    roughness: f32,
+    receive_shadow: u32,
+
+    textures_used: u32,
+};
+
+@group(0) @binding(0)
+var<uniform> material: MaterialUniform;
+
+@group(0) @binding(1) var t_ambient: texture_2d<f32>;
+@group(0) @binding(2) var s_ambient: sampler;
+@group(0) @binding(3) var t_base: texture_2d<f32>;
+@group(0) @binding(4) var s_base: sampler;
+@group(0) @binding(5) var t_specular: texture_2d<f32>;
+@group(0) @binding(6) var s_specular: sampler;
+@group(0) @binding(7) var t_normal: texture_2d<f32>;
+@group(0) @binding(8) var s_normal: sampler;
+@group(0) @binding(9) var t_alpha: texture_2d<f32>;
+@group(0) @binding(10) var s_alpha: sampler;
+@group(0) @binding(11) var t_roughness: texture_2d<f32>;
+@group(0) @binding(12) var s_roughness: sampler;
+@group(0) @binding(13) var t_ambient_occlusion: texture_2d<f32>;
+@group(0) @binding(14) var s_ambient_occlusion: sampler;
+@group(0) @binding(15) var t_reflectivity: texture_2d<f32>;
+@group(0) @binding(16) var s_reflectivity: sampler;
+@group(0) @binding(17) var t_shininess: texture_2d<f32>;
+@group(0) @binding(18) var s_shininess: sampler;
+
+@group(0) @binding(19) var t_custom0: texture_2d<f32>;
+@group(0) @binding(20) var s_custom0: sampler;
+@group(0) @binding(21) var t_custom1: texture_2d<f32>;
+@group(0) @binding(22) var s_custom1: sampler;
+@group(0) @binding(23) var t_custom2: texture_2d<f32>;
+@group(0) @binding(24) var s_custom2: sampler;
+@group(0) @binding(25) var t_custom3: texture_2d<f32>;
+@group(0) @binding(26) var s_custom3: sampler;
+@group(0) @binding(27) var t_custom4: texture_2d<f32>;
+@group(0) @binding(28) var s_custom4: sampler;
+@group(0) @binding(29) var t_custom5: texture_2d<f32>;
+@group(0) @binding(30) var s_custom5: sampler;
+@group(0) @binding(31) var t_custom6: texture_2d<f32>;
+@group(0) @binding(32) var s_custom6: sampler;
+@group(0) @binding(33) var t_custom7: texture_2d<f32>;
+@group(0) @binding(34) var s_custom7: sampler;
+@group(0) @binding(35) var t_custom8: texture_2d<f32>;
+@group(0) @binding(36) var s_custom8: sampler;
+@group(0) @binding(37) var t_custom9: texture_2d<f32>;
+@group(0) @binding(38) var s_custom9: sampler;
+
+@group(0) @binding(39) var t_depth: texture_2d<f32>;
+@group(0) @binding(40) var s_depth: sampler;
+
+/*
 @group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
@@ -113,6 +180,7 @@ var s_diffuse: sampler;
 var t_normal: texture_2d<f32>;
 @group(0) @binding(3)
 var s_normal: sampler;
+*/
 
 /*
 @group(0) @binding(2)
@@ -133,7 +201,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         in.world_normal,
     ));
 
-    let object_color = textureSample(t_diffuse, s_diffuse, uvs);
+    let object_color = textureSample(t_base, s_base, uvs);
     let object_normal = textureSample(t_normal, s_normal, uvs);
 
     let tangent_normal = object_normal.xyz * 2.0 - 1.0;

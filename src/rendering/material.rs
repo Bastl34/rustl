@@ -169,7 +169,7 @@ impl MaterialBuffer
 
         if let Some(additional_textures) = additional_textures
         {
-            for (texture, texture_id) in additional_textures
+            for (_texture, texture_id) in additional_textures
             {
                 material_uniform.textures_used |= 0x1 << texture_id;
             }
@@ -188,7 +188,7 @@ impl MaterialBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, material: &Material)
     {
-        let mut material_uniform = MaterialUniform::new(material);
+        let material_uniform = MaterialUniform::new(material);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[material_uniform]));
     }
@@ -229,11 +229,11 @@ impl MaterialBuffer
 
                 swap(&mut texture.render_item, &mut render_item);
 
-                render_items.push((render_item,bind_id));
+                render_items.push((render_item, bind_id));
             }
             else
             {
-                render_items.push((None,bind_id));
+                render_items.push((None, bind_id));
             }
 
             bind_id += 1;

@@ -9,9 +9,6 @@ use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::CameraBu
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
 
-//type RenderListType<'a> = Vec<(RwLockReadGuard<'a, Box<Node>>, Option<RwLockReadGuard<'a, Box<SharedComponentItem>>>)>;
-//type RenderListType = Vec<(RwLockReadGuard<Box<Node>>, Option<RwLockReadGuard<ComponentItem>>)>;
-
 pub struct Scene
 {
     clear_color: wgpu::Color,
@@ -496,8 +493,7 @@ impl Scene
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
-        //let mut nodes: Vec<(RwLockReadGuard<'_, Box<Node>>, Option<RwLockReadGuard<'_, Box<dyn Component + Send + Sync>>>)> = vec![];
-        //let mut nodes: RenderListType = vec![];
+
         let mut nodes_read = vec![];
         let mut materials = vec![];
         let mut materials_read = vec![];
@@ -509,12 +505,8 @@ impl Scene
 
             if let Some(mat) = mat
             {
-                let mat = mat.clone();
-                //let mat_read = mat.read().unwrap();
-                //nodes.push((read_node, Some(mat), Some(mat_read)));
                 nodes_read.push(read_node);
                 materials.push(mat);
-                //materials_read.push(mat.read().unwrap());
             }
         }
 
@@ -685,10 +677,6 @@ impl Scene
             {
                 continue;
             }
-
-            //let mat = node.find_shared_component::<MaterialComponent>().unwrap();
-            //let mat = mat.read().unwrap();
-            //let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 
             let material_render_item = mat.get_base().render_item.as_ref();
             let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
