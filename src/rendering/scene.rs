@@ -123,13 +123,13 @@ impl Scene
         let mat = mat.read().unwrap();
         let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 
-        let material_render_item = mat.get_base().render_item;
+        let material_render_item = &mat.get_base().render_item;
         let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
-        let material_bind_layout = material_render_item.bind_group_layout.unwrap();
+        let material_bind_layout = material_render_item.bind_group_layout.as_ref().unwrap();
 
         let bind_group_layouts =
         [
-            &material_bind_layout,
+            material_bind_layout,
             &light_cam_bind_layout
         ];
 
