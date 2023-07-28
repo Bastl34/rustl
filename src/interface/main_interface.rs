@@ -90,6 +90,7 @@ impl MainInterface
                 let mut node = node.write().unwrap();
                 node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(4.0, 4.0, 4.0));
+                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 15.0, -30.0));
 
                 //node.remove_component_by_type::<Transformation>();
             }

@@ -285,8 +285,6 @@ impl MaterialBuffer
             }
         );
 
-        //dbg!(&layout_group_vec);
-
         // ********* swap back *********
         let mut i = 0;
         for texture_type in ALL_TEXTURE_TYPES

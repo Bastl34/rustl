@@ -62,56 +62,6 @@ impl Scene
 
     pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
-        /*
-        let node_id = 0;
-        let cam_id = 0;
-
-        let node = scene.nodes.get_mut(node_id).unwrap();
-
-        // material and textures
-        let mat = node.write().unwrap().find_shared_component::<MaterialComponent>().unwrap();
-        let mut mat = mat.write().unwrap();
-        let mat = mat.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
-        let mat_data = mat.get_data_mut().get_mut();
-
-        //let mut base_tex = mat_data.texture_base.as_mut().unwrap().write().unwrap();
-        //let mut normal_tex = mat_data.texture_normal.as_mut().unwrap().write().unwrap();
-
-        //let base_texture = Texture::new_from_texture(wgpu, base_tex.name.as_str(), &base_tex, true);
-        //let normal_texture = Texture::new_from_texture(wgpu, normal_tex.name.as_str(), &normal_tex, false);
-
-        let base_tex = mat_data.texture_base.as_mut().unwrap().read().unwrap();
-        let normal_tex = mat_data.texture_normal.as_mut().unwrap().read().unwrap();
-
-        //let base_texture = base_tex.render_item;
-        //let normal_texture = normal_tex.render_item;
-
-        let base_texture = get_render_item::<Texture>(base_tex.render_item.as_ref().unwrap());
-        let normal_texture = get_render_item::<Texture>(normal_tex.render_item.as_ref().unwrap());
-
-        let depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
-
-        // cam/light
-        let cam = scene.cameras.get(cam_id).unwrap(); // TODO
-        let cam = cam.borrow();
-        let light_cam_bind_group = get_render_item::<LightCamBindGroup>(cam.get_ref().bind_group_render_item.as_ref().unwrap());
-
-        // ********** depth pass **********
-        let mut textures = vec![];
-        textures.push(*base_texture);
-        textures.push(*normal_texture);
-        */
-
-
-        // cam/light
-        /*
-        let cam_id = 0; // use first cam for bind group layout
-        let cam = scene.cameras.get(cam_id).unwrap(); // TODO
-        let cam = cam.borrow();
-        let light_cam_bind_group = get_render_item::<LightCamBindGroup>(cam.get_ref().bind_group_render_item.as_ref().unwrap());
-        */
-
         let light_cam_bind_layout = LightCamBindGroup::bind_layout(wgpu);
 
         let node_id = 0;
@@ -144,7 +94,6 @@ impl Scene
         }
 
         // ********** color pass **********
-        //textures.push(&depth_pass_buffer_texture);
         let mut additional_textures = vec![];
         additional_textures.push(&self.depth_pass_buffer_texture);
 
@@ -156,32 +105,10 @@ impl Scene
         {
             self.color_pipe.as_mut().unwrap().re_create(wgpu, &bind_group_layouts, true, true, self.samples);
         }
-
-        //base_tex.render_item = Some(Box::new(base_texture));
-        //normal_tex.render_item = Some(Box::new(normal_texture));
-
-        //self.depth_buffer_texture = Some(depth_buffer_texture);
-        //self.depth_pass_buffer_texture = Some(depth_pass_buffer_texture);
     }
 
-    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_textures(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
-        let node_id = 0;
-
-        let (clear_color, clear_color_changed) = state.rendering.clear_color.consume_borrow();
-
-        if clear_color_changed
-        {
-            self.clear_color = wgpu::Color
-            {
-                r: clear_color.x as f64,
-                g: clear_color.y as f64,
-                b: clear_color.z as f64,
-                a: 1.0,
-            };
-        }
-
-        // ********** textures **********
         for (_texture_id, texture) in &mut scene.textures
         {
             let mut texture = texture.write().unwrap();
@@ -191,8 +118,10 @@ impl Scene
                 texture.render_item = Some(Box::new(render_item));
             }
         }
+    }
 
-        // ********** materials **********
+    pub fn update_materials(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
+    {
         for (_material_id, material) in &mut scene.materials
         {
             let mut material = material.write().unwrap();
@@ -206,7 +135,7 @@ impl Scene
                 let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
             }
-            else if material_changed
+            else if material_changed || force
             {
                 let mut render_item = material.get_base_mut().render_item.take();
 
@@ -221,7 +150,10 @@ impl Scene
                 dbg!("material render item update");
             }
         }
+    }
 
+    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    {
         // ********** lights: all **********
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
         if all_lights_changed
@@ -290,109 +222,145 @@ impl Scene
                 cam.bind_group_render_item = Some(Box::new(light_cam_bind_group));
             }
         }
+    }
 
-        // ********** vertex buffer **********
+    pub fn update_nodes(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    {
+        //for node in scene.nodes.iter_mut()
+        for node_id in 0..scene.nodes.len()
         {
-            let node = scene.nodes.get_mut(node_id).unwrap();
-
-            let mut node = node.write().unwrap();
-            let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>().unwrap();
-
-            let (mesh_data, mesh_data_changed) = mesh.get_data_mut().consume_borrow_mut();
-
-            if mesh_data_changed
-            {
-                let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh_data);
-                mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
-            }
-        }
-
-        // ********** instances all **********
-        let mut all_instances_changed;
-        {
-            let node_arc = scene.nodes.get_mut(node_id).unwrap();
-
-            {
-                let mut write = node_arc.write().unwrap();
-                (_, all_instances_changed) = write.instances.consume_borrow();
-            }
-
-            {
-                let mut node = node_arc.write().unwrap();
-                let trans_component = node.find_component_mut::<Transformation>();
-                if let Some(trans_component) = trans_component
-                {
-                    all_instances_changed = trans_component.get_data_mut().consume_change() || all_instances_changed;
-                }
-            }
-
-            if all_instances_changed
-            {
-                //dbg!(" ============ instances updated");
-                let instance_buffer;
-                {
-                    let node = node_arc.read().unwrap();
-                    instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node.instances.get_ref());
-                }
-
-                node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
-            }
-        }
-
-        {
-            /*
-            let node_arc = scene.nodes.get_mut(node_id).unwrap();
-            let mut node_write = node_arc.write().unwrap();
-
-            let transform = node_write.find_component_mut::<Transformation>();
-            */
-            //transform.unwrap().calc_full_transform(node_arc.clone());
-            //transform.unwrap().calc_full_transform(node_write.as_mut());
-            //transform.unwrap().calc_full_transform(node_arc.clone());
-
-            //let node_arc = scene.nodes.get_mut(node_id).unwrap();
-        }
-
-        // ********** instances check each **********
-        if !all_instances_changed
-        {
-            let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+            // ********** vertex buffer **********
             {
                 let node = scene.nodes.get_mut(node_id).unwrap();
+
                 let mut node = node.write().unwrap();
+                let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>();
 
-                swap(&mut node.instance_render_item, &mut render_item);
-            }
-
-            {
-                let node = scene.nodes.get(node_id).unwrap();
-                let node = node.read().unwrap();
-                let node_ref = node.instances.get_ref();
-
-                for (i, instance) in node_ref.iter().enumerate()
+                if let Some(mesh) = mesh
                 {
-                    let mut instance = instance.borrow_mut();
-                    let (instance, instance_changed) = instance.consume_borrow();
-                    if instance_changed
-                    {
-                        let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
-                        render_item.update_buffer(wgpu, instance, i);
+                    let (mesh_data, mesh_data_changed) = mesh.get_data_mut().consume_borrow_mut();
 
-                        //dbg!(" ============ ONE instance updated");
+                    if mesh_data_changed
+                    {
+                        let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh_data);
+                        mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
                     }
                 }
             }
 
+            // ********** instances all **********
+            let mut all_instances_changed;
             {
-                let node = scene.nodes.get_mut(node_id).unwrap();
-                let mut node = node.write().unwrap();
+                let node_arc = scene.nodes.get_mut(node_id).unwrap();
 
-                swap(&mut render_item, &mut node.instance_render_item);
+                {
+                    let mut write = node_arc.write().unwrap();
+                    (_, all_instances_changed) = write.instances.consume_borrow();
+                }
+
+                {
+                    let mut node = node_arc.write().unwrap();
+                    let trans_component = node.find_component_mut::<Transformation>();
+                    if let Some(trans_component) = trans_component
+                    {
+                        all_instances_changed = trans_component.get_data_mut().consume_change() || all_instances_changed;
+                    }
+                }
+
+                if all_instances_changed
+                {
+                    //dbg!(" ============ instances updated");
+                    let instance_buffer;
+                    {
+                        let node = node_arc.read().unwrap();
+                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node.instances.get_ref());
+                    }
+
+                    node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
+                }
+            }
+
+            {
+                /*
+                let node_arc = scene.nodes.get_mut(node_id).unwrap();
+                let mut node_write = node_arc.write().unwrap();
+
+                let transform = node_write.find_component_mut::<Transformation>();
+                */
+                //transform.unwrap().calc_full_transform(node_arc.clone());
+                //transform.unwrap().calc_full_transform(node_write.as_mut());
+                //transform.unwrap().calc_full_transform(node_arc.clone());
+
+                //let node_arc = scene.nodes.get_mut(node_id).unwrap();
+            }
+
+            // ********** instances check each **********
+            if !all_instances_changed
+            {
+                let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                {
+                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let mut node = node.write().unwrap();
+
+                    swap(&mut node.instance_render_item, &mut render_item);
+                }
+
+                {
+                    let node = scene.nodes.get(node_id).unwrap();
+                    let node = node.read().unwrap();
+                    let node_ref = node.instances.get_ref();
+
+                    for (i, instance) in node_ref.iter().enumerate()
+                    {
+                        let mut instance = instance.borrow_mut();
+                        let (instance, instance_changed) = instance.consume_borrow();
+                        if instance_changed
+                        {
+                            let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
+                            render_item.update_buffer(wgpu, instance, i);
+
+                            //dbg!(" ============ ONE instance updated");
+                        }
+                    }
+                }
+
+                {
+                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let mut node = node.write().unwrap();
+
+                    swap(&mut render_item, &mut node.instance_render_item);
+                }
             }
         }
+    }
 
+    pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
+    {
+        // ********** clear color **********
+        let (clear_color, clear_color_changed) = state.rendering.clear_color.consume_borrow();
+
+        if clear_color_changed
+        {
+            self.clear_color = wgpu::Color
+            {
+                r: clear_color.x as f64,
+                g: clear_color.y as f64,
+                b: clear_color.z as f64,
+                a: 1.0,
+            };
+        }
+
+        // ********** dynamic items **********
+        self.update_textures(wgpu, scene);
+        self.update_materials(wgpu, scene, false);
+        self.update_light_cameras(wgpu, scene);
+        self.update_nodes(wgpu, scene);
+
+
+        // ********** screenshot stuff **********
         if state.save_image
         {
+            let node_id = 0;
             let node_arc = scene.nodes.get(node_id).unwrap();
             //let node = node_arc.read().unwrap();
 
@@ -451,6 +419,10 @@ impl Scene
     pub fn msaa_sample_size_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, samples: u32)
     {
         self.samples = samples;
+
+        self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
+
+        //self.update_materials(wgpu, scene, true);
         self.create_pipelines(wgpu, scene, true);
     }
 
@@ -693,16 +665,9 @@ impl Scene
                     let instance_render_item = node.instance_render_item.as_ref().unwrap();
                     let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                    //let camera_render_item = cam.render_item.as_ref().unwrap();
-                    //let camera_buffer = get_render_item::<CameraBuffer>(camera_render_item);
-
-                    pass.set_pipeline(&pipeline.get());
-                    //pass.set_bind_group(0, pipeline.get_textures_bind_group(), &[]);
+                    pass.set_pipeline(&pipeline.get());;
                     pass.set_bind_group(0, material_bind_group, &[]);
-                    //pass.set_bind_group(1, camera_buffer.get_bind_group(), &[]);
-                    //pass.set_bind_group(1, bind_group, &[]);
                     pass.set_bind_group(1, light_cam_bind_group, &[]);
-                    //pass.set_bind_group(2, pipeline.get_light_bind_group(), &[]);
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
 
