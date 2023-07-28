@@ -236,7 +236,7 @@ impl MaterialBuffer
                 render_items.push((None, bind_id));
             }
 
-            bind_id += 1;
+            bind_id += 2;
         }
 
         for (render_item, id) in &render_items
@@ -284,6 +284,8 @@ impl MaterialBuffer
                 label: Some(bind_group_name.as_str()),
             }
         );
+
+        //dbg!(&layout_group_vec);
 
         // ********* swap back *********
         let mut i = 0;

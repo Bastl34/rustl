@@ -195,7 +195,7 @@ impl Texture
         &self.sampler
     }
 
-    pub fn get_bind_group_layout_entries(&self, index: u32) -> [BindGroupLayoutEntry; 2]
+    pub fn get_bind_group_layout_entries(&self, index_start: u32) -> [BindGroupLayoutEntry; 2]
     {
         let mut sample_type = wgpu::TextureSampleType::Float { filterable: true };
         if self.is_depth_texture
@@ -214,7 +214,7 @@ impl Texture
         [
             wgpu::BindGroupLayoutEntry
             {
-                binding: index * 2,
+                binding: index_start,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture
                 {
@@ -226,7 +226,7 @@ impl Texture
             },
             wgpu::BindGroupLayoutEntry
             {
-                binding: (index * 2) + 1,
+                binding: index_start + 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 // This should match the filterable field of the
                 // corresponding Texture entry above.
@@ -236,17 +236,17 @@ impl Texture
         ]
     }
 
-    pub fn get_bind_group_entries(&self, index: u32) -> [BindGroupEntry; 2]
+    pub fn get_bind_group_entries(&self, index_start: u32) -> [BindGroupEntry; 2]
     {
         [
             wgpu::BindGroupEntry
             {
-                binding: index * 2,
+                binding: index_start,
                 resource: wgpu::BindingResource::TextureView(&self.view),
             },
             wgpu::BindGroupEntry
             {
-                binding: (index * 2) + 1,
+                binding: index_start + 1,
                 resource: wgpu::BindingResource::Sampler(&self.sampler),
             }
         ]
