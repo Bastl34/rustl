@@ -1,10 +1,10 @@
-use std::{sync::RwLockReadGuard, mem::swap, ops::Deref};
+use std::{sync::RwLockReadGuard, mem::swap};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::{State}, scene::{components::{component::{Component, SharedComponentItem, ComponentItem}, transformation::Transformation, material::Material}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentItem}, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
-use super::{wgpu::{WGpu}, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::{InstanceBuffer}, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -665,7 +665,7 @@ impl Scene
                     let instance_render_item = node.instance_render_item.as_ref().unwrap();
                     let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                    pass.set_pipeline(&pipeline.get());;
+                    pass.set_pipeline(&pipeline.get());
                     pass.set_bind_group(0, material_bind_group, &[]);
                     pass.set_bind_group(1, light_cam_bind_group, &[]);
 

@@ -54,9 +54,77 @@ impl MainInterface
 
         let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
+
+        let mut interface = Self
+        {
+            state,
+            start_time: Instant::now(),
+
+            wgpu,
+            window,
+            egui,
+        };
+
+        interface.app_init().await;
+        interface.init().await;
+
+        interface
+    }
+
+    pub async fn init(&mut self)
+    {
+        let state = &mut *(self.state.borrow_mut());
+        let samlpes = *(state.rendering.msaa.get_ref());
+
+        // move out scenes from state to prevent using multiple mut borrows
+        let mut scenes = vec![];
+        swap(&mut state.scenes, &mut scenes);
+
+        for scene in &mut scenes
+        {
+            let render_item = Scene::new(&mut self.wgpu, state, scene, samlpes).await;
+            scene.render_item = Some(Box::new(render_item));
+        }
+
+        swap(&mut scenes, &mut state.scenes);
+    }
+
+    pub fn window(&self) -> &Window
+    {
+        &self.window
+    }
+
+    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
+    {
+        let mut width = dimensions.width;
+        let mut height = dimensions.height;
+
+        if width == 0 { width = 1; }
+        if height == 0 { height = 1; }
+
+        self.wgpu.resize(width, height);
+        self.egui.resize(width, height, scale_factor);
+
+        {
+            let state = &mut *(self.state.borrow_mut());
+
+            for scene in &mut state.scenes
+            {
+                let mut render_item = scene.render_item.take();
+
+                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                render_scene.resize(&mut self.wgpu, scene);
+
+                scene.render_item = render_item;
+            }
+        }
+    }
+
+    pub async fn app_init(&mut self)
+    {
         //init scene
         {
-            let state = &mut *(state.borrow_mut());
+            let state = &mut *(self.state.borrow_mut());
 
             let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
 
@@ -115,10 +183,10 @@ impl MainInterface
                 scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
             }
 
-            scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
-            scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
-            scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
-            scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, wgpu.surface_config().width, wgpu.surface_config().height);
+            scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
 
             // ********** light **********
             {
@@ -137,65 +205,6 @@ impl MainInterface
 
             state.print();
         }
-
-        {
-            let state = &mut *(state.borrow_mut());
-
-            // move out scenes from state to prevent using multiple mut borrows
-            let mut scenes = vec![];
-            swap(&mut state.scenes, &mut scenes);
-
-            for scene in &mut scenes
-            {
-                //let render_item = Scene::new(&mut wgpu, scene, samlpes).await;
-                let render_item = Scene::new(&mut wgpu, state, scene, samlpes).await;
-                scene.render_item = Some(Box::new(render_item));
-            }
-
-            swap(&mut scenes, &mut state.scenes);
-        }
-
-
-        Self
-        {
-            state,
-            start_time: Instant::now(),
-
-            wgpu,
-            window,
-            egui,
-        }
-    }
-
-    pub fn window(&self) -> &Window
-    {
-        &self.window
-    }
-
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
-    {
-        let mut width = dimensions.width;
-        let mut height = dimensions.height;
-
-        if width == 0 { width = 1; }
-        if height == 0 { height = 1; }
-
-        self.wgpu.resize(width, height);
-        self.egui.resize(width, height, scale_factor);
-
-        {
-            let state = &mut *(self.state.borrow_mut());
-
-            for scene in &mut state.scenes
-            {
-                let mut render_item = scene.render_item.take();
-
-                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.resize(&mut self.wgpu, scene);
-
-                scene.render_item = render_item;
-            }
-        }
     }
 
     pub fn app_update(&mut self)
@@ -205,9 +214,24 @@ impl MainInterface
 
         let state = &mut *(self.state.borrow_mut());
 
-        let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
-        let node_arc = scene.nodes.get_mut(node_id).unwrap();
-        let mut node = node_arc.write().unwrap();
+        // get scene
+        let scene = state.scenes.get_mut(scene_id.clone());
+
+        if scene.is_none()
+        {
+            return;
+        }
+        let scene = scene.unwrap();
+
+        // get node
+        let node_arc = scene.nodes.get_mut(node_id);
+
+        if node_arc.is_none()
+        {
+            return;
+        }
+        let node_arc = node_arc.unwrap();
+        let mut node: std::sync::RwLockWriteGuard<'_, Box<Node>> = node_arc.write().unwrap();
 
         {
             let instances = &mut node.instances;

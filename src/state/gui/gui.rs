@@ -204,41 +204,44 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             // change transform
             let scene_id = 0;
 
-            let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+            let scene = state.scenes.get_mut(scene_id.clone());
 
-            for node_id in 0..scene.nodes.len()
+            if let Some(scene) = scene
             {
-                let node = scene.nodes.get_mut(node_id).unwrap();
-                let mut node = node.write().unwrap();
-
-                let name = node.get_name().clone();
-                let trans_component = node.find_component_mut::<Transformation>();
-
-                if let Some(trans_component) = trans_component
+                for node_id in 0..scene.nodes.len()
                 {
-                    let mut changed = false;
+                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let mut node = node.write().unwrap();
 
-                    let mut pos;
+                    let name = node.get_name().clone();
+                    let trans_component = node.find_component_mut::<Transformation>();
+
+                    if let Some(trans_component) = trans_component
                     {
-                        let data = trans_component.get_data();
+                        let mut changed = false;
 
-                        pos = data.position;
-
-                        ui.horizontal(|ui|
+                        let mut pos;
                         {
-                            ui.label(format!("node {} pos",name));
+                            let data = trans_component.get_data();
 
-                            changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
-                            changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
-                            changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
-                        });
-                    }
+                            pos = data.position;
 
-                    if changed
-                    {
-                        let data = trans_component.get_data_mut();
-                        data.get_mut().position = pos;
-                        trans_component.calc_transform();
+                            ui.horizontal(|ui|
+                            {
+                                ui.label(format!("node {} pos",name));
+
+                                changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                                changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                                changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                            });
+                        }
+
+                        if changed
+                        {
+                            let data = trans_component.get_data_mut();
+                            data.get_mut().position = pos;
+                            trans_component.calc_transform();
+                        }
                     }
                 }
             }
