@@ -66,26 +66,26 @@ impl MaterialUniform
         let material_data = material.get_data();
 
         let mut textures_used: u32 = 0;
-        if material.has_texture(TextureType::AmbientEmissive)   { textures_used |= 0x2; }
-        if material.has_texture(TextureType::Base)              { textures_used |= 0x3; }
-        if material.has_texture(TextureType::Specular)          { textures_used |= 0x4; }
-        if material.has_texture(TextureType::Normal)            { textures_used |= 0x5; }
-        if material.has_texture(TextureType::Alpha)             { textures_used |= 0x6; }
-        if material.has_texture(TextureType::Roughness)         { textures_used |= 0x7; }
-        if material.has_texture(TextureType::AmbientOcclusion)  { textures_used |= 0x8; }
-        if material.has_texture(TextureType::Reflectivity)      { textures_used |= 0x9; }
-        if material.has_texture(TextureType::Shininess)         { textures_used |= 0x10; }
+        if material.has_texture(TextureType::AmbientEmissive)   { textures_used |= 1 << 1; }
+        if material.has_texture(TextureType::Base)              { textures_used |= 1 << 2; }
+        if material.has_texture(TextureType::Specular)          { textures_used |= 1 << 3; }
+        if material.has_texture(TextureType::Normal)            { textures_used |= 1 << 4; }
+        if material.has_texture(TextureType::Alpha)             { textures_used |= 1 << 5; }
+        if material.has_texture(TextureType::Roughness)         { textures_used |= 1 << 6; }
+        if material.has_texture(TextureType::AmbientOcclusion)  { textures_used |= 1 << 7; }
+        if material.has_texture(TextureType::Reflectivity)      { textures_used |= 1 << 8; }
+        if material.has_texture(TextureType::Shininess)         { textures_used |= 1 << 9; }
 
-        if material.has_texture(TextureType::Custom0)           { textures_used |= 0x11; }
-        if material.has_texture(TextureType::Custom1)           { textures_used |= 0x12; }
-        if material.has_texture(TextureType::Custom2)           { textures_used |= 0x13; }
-        if material.has_texture(TextureType::Custom3)           { textures_used |= 0x14; }
-        if material.has_texture(TextureType::Custom4)           { textures_used |= 0x15; }
-        if material.has_texture(TextureType::Custom5)           { textures_used |= 0x16; }
-        if material.has_texture(TextureType::Custom6)           { textures_used |= 0x17; }
-        if material.has_texture(TextureType::Custom7)           { textures_used |= 0x18; }
-        if material.has_texture(TextureType::Custom8)           { textures_used |= 0x19; }
-        if material.has_texture(TextureType::Custom9)           { textures_used |= 0x20; }
+        if material.has_texture(TextureType::Custom0)           { textures_used |= 1 << 10; }
+        if material.has_texture(TextureType::Custom1)           { textures_used |= 1 << 11; }
+        if material.has_texture(TextureType::Custom2)           { textures_used |= 1 << 12; }
+        if material.has_texture(TextureType::Custom3)           { textures_used |= 1 << 13; }
+        if material.has_texture(TextureType::Custom4)           { textures_used |= 1 << 14; }
+        if material.has_texture(TextureType::Custom5)           { textures_used |= 1 << 15; }
+        if material.has_texture(TextureType::Custom6)           { textures_used |= 1 << 16; }
+        if material.has_texture(TextureType::Custom7)           { textures_used |= 1 << 17; }
+        if material.has_texture(TextureType::Custom8)           { textures_used |= 1 << 18; }
+        if material.has_texture(TextureType::Custom9)           { textures_used |= 1 << 19; }
 
         MaterialUniform
         {
@@ -171,7 +171,8 @@ impl MaterialBuffer
         {
             for (_texture, texture_id) in additional_textures
             {
-                material_uniform.textures_used |= 0x1 << texture_id;
+                //material_uniform.textures_used |= 0x1 << texture_id;
+                material_uniform.textures_used |= 1 << texture_id;
             }
         }
 

@@ -136,7 +136,6 @@ impl MainInterface
 
             scene.nodes.remove(0);
 
-
             scene.load("objects/cube/cube.obj").await.unwrap();
             //scene.load("objects/plane/plane.obj").await.unwrap();
 

@@ -170,24 +170,30 @@ var<uniform> material: MaterialUniform;
 @group(0) @binding(39) var t_depth: texture_2d<f32>;
 @group(0) @binding(40) var s_depth: sampler;
 
-/*
-@group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
-@group(0) @binding(1)
-var s_diffuse: sampler;
 
-@group(0) @binding(2)
-var t_normal: texture_2d<f32>;
-@group(0) @binding(3)
-var s_normal: sampler;
-*/
+fn has_ambient_texture() -> bool            { return (material.textures_used & (1u << 1u)) != 0u; }
+fn has_base_texture() -> bool               { return (material.textures_used & (1u << 2u)) != 0u; }
+fn has_specular_texture() -> bool           { return (material.textures_used & (1u << 3u)) != 0u; }
+fn has_normal_texture() -> bool             { return (material.textures_used & (1u << 4u)) != 0u; }
+fn has_alpha_texture() -> bool              { return (material.textures_used & (1u << 5u)) != 0u; }
+fn has_roughness_texture() -> bool          { return (material.textures_used & (1u << 6u)) != 0u; }
+fn has_ambient_occlusion_texture() -> bool  { return (material.textures_used & (1u << 7u)) != 0u; }
+fn has_reflectivity_texture() -> bool       { return (material.textures_used & (1u << 8u)) != 0u; }
+fn has_shininess_texture() -> bool          { return (material.textures_used & (1u << 9u)) != 0u; }
 
-/*
-@group(0) @binding(2)
-var t_depth: texture_depth_2d; //texture_depth_2d_array
-@group(0) @binding(3)
-var s_depth: sampler_comparison;
-*/
+fn has_custom0_texture() -> bool            { return (material.textures_used & (1u << 10u)) != 0u; }
+fn has_custom1_texture() -> bool            { return (material.textures_used & (1u << 11u)) != 0u; }
+fn has_custom2_texture() -> bool            { return (material.textures_used & (1u << 12u)) != 0u; }
+fn has_custom3_texture() -> bool            { return (material.textures_used & (1u << 13u)) != 0u; }
+fn has_custom4_texture() -> bool            { return (material.textures_used & (1u << 14u)) != 0u; }
+fn has_custom5_texture() -> bool            { return (material.textures_used & (1u << 15u)) != 0u; }
+fn has_custom6_texture() -> bool            { return (material.textures_used & (1u << 16u)) != 0u; }
+fn has_custom7_texture() -> bool            { return (material.textures_used & (1u << 17u)) != 0u; }
+fn has_custom8_texture() -> bool            { return (material.textures_used & (1u << 18u)) != 0u; }
+fn has_custom9_texture() -> bool            { return (material.textures_used & (1u << 19u)) != 0u; }
+
+fn has_depth_texture() -> bool              { return (material.textures_used & (1u << 20u)) != 0u; }
+
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
@@ -201,13 +207,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         in.world_normal,
     ));
 
-    let object_color = textureSample(t_base, s_base, uvs);
-    let object_normal = textureSample(t_normal, s_normal, uvs);
+    // base color
+    var object_color = material.base_color;
+    if (has_base_texture())
+    {
+        let tex_color = textureSample(t_base, s_base, uvs);
+        object_color *= tex_color;
+    }
 
-    let tangent_normal = object_normal.xyz * 2.0 - 1.0;
-    //let tangent_normal = in.world_normal;
+    // normal
+    var tangent_normal = in.world_normal;
+    if (has_normal_texture())
+    {
+        let object_normal = textureSample(t_normal, s_normal, uvs);
+        tangent_normal = object_normal.xyz * 2.0 - 1.0;
 
-    let shininess = 32.0;
+        tangent_normal.x *= material.normal_map_strength;
+        tangent_normal.y *= material.normal_map_strength;
+    }
 
     var res = vec3<f32>(0.0, 0.0, 0.0);
 
@@ -228,13 +245,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
         let diffuse_color = (lights[i].color * diffuse_strength).xyz;
 
-        let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), shininess);
+        let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), material.shininess);
         let specular_color = (specular_strength * lights[i].color).xyz;
 
         res += (ambient_color + diffuse_color + specular_color) * object_color.xyz;
     }
 
-    return vec4<f32>(res, object_color.a);
+    let alpha = object_color.a * material.alpha;
+    return vec4<f32>(res, alpha);
 
     //return textureSample(t_diffuse, s_diffuse, uvs);
 
