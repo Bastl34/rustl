@@ -1,17 +1,17 @@
-use egui::FullOutput;
+use egui::{FullOutput};
 use egui_winit::{winit};
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::{state::state::State, rendering::wgpu::{WGpu, WGpuRendering}};
+use crate::{rendering::wgpu::{WGpu}};
 
 pub struct EGui
 {
-    ctx: egui::Context,
-    renderer: egui_wgpu::renderer::Renderer,
-    ui_state: egui_winit::State,
-    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
+    pub ctx: egui::Context,
+    pub renderer: egui_wgpu::renderer::Renderer,
+    pub ui_state: egui_winit::State,
+    pub screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
 
-    output: Option<FullOutput>
+    pub output: Option<FullOutput>
 }
 
 impl EGui
@@ -58,10 +58,10 @@ impl EGui
         clipped_primitives
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
+    pub fn resize(&mut self, width: u32, height: u32, scale_factor: Option<f64>)
     {
-        self.screen_descriptor.size_in_pixels[0] = dimensions.width;
-        self.screen_descriptor.size_in_pixels[1] = dimensions.height;
+        self.screen_descriptor.size_in_pixels[0] = width;
+        self.screen_descriptor.size_in_pixels[1] = height;
 
         if scale_factor.is_some()
         {
@@ -81,35 +81,7 @@ impl EGui
         self.ctx.request_repaint();
     }
 
-    pub fn build(&mut self, state: &mut State, window: &winit::window::Window)
-    {
-        let raw_input = self.ui_state.take_egui_input(window);
-
-        let full_output = self.ctx.run(raw_input, |ctx|
-        {
-            egui::Window::new("Settings").show(ctx, |ui|
-            {
-                ui.label(format!("fps: {}", state.last_fps));
-                ui.label("clear color:");
-                ui.add(egui::Slider::new(&mut state.clear_color_r, 0.0..=1.0));
-                ui.add(egui::Slider::new(&mut state.clear_color_g, 0.0..=1.0));
-                ui.add(egui::Slider::new(&mut state.clear_color_b, 0.0..=1.0));
-
-                ui.checkbox(&mut state.fullscreen, "Fullscreen");
-            });
-        });
-
-        let platform_output = full_output.platform_output.clone();
-
-        self.ui_state.handle_platform_output(window, &self.ctx, platform_output);
-
-        self.output = Some(full_output);
-    }
-}
-
-impl WGpuRendering for EGui
-{
-    fn render_pass(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
         let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
 
@@ -117,16 +89,19 @@ impl WGpuRendering for EGui
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment
-                {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations
+                color_attachments:
+                &[
+                    Some(wgpu::RenderPassColorAttachment
                     {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    }
-                })],
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations
+                        {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        }
+                    })
+                ],
                 depth_stencil_attachment: None,
             });
 

@@ -74,7 +74,7 @@ fn run(event_loop: winit::event_loop::EventLoop<()>, mut interface: MainInterfac
     });
 }
 
-pub fn start()
+pub async fn start()
 {
     cfg_if::cfg_if!
     {
@@ -90,7 +90,7 @@ pub fn start()
     }
 
     let (event_loop, window) = setup_window();
-    let interface = crate::interface::main_interface::init(window, &event_loop);
+    let interface = MainInterface::new(window, &event_loop).await;
 
     run(event_loop, interface);
 }
