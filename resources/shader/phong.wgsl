@@ -154,21 +154,9 @@ var<uniform> material: MaterialUniform;
 @group(0) @binding(24) var s_custom2: sampler;
 @group(0) @binding(25) var t_custom3: texture_2d<f32>;
 @group(0) @binding(26) var s_custom3: sampler;
-@group(0) @binding(27) var t_custom4: texture_2d<f32>;
-@group(0) @binding(28) var s_custom4: sampler;
-@group(0) @binding(29) var t_custom5: texture_2d<f32>;
-@group(0) @binding(30) var s_custom5: sampler;
-@group(0) @binding(31) var t_custom6: texture_2d<f32>;
-@group(0) @binding(32) var s_custom6: sampler;
-@group(0) @binding(33) var t_custom7: texture_2d<f32>;
-@group(0) @binding(34) var s_custom7: sampler;
-@group(0) @binding(35) var t_custom8: texture_2d<f32>;
-@group(0) @binding(36) var s_custom8: sampler;
-@group(0) @binding(37) var t_custom9: texture_2d<f32>;
-@group(0) @binding(38) var s_custom9: sampler;
 
-@group(0) @binding(39) var t_depth: texture_2d<f32>;
-@group(0) @binding(40) var s_depth: sampler;
+@group(0) @binding(27) var t_depth: texture_2d<f32>;
+@group(0) @binding(38) var s_depth: sampler;
 
 
 fn has_ambient_texture() -> bool            { return (material.textures_used & (1u << 1u)) != 0u; }
@@ -185,14 +173,8 @@ fn has_custom0_texture() -> bool            { return (material.textures_used & (
 fn has_custom1_texture() -> bool            { return (material.textures_used & (1u << 11u)) != 0u; }
 fn has_custom2_texture() -> bool            { return (material.textures_used & (1u << 12u)) != 0u; }
 fn has_custom3_texture() -> bool            { return (material.textures_used & (1u << 13u)) != 0u; }
-fn has_custom4_texture() -> bool            { return (material.textures_used & (1u << 14u)) != 0u; }
-fn has_custom5_texture() -> bool            { return (material.textures_used & (1u << 15u)) != 0u; }
-fn has_custom6_texture() -> bool            { return (material.textures_used & (1u << 16u)) != 0u; }
-fn has_custom7_texture() -> bool            { return (material.textures_used & (1u << 17u)) != 0u; }
-fn has_custom8_texture() -> bool            { return (material.textures_used & (1u << 18u)) != 0u; }
-fn has_custom9_texture() -> bool            { return (material.textures_used & (1u << 19u)) != 0u; }
 
-fn has_depth_texture() -> bool              { return (material.textures_used & (1u << 20u)) != 0u; }
+fn has_depth_texture() -> bool              { return (material.textures_used & (1u << 14u)) != 0u; }
 
 
 @fragment
@@ -226,7 +208,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         tangent_normal.y *= material.normal_map_strength;
     }
 
-    var res = vec3<f32>(0.0, 0.0, 0.0);
+    var color = vec3<f32>(0.0, 0.0, 0.0);
 
     let view_dir = normalize(in.tangent_view_position - in.tangent_position);
 
@@ -248,11 +230,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), material.shininess);
         let specular_color = (specular_strength * lights[i].color).xyz;
 
-        res += (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+        color += (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+    }
+
+    // ambient occlusion
+    if (has_ambient_occlusion_texture())
+    {
+        let ambient_occlusion = textureSample(t_ambient_occlusion, s_ambient_occlusion, uvs);
+        color.x *= ambient_occlusion.x;
+        color.y *= ambient_occlusion.x;
+        color.z *= ambient_occlusion.x;
     }
 
     let alpha = object_color.a * material.alpha;
-    return vec4<f32>(res, alpha);
+    return vec4<f32>(color, alpha);
 
     //return textureSample(t_diffuse, s_diffuse, uvs);
 

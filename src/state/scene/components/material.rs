@@ -32,16 +32,10 @@ pub enum TextureType
     Custom0,
     Custom1,
     Custom2,
-    Custom3,
-    Custom4,
-    Custom5,
-    Custom6,
-    Custom7,
-    Custom8,
-    Custom9,
+    Custom3
 }
 
-pub const ALL_TEXTURE_TYPES: [TextureType; 19] =
+pub const ALL_TEXTURE_TYPES: [TextureType; 13] =
 [
     TextureType::AmbientEmissive,
     TextureType::Base,
@@ -56,13 +50,7 @@ pub const ALL_TEXTURE_TYPES: [TextureType; 19] =
     TextureType::Custom0,
     TextureType::Custom1,
     TextureType::Custom2,
-    TextureType::Custom3,
-    TextureType::Custom4,
-    TextureType::Custom5,
-    TextureType::Custom6,
-    TextureType::Custom7,
-    TextureType::Custom8,
-    TextureType::Custom9,
+    TextureType::Custom3
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -92,12 +80,6 @@ pub struct MaterialData
     pub texture_custom1: Option<TextureItem>,
     pub texture_custom2: Option<TextureItem>,
     pub texture_custom3: Option<TextureItem>,
-    pub texture_custom4: Option<TextureItem>,
-    pub texture_custom5: Option<TextureItem>,
-    pub texture_custom6: Option<TextureItem>,
-    pub texture_custom7: Option<TextureItem>,
-    pub texture_custom8: Option<TextureItem>,
-    pub texture_custom9: Option<TextureItem>,
 
     pub filtering_mode: TextureFiltering,
 
@@ -153,12 +135,6 @@ impl Material
             texture_custom1: None,
             texture_custom2: None,
             texture_custom3: None,
-            texture_custom4: None,
-            texture_custom5: None,
-            texture_custom6: None,
-            texture_custom7: None,
-            texture_custom8: None,
-            texture_custom9: None,
 
             filtering_mode: TextureFiltering::Linear,
 
@@ -314,12 +290,6 @@ impl Material
         compare_and_apply_texture_diff!(data.texture_custom1, default_material_data.texture_custom1.as_ref(), new_mat_data.texture_custom1.clone());
         compare_and_apply_texture_diff!(data.texture_custom2, default_material_data.texture_custom2.as_ref(), new_mat_data.texture_custom2.clone());
         compare_and_apply_texture_diff!(data.texture_custom3, default_material_data.texture_custom3.as_ref(), new_mat_data.texture_custom3.clone());
-        compare_and_apply_texture_diff!(data.texture_custom4, default_material_data.texture_custom4.as_ref(), new_mat_data.texture_custom4.clone());
-        compare_and_apply_texture_diff!(data.texture_custom5, default_material_data.texture_custom5.as_ref(), new_mat_data.texture_custom5.clone());
-        compare_and_apply_texture_diff!(data.texture_custom6, default_material_data.texture_custom6.as_ref(), new_mat_data.texture_custom6.clone());
-        compare_and_apply_texture_diff!(data.texture_custom7, default_material_data.texture_custom7.as_ref(), new_mat_data.texture_custom7.clone());
-        compare_and_apply_texture_diff!(data.texture_custom8, default_material_data.texture_custom8.as_ref(), new_mat_data.texture_custom8.clone());
-        compare_and_apply_texture_diff!(data.texture_custom9, default_material_data.texture_custom9.as_ref(), new_mat_data.texture_custom9.clone());
     }
 
     pub fn print(&self)
@@ -343,12 +313,6 @@ impl Material
         println!("texture_custom1: {:?}", data.texture_custom1.is_some());
         println!("texture_custom2: {:?}", data.texture_custom2.is_some());
         println!("texture_custom3: {:?}", data.texture_custom3.is_some());
-        println!("texture_custom4: {:?}", data.texture_custom4.is_some());
-        println!("texture_custom5: {:?}", data.texture_custom5.is_some());
-        println!("texture_custom6: {:?}", data.texture_custom6.is_some());
-        println!("texture_custom7: {:?}", data.texture_custom7.is_some());
-        println!("texture_custom8: {:?}", data.texture_custom8.is_some());
-        println!("texture_custom9: {:?}", data.texture_custom9.is_some());
 
         println!("filtering_mode: {:?}", data.filtering_mode);
 
@@ -394,12 +358,6 @@ impl Material
             TextureType::Custom1 => { data.texture_custom1 = None; },
             TextureType::Custom2 => { data.texture_custom2 = None; },
             TextureType::Custom3 => { data.texture_custom3 = None; },
-            TextureType::Custom4 => { data.texture_custom4 = None; },
-            TextureType::Custom5 => { data.texture_custom5 = None; },
-            TextureType::Custom6 => { data.texture_custom6 = None; },
-            TextureType::Custom7 => { data.texture_custom7 = None; },
-            TextureType::Custom8 => { data.texture_custom8 = None; },
-            TextureType::Custom9 => { data.texture_custom9 = None; },
         }
     }
 
@@ -423,12 +381,6 @@ impl Material
             TextureType::Custom1 => { data.texture_custom1 = Some(tex.clone()); },
             TextureType::Custom2 => { data.texture_custom2 = Some(tex.clone()); },
             TextureType::Custom3 => { data.texture_custom3 = Some(tex.clone()); },
-            TextureType::Custom4 => { data.texture_custom4 = Some(tex.clone()); },
-            TextureType::Custom5 => { data.texture_custom5 = Some(tex.clone()); },
-            TextureType::Custom6 => { data.texture_custom6 = Some(tex.clone()); },
-            TextureType::Custom7 => { data.texture_custom7 = Some(tex.clone()); },
-            TextureType::Custom8 => { data.texture_custom8 = Some(tex.clone()); },
-            TextureType::Custom9 => { data.texture_custom9 = Some(tex.clone()); },
         }
     }
 
@@ -469,12 +421,6 @@ impl Material
             TextureType::Custom1 => { tex = data.texture_custom1.clone() },
             TextureType::Custom2 => { tex = data.texture_custom2.clone() },
             TextureType::Custom3 => { tex = data.texture_custom3.clone() },
-            TextureType::Custom4 => { tex = data.texture_custom4.clone() },
-            TextureType::Custom5 => { tex = data.texture_custom5.clone() },
-            TextureType::Custom6 => { tex = data.texture_custom6.clone() },
-            TextureType::Custom7 => { tex = data.texture_custom7.clone() },
-            TextureType::Custom8 => { tex = data.texture_custom8.clone() },
-            TextureType::Custom9 => { tex = data.texture_custom9.clone() },
 
         }
 

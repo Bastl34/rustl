@@ -27,14 +27,8 @@ use super::{wgpu::WGpu, uniform, texture::Texture};
     11: custom 1
     12: custom 2
     13: custom 3
-    14: custom 4
-    15: custom 5
-    16: custom 6
-    17: custom 7
-    18: custom 8
-    19: custom 9
 
-    20: depth
+    14: depth
 */
 
 pub const ADDITIONAL_START_INDEX: u32 = 20;
@@ -80,12 +74,6 @@ impl MaterialUniform
         if material.has_texture(TextureType::Custom1)           { textures_used |= 1 << 11; }
         if material.has_texture(TextureType::Custom2)           { textures_used |= 1 << 12; }
         if material.has_texture(TextureType::Custom3)           { textures_used |= 1 << 13; }
-        if material.has_texture(TextureType::Custom4)           { textures_used |= 1 << 14; }
-        if material.has_texture(TextureType::Custom5)           { textures_used |= 1 << 15; }
-        if material.has_texture(TextureType::Custom6)           { textures_used |= 1 << 16; }
-        if material.has_texture(TextureType::Custom7)           { textures_used |= 1 << 17; }
-        if material.has_texture(TextureType::Custom8)           { textures_used |= 1 << 18; }
-        if material.has_texture(TextureType::Custom9)           { textures_used |= 1 << 19; }
 
         MaterialUniform
         {
@@ -128,6 +116,8 @@ pub struct MaterialBuffer
 
     buffer: wgpu::Buffer,
 
+    empty_texture: Texture,
+
     pub bind_group_layout: Option<BindGroupLayout>,
     pub bind_group: Option<BindGroup>
 }
@@ -149,10 +139,13 @@ impl MaterialBuffer
             mapped_at_creation: false,
         });
 
+        let empty_texture = Texture::new_empty_texture(wgpu, format!("empty material {} texture", material.get_base().name).as_str(), true);
+
         let mut buffer = MaterialBuffer
         {
             name: material.get_base().name.clone(),
             buffer: empty_buffer,
+            empty_texture,
             bind_group_layout: None,
             bind_group: None
         };
@@ -248,6 +241,14 @@ impl MaterialBuffer
 
                 let textures_layout_group = render_item.get_bind_group_layout_entries(*id);
                 let textures_group = render_item.get_bind_group_entries(*id);
+
+                layout_group_vec.append(&mut textures_layout_group.to_vec());
+                group_vec.append(&mut textures_group.to_vec());
+            }
+            else
+            {
+                let textures_layout_group = self.empty_texture.get_bind_group_layout_entries(*id);
+                let textures_group = self.empty_texture.get_bind_group_entries(*id);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
