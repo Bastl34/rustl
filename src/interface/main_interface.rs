@@ -138,6 +138,9 @@ impl MainInterface
 
             scene.load("objects/cube/cube.obj").await.unwrap();
             scene.load("objects/plane/plane.obj").await.unwrap();
+            scene.load("objects/monkey/monkey.gltf").await.unwrap();
+            scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
 
             {
                 let node_id = 0;

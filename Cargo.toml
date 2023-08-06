@@ -18,11 +18,17 @@ anyhow = "1.0"
 nalgebra = "0.32.2"
 sha256 = "1.1.3"
 colored = "2.0.0"
+base64 = "0.21"
 
 parry3d = "0.13"
 bvh = "0.7"
 
 tobj = { version = "4.0", features = ["async"]}
+
+gltf = { version = "1.2", features = [
+  "extras",
+  "names"
+]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
 image = { version = "0.24.6", default-features = false, features = [ "png", "jpeg"] }

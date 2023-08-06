@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem}, camera::CameraItem, loader::wavefront, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -66,6 +66,10 @@ impl Scene
         {
             return wavefront::load(path, self).await;
         }
+        else if extension == "gltf" || extension == "glb"
+        {
+            return gltf::load(path, self).await;
+        }
 
         Ok(vec![])
     }
@@ -101,19 +105,25 @@ impl Scene
         self.nodes.push(node);
     }
 
-    pub async fn load_texture_or_reuse(&mut self, path: &str) -> anyhow::Result<TextureItem>
+    pub async fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary_async(path).await?;
+
+        self.load_texture_byte_or_reuse(&image_bytes, path, extension).await
+    }
+
+    pub async fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    {
         let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
 
         if self.textures.contains_key(&hash)
         {
-            println!("reusing texture {}", path);
+            println!("reusing texture {}", name);
             return Ok(self.textures.get_mut(&hash).unwrap().clone());
         }
 
         let id = self.id_manager.get_next_texture_id();
-        let texture = Texture::new(id, path, &image_bytes);
+        let texture = Texture::new(id, name, &image_bytes, extension);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 

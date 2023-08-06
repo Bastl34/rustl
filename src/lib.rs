@@ -42,6 +42,7 @@ mod state
         pub(crate) mod loader
         {
             pub(crate) mod wavefront;
+            pub(crate) mod gltf;
         }
 
         pub(crate) mod components

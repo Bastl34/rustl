@@ -1,6 +1,6 @@
 use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat};
 use nalgebra::Vector4;
 
 use crate::{helper, state::helper::render_item::RenderItemOption};
@@ -34,9 +34,21 @@ impl Texture
         }
     }
 
-    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>) -> Texture
+    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>, extension: Option<String>) -> Texture
     {
-        let image = image::load_from_memory(image_bytes.as_slice()).unwrap();
+        let image;
+
+        if let Some(extension) = extension
+        {
+            dbg!(&extension);
+            let format = ImageFormat::from_extension(extension).unwrap();
+            image = image::load_from_memory_with_format(image_bytes.as_slice(), format).unwrap();
+        }
+        else
+        {
+            image = image::load_from_memory(image_bytes.as_slice()).unwrap();
+        }
+
         let rgba = image.to_rgba8();
 
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
