@@ -1,12 +1,13 @@
 
 use std::{path::Path, ffi::OsStr, f32::consts::E, sync::{Arc, RwLock}};
 
+use egui::vec2;
 use gltf::{Gltf, texture};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::Vector3;
 
-use crate::{state::scene::{scene::Scene, components::material::Material, texture::Texture}, resources::resources::load_binary_async, new_shared_component};
+use crate::{state::scene::{scene::Scene, components::material::Material, texture::{Texture, TextureItem}}, resources::resources::load_binary_async, new_shared_component};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -37,6 +38,9 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
         loaded_textures.push((tex, texture.index()));
     }
+
+    // because metallic and roughness are combined -> and we will use it seperatly -> the initial loaded texture should be removed again
+    let clear_textures: Vec<TextureItem> = vec![];
 
     for gltf_material in gltf.materials()
     {
@@ -89,15 +93,19 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
         //TODO: metallic and roughness are combined in the loaded texture
         //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/model/material/pbr.rs#L22
 
-        /*
-        if let Some(base_tex) = gltf_material.pbr_metallic_roughness().
+        if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
         {
-            if let Some(texture) = get_texture_by_index(&base_tex, &loaded_textures)
+            if let Some(texture) = get_texture_by_index(&metallic_roughness_tex, &loaded_textures)
             {
-                data.texture_base = Some(texture);
+                let tex = texture.read().unwrap();
+                let name = format!("{} metallic", tex.name);
+                let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
+                let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+                data.texture_reflectivity = Some(tex_arc);
             }
         }
-        */
+
+        // roughness
     }
 
     for scene in gltf.scenes()
@@ -112,6 +120,12 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
             );
             */
         }
+    }
+
+    // cleanup
+    for clear_texture in clear_textures
+    {
+        _ = scene.remove_texture(clear_texture);
     }
 
     Ok(loaded_ids)

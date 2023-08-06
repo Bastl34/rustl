@@ -1,6 +1,6 @@
 use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, RgbaImage, ImageBuffer};
 use nalgebra::Vector4;
 
 use crate::{helper, state::helper::render_item::RenderItemOption};
@@ -60,6 +60,37 @@ impl Texture
             hash,
 
             image: image::DynamicImage::ImageRgba8(rgba),
+
+            render_item: None
+        }
+    }
+
+    pub fn new_from_image_channel(id: u64, name: &str, texture: &Texture, channel: usize) -> Texture
+    {
+        let width = texture.width();
+        let height = texture.height();
+
+        let mut image = ImageBuffer::new(width, height);
+
+        for x in 0..width
+        {
+            for y in 0..height
+            {
+                let pixel = texture.image.get_pixel(x, y);
+                image.put_pixel(x, y, Rgba([pixel[channel], 0 , 0, 0]));
+            }
+        }
+
+        let bytes = &image.to_vec();
+        let hash = helper::crypto::get_hash_from_byte_vec(&bytes);
+
+        Texture
+        {
+            id,
+            name: name.to_string(),
+            hash,
+
+            image: image::DynamicImage::ImageRgba8(image),
 
             render_item: None
         }
