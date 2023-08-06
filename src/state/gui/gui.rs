@@ -159,7 +159,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     let b = (light.color.z * 255.0) as u8;
                     let color = Color32::from_rgb(r, g, b);
 
-                    lights.push((s, l, light.name().clone(), light.pos.clone(), color));
+                    lights.push((s, l, light.name.clone(), light.pos.clone(), color));
                 }
             }
 
@@ -207,7 +207,7 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                     let scene = state.scenes.get_mut(0).unwrap();
 
                     let light_id = scene.id_manager.get_next_light_id();
-                    let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                 }
             });

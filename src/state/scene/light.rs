@@ -19,6 +19,7 @@ pub enum LightType
 pub struct Light
 {
     pub enabled: bool,
+    pub name: String,
     pub id: u64,
     pub pos: Point3<f32>,
     pub dir: Vector3<f32>,
@@ -30,12 +31,13 @@ pub struct Light
 
 impl Light
 {
-    pub fn new_point(id: u64, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_point(id: u64, name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
             enabled: true,
             id: id,
+            name: name,
             pos: pos,
             dir: Vector3::<f32>::zeros(),
             color: color,
@@ -45,13 +47,35 @@ impl Light
         }
     }
 
-    pub fn name(&self) -> String
+    pub fn new_directional(id: u64, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
-        match self.light_type
+        Self
         {
-            LightType::Point => return "Point".to_string(),
-            LightType::Directional => return "Directional".to_string(),
-            LightType::Spot => return "Spot".to_string()
+            enabled: true,
+            id: id,
+            name: name,
+            pos: pos,
+            dir: dir,
+            color: color,
+            intensity: intensity,
+            max_angle: 0.0,
+            light_type: LightType::Directional,
+        }
+    }
+
+    pub fn new_spot(id: u64, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> Light
+    {
+        Self
+        {
+            enabled: true,
+            id: id,
+            name: name,
+            pos: pos,
+            dir: dir,
+            color: color,
+            intensity: intensity,
+            max_angle: max_angle,
+            light_type: LightType::Spot,
         }
     }
 }
