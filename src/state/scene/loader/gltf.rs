@@ -7,7 +7,7 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3};
 
-use crate::{state::scene::{scene::Scene, components::material::{Material, MaterialItem}, texture::{Texture, TextureItem}, light::Light}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
+use crate::{state::scene::{scene::Scene, components::material::{Material, MaterialItem}, texture::{Texture, TextureItem}, light::Light, camera::Camera}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -119,7 +119,6 @@ fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f3
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
-
     let local_transform = transform_to_matrix(node.transform());
     let transform = parent_transform * local_transform;
 
@@ -156,6 +155,39 @@ fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f3
                 let name = light.name().unwrap_or("Point");
                 let light = Light::new_spot(light_id, name.to_string(), pos, dir, color, outer_cone_angle, intensity);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            },
+        };
+    }
+
+    // ********** camera **********
+    if let Some(camera) = node.camera()
+    {
+        let cam_id = scene.id_manager.get_next_camera_id();
+        let name = camera.name().unwrap_or("Unnamed Camera");
+
+        //https://github.com/flomonster/easy-gltf/blob/master/src/scene/camera.rs
+        let pos = Point3::<f32>::new(transform[(3, 0)], transform[(3, 1)], transform[(3, 2)]);
+        let up = Vector3::<f32>::new(transform[(1, 0)], transform[(1, 1)], transform[(1, 2)]);
+        let forward = Vector3::<f32>::new(transform[(2, 0)], transform[(2, 1)], transform[(2, 2)]);
+        //let right = Vector3::<f32>::new(transform[(0, 0)], transform[(0, 1)], transform[(0, 2)]);
+
+        match camera.projection()
+        {
+            gltf::camera::Projection::Orthographic(ortho) =>
+            {
+                //TODO
+            },
+            gltf::camera::Projection::Perspective(pers) =>
+            {
+                let mut cam = Camera::new(cam_id, name.to_string());
+                cam.fovy = pers.yfov().to_radians();
+                cam.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
+                cam.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
+                cam.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
+                cam.clipping_near = pers.znear();
+                cam.clipping_far = pers.zfar().unwrap_or(1000.0);
+
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
             },
         };
     }
