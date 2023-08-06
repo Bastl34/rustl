@@ -21,6 +21,17 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
             ui.label(format!("update time: {:.3} ms", state.update_time));
             ui.label(format!("render time: {:.3} ms", state.render_time));
 
+            let mut textures = 0;
+            let mut materials = 0;
+            for scene in &state.scenes
+            {
+                textures += scene.textures.len();
+                materials += scene.materials.len();
+            }
+
+            ui.label(format!("textures: {}", textures));
+            ui.label(format!("materials: {}", materials));
+
             ui.horizontal(|ui|
             {
                 let clear_color = state.rendering.clear_color.get_ref();
