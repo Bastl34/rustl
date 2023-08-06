@@ -1,11 +1,12 @@
 
-use std::{path::Path, ffi::OsStr};
+use std::{path::Path, ffi::OsStr, f32::consts::E, sync::{Arc, RwLock}};
 
-use gltf::Gltf;
+use gltf::{Gltf, texture};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
+use nalgebra::Vector3;
 
-use crate::{state::scene::scene::Scene, resources::resources::load_binary_async};
+use crate::{state::scene::{scene::Scene, components::material::Material, texture::Texture}, resources::resources::load_binary_async, new_shared_component};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -18,10 +19,6 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
     let mut loaded_ids: Vec<u64> = vec![];
 
-    //dbg!("textures");
-    //dbg!(gltf.textures().len());
-
-
     let mut buffers: Vec<gltf::buffer::Data> = vec![];
 
     for buffer in gltf.buffers()
@@ -30,20 +27,77 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
         buffers.push(gltf::buffer::Data(data));
     }
 
-    dbg!(buffers.len());
+    let mut loaded_textures = vec![];
 
     for texture in gltf.textures()
     {
-        let source = texture.source();
-
         let (bytes, extension) = load_texture(path, &texture, &buffers).await;
 
         let tex = scene.load_texture_byte_or_reuse(&bytes, texture.name().unwrap_or("unknown"), extension).await?;
+
+        loaded_textures.push((tex, texture.index()));
     }
 
-    for material in gltf.materials()
+    for gltf_material in gltf.materials()
     {
+        let component_id = scene.id_manager.get_next_component_id();
+        let mut material = Material::new(component_id, gltf_material.name().unwrap_or("unknown"));
+        let data = material.get_data_mut().get_mut();
 
+        let base_color = gltf_material.pbr_metallic_roughness().base_color_factor();
+        data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
+        data.alpha = base_color[3];
+
+        // base/albedo texture
+        if let Some(base_tex) = gltf_material.pbr_metallic_roughness().base_color_texture()
+        {
+            if let Some(texture) = get_texture_by_index(&base_tex, &loaded_textures)
+            {
+                data.texture_base = Some(texture);
+            }
+        }
+
+        // specular
+        let specular = gltf_material.specular();
+        if let Some(specular) = specular
+        {
+            // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_specular/README.md
+            let specular_color = specular.specular_color_factor();
+            let specular_color_factor = specular.specular_factor();
+
+            data.specular_color = Vector3::<f32>::new(specular_color[0] * specular_color_factor, specular_color[1] * specular_color_factor, specular_color[2] * specular_color_factor);
+
+            if let Some(specular_tex) = specular.specular_color_texture()
+            {
+                if let Some(texture) = get_texture_by_index(&specular_tex, &loaded_textures)
+                {
+                    data.texture_specular = Some(texture);
+                }
+            }
+        }
+        else
+        {
+            // if there is no specular color -> use base color
+            data.specular_color = data.base_color * 0.8;
+        }
+
+        // reflectivity
+
+        // do not use full metallic_factor as reflectivity --> otherwise the object will be just complete mirror if metallic is set to 1.0
+        data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5;
+
+        //TODO: metallic and roughness are combined in the loaded texture
+        //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/model/material/pbr.rs#L22
+
+        /*
+        if let Some(base_tex) = gltf_material.pbr_metallic_roughness().
+        {
+            if let Some(texture) = get_texture_by_index(&base_tex, &loaded_textures)
+            {
+                data.texture_base = Some(texture);
+            }
+        }
+        */
     }
 
     for scene in gltf.scenes()
@@ -61,6 +115,19 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
     }
 
     Ok(loaded_ids)
+}
+
+
+pub fn get_texture_by_index(texture_info: &texture::Info<'_>, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>) -> Option<Arc<RwLock<Box<Texture>>>>
+{
+    let index = texture_info.texture().index();
+    let tex_index = loaded_textures.iter().position(|t| t.1 == index);
+    if let Some(tex_index) = tex_index
+    {
+        return Some(loaded_textures.get(tex_index).unwrap().0.clone());
+    }
+
+    None
 }
 
 pub fn get_path(item_path: &String, gltf_path: &str) -> String

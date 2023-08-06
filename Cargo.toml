@@ -27,7 +27,9 @@ tobj = { version = "4.0", features = ["async"]}
 
 gltf = { version = "1.2", features = [
   "extras",
-  "names"
+  "names",
+  "KHR_lights_punctual",
+  "KHR_materials_specular"
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
