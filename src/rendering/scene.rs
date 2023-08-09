@@ -64,12 +64,8 @@ impl Scene
     {
         let light_cam_bind_layout = LightCamBindGroup::bind_layout(wgpu);
 
-        let node_id = 0;
-
-        let node = scene.nodes.get_mut(node_id).unwrap();
-
         // material and textures
-        let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
+        let mat = scene.get_default_material().unwrap();
         let mat = mat.read().unwrap();
         let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 
@@ -129,7 +125,7 @@ impl Scene
 
             let material_changed = material.get_data_mut().consume_change();
 
-            if material_changed && material.get_base().render_item.is_none()
+            if material_changed || material.get_base().render_item.is_none()
             {
                 dbg!("material render item recreate");
                 let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, None);

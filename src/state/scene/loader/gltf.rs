@@ -1,7 +1,6 @@
 
-use std::{path::Path, ffi::OsStr, f32::consts::E, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
+use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
 
-use egui::vec2;
 use gltf::{Gltf, texture};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -303,23 +302,26 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
     // if there is nothing set -> its just a transform node
     if node.camera().is_none() && node.mesh().is_none() && node.light().is_none()
     {
-        let name = node.name().unwrap_or("unknown transform node");
-        let node = Node::new(scene.id_manager.get_next_node_id(), name);
-
-        // add transformation
+        // only if the node has children -> otherwise ignore it
+        if node.children().len() > 0
         {
-            let component_id = scene.id_manager.get_next_component_id();
-            //node.write().unwrap().add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
-            node.write().unwrap().add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
-        }
+            let name = node.name().unwrap_or("unknown transform node");
+            let node = Node::new(scene.id_manager.get_next_node_id(), name);
 
-        scene.add_node(node);
+            // add transformation
+            {
+                let component_id = scene.id_manager.get_next_component_id();
+                //node.write().unwrap().add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+                node.write().unwrap().add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
+            }
+
+            scene.add_node(node);
+        }
     }
 
     // ********** children **********
     for child in node.children()
     {
-        dbg!(parent_transform);
         let ids = read_node(&child, &buffers, loaded_materials, scene, parent_node.clone(), &world_transform);
         loaded_ids.extend(ids);
     }
@@ -329,7 +331,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
 
 pub fn transform_to_matrix(transform: gltf::scene::Transform) -> Matrix4<f32>
 {
-    // TODO: validate
     let tr = transform.matrix();
 
     Matrix4::new
@@ -349,8 +350,6 @@ pub fn transform_decompose(transform: gltf::scene::Transform) ->(Vector3<f32>, V
 
     let translate = Vector3::<f32>::new(decomposed.0[0], decomposed.0[1], decomposed.0[2]);
     let scale = Vector3::<f32>::new(decomposed.2[0], decomposed.2[1], decomposed.2[2]);
-
-    //let rotation_quat = UnitQuaternion::new_normalize(rotation);
 
     let quaternion = UnitQuaternion::new_normalize(Quaternion::new(
         decomposed.1[3], // W

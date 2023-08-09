@@ -208,8 +208,8 @@ impl MainInterface
 
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
