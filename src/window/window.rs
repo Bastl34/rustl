@@ -25,7 +25,8 @@ fn setup_window() -> (winit::event_loop::EventLoop<()>, winit::window::Window)
     let event_loop = winit::event_loop::EventLoop::new();
     let window = winit::window::WindowBuilder::new()
         .with_title("Rustl")
-        .with_inner_size(winit::dpi::PhysicalSize::new(width, height))
+        //.with_inner_size(winit::dpi::PhysicalSize::new(width, height))
+        .with_inner_size(winit::dpi::LogicalSize::new(width, height))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();

@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::MaterialItem, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -162,6 +162,28 @@ impl Scene
     pub fn add_material(&mut self, id: u64, material: &MaterialItem)
     {
         self.materials.insert(id, material.clone());
+    }
+
+    pub fn add_default_material(&mut self)
+    {
+        let material_id = self.id_manager.get_next_component_id();
+        let material = Material::new(material_id, "default");
+
+        let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        self.add_material(material_id, &material_arc);
+    }
+
+    pub fn get_default_material(&self) -> Option<MaterialItem>
+    {
+        for (_, material) in &self.materials
+        {
+            if material.read().unwrap().get_base().name == "default"
+            {
+                return Some(material.clone());
+            }
+        }
+
+        None
     }
 
     pub fn get_material_by_id(&self, id: u64) -> Option<MaterialItem>

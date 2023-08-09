@@ -127,8 +127,45 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
 
             let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
+            scene.add_default_material();
+
+            // ********** cam **********
+            /*
+            for i in 0..4
+            {
+                let cam_id = scene.id_manager.get_next_camera_id();
+                let mut cam = Camera::new(cam_id, format!("cam {}", i).to_string());
+                cam.fovy = 45.0f32.to_radians();
+                cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
+                cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
+                cam.clipping_near = 0.1;
+                cam.clipping_far = 1000.0;
+
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            }
+
+            scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+             */
+
+            // ********** light **********
+            /*
+            {
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            }
+            {
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            }
+            */
 
             // ********** models **********
+            /*
             scene.load("objects/bastl/bastl.obj").await.unwrap();
             let n0 = scene.nodes.get(0).unwrap().clone();
             let n1 = scene.nodes.get_mut(1).unwrap().clone();
@@ -138,9 +175,6 @@ impl MainInterface
 
             scene.load("objects/cube/cube.obj").await.unwrap();
             scene.load("objects/plane/plane.obj").await.unwrap();
-            scene.load("objects/monkey/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/monkey.glb").await.unwrap();
 
             {
                 let node_id = 0;
@@ -170,37 +204,12 @@ impl MainInterface
 
             scene.add_node(node1.clone());
             Node::add_node(node1, node2);
+            */
 
-            // ********** cam **********
-            for i in 0..4
-            {
-                let cam_id = scene.id_manager.get_next_camera_id();
-                let mut cam = Camera::new(cam_id, format!("cam {}", i).to_string());
-                cam.fovy = 45.0f32.to_radians();
-                cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
-                cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
-                cam.clipping_near = 0.1;
-                cam.clipping_far = 1000.0;
 
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
-            }
-
-            scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-
-            // ********** light **********
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
-            {
-                let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-            }
+            //scene.load("objects/monkey/monkey.gltf").await.unwrap();
+            scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
+            //scene.load("objects/monkey/monkey.glb").await.unwrap();
 
             // ********** scene add **********
             state.scenes.push(Box::new(scene));
@@ -226,6 +235,7 @@ impl MainInterface
         let scene = scene.unwrap();
 
         // get node
+        /*
         let node_arc = scene.nodes.get_mut(node_id);
 
         if node_arc.is_none()
@@ -277,6 +287,7 @@ impl MainInterface
                 }
             }
         }
+        */
     }
 
     pub fn update(&mut self)

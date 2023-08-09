@@ -142,6 +142,12 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                         cam.fovy = fov.to_radians();
                         cam.init_matrices();
                     }
+
+                    if ui.button("🗑").clicked()
+                    {
+                        let scene = state.scenes.get_mut(scene_id.clone()).unwrap();
+                        scene.cameras.remove(cam_id.clone());
+                    }
                 });
             }
 

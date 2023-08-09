@@ -1,13 +1,13 @@
 
-use std::{path::Path, ffi::OsStr, f32::consts::E, sync::{Arc, RwLock}, cell::RefCell};
+use std::{path::Path, ffi::OsStr, f32::consts::E, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
 
 use egui::vec2;
 use gltf::{Gltf, texture};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use nalgebra::{Vector3, Matrix4, Point3};
+use nalgebra::{Vector3, Matrix4, Point3, Point2};
 
-use crate::{state::scene::{scene::Scene, components::material::{Material, MaterialItem}, texture::{Texture, TextureItem}, light::Light, camera::Camera}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -46,7 +46,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
 
     // ********** materials **********
-    let mut loaded_materials = vec![];
+    let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
     {
         let material = load_material(&gltf_material, scene, &loaded_textures, &mut clear_textures);
@@ -59,7 +59,8 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
         scene.add_material(id, &material_arc);
 
-        loaded_materials.push((material_arc, gltf_material.index()));
+        let gltf_material_index = gltf_material.index().unwrap();
+        loaded_materials.insert(gltf_material_index, material_arc);
     }
 
     // ********** scene items **********
@@ -67,44 +68,10 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
     {
         for node in gltf_scene.nodes()
         {
-            read_node(&node, scene, &Matrix4::<f32>::identity());
+            let ids = read_node(&node, &buffers, &loaded_materials, scene, None, &Matrix4::<f32>::identity());
+            loaded_ids.extend(ids);
         }
     }
-
-
-    /*
-    if let Some(lights) = gltf.lights()
-    {
-        for light in lights
-        {
-            let light_id = scene.id_manager.get_next_light_id();
-            let intensity = light.intensity();
-            let name = light.name().unwrap_or("unknown");
-            let color = light.color();
-            let color = Vector3::<f32>::new(color[0], color[1], color[2]);
-
-            let range = light.range();
-            light.
-
-            match light.kind()
-            {
-                gltf::khr_lights_punctual::Kind::Directional =>
-                {
-                },
-                gltf::khr_lights_punctual::Kind::Point =>
-                {
-                    let light = Light::new_point(light_id, Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-                },
-                gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle, outer_cone_angle } =>
-                {
-
-                },
-            };
-        }
-    }
-    */
-
 
     // cleanup
     for clear_texture in clear_textures
@@ -115,12 +82,14 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
     Ok(loaded_ids)
 }
 
-fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f32>)
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materials: &HashMap<usize, MaterialItem>, scene: &mut Scene, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>) -> Vec<u64>
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
+    let mut loaded_ids: Vec<u64> = vec![];
+
     let local_transform = transform_to_matrix(node.transform());
-    let transform = parent_transform * local_transform;
+    let world_transform = parent_transform * local_transform;
 
     // ********** lights **********
     if let Some(light) = node.light()
@@ -131,8 +100,8 @@ fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f3
         let color = Vector3::<f32>::new(color[0], color[1], color[2]);
 
         // reference: https://github.com/flomonster/easy-gltf/blob/master/src/scene/light.rs
-        let pos = Point3::<f32>::new(transform[(3, 0)], transform[(3, 1)], transform[(3, 2)]);
-        let dir = -1.0 * Vector3::<f32>::new(transform[(2,0)], transform[(2,1)], transform[(2,2)]).normalize();
+        let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
+        let dir = -1.0 * Vector3::<f32>::new(world_transform[(2,0)], world_transform[(2,1)], world_transform[(2,2)]).normalize();
 
         // let range = light.range(); TODO
 
@@ -159,16 +128,16 @@ fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f3
         };
     }
 
-    // ********** camera **********
+    // ********** cameras **********
     if let Some(camera) = node.camera()
     {
         let cam_id = scene.id_manager.get_next_camera_id();
         let name = camera.name().unwrap_or("Unnamed Camera");
 
         //https://github.com/flomonster/easy-gltf/blob/master/src/scene/camera.rs
-        let pos = Point3::<f32>::new(transform[(3, 0)], transform[(3, 1)], transform[(3, 2)]);
-        let up = Vector3::<f32>::new(transform[(1, 0)], transform[(1, 1)], transform[(1, 2)]);
-        let forward = Vector3::<f32>::new(transform[(2, 0)], transform[(2, 1)], transform[(2, 2)]);
+        let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
+        let up = Vector3::<f32>::new(world_transform[(1, 0)], world_transform[(1, 1)], world_transform[(1, 2)]);
+        let forward = Vector3::<f32>::new(world_transform[(2, 0)], world_transform[(2, 1)], world_transform[(2, 2)]);
         //let right = Vector3::<f32>::new(transform[(0, 0)], transform[(0, 1)], transform[(0, 2)]);
 
         match camera.projection()
@@ -180,7 +149,8 @@ fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f3
             gltf::camera::Projection::Perspective(pers) =>
             {
                 let mut cam = Camera::new(cam_id, name.to_string());
-                cam.fovy = pers.yfov().to_radians();
+                //cam.fovy = pers.yfov().to_radians();
+                cam.fovy = pers.yfov();
                 cam.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
                 cam.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
                 cam.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
@@ -191,6 +161,169 @@ fn read_node(node: &gltf::Node, scene: &mut Scene, parent_transform: &Matrix4<f3
             },
         };
     }
+
+    // ********** mesh **********
+    let mut parent_node = None;
+
+
+    if let Some(mesh) = node.mesh()
+    {
+        let name = mesh.name().unwrap_or("unknown mesh");
+
+        for primitive in mesh.primitives()
+        {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            let material_index = primitive.material().index();
+
+            let mut verts: Vec<Point3::<f32>> = vec![];
+            let mut uvs1: Vec<Point2<f32>> = vec![];
+            let mut uvs2: Vec<Point2<f32>> = vec![];
+            let mut uvs3: Vec<Point2<f32>> = vec![];
+            let mut normals: Vec<Point3<f32>> = vec![];
+
+            let mut indices:Vec<[u32; 3]> = vec![];
+            let mut uv_indices: Vec<[u32; 3]> = vec![];
+            let mut normals_indices: Vec<[u32; 3]> = vec![];
+
+            // vertices
+            let gltf_vertices = reader.read_positions();
+            if let Some(gltf_vertices) = gltf_vertices
+            {
+                for vert in gltf_vertices
+                {
+                    verts.push(Point3::<f32>::new(vert[0], vert[1], vert[2]));
+                }
+            }
+
+            // normals
+            let gltf_normals = reader.read_normals();
+            if let Some(gltf_normals) = gltf_normals
+            {
+                for normal in gltf_normals
+                {
+                    normals.push(Point3::<f32>::new(normal[0], normal[1], normal[2]));
+                }
+            }
+
+            // uvs (1)
+            let gltf_uvs1 = reader.read_tex_coords(0);
+            if let Some(gltf_uvs1) = gltf_uvs1
+            {
+                for uv in gltf_uvs1.into_f32()
+                {
+                    uvs1.push(Point2::<f32>::new(uv[0], uv[1]));
+                }
+            }
+
+            // uvs (2)
+            let gltf_uvs2 = reader.read_tex_coords(1);
+            if let Some(gltf_uvs2) = gltf_uvs2
+            {
+                for uv in gltf_uvs2.into_f32()
+                {
+                    uvs2.push(Point2::<f32>::new(uv[0], uv[1]));
+                }
+            }
+
+            // uvs (3)
+            let gltf_uvs3 = reader.read_tex_coords(2);
+            if let Some(gltf_uvs3) = gltf_uvs3
+            {
+                for uv in gltf_uvs3.into_f32()
+                {
+                    uvs3.push(Point2::<f32>::new(uv[0], uv[1]));
+                }
+            }
+
+            // indices
+            let gltf_indices: Option<Vec<u32>> = reader.read_indices().map(|indices| indices.into_u32().collect());
+
+            if let Some(gltf_indices) = gltf_indices
+            {
+                for vtx in 0..gltf_indices.len() / 3
+                {
+                    let i0 = gltf_indices[3 * vtx];
+                    let i1 = gltf_indices[3 * vtx + 1];
+                    let i2 = gltf_indices[3 * vtx + 2];
+
+                    indices.push([i0, i1, i2]);
+                    uv_indices.push([i0, i1, i2]);
+                    normals_indices.push([i0, i1, i2]);
+                }
+            }
+
+            let mut item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), verts, indices, uvs1, uv_indices, normals, normals_indices);
+            item.get_data_mut().get_mut().uvs_2 = uvs2;
+            item.get_data_mut().get_mut().uvs_3 = uvs3;
+
+            let id = scene.id_manager.get_next_node_id();
+            loaded_ids.push(id);
+
+            let node_arc = Node::new(id, name);
+            {
+                let mut node = node_arc.write().unwrap();
+                node.add_component(Box::new(item));
+
+                // add material
+                if let Some(material_index) = material_index
+                {
+                    let material_arc = loaded_materials.get(&material_index).unwrap().clone();
+                    node.add_shared_component(material_arc);
+                }
+                else
+                {
+                    let default_material = scene.get_default_material();
+                    if let Some(default_material) = default_material
+                    {
+                        node.add_shared_component(default_material);
+                    }
+                }
+
+                // transformation
+                let component_id = scene.id_manager.get_next_component_id();
+                node.add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+
+                // add default instance
+                //let node = scene.nodes.get_mut(0).unwrap();
+                node.create_default_instance(node_arc.clone(), scene.id_manager.get_next_instance_id());
+
+                // parent
+                node.parent = parent_node.clone();
+            }
+
+            parent_node = Some(node_arc.clone());
+            scene.add_node(node_arc);
+        }
+    }
+
+    // if there is nothing set -> its just a transform node
+    if node.camera().is_none() && node.mesh().is_none() && node.light().is_none()
+    {
+        let name = node.name().unwrap_or("unknown transform node");
+        let node = Node::new(scene.id_manager.get_next_node_id(), name);
+
+        // add transformation
+        {
+            let component_id = scene.id_manager.get_next_component_id();
+            node.write().unwrap().add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+        }
+
+        scene.add_node(node);
+    }
+
+    // TODOOOOOO: nodes without cam/light/mesh... --> TransformNodes
+
+    // Recurse on children
+    // ********** children **********
+    for child in node.children()
+    {
+        dbg!(parent_transform);
+        let ids = read_node(&child, &buffers, loaded_materials, scene, parent_node.clone(), &world_transform);
+        loaded_ids.extend(ids);
+    }
+
+    loaded_ids
 }
 
 pub fn transform_to_matrix(transform: gltf::scene::Transform) -> Matrix4<f32>

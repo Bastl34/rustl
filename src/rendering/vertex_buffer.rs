@@ -58,7 +58,7 @@ impl VertexBuffer
         {
             let v = mesh_data.vertices[i];
             let n = mesh_data.normals[i];
-            let uv = mesh_data.uvs[i];
+            let uv = mesh_data.uvs_1[i];
 
             vertices.push(Vertex
             {

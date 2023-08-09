@@ -14,7 +14,9 @@ pub struct MeshData
     pub vertices: Vec<Point3<f32>>,
     pub indices: Vec<[u32; 3]>,
 
-    pub uvs: Vec<Point2<f32>>,
+    pub uvs_1: Vec<Point2<f32>>,
+    pub uvs_2: Vec<Point2<f32>>,
+    pub uvs_3: Vec<Point2<f32>>,
     pub uv_indices: Vec<[u32; 3]>,
 
     pub normals: Vec<Point3<f32>>,
@@ -40,10 +42,13 @@ impl Mesh
 
             vertices: vertices,
             indices: indices,
-            uvs: uvs,
-            uv_indices: uv_indices,
             normals: normals,
             normals_indices: normals_indices,
+
+            uvs_1: uvs,
+            uvs_2: vec![],
+            uvs_3: vec![],
+            uv_indices: uv_indices,
 
             flip_normals: false,
             b_box: Aabb::new_invalid(),
@@ -145,8 +150,10 @@ impl Mesh
             data.indices.push([i0, i1, i2]);
         }
 
-        // uvs and uv indices
-        data.uvs.extend(&mesh_data.uvs);
+        // uvs and uv indices (1)
+        data.uvs_1.extend(&mesh_data.uvs_1);
+        data.uvs_2.extend(&mesh_data.uvs_2);
+        data.uvs_3.extend(&mesh_data.uvs_3);
 
         let uv_index_offset = data.uv_indices.len() as u32;
         for i in &mesh_data.uv_indices

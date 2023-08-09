@@ -9,6 +9,7 @@ use super::component::{Component, ComponentBase};
 pub struct TransformationData
 {
     pub parent_inheritance: bool,
+    pub transform_vectors: bool, // if disabled - only trans matrix is used (position, rotation, scale vectors are ignored)
 
     pub position: Vector3<f32>,
     pub rotation: Vector3<f32>,
@@ -33,6 +34,7 @@ impl Transformation
         let data = TransformationData
         {
             parent_inheritance: true,
+            transform_vectors: true,
 
             position,
             rotation,
@@ -54,11 +56,39 @@ impl Transformation
         transform
     }
 
+    pub fn new_transformation_only(id: u64, trans: Matrix4::<f32>) -> Transformation
+    {
+        let data = TransformationData
+        {
+            parent_inheritance: true,
+            transform_vectors: false,
+
+            position: Vector3::<f32>::zeros(),
+            rotation: Vector3::<f32>::zeros(),
+            scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
+
+            trans: trans,
+            tran_inverse: Matrix4::<f32>::identity(),
+
+            normal: Matrix3::<f32>::identity(),
+        };
+
+        let mut transform = Transformation
+        {
+            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
+            data: ChangeTracker::new(data)
+        };
+        transform.calc_transform();
+
+        transform
+    }
+
     pub fn identity(id: u64) -> Transformation
     {
         let data = TransformationData
         {
             parent_inheritance: true,
+            transform_vectors: true,
 
             position: Vector3::<f32>::new(0.0, 0.0, 0.0),
             rotation: Vector3::<f32>::new(0.0, 0.0, 0.0),
@@ -99,36 +129,48 @@ impl Transformation
     {
         let data = self.data.get_mut();
 
-        let translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
+        if data.transform_vectors
+        {
+            let translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
 
-        let scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            let scale = Matrix4::new_nonuniform_scaling(&data.scale);
 
-        let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
-        let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
-        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
+            let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
+            let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
+            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
 
-        let mut rotation = rotation_x;
-        rotation = rotation * rotation_y;
-        rotation = rotation * rotation_z;
+            let mut rotation = rotation_x;
+            rotation = rotation * rotation_y;
+            rotation = rotation * rotation_z;
 
-        let mut trans = Matrix4::<f32>::identity();
-        trans = trans * translation;
-        trans = trans * scale;
-        trans = trans * rotation;
+            let mut trans = Matrix4::<f32>::identity();
+            trans = trans * translation;
+            trans = trans * scale;
+            trans = trans * rotation;
 
-        let col0 = rotation.column(0).xyz();
-        let col1 = rotation.column(1).xyz();
-        let col2 = rotation.column(2).xyz();
+            let col0 = rotation.column(0).xyz();
+            let col1 = rotation.column(1).xyz();
+            let col2 = rotation.column(2).xyz();
 
-        let normal_matrix = Matrix3::from_columns
-        (&[
-            col0,
-            col1,
-            col2
-        ]);
+            let normal_matrix = Matrix3::from_columns
+            (&[
+                col0,
+                col1,
+                col2
+            ]);
 
-        data.trans = trans;
-        data.normal = normal_matrix;
+            data.trans = trans;
+            data.normal = normal_matrix;
+        }
+        else
+        {
+            //https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
+            let upper_left_3x3 = data.trans.fixed_view::<3, 3>(0, 0);
+            let normal_matrix = upper_left_3x3.try_inverse().map(|inv| inv.transpose()).unwrap_or_else(Matrix3::identity);
+
+            data.normal = normal_matrix;
+        }
+
         data.tran_inverse = data.trans.try_inverse().unwrap();
     }
 
@@ -157,6 +199,28 @@ impl Transformation
         data.scale.z *= scale.z;
         data.rotation += rotation;
 
+        if !data.transform_vectors
+        {
+            let translation = nalgebra::Isometry3::translation(translation.x, translation.y, translation.z).to_homogeneous();
+
+            let scale = Matrix4::new_nonuniform_scaling(&scale);
+
+            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
+            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
+            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
+
+            let mut rotation = rotation_x;
+            rotation = rotation * rotation_y;
+            rotation = rotation * rotation_z;
+
+            let mut trans = Matrix4::<f32>::identity();
+            trans = trans * translation;
+            trans = trans * scale;
+            trans = trans * rotation;
+
+            data.trans = data.trans * rotation;
+        }
+
         self.calc_transform();
     }
 
@@ -165,6 +229,12 @@ impl Transformation
         let data = self.data.get_mut();
 
         data.position += translation;
+
+        if !data.transform_vectors
+        {
+            let translation = nalgebra::Isometry3::translation(translation.x, translation.y, translation.z).to_homogeneous();
+            data.trans = data.trans * translation;
+        }
 
         self.calc_transform();
     }
@@ -177,6 +247,12 @@ impl Transformation
         data.scale.y *= scale.y;
         data.scale.z *= scale.z;
 
+        if !data.transform_vectors
+        {
+            let scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            data.trans = data.trans * scale;
+        }
+
         self.calc_transform();
     }
 
@@ -185,6 +261,19 @@ impl Transformation
         let data = self.data.get_mut();
 
         data.rotation += rotation;
+
+        if !data.transform_vectors
+        {
+            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
+            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
+            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
+
+            let mut rotation = rotation_x;
+            rotation = rotation * rotation_y;
+            rotation = rotation * rotation_z;
+
+            data.trans = data.trans * rotation;
+        }
 
         self.calc_transform();
     }
