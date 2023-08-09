@@ -4,6 +4,7 @@ todo:
  * everything should be dynamic
  * buffer update on model matrix change
  * TODOs
+ * normal matrix is wrong -> its actually this: https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
 
 done:
  * cleanup vertex/instancing structure

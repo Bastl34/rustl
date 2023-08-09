@@ -5,7 +5,7 @@ use egui::vec2;
 use gltf::{Gltf, texture};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use nalgebra::{Vector3, Matrix4, Point3, Point2};
+use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
 
@@ -90,6 +90,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
 
     let local_transform = transform_to_matrix(node.transform());
     let world_transform = parent_transform * local_transform;
+    let decomposed_transform = transform_decompose(node.transform());
+
+    let mut parent_node = None;
 
     // ********** lights **********
     if let Some(light) = node.light()
@@ -163,8 +166,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
     }
 
     // ********** mesh **********
-    let mut parent_node = None;
-
 
     if let Some(mesh) = node.mesh()
     {
@@ -282,7 +283,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
 
                 // transformation
                 let component_id = scene.id_manager.get_next_component_id();
-                node.add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+                //node.add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+                node.add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
@@ -297,6 +299,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
         }
     }
 
+    // ********** empty transform node **********
     // if there is nothing set -> its just a transform node
     if node.camera().is_none() && node.mesh().is_none() && node.light().is_none()
     {
@@ -306,15 +309,13 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
         // add transformation
         {
             let component_id = scene.id_manager.get_next_component_id();
-            node.write().unwrap().add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+            //node.write().unwrap().add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
+            node.write().unwrap().add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
         }
 
         scene.add_node(node);
     }
 
-    // TODOOOOOO: nodes without cam/light/mesh... --> TransformNodes
-
-    // Recurse on children
     // ********** children **********
     for child in node.children()
     {
@@ -330,6 +331,7 @@ pub fn transform_to_matrix(transform: gltf::scene::Transform) -> Matrix4<f32>
 {
     // TODO: validate
     let tr = transform.matrix();
+
     Matrix4::new
     (
         tr[0][0], tr[0][1], tr[0][2], tr[0][3],
@@ -337,6 +339,32 @@ pub fn transform_to_matrix(transform: gltf::scene::Transform) -> Matrix4<f32>
         tr[2][0], tr[2][1], tr[2][2], tr[2][3],
         tr[3][0], tr[3][1], tr[3][2], tr[3][3],
     )
+
+    //Matrix4::from_row_slice(bytemuck::cast_slice(&tr))
+}
+
+pub fn transform_decompose(transform: gltf::scene::Transform) ->(Vector3<f32>, Vector3<f32>, Vector3<f32>)
+{
+    let decomposed = transform.decomposed();
+
+    let translate = Vector3::<f32>::new(decomposed.0[0], decomposed.0[1], decomposed.0[2]);
+    let scale = Vector3::<f32>::new(decomposed.2[0], decomposed.2[1], decomposed.2[2]);
+
+    //let rotation_quat = UnitQuaternion::new_normalize(rotation);
+
+    let quaternion = UnitQuaternion::new_normalize(Quaternion::new(
+        decomposed.1[3], // W
+        decomposed.1[0], // X
+        decomposed.1[1], // Y
+        decomposed.1[2], // Z
+    ));
+
+    let rotation: Rotation3<f32> = quaternion.into();
+    let euer_angles = rotation.euler_angles();
+
+    let rotation = Vector3::<f32>::new(euer_angles.0, euer_angles.1, euer_angles.2);
+
+    (translate, rotation, scale)
 }
 
 pub fn get_texture_by_index(texture_info: &texture::Info<'_>, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>) -> Option<Arc<RwLock<Box<Texture>>>>
