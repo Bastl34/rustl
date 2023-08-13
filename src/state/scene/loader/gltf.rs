@@ -6,7 +6,7 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -36,6 +36,62 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
         let (bytes, extension) = load_texture(path, &texture, &buffers).await;
 
         let tex = scene.load_texture_byte_or_reuse(&bytes, texture.name().unwrap_or("unknown"), extension).await?;
+
+        {
+            let mut tex = tex.write().unwrap();
+
+            match texture.sampler().wrap_s()
+            {
+                texture::WrappingMode::ClampToEdge => tex.address_mode_u = TextureAddressMode::ClampToEdge,
+                texture::WrappingMode::MirroredRepeat => tex.address_mode_u = TextureAddressMode::MirrorRepeat,
+                texture::WrappingMode::Repeat => tex.address_mode_u = TextureAddressMode::Repeat,
+            }
+
+            match texture.sampler().wrap_t()
+            {
+                texture::WrappingMode::ClampToEdge => tex.address_mode_v = TextureAddressMode::ClampToEdge,
+                texture::WrappingMode::MirroredRepeat => tex.address_mode_v = TextureAddressMode::MirrorRepeat,
+                texture::WrappingMode::Repeat => tex.address_mode_v = TextureAddressMode::Repeat,
+            }
+
+            if let Some(mag_filter) = texture.sampler().mag_filter()
+            {
+                match mag_filter
+                {
+                    texture::MagFilter::Nearest => tex.mag_filter = TextureFilterMode::Nearest,
+                    texture::MagFilter::Linear => tex.mag_filter = TextureFilterMode::Linear,
+                }
+            }
+
+            if let Some(min_filter) = texture.sampler().min_filter()
+            {
+                match min_filter
+                {
+                    texture::MinFilter::Nearest => tex.min_filter = TextureFilterMode::Nearest,
+                    texture::MinFilter::Linear => tex.min_filter = TextureFilterMode::Linear,
+                    texture::MinFilter::NearestMipmapNearest =>
+                    {
+                        tex.min_filter = TextureFilterMode::Nearest;
+                        tex.mipmap_filter = TextureFilterMode::Nearest;
+                    },
+                    texture::MinFilter::LinearMipmapNearest =>
+                    {
+                        tex.min_filter = TextureFilterMode::Linear;
+                        tex.mipmap_filter = TextureFilterMode::Nearest;
+                    },
+                    texture::MinFilter::NearestMipmapLinear =>
+                    {
+                        tex.min_filter = TextureFilterMode::Nearest;
+                        tex.mipmap_filter = TextureFilterMode::Linear;
+                    },
+                    texture::MinFilter::LinearMipmapLinear =>
+                    {
+                        tex.min_filter = TextureFilterMode::Linear;
+                        tex.mipmap_filter = TextureFilterMode::Linear;
+                    },
+                }
+            }
+        }
 
         loaded_textures.push((tex, texture.index()));
     }

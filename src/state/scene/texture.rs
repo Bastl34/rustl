@@ -7,12 +7,33 @@ use crate::{helper, state::helper::render_item::RenderItemOption};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
+pub enum TextureAddressMode
+{
+    ClampToEdge,
+    Repeat,
+    MirrorRepeat,
+    ClampToBorder
+}
+
+pub enum TextureFilterMode
+{
+    Nearest,
+    Linear
+}
+
 pub struct Texture
 {
     pub id: u64,
     pub name: String,
     pub hash: String,
     pub image: DynamicImage,
+
+    pub address_mode_u: TextureAddressMode,
+    pub address_mode_v: TextureAddressMode,
+    pub address_mode_w: TextureAddressMode,
+    pub mag_filter: TextureFilterMode,
+    pub min_filter: TextureFilterMode,
+    pub mipmap_filter: TextureFilterMode,
 
     pub render_item: RenderItemOption
 }
@@ -28,6 +49,13 @@ impl Texture
             hash: "".to_string(),
 
             image: DynamicImage::new_rgba8(0,0),
+
+            address_mode_u: TextureAddressMode::ClampToEdge,
+            address_mode_v: TextureAddressMode::ClampToEdge,
+            address_mode_w: TextureAddressMode::ClampToEdge,
+            mag_filter: TextureFilterMode::Linear,
+            min_filter: TextureFilterMode::Nearest,
+            mipmap_filter: TextureFilterMode::Nearest,
 
             render_item: None
         }
@@ -60,6 +88,13 @@ impl Texture
 
             image: image::DynamicImage::ImageRgba8(rgba),
 
+            address_mode_u: TextureAddressMode::ClampToEdge,
+            address_mode_v: TextureAddressMode::ClampToEdge,
+            address_mode_w: TextureAddressMode::ClampToEdge,
+            mag_filter: TextureFilterMode::Linear,
+            min_filter: TextureFilterMode::Nearest,
+            mipmap_filter: TextureFilterMode::Nearest,
+
             render_item: None
         }
     }
@@ -90,6 +125,13 @@ impl Texture
             hash,
 
             image: image::DynamicImage::ImageRgba8(image),
+
+            address_mode_u: TextureAddressMode::ClampToEdge,
+            address_mode_v: TextureAddressMode::ClampToEdge,
+            address_mode_w: TextureAddressMode::ClampToEdge,
+            mag_filter: TextureFilterMode::Linear,
+            min_filter: TextureFilterMode::Nearest,
+            mipmap_filter: TextureFilterMode::Nearest,
 
             render_item: None
         }
