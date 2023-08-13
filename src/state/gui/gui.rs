@@ -1,9 +1,9 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, fmt::format};
 
-use egui::{FullOutput, RichText, Color32};
+use egui::{FullOutput, RichText, Color32, ScrollArea, Ui};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::{light::Light, components::transformation::Transformation}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
+use crate::{state::{state::State, scene::{light::Light, components::transformation::Transformation, node::NodeItem}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
 
 
 pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -218,49 +218,20 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
                 }
             });
 
-            // change transform
+            // scene items
+            ui.separator();
+
             let scene_id = 0;
 
             let scene = state.scenes.get_mut(scene_id.clone());
 
             if let Some(scene) = scene
             {
-                for node_id in 0..scene.nodes.len()
+                let scroll_area = ScrollArea::vertical().max_height(200.0).auto_shrink([false; 2]);
+                scroll_area.show(ui, |ui|
                 {
-                    let node = scene.nodes.get_mut(node_id).unwrap();
-                    let mut node = node.write().unwrap();
-
-                    let name = node.get_name().clone();
-                    let trans_component = node.find_component_mut::<Transformation>();
-
-                    if let Some(trans_component) = trans_component
-                    {
-                        let mut changed = false;
-
-                        let mut pos;
-                        {
-                            let data = trans_component.get_data();
-
-                            pos = data.position;
-
-                            ui.horizontal(|ui|
-                            {
-                                ui.label(format!("node {} pos",name));
-
-                                changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
-                                changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
-                                changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
-                            });
-                        }
-
-                        if changed
-                        {
-                            let data = trans_component.get_data_mut();
-                            data.get_mut().position = pos;
-                            trans_component.calc_transform();
-                        }
-                    }
-                }
+                    build_node_list(ui, &scene.nodes);
+                });
             }
 
             // just some tests
@@ -304,4 +275,100 @@ pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut E
     egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
 
     full_output
+}
+
+pub fn build_node_list(ui: &mut Ui, nodes: &Vec<NodeItem>)
+{
+    for node in nodes
+    {
+        let mut node = node.write().unwrap();
+        let child_nodes = &node.nodes.clone();
+
+        let mut visible = node.visible;
+
+        let name = node.name.clone();
+        let id = node.id;
+        let trans_component = node.find_component_mut::<Transformation>();
+
+        if let Some(trans_component) = trans_component
+        {
+            let mut changed = false;
+
+            let mut pos;
+            let mut rot;
+            let mut scale;
+            {
+                let data = trans_component.get_data();
+
+                pos = data.position;
+                rot = data.rotation;
+                scale = data.scale;
+
+                let coll_name = format!("{}: {}", id, name.clone());
+
+
+                let heading;
+                if visible
+                {
+                    heading = RichText::new(coll_name).strong();
+                }
+                else
+                {
+                    heading = RichText::new(coll_name).strikethrough();
+                }
+
+                ui.collapsing(heading, |ui|
+                {
+                    ui.vertical(|ui|
+                    {
+                        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+
+                        ui.horizontal(|ui|
+                        {
+                            ui.label("pos");
+                            changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                            changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                            changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                        });
+                        ui.horizontal(|ui|
+                        {
+                            ui.label("rotation");
+                            changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
+                            changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
+                            changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
+                        });
+                        ui.horizontal(|ui|
+                        {
+                            ui.label("scale");
+                            changed = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed() || changed;
+                            changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
+                            changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
+
+                            // scale = 0 is not supported / working -> otherwise a inverse transform can not be created
+                            if scale.x == 0.0 { scale.x = 0.00000001; }
+                            if scale.y == 0.0 { scale.y = 0.00000001; }
+                            if scale.z == 0.0 { scale.z = 0.00000001; }
+                        });
+
+                    });
+
+                    ui.separator();
+
+                    build_node_list(ui, child_nodes);
+                });
+            }
+
+            if changed
+            {
+                let data = trans_component.get_data_mut();
+                data.get_mut().position = pos;
+                data.get_mut().rotation = rot;
+                data.get_mut().scale = scale;
+                trans_component.calc_transform();
+
+                node.visible = visible;
+            }
+        }
+    }
+
 }

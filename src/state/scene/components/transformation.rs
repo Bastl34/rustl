@@ -115,6 +115,11 @@ impl Transformation
         &self.data.get_ref()
     }
 
+    pub fn get_data_tracker(&self) -> &ChangeTracker<TransformationData>
+    {
+        &self.data
+    }
+
     pub fn get_data_mut(&mut self) -> &mut ChangeTracker<TransformationData>
     {
         &mut self.data
@@ -145,8 +150,8 @@ impl Transformation
 
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
-            trans = trans * scale;
             trans = trans * rotation;
+            trans = trans * scale;
 
             let col0 = rotation.column(0).xyz();
             let col1 = rotation.column(1).xyz();
@@ -215,8 +220,8 @@ impl Transformation
 
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
-            trans = trans * scale;
             trans = trans * rotation;
+            trans = trans * scale;
 
             data.trans = data.trans * rotation;
         }

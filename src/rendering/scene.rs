@@ -1,4 +1,4 @@
-use std::{sync::RwLockReadGuard, mem::swap};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
@@ -220,14 +220,16 @@ impl Scene
         }
     }
 
-    pub fn update_nodes(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>)
     {
         //for node in scene.nodes.iter_mut()
-        for node_id in 0..scene.nodes.len()
+
+        // go in reverse to find parent transformations for child nodes
+        for node_id in (0..nodes.len()).rev()
         {
             // ********** vertex buffer **********
             {
-                let node = scene.nodes.get_mut(node_id).unwrap();
+                let node = nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();
                 let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>();
@@ -247,7 +249,7 @@ impl Scene
             // ********** instances all **********
             let mut all_instances_changed;
             {
-                let node_arc = scene.nodes.get_mut(node_id).unwrap();
+                let node_arc = nodes.get_mut(node_id).unwrap();
 
                 {
                     let mut write = node_arc.write().unwrap();
@@ -261,6 +263,12 @@ impl Scene
                     {
                         all_instances_changed = trans_component.get_data_mut().consume_change() || all_instances_changed;
                     }
+                }
+
+                // check parents for changed transforms
+                if !all_instances_changed
+                {
+                    all_instances_changed = Scene::find_parent_trasform(node_arc.clone());
                 }
 
                 if all_instances_changed
@@ -295,14 +303,14 @@ impl Scene
             {
                 let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
                 {
-                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id).unwrap();
                     let mut node = node.write().unwrap();
 
                     swap(&mut node.instance_render_item, &mut render_item);
                 }
 
                 {
-                    let node = scene.nodes.get(node_id).unwrap();
+                    let node = nodes.get(node_id).unwrap();
                     let node = node.read().unwrap();
                     let node_ref = node.instances.get_ref();
 
@@ -321,13 +329,41 @@ impl Scene
                 }
 
                 {
-                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id).unwrap();
                     let mut node = node.write().unwrap();
 
                     swap(&mut render_item, &mut node.instance_render_item);
                 }
             }
         }
+    }
+
+    pub fn find_parent_trasform(node: Arc<RwLock<Box<Node>>>) -> bool
+    {
+        let node_read = node.read().unwrap();
+        let parent_arc = node_read.parent.clone();
+
+        let mut has_changed_transform = false;
+        if let Some(parent_arc) = parent_arc
+        {
+            let parent = parent_arc.read().unwrap();
+            let trans_component = parent.find_component::<Transformation>();
+            if let Some(trans_component) = trans_component
+            {
+                has_changed_transform = has_changed_transform || trans_component.get_data_tracker().changed();
+                if has_changed_transform
+                {
+                    return true;
+                }
+            }
+
+            if parent.parent.is_some()
+            {
+                has_changed_transform = has_changed_transform || Scene::find_parent_trasform(parent_arc.clone())
+            }
+        }
+
+        has_changed_transform
     }
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
@@ -350,7 +386,9 @@ impl Scene
         self.update_textures(wgpu, scene);
         self.update_materials(wgpu, scene, false);
         self.update_light_cameras(wgpu, scene);
-        self.update_nodes(wgpu, scene);
+
+        let mut all_nodes = Scene::list_all_child_nodes(&scene.nodes, false);
+        self.update_nodes(wgpu, &mut all_nodes);
 
 
         // ********** screenshot stuff **********
@@ -435,13 +473,22 @@ impl Scene
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
     }
 
-    fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
+    pub fn list_all_child_nodes(nodes: &Vec<NodeItem>, check_visibility: bool) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];
 
         for node in nodes
         {
-            let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
+            let visible;
+            {
+                visible = node.read().unwrap().visible;
+            }
+            if check_visibility && !visible
+            {
+                continue;
+            }
+
+            let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes, check_visibility);
 
             if node.read().unwrap().render_children_first
             {
@@ -460,7 +507,7 @@ impl Scene
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
-        let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+        let all_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
 
         let mut nodes_read = vec![];
         let mut materials = vec![];
@@ -484,10 +531,10 @@ impl Scene
             materials_read.push(material_read);
         }
 
-        let mut nodes = vec![];
+        let mut nodes_with_material = vec![];
         for (i, material) in materials_read.iter().enumerate()
         {
-            nodes.push((nodes_read.get(i).unwrap(), material));
+            nodes_with_material.push((nodes_read.get(i).unwrap(), material));
         }
 
         let mut draw_calls: u32 = 0;
@@ -506,8 +553,8 @@ impl Scene
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
 
-            draw_calls += self.render_depth(wgpu, view, encoder, &nodes, cam, &bind_group_render_item.bind_group, clear);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &nodes, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_depth(wgpu, view, encoder, &nodes_with_material, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &nodes_with_material, cam, &bind_group_render_item.bind_group, clear);
 
             i += 1;
         }
@@ -639,6 +686,11 @@ impl Scene
 
         for (node, mat) in nodes
         {
+            if !node.visible
+            {
+                continue;
+            }
+
             let meshes = node.get_meshes();
 
             if meshes.is_none()

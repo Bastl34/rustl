@@ -1,7 +1,7 @@
 use crate::{state::{scene::components::mesh::{Mesh, MeshData}, helper::render_item::RenderItem}, render_item_impl_default};
 
 use super::wgpu::WGpu;
-use nalgebra::{Vector3, Vector2};
+use nalgebra::{Vector3, Vector2, Point2};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -58,7 +58,17 @@ impl VertexBuffer
         {
             let v = mesh_data.vertices[i];
             let n = mesh_data.normals[i];
-            let uv = mesh_data.uvs_1[i];
+
+            // no uvs found -> use empty uv
+            let uv;
+            if mesh_data.uvs_1.len() == 0
+            {
+                uv = Point2::<f32>::new(0.0, 0.0);
+            }
+            else
+            {
+                uv = mesh_data.uvs_1[i];
+            }
 
             vertices.push(Vertex
             {

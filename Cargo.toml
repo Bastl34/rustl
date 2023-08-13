@@ -33,7 +33,7 @@ gltf = { version = "1.2", features = [
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
-image = { version = "0.24.6", default-features = false, features = [ "png", "jpeg"] }
+image = { version = "0.24.7", default-features = false, features = [ "png", "jpeg"] }
 # image = "0.24.5"
 
 egui = "0.22.0"

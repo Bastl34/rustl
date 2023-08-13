@@ -67,7 +67,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
     {
         for node in gltf_scene.nodes()
         {
-            let ids = read_node(&node, &buffers, &loaded_materials, scene, None, &Matrix4::<f32>::identity());
+            let ids = read_node(&node, &buffers, &loaded_materials, scene, None, &Matrix4::<f32>::identity(), 1);
             loaded_ids.extend(ids);
         }
     }
@@ -81,17 +81,21 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
     Ok(loaded_ids)
 }
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materials: &HashMap<usize, MaterialItem>, scene: &mut Scene, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>) -> Vec<u64>
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materials: &HashMap<usize, MaterialItem>, scene: &mut Scene, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>, level: usize) -> Vec<u64>
 {
+    //let spaces = " ".repeat(level * 2);
+    //println!("{}-  {} childs={}, l={}, l={}, m={}, s={}, w={}, t={:?}", spaces, node.name().unwrap(), node.children().len(), node.light().is_some(), node.camera().is_some(), node.mesh().is_some(), node.skin().is_some(), node.weights().is_none(), node.transform().matrix());
+
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
     let mut loaded_ids: Vec<u64> = vec![];
 
     let local_transform = transform_to_matrix(node.transform());
-    let world_transform = parent_transform * local_transform;
+    //let world_transform = parent_transform * local_transform;
+    let world_transform = local_transform * parent_transform;
     let decomposed_transform = transform_decompose(node.transform());
 
-    let mut parent_node = None;
+    let mut parent_node = parent;
 
     // ********** lights **********
     if let Some(light) = node.light()
@@ -165,13 +169,14 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
     }
 
     // ********** mesh **********
-
     if let Some(mesh) = node.mesh()
     {
-        let name = mesh.name().unwrap_or("unknown mesh");
+        let primitives_amount = mesh.primitives().len();
 
-        for primitive in mesh.primitives()
+        for (primitive_id, primitive) in mesh.primitives().enumerate()
         {
+            let mut name = mesh.name().unwrap_or("unknown mesh").to_string();
+
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
             let material_index = primitive.material().index();
@@ -212,7 +217,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             {
                 for uv in gltf_uvs1.into_f32()
                 {
-                    uvs1.push(Point2::<f32>::new(uv[0], uv[1]));
+                    // flip y coordinate
+                    uvs1.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
                 }
             }
 
@@ -222,7 +228,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             {
                 for uv in gltf_uvs2.into_f32()
                 {
-                    uvs2.push(Point2::<f32>::new(uv[0], uv[1]));
+                    // flip y coordinate
+                    uvs2.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
                 }
             }
 
@@ -232,7 +239,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             {
                 for uv in gltf_uvs3.into_f32()
                 {
-                    uvs3.push(Point2::<f32>::new(uv[0], uv[1]));
+                    // flip y coordinate
+                    uvs3.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
                 }
             }
 
@@ -260,7 +268,12 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             let id = scene.id_manager.get_next_node_id();
             loaded_ids.push(id);
 
-            let node_arc = Node::new(id, name);
+            if primitives_amount > 1
+            {
+                name = format!("{} primitive_{}", name, primitive_id);
+            }
+
+            let node_arc = Node::new(id, name.as_str());
             {
                 let mut node = node_arc.write().unwrap();
                 node.add_component(Box::new(item));
@@ -282,19 +295,29 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
 
                 // transformation
                 let component_id = scene.id_manager.get_next_component_id();
-                //node.add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
                 node.add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
 
                 // add default instance
-                //let node = scene.nodes.get_mut(0).unwrap();
                 node.create_default_instance(node_arc.clone(), scene.id_manager.get_next_instance_id());
 
                 // parent
                 node.parent = parent_node.clone();
             }
 
-            parent_node = Some(node_arc.clone());
-            scene.add_node(node_arc);
+            if parent_node.is_none()
+            {
+                scene.add_node(node_arc.clone());
+            }
+            else
+            {
+                Node::add_node(parent_node.clone().unwrap(), node_arc.clone());
+            }
+
+            // only if there is one primitive -> use it as parent for next childs
+            if primitives_amount == 1
+            {
+                parent_node = Some(node_arc.clone());
+            }
         }
     }
 
@@ -306,23 +329,31 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
         if node.children().len() > 0
         {
             let name = node.name().unwrap_or("unknown transform node");
-            let node = Node::new(scene.id_manager.get_next_node_id(), name);
+            let scene_node = Node::new(scene.id_manager.get_next_node_id(), name);
 
             // add transformation
             {
                 let component_id = scene.id_manager.get_next_component_id();
-                //node.write().unwrap().add_component(Box::new(Transformation::new_transformation_only(component_id, local_transform)));
-                node.write().unwrap().add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
+                scene_node.write().unwrap().add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
             }
 
-            scene.add_node(node);
+            if parent_node.is_none()
+            {
+                scene.add_node(scene_node.clone());
+            }
+            else
+            {
+                Node::add_node(parent_node.clone().unwrap(), scene_node.clone());
+            }
+
+            parent_node = Some(scene_node.clone());
         }
     }
 
     // ********** children **********
     for child in node.children()
     {
-        let ids = read_node(&child, &buffers, loaded_materials, scene, parent_node.clone(), &world_transform);
+        let ids = read_node(&child, &buffers, loaded_materials, scene, parent_node.clone(), &world_transform, level + 1);
         loaded_ids.extend(ids);
     }
 
@@ -475,9 +506,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     // do not use full metallic_factor as reflectivity --> otherwise the object will be just complete mirror if metallic is set to 1.0
     data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5;
 
-    //TODO: metallic and roughness are combined in the loaded texture
-    //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/model/material/pbr.rs#L22
-
+    // metallic and roughness are combined in the loaded texture
     if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
     {
         if let Some(texture) = get_texture_by_index(&metallic_roughness_tex, &loaded_textures)
@@ -583,7 +612,6 @@ pub async fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers:
             let data = &parent_buffer_data[view.offset()..view.offset() + view.length()];
             let mime_type = mime_type.replace('/', ".");
             let extension = Path::new(&mime_type).extension().and_then(OsStr::to_str);
-            dbg!(extension);
 
             (data.to_vec(), extension.map(str::to_string))
         }
@@ -604,8 +632,6 @@ pub async fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers:
                 };
                 let mime_type = mime_type.replace('/', ".");
                 let extension = Path::new(&mime_type).extension().and_then(OsStr::to_str);
-
-                dbg!(extension);
 
                 (data, extension.map(str::to_string))
             }

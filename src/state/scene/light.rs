@@ -78,4 +78,24 @@ impl Light
             light_type: LightType::Spot,
         }
     }
+
+    pub fn print(&self)
+    {
+        println!("id: {:?}", self.id);
+        println!("name: {:?}", self.name);
+        println!("enabled: {:?}", self.enabled);
+
+        println!("pos: {:?}", self.pos);
+        println!("dir: {:?}", self.dir);
+        println!("color: {:?}", self.color);
+
+        println!("intensity: {:?}", self.intensity);
+        println!("max_angle: {:?}", self.max_angle);
+        println!("light_type: {:?}", self.light_type);
+    }
+
+    pub fn print_short(&self)
+    {
+        println!(" - (LIGHT): id={} name={} enabled={} pos=[x={}, y={}, z={}], dir=[x={}, y={}, z={}], color=[r={}, g={}, b={}], intensity={} max_angle={} light_type={:?}", self.id, self.name, self.enabled, self.pos.x, self.pos.y, self.pos.z, self.dir.x, self.dir.y, self.dir.z, self.color.x, self.color.y, self.color.z, self.intensity, self.max_angle, self.light_type);
+    }
 }

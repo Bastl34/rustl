@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use instant::Instant;
-use nalgebra::{Vector3};
+use nalgebra::Vector3;
 
-use crate::helper::{change_tracker::ChangeTracker};
+use crate::helper::change_tracker::ChangeTracker;
 
 use super::scene::scene::SceneItem;
 

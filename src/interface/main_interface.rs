@@ -164,6 +164,75 @@ impl MainInterface
             }
             */
 
+
+            // helmet
+            /*
+            {
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            }
+
+            {
+                let cam_id = scene.id_manager.get_next_camera_id();
+                let mut cam = Camera::new(cam_id, "cam".to_string());
+                cam.fovy = 23.0f32.to_radians();
+                cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
+                cam.dir = Vector3::<f32>::new(-0.6515582, -0.4452714, -0.61417043);
+                cam.clipping_near = 0.1;
+                cam.clipping_far = 1000.0;
+
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            }
+            */
+
+
+
+            // lantern
+
+            /*
+            {
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            }
+
+            {
+                let cam_id = scene.id_manager.get_next_camera_id();
+                let mut cam = Camera::new(cam_id, "cam".to_string());
+                cam.fovy = 23.0f32.to_radians();
+                cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
+                cam.dir = Vector3::<f32>::new(-0.6515582, -0.4452714, -0.61417043);
+                cam.up = Vector3::<f32>::new(-0.32401347, 0.8953957, -0.30542085);
+                cam.clipping_near = 0.1;
+                cam.clipping_far = 1000.0;
+
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            }
+             */
+
+            // corset
+            /*
+            {
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 200.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            }
+
+            {
+                let cam_id = scene.id_manager.get_next_camera_id();
+                let mut cam = Camera::new(cam_id, "cam".to_string());
+                cam.fovy = 23.0f32.to_radians();
+                cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
+                cam.up = Vector3::<f32>::new(-0.32401347, 0.8953957, -0.30542085);
+                cam.dir = Vector3::<f32>::new(-0.6515582, -0.4452714, -0.61417043);
+                cam.clipping_near = 0.1;
+                cam.clipping_far = 1000.0;
+
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            }
+             */
+
             // ********** models **********
             /*
             scene.load("objects/bastl/bastl.obj").await.unwrap();
@@ -209,12 +278,48 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
-            //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
+            scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
+
+            scene.clear_empty_nodes();
+
+
+            // lantern
+            /*
+            {
+                let node_id = 0;
+                let node = scene.nodes.get_mut(node_id).unwrap();
+
+                let mut node = node.write().unwrap();
+                //node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, -1.25, 0.0));
+                node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(0.08, 0.08, 0.08));
+
+                //node.remove_component_by_type::<Transformation>();
+            }
+            */
+
+
+            /*
+            // corset
+            {
+                let node_id = 0;
+                let node = scene.nodes.get_mut(node_id).unwrap();
+
+                let mut node = node.write().unwrap();
+                //node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.15, -0.7, -0.2));
+                node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(25.0, 25.0, 25.0));
+
+                //node.remove_component_by_type::<Transformation>();
+            }
+             */
+
 
             // ********** scene add **********
             state.scenes.push(Box::new(scene));

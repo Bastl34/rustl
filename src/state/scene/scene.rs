@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, self}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -93,10 +93,18 @@ impl Scene
             node.read().unwrap().print(2);
         }
 
-        // camera
+        // cameras
         for cam in &self.cameras
         {
             cam.borrow().get_ref().print_short();
+        }
+
+        // lights
+        for light in self.lights.get_ref()
+        {
+            let light = light.borrow();
+            let light = light.get_ref();
+            light.print_short();
         }
     }
 
@@ -147,6 +155,28 @@ impl Scene
         self.textures.insert(hash, arc.clone());
 
         arc
+    }
+
+    fn clear_empty_nodes_recursive(nodes: &mut Vec<NodeItem>)
+    {
+        nodes.retain(|node|
+        {
+            let node = node.read().unwrap();
+            let is_empty = node.is_empty();
+
+            !is_empty
+        });
+
+        for node in nodes
+        {
+            let mut node = node.write().unwrap();
+            Self::clear_empty_nodes_recursive(&mut node.nodes);
+        }
+    }
+
+    pub fn clear_empty_nodes(&mut self)
+    {
+        Self::clear_empty_nodes_recursive(&mut self.nodes);
     }
 
     pub async fn remove_texture(&mut self, texture: TextureItem) -> bool

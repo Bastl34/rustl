@@ -243,7 +243,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     }
 
     let alpha = object_color.a * material.alpha;
+
+    if (alpha < 0.000001)
+    {
+        discard;
+    }
+
     return vec4<f32>(color, alpha);
+    //return vec4<f32>(1.0, 1.0, 1.0, alpha);
 
     //return textureSample(t_diffuse, s_diffuse, uvs);
 

@@ -1,6 +1,6 @@
 use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, RgbaImage, ImageBuffer};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer};
 use nalgebra::Vector4;
 
 use crate::{helper, state::helper::render_item::RenderItemOption};
@@ -12,7 +12,6 @@ pub struct Texture
     pub id: u64,
     pub name: String,
     pub hash: String,
-
     pub image: DynamicImage,
 
     pub render_item: RenderItemOption
@@ -40,7 +39,6 @@ impl Texture
 
         if let Some(extension) = extension
         {
-            dbg!(&extension);
             let format = ImageFormat::from_extension(extension).unwrap();
             image = image::load_from_memory_with_format(image_bytes.as_slice(), format).unwrap();
         }
@@ -52,6 +50,7 @@ impl Texture
         let rgba = image.to_rgba8();
 
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
+        //let hash = helper::crypto::get_hash_from_byte_vec(&rgba.to_vec());
 
         Texture
         {
@@ -96,6 +95,16 @@ impl Texture
         }
     }
 
+    pub fn get_dynamic_image(&self) -> &DynamicImage
+    {
+        &self.image
+    }
+
+    pub fn get_dynamic_image_mut(&mut self) -> &mut DynamicImage
+    {
+        &mut self.image
+    }
+
     pub fn width(&self) -> u32
     {
         self.image.width()
@@ -103,7 +112,7 @@ impl Texture
 
     pub fn height(&self) -> u32
     {
-        self.image.width()
+        self.image.height()
     }
 
     pub fn dimensions(&self) -> (u32, u32)

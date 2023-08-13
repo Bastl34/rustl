@@ -11,8 +11,8 @@ pub type NodeItem = Arc<RwLock<Box<Node>>>;
 
 pub struct Node
 {
-    id: u64,
-    name: String,
+    pub id: u64,
+    pub name: String,
     pub visible: bool,
 
     pub render_children_first: bool,
@@ -56,11 +56,6 @@ impl Node
         };
 
         Arc::new(RwLock::new(Box::new(node)))
-    }
-
-    pub fn get_name(&self) -> &String
-    {
-        &self.name
     }
 
     pub fn add_node(node: NodeItem, child_node: NodeItem)
@@ -332,9 +327,7 @@ impl Node
 
         if let Some(parent_node) = &node.parent
         {
-            let parent = parent_node.read().unwrap();
-
-            (parent_trans, parent_normal_matrix, _) = parent.get_transform();
+            (parent_trans, parent_normal_matrix) = Self::get_full_transform(parent_node.clone());
         }
 
         if node_parent_inheritance
@@ -377,6 +370,29 @@ impl Node
         }
 
         1.0
+    }
+
+    pub fn is_empty(&self) -> bool
+    {
+        let has_meshes = self.get_mesh().is_some();
+
+        if has_meshes
+        {
+            return false;
+        }
+        else if !has_meshes && self.nodes.len() == 0
+        {
+            return true;
+        }
+
+        let mut is_not_empty = false;
+        for node in &self.nodes
+        {
+            let node = node.read().unwrap();
+            is_not_empty = is_not_empty || !node.is_empty();
+        }
+
+        !is_not_empty
     }
 
     pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)
