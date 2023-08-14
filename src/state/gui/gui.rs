@@ -310,7 +310,7 @@ pub fn build_node_list(ui: &mut Ui, nodes: &Vec<NodeItem>)
                 let heading;
                 if visible
                 {
-                    heading = RichText::new(coll_name).strong();
+                    heading = RichText::new(coll_name).strong()
                 }
                 else
                 {

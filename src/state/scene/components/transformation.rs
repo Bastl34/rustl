@@ -144,9 +144,9 @@ impl Transformation
             let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
             let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
 
-            let mut rotation = rotation_x;
+            let mut rotation = rotation_z;
             rotation = rotation * rotation_y;
-            rotation = rotation * rotation_z;
+            rotation = rotation * rotation_x;
 
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
@@ -214,9 +214,9 @@ impl Transformation
             let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
             let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
 
-            let mut rotation = rotation_x;
+            let mut rotation = rotation_z;
             rotation = rotation * rotation_y;
-            rotation = rotation * rotation_z;
+            rotation = rotation * rotation_x;
 
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
@@ -273,9 +273,9 @@ impl Transformation
             let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
             let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
 
-            let mut rotation = rotation_x;
+            let mut rotation = rotation_z;
             rotation = rotation * rotation_y;
-            rotation = rotation * rotation_z;
+            rotation = rotation * rotation_x;
 
             data.trans = data.trans * rotation;
         }
