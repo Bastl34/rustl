@@ -12,6 +12,7 @@ pub struct Instance
     node: NodeItem,
 
     transform: Transformation,
+    pub highlight: bool
 }
 
 impl Instance
@@ -29,7 +30,8 @@ impl Instance
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::new(1.0, 1.0, 1.0)
-            )
+            ),
+            highlight: false
         };
 
         instance
@@ -42,7 +44,8 @@ impl Instance
             id: id,
             name: name,
             node: node,
-            transform: transform
+            transform: transform,
+            highlight: false
         };
 
         instance
@@ -55,7 +58,8 @@ impl Instance
             id: id,
             name: name,
             node: node,
-            transform: Transformation::new(0, position, rotation, scale)
+            transform: Transformation::new(0, position, rotation, scale),
+            highlight: false
         };
 
         instance

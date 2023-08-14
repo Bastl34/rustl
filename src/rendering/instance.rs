@@ -19,6 +19,7 @@ pub struct Instance
 {
     pub transform: [[f32; 4]; 4],
     pub normal: [[f32; 3]; 3],
+    pub highlight: f32,
 }
 
 impl Instance
@@ -80,6 +81,14 @@ impl Instance
                     shader_location: Self::SHADER_LOCATION_START + 6,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+
+                // ***** highlight *****
+                wgpu::VertexAttribute
+                {
+                    offset: mem::size_of::<[f32; 25]>() as wgpu::BufferAddress,
+                    shader_location: Self::SHADER_LOCATION_START + 7,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
@@ -117,12 +126,15 @@ impl InstanceBuffer
     {
         let instance_data = instances.iter().map(|instance|
         {
-            let (transform, normal) = instance.borrow().get_ref().get_transform();
+            let instance = instance.borrow();
+            let instance = instance.get_ref();
+            let (transform, normal) = instance.get_transform();
 
             Instance
             {
                 transform: transform.into(),
-                normal: normal.into()
+                normal: normal.into(),
+                highlight: f32::from(instance.highlight)
             }
         }).collect::<Vec<_>>();
 
@@ -153,7 +165,8 @@ impl InstanceBuffer
         let data = Instance
         {
             transform: transform.into(),
-            normal: normal.into()
+            normal: normal.into(),
+            highlight: f32::from(instance.highlight)
         };
 
         wgpu.queue_mut().write_buffer
@@ -177,12 +190,15 @@ impl InstanceBuffer
 
         let instance_data = slice.iter().map(|instance|
         {
-            let (transform, normal) = instance.borrow().get_ref().get_transform();
+            let instance = instance.borrow();
+            let instance = instance.get_ref();
+            let (transform, normal) = instance.get_transform();
 
             Instance
             {
                 transform: transform.into(),
-                normal: normal.into()
+                normal: normal.into(),
+                highlight: f32::from(instance.highlight)
             }
         }).collect::<Vec<_>>();
 

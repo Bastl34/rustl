@@ -3,7 +3,7 @@ use std::{cell::RefCell, fmt::format};
 use egui::{FullOutput, RichText, Color32, ScrollArea, Ui};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::{light::Light, components::transformation::Transformation, node::NodeItem}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
+use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material}, node::NodeItem}}, rendering::egui::EGui, helper::change_tracker::ChangeTracker};
 
 
 pub fn build_gui(state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -285,6 +285,18 @@ pub fn build_node_list(ui: &mut Ui, nodes: &Vec<NodeItem>)
         let child_nodes = &node.nodes.clone();
 
         let mut visible = node.visible;
+        let mut highlight;
+        {
+            // use first instance for now
+            if let Some(instance) = node.instances.get_ref().get(0)
+            {
+                highlight = instance.borrow().get_ref().highlight;
+            }
+            else
+            {
+                highlight = false;
+            }
+        }
 
         let name = node.name.clone();
         let id = node.id;
@@ -322,6 +334,7 @@ pub fn build_node_list(ui: &mut Ui, nodes: &Vec<NodeItem>)
                     ui.vertical(|ui|
                     {
                         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+                        changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
 
                         ui.horizontal(|ui|
                         {
@@ -367,6 +380,12 @@ pub fn build_node_list(ui: &mut Ui, nodes: &Vec<NodeItem>)
                 trans_component.calc_transform();
 
                 node.visible = visible;
+
+                // highlight
+                if let Some(instance) = node.instances.get_ref().get(0)
+                {
+                    instance.borrow_mut().get_mut().highlight = highlight;
+                }
             }
         }
     }

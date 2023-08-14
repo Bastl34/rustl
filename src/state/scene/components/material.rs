@@ -66,6 +66,8 @@ pub struct MaterialData
     pub base_color: Vector3<f32>,
     pub specular_color: Vector3<f32>,
 
+    pub highlight_color: Vector3<f32>,
+
     pub texture_ambient: Option<TextureItem>,
     pub texture_base: Option<TextureItem>,
     pub texture_specular: Option<TextureItem>,
@@ -120,6 +122,8 @@ impl Material
             ambient_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             base_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             specular_color: Vector3::<f32>::new(0.8, 0.8, 0.8),
+
+            highlight_color: Vector3::<f32>::new(1.0, 0.0, 0.0),
 
             texture_ambient: None,
             texture_base: None,

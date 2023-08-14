@@ -41,6 +41,8 @@ struct InstanceInput
     @location(9) normal_matrix_0: vec3<f32>,
     @location(10) normal_matrix_1: vec3<f32>,
     @location(11) normal_matrix_2: vec3<f32>,
+
+    @location(12) highlight: f32,
 };
 
 struct VertexOutput
@@ -54,6 +56,8 @@ struct VertexOutput
     @location(3) world_tangent: vec3<f32>,
     @location(4) world_bitangent: vec3<f32>,
     @location(5) world_normal: vec3<f32>,
+
+    @location(6) highlight: f32,
 };
 
 // ****************************** vertex ******************************
@@ -100,6 +104,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.world_bitangent = world_bitangent;
     out.world_normal = world_normal;
 
+    out.highlight = instance.highlight;
+
     return out;
 }
 
@@ -111,6 +117,7 @@ struct MaterialUniform
     ambient_color: vec4<f32>,
     base_color: vec4<f32>,
     specular_color: vec4<f32>,
+    highlight_color: vec4<f32>,
 
     alpha: f32,
     shininess: f32,
@@ -214,9 +221,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
     {
-        let light_color = lights[i].color.xyz;
+        let light_color = lights[i].color.rgb;
         let ambient_strength = 0.1;
-        let ambient_color = (light_color * ambient_strength).xyz;
+        let ambient_color = (light_color * ambient_strength).rgb;
 
         //let light_dir = normalize(light.position.xyz - in.world_position);
         //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
@@ -225,12 +232,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         let half_dir = normalize(view_dir + light_dir);
 
         let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
-        let diffuse_color = (lights[i].color * diffuse_strength).xyz;
+        let diffuse_color = (lights[i].color * diffuse_strength).rgb;
 
         let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), material.shininess);
-        let specular_color = (specular_strength * lights[i].color).xyz;
+        let specular_color = (specular_strength * lights[i].color).rgb;
 
-        color += (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+        color += (ambient_color + diffuse_color + specular_color) * object_color.rgb;
     }
 
     // ambient occlusion
@@ -240,6 +247,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color.x *= ambient_occlusion.x;
         color.y *= ambient_occlusion.x;
         color.z *= ambient_occlusion.x;
+    }
+
+    // highlight color
+    if (in.highlight > 0.0001)
+    {
+        color *= material.highlight_color.rgb;
     }
 
     let alpha = object_color.a * material.alpha;
