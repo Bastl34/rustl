@@ -59,6 +59,8 @@ pub struct State
     pub frame_time: f32,
     pub update_time: f32,
     pub render_time: f32,
+
+    pub exit: bool,
 }
 
 impl State
@@ -110,7 +112,35 @@ impl State
             frame_time: 0.0,
             update_time: 0.0,
             render_time: 0.0,
+
+            exit: false
         }
+    }
+
+    pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>
+    {
+        for scene in &self.scenes
+        {
+            if scene.id == id
+            {
+                return Some(&scene);
+            }
+        }
+
+        None
+    }
+
+    pub fn find_scene_by_id_mut(&mut self, id: u64) -> Option<&mut SceneItem>
+    {
+        for scene in &mut self.scenes
+        {
+            if scene.id == id
+            {
+                return Some(scene);
+            }
+        }
+
+        None
     }
 
     pub fn update(&mut self, time_delta: f32)

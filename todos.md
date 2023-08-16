@@ -1,4 +1,5 @@
 todo:
+ * instance visibility (in rendering)
  * active camera (camera width/height based on 0<->1)
  * consider using ComponentBase for all state structs
  * everything should be dynamic

@@ -28,7 +28,6 @@ impl Instance
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
-        use std::mem;
         wgpu::VertexBufferLayout
         {
             array_stride: mem::size_of::<Instance>() as wgpu::BufferAddress,

@@ -6,12 +6,14 @@ pub type InstanceItem = Box<Instance>;
 
 pub struct Instance
 {
-    id: u64,
-    name: String,
+    pub id: u64,
+    pub name: String,
 
     node: NodeItem,
 
     transform: Transformation,
+
+    pub visible: bool,
     pub highlight: bool
 }
 
@@ -31,6 +33,7 @@ impl Instance
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::new(1.0, 1.0, 1.0)
             ),
+            visible: true,
             highlight: false
         };
 
@@ -45,6 +48,7 @@ impl Instance
             name: name,
             node: node,
             transform: transform,
+            visible: true,
             highlight: false
         };
 
@@ -59,6 +63,7 @@ impl Instance
             name: name,
             node: node,
             transform: Transformation::new(0, position, rotation, scale),
+            visible: true,
             highlight: false
         };
 

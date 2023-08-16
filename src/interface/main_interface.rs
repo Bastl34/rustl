@@ -12,7 +12,7 @@ use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene};
 
 use crate::rendering::wgpu::{WGpu};
-use crate::state::gui::gui::build_gui;
+use crate::state::gui::gui::Gui;
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::transformation::Transformation;
@@ -25,8 +25,10 @@ const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
 pub struct MainInterface
 {
-    state: StateItem,
+    pub state: StateItem,
     start_time: Instant,
+
+    editor_gui: Gui,
 
     wgpu: WGpu,
     window: Window,
@@ -54,11 +56,12 @@ impl MainInterface
 
         let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
-
         let mut interface = Self
         {
             state,
             start_time: Instant::now(),
+
+            editor_gui: Gui::new(),
 
             wgpu,
             window,
@@ -278,10 +281,10 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
-            scene.load("objects/temp/Workbench.glb").await.unwrap();
+            //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
@@ -496,7 +499,7 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let gui_output = build_gui(state, &self.window, &mut self.egui);
+            let gui_output = self.editor_gui.build_gui(state, &self.window, &mut self.egui);
             self.egui.output = Some(gui_output);
 
             //self.gui.request_repaint();
@@ -561,6 +564,11 @@ impl MainInterface
 
             state.fps_absolute = (1000.0 / (state.render_time + state.update_time)) as u32;
         }
+    }
+
+    pub fn check_exit(&mut self) -> bool
+    {
+        self.state.borrow().exit
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)

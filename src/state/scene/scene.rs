@@ -237,4 +237,44 @@ impl Scene
 
         None
     }
+
+    pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
+    {
+        let mut all_nodes = vec![];
+
+        for node in nodes
+        {
+            let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
+
+            all_nodes.push(node.clone());
+            all_nodes.extend(child_nodes);
+        }
+
+        all_nodes
+    }
+
+    fn _find_node(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().id == id
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Scene::_find_node(&node.read().unwrap().nodes, id);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
+    {
+        Self::_find_node(&self.nodes, id)
+    }
 }

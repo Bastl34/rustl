@@ -8,6 +8,7 @@ use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker
 use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation, material::Material}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
+pub type InstanceItemChangeTrack = RefCell<ChangeTracker<InstanceItem>>;
 
 pub struct Node
 {
@@ -20,7 +21,7 @@ pub struct Node
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
-    pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
+    pub instances: ChangeTracker<Vec<InstanceItemChangeTrack>>,
 
     pub components: Vec<ComponentItem>,
     pub shared_components: Vec<SharedComponentItem>,
@@ -452,6 +453,19 @@ impl Node
         current_mesh.unwrap().merge(mesh_data);
 
         true
+    }
+
+    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemChangeTrack>
+    {
+        for instance in self.instances.get_ref()
+        {
+            if instance.borrow().get_ref().id == id
+            {
+                return Some(instance);
+            }
+        }
+
+        None
     }
 
     pub fn print(&self, level: usize)
