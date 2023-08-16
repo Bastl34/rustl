@@ -468,6 +468,17 @@ impl Node
         None
     }
 
+    pub fn delete_instance_by_id(&mut self, id: u64) -> bool
+    {
+        let len = self.instances.get_ref().len();
+        self.instances.get_mut().retain(|instance|
+        {
+            instance.borrow().get_ref().id != id
+        });
+
+        self.instances.get_ref().len() != len
+    }
+
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);

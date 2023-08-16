@@ -203,7 +203,7 @@ impl Gui
         ui.separator();
 
         // statistics
-        egui::CollapsingHeader::new(RichText::new("📈 Statistics").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("📈 Statistics").heading().strong()).default_open(true).show(ui, |ui|
         {
             self.create_statistic(state, ui);
         });
@@ -211,7 +211,7 @@ impl Gui
         ui.separator();
 
         // hierarchy
-        egui::CollapsingHeader::new(RichText::new("🗄 Hierarchy").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("🗄 Hierarchy").heading().strong()).default_open(true).show(ui, |ui|
         {
             ui.horizontal(|ui|
             {
@@ -503,7 +503,7 @@ impl Gui
 
                 if instance.highlight
                 {
-                    heading = heading.color(Color32::from_rgb(255, 200, 200));
+                    heading = heading.color(Color32::from_rgb(255, 175, 175));
                 }
 
                 let mut selection; if self.selected_object == id { selection = true; } else { selection = false; }
@@ -619,7 +619,7 @@ impl Gui
         }
 
         // General
-        egui::CollapsingHeader::new(RichText::new("ℹ Object Data").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("ℹ Object Data").heading().strong()).default_open(true).show(ui, |ui|
         {
             {
                 let node = node.read().unwrap();
@@ -632,7 +632,7 @@ impl Gui
         ui.separator();
 
         // statistics
-        egui::CollapsingHeader::new(RichText::new("📈 Object Info").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("📈 Object Info").heading().strong()).default_open(true).show(ui, |ui|
         {
             ui.label(RichText::new("👤 own").strong());
             ui.label(format!(" ⚫ instances: {}", direct_instances_amout));
@@ -652,7 +652,7 @@ impl Gui
         ui.separator();
 
         // Settings
-        egui::CollapsingHeader::new(RichText::new("⛭ Object Settings").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("⛭ Object Settings").heading().strong()).default_open(true).show(ui, |ui|
         {
             let mut changed = false;
 
@@ -673,20 +673,36 @@ impl Gui
                 node.visible = visible;
                 node.render_children_first = render_children_first;
             }
+
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+            {
+                if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
+                {
+                    let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                    node.write().unwrap().create_default_instance(node.clone(), scene.id_manager.get_next_instance_id());
+                }
+
+                if ui.button(RichText::new("Dispose").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+                {
+                    let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                    scene.delete_node_by_id(node_id);
+                }
+            });
         });
+
 
         ui.separator();
 
         if let Some(instance_id) = instance_id
         {
             let instance_id = instance_id.parse().unwrap();
-            self.create_instance_settings(state, node, instance_id, ui);
+            self.create_instance_settings(state, scene_id, node, instance_id, ui);
         }
     }
 
-    fn create_instance_settings(&mut self, state: &mut State, node: NodeItem, instance_id: u64 , ui: &mut Ui)
+    fn create_instance_settings(&mut self, state: &mut State, scene_id: u64, node_arc: NodeItem, instance_id: u64 , ui: &mut Ui)
     {
-        let node = node.read().unwrap();
+        let node = node_arc.read().unwrap();
         let instance = node.find_instance_by_id(instance_id);
 
         if instance.is_none()
@@ -697,7 +713,7 @@ impl Gui
         let instance = instance.unwrap();
 
         // General
-        egui::CollapsingHeader::new(RichText::new("ℹ Instance Data").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("ℹ Instance Data").heading().strong()).default_open(true).show(ui, |ui|
         {
             let instance = instance.borrow();
             let instance = instance.get_ref();
@@ -709,7 +725,8 @@ impl Gui
         ui.separator();
 
         // Settings
-        egui::CollapsingHeader::new(RichText::new("⛭ Instance Settings").heading()).default_open(true).show(ui, |ui|
+        let mut delete_instance = false;
+        egui::CollapsingHeader::new(RichText::new("⛭ Instance Settings").heading().strong()).default_open(true).show(ui, |ui|
         {
             let mut changed = false;
 
@@ -732,7 +749,23 @@ impl Gui
                 instance.visible = visible;
                 instance.highlight = highlight;
             }
+
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+            {
+                if ui.button(RichText::new("Dispose").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+                {
+                    delete_instance = true;
+                }
+            });
         });
+
+        drop(node);
+
+        if delete_instance
+        {
+            let mut node = node_arc.write().unwrap();
+            node.delete_instance_by_id(instance_id);
+        }
     }
 
     fn create_scene_settings(&mut self, state: &mut State, ui: &mut Ui)
@@ -777,7 +810,7 @@ impl Gui
         }
 
         // statistics
-        egui::CollapsingHeader::new(RichText::new("📈 Info").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("📈 Info").heading().strong()).default_open(true).show(ui, |ui|
         {
             ui.label(format!("nodes: {}", all_nodes.len()));
             ui.label(format!("instances: {}", instances_amout));
@@ -795,7 +828,7 @@ impl Gui
 
         ui.separator();
 
-        egui::CollapsingHeader::new(RichText::new("🐛 Debugging Settings").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("🐛 Debugging Settings").heading().strong()).default_open(true).show(ui, |ui|
         {
             ui.horizontal(|ui|
             {
@@ -814,11 +847,7 @@ impl Gui
     fn create_rendering_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
         // general rendering settings
-        //ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
-        //{
-        //ui.collapsing(RichText::new("General").heading(), |ui|
-        //{
-        egui::CollapsingHeader::new(RichText::new("General Settings").heading()).default_open(true).show(ui, |ui|
+        egui::CollapsingHeader::new(RichText::new("General Settings").heading().strong()).default_open(true).show(ui, |ui|
         {
             ui.horizontal(|ui|
             {

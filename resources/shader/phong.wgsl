@@ -252,7 +252,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // highlight color
     if (in.highlight > 0.0001)
     {
-        color *= material.highlight_color.rgb;
+        color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
     }
 
     let alpha = object_color.a * material.alpha;

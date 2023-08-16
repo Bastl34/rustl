@@ -277,4 +277,15 @@ impl Scene
     {
         Self::_find_node(&self.nodes, id)
     }
+
+    pub fn delete_node_by_id(&mut self, id: u64) -> bool
+    {
+        let len = self.nodes.len();
+        self.nodes.retain(|node|
+        {
+            node.read().unwrap().id != id
+        });
+
+        self.nodes.len() != len
+    }
 }
