@@ -3,7 +3,7 @@ use std::any::Any;
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker};
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
 
 use super::component::{Component, ComponentBase};
 
@@ -56,7 +56,7 @@ impl Mesh
 
         let mut mesh = Mesh
         {
-            base: ComponentBase::new(id, "".to_string(), "Mesh".to_string()),
+            base: ComponentBase::new(id, "Default".to_string(), "Mesh".to_string(), "◼".to_string()),
             data: ChangeTracker::new(mesh_data)
         };
 
@@ -245,5 +245,10 @@ impl Component for Mesh
 
     fn update(&mut self, _frame_scale: f32)
     {
+    }
+
+    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui)
+    {
+
     }
 }

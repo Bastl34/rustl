@@ -2,7 +2,7 @@ use std::{any::Any};
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker};
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
 
 use super::component::{Component, ComponentBase};
 
@@ -48,7 +48,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
+            base: ComponentBase::new(id, "Default".to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data)
         };
         transform.calc_transform();
@@ -75,7 +75,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
+            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data)
         };
         transform.calc_transform();
@@ -102,7 +102,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string()),
+            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data)
         };
         transform.calc_transform();
@@ -290,5 +290,61 @@ impl Component for Transformation
 
     fn update(&mut self, _frame_scale: f32)
     {
+    }
+
+    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui)
+    {
+        let mut changed = false;
+
+        let mut pos;
+        let mut rot;
+        let mut scale;
+        {
+            let data = self.get_data();
+
+            pos = data.position;
+            rot = data.rotation;
+            scale = data.scale;
+
+            ui.vertical(|ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("pos");
+                    changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                });
+                ui.horizontal(|ui|
+                {
+                    ui.label("rotation");
+                    changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
+                });
+                ui.horizontal(|ui|
+                {
+                    ui.label("scale");
+                    changed = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
+
+                    // scale = 0 is not supported / working -> otherwise a inverse transform can not be created
+                    if scale.x == 0.0 { scale.x = 0.00000001; }
+                    if scale.y == 0.0 { scale.y = 0.00000001; }
+                    if scale.z == 0.0 { scale.z = 0.00000001; }
+                });
+
+            });
+        }
+
+        if changed
+        {
+            let data = self.get_data_mut();
+            data.get_mut().position = pos;
+            data.get_mut().rotation = rot;
+            data.get_mut().scale = scale;
+            self.calc_transform();
+        }
     }
 }

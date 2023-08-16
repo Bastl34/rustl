@@ -11,7 +11,7 @@ pub struct Instance
 
     node: NodeItem,
 
-    transform: Transformation,
+    pub transform: Transformation,
 
     pub visible: bool,
     pub highlight: bool

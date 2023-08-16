@@ -2,6 +2,7 @@ use std::sync::{RwLock, Arc};
 use std::any::Any;
 
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::scene::node::NodeItem;
 
 pub type ComponentItem = Box<dyn Component + Send + Sync>;
 pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -14,6 +15,8 @@ pub trait Component: Any
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn update(&mut self, frame_scale: f32);
+
+    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui);
 
     fn id(&self) -> u64
     {
@@ -37,19 +40,21 @@ pub struct ComponentBase
     pub is_enabled: bool,
     pub name: String,
     pub component_name: String,
+    pub icon: String,
 
     pub render_item: RenderItemOption
 }
 
 impl ComponentBase
 {
-    pub fn new(id: u64, name: String, component_name: String) -> ComponentBase
+    pub fn new(id: u64, name: String, component_name: String, icon: String) -> ComponentBase
     {
         ComponentBase
         {
             id,
             name,
             component_name,
+            icon,
             is_enabled: true,
             render_item: None
         }

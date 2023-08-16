@@ -5,6 +5,7 @@ use nalgebra::{Vector3, Vector4};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::component_impl_default;
+use crate::state::scene::node::NodeItem;
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
 use super::component::{Component, SharedComponentItem, ComponentBase};
@@ -166,7 +167,7 @@ impl Material
 
         Material
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Material".to_string(), "🎨".to_string()),
             data: ChangeTracker::new(material_data)
         }
     }
@@ -522,5 +523,10 @@ impl Component for Material
 
     fn update(&mut self, _frame_scale: f32)
     {
+    }
+
+    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui)
+    {
+
     }
 }
