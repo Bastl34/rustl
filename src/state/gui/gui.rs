@@ -188,17 +188,20 @@ impl Gui
             });
             ui.separator();
 
-            match self.settings
+            ScrollArea::vertical().show(ui, |ui|
             {
-                SettingsPanel::Components => if object_settings { self.create_component_settings(state, ui); },
-                SettingsPanel::Object => if object_settings { self.create_object_settings(state, ui); },
-                SettingsPanel::Material => if material_settings { self.create_material_settings(state, ui); },
-                SettingsPanel::Camera => if camera_settings { },
-                SettingsPanel::Texture => if texture_settings { },
-                SettingsPanel::Light => if light_settings { },
-                SettingsPanel::Scene => self.create_scene_settings(state, ui),
-                SettingsPanel::Rendering => self.create_rendering_settings(state, ui),
-            }
+                match self.settings
+                {
+                    SettingsPanel::Components => if object_settings { self.create_component_settings(state, ui); },
+                    SettingsPanel::Object => if object_settings { self.create_object_settings(state, ui); },
+                    SettingsPanel::Material => if material_settings { self.create_material_settings(state, ui); },
+                    SettingsPanel::Camera => if camera_settings { },
+                    SettingsPanel::Texture => if texture_settings { },
+                    SettingsPanel::Light => if light_settings { },
+                    SettingsPanel::Scene => self.create_scene_settings(state, ui),
+                    SettingsPanel::Rendering => self.create_rendering_settings(state, ui),
+                }
+            });
         });
 
         //top
@@ -679,28 +682,57 @@ impl Gui
 
             if let Some(instance) = instance
             {
-                let name;
+                // alpha
                 {
-                    let instance = instance.borrow();
-                    let instance = instance.get_ref();
-                    let component = &instance.transform;
+                    let name;
+                    {
+                        let instance = instance.borrow();
+                        let instance = instance.get_ref();
+                        let component = &instance.alpha;
 
-                    let base = component.get_base();
-                    name = format!("{} Instance {} ({})", base.icon, base.component_name, base.name);
+                        let base = component.get_base();
+                        name = format!("{} Instance {} ({})", base.icon, base.component_name, base.name);
+                    }
+                    // WARNING: if shown a buffer update is triggered -> also if there is no change
+                    // thats why its not visible as default
+                    egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(false).show(ui, |ui|
+                    {
+                        let mut instance = instance.borrow_mut();
+                        let instance = instance.get_mut();
+                        let component = &mut instance.alpha;
+
+                        ui.label(RichText::new("Info: If this component is visble: The instance buffer update is performed on every frame.").color(ui.visuals().warn_fg_color));
+                        component.ui(ui);
+                    });
+
+                    ui.separator();
                 }
-                // WARNING: if shown a buffer update is triggered -> also if there is no change
-                // thats why its not visible as default
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(false).show(ui, |ui|
+
+                // transformation
                 {
-                    let mut instance = instance.borrow_mut();
-                    let instance = instance.get_mut();
-                    let component = &mut instance.transform;
+                    let name;
+                    {
+                        let instance = instance.borrow();
+                        let instance = instance.get_ref();
+                        let component = &instance.transform;
 
-                    ui.label(RichText::new("Info: If this component is visble: The instance buffer update is performed on every frame.").color(ui.visuals().warn_fg_color));
-                    component.ui(ui);
-                });
+                        let base = component.get_base();
+                        name = format!("{} Instance {} ({})", base.icon, base.component_name, base.name);
+                    }
+                    // WARNING: if shown a buffer update is triggered -> also if there is no change
+                    // thats why its not visible as default
+                    egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(false).show(ui, |ui|
+                    {
+                        let mut instance = instance.borrow_mut();
+                        let instance = instance.get_mut();
+                        let component = &mut instance.transform;
 
-                ui.separator();
+                        ui.label(RichText::new("Info: If this component is visble: The instance buffer update is performed on every frame.").color(ui.visuals().warn_fg_color));
+                        component.ui(ui);
+                    });
+
+                    ui.separator();
+                }
             }
         }
 

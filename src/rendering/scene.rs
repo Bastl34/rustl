@@ -2,7 +2,7 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentItem}, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentItem}, transformation::Transformation, alpha::Alpha}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
@@ -113,6 +113,7 @@ impl Scene
                 let mut texture = texture.write().unwrap();
                 let texture_changed = texture.get_data_mut().consume_change();
 
+                // check if buffer recreation is needed
                 if let Some(render_item) = &texture.render_item
                 {
                     let render_item = get_render_item::<Texture>(render_item);
@@ -136,7 +137,6 @@ impl Scene
                     texture.render_item = render_item;
                 }
             }
-
 
             // mark material as "dirty" if the buffer needs a recreate
             if buffer_recreate_needed
@@ -294,7 +294,7 @@ impl Scene
 
                 {
                     let mut write = node_arc.write().unwrap();
-                    (_, all_instances_changed) = write.instances.consume_borrow();
+                    all_instances_changed = write.instances.consume_change();
                 }
 
                 {
@@ -309,7 +309,7 @@ impl Scene
                 // check parents for changed transforms
                 if !all_instances_changed
                 {
-                    all_instances_changed = Scene::find_parent_trasform(node_arc.clone());
+                    all_instances_changed = Scene::find_changed_parent_data(node_arc.clone());
                 }
 
                 if all_instances_changed
@@ -379,20 +379,31 @@ impl Scene
         }
     }
 
-    pub fn find_parent_trasform(node: Arc<RwLock<Box<Node>>>) -> bool
+    pub fn find_changed_parent_data(node: Arc<RwLock<Box<Node>>>) -> bool
     {
         let node_read = node.read().unwrap();
         let parent_arc = node_read.parent.clone();
 
-        let mut has_changed_transform = false;
+        let mut has_changed_data = false;
         if let Some(parent_arc) = parent_arc
         {
             let parent = parent_arc.read().unwrap();
             let trans_component = parent.find_component::<Transformation>();
+            let alpha_component = parent.find_component::<Alpha>();
+
             if let Some(trans_component) = trans_component
             {
-                has_changed_transform = has_changed_transform || trans_component.get_data_tracker().changed();
-                if has_changed_transform
+                has_changed_data = has_changed_data || trans_component.get_data_tracker().changed();
+                if has_changed_data
+                {
+                    return true;
+                }
+            }
+
+            if let Some(alpha_component) = alpha_component
+            {
+                has_changed_data = has_changed_data || alpha_component.get_data_tracker().changed();
+                if has_changed_data
                 {
                     return true;
                 }
@@ -400,11 +411,11 @@ impl Scene
 
             if parent.parent.is_some()
             {
-                has_changed_transform = has_changed_transform || Scene::find_parent_trasform(parent_arc.clone())
+                has_changed_data = has_changed_data || Scene::find_changed_parent_data(parent_arc.clone())
             }
         }
 
-        has_changed_transform
+        has_changed_data
     }
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)

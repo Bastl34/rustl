@@ -113,6 +113,11 @@ impl Scene
         self.nodes.push(node);
     }
 
+    pub fn clear_nodes(&mut self)
+    {
+        self.nodes.clear();
+    }
+
     pub async fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary_async(path).await?;

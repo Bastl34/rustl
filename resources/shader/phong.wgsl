@@ -42,7 +42,8 @@ struct InstanceInput
     @location(10) normal_matrix_1: vec3<f32>,
     @location(11) normal_matrix_2: vec3<f32>,
 
-    @location(12) highlight: f32,
+    @location(12) alpha: f32,
+    @location(13) highlight: f32,
 };
 
 struct VertexOutput
@@ -57,7 +58,8 @@ struct VertexOutput
     @location(4) world_bitangent: vec3<f32>,
     @location(5) world_normal: vec3<f32>,
 
-    @location(6) highlight: f32,
+    @location(6) alpha: f32,
+    @location(7) highlight: f32,
 };
 
 // ****************************** vertex ******************************
@@ -104,6 +106,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.world_bitangent = world_bitangent;
     out.world_normal = world_normal;
 
+    out.alpha = instance.alpha;
     out.highlight = instance.highlight;
 
     return out;
@@ -255,7 +258,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
     }
 
-    let alpha = object_color.a * material.alpha;
+    let alpha = in.alpha * object_color.a * material.alpha;
 
     if (alpha < 0.000001)
     {

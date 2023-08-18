@@ -15,6 +15,7 @@ use crate::rendering::wgpu::{WGpu};
 use crate::state::gui::gui::Gui;
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
+use crate::state::scene::components::alpha::Alpha;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
@@ -280,8 +281,8 @@ impl MainInterface
 
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/monkey.glb").await.unwrap();
+            scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
+            //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
@@ -290,6 +291,20 @@ impl MainInterface
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
 
             scene.clear_empty_nodes();
+
+            let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
+            {
+                let mut root_node = root_node.write().unwrap();
+                root_node.add_component(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), 1.0)));
+            }
+
+            for node in &scene.nodes
+            {
+                Node::add_node(root_node.clone(), node.clone());
+            }
+
+            scene.clear_nodes();
+            scene.add_node(root_node.clone());
 
 
             // lantern

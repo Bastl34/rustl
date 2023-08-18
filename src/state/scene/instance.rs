@@ -1,6 +1,6 @@
 use nalgebra::{Matrix3, Matrix4, Vector3};
 
-use super::{node::{NodeItem, Node}, components::{transformation::{Transformation}}};
+use super::{node::{NodeItem, Node}, components::{transformation::{Transformation}, alpha::Alpha}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -12,6 +12,7 @@ pub struct Instance
     node: NodeItem,
 
     pub transform: Transformation,
+    pub alpha: Alpha,
 
     pub visible: bool,
     pub highlight: bool
@@ -33,6 +34,7 @@ impl Instance
                 Vector3::<f32>::zeros(),
                 Vector3::<f32>::new(1.0, 1.0, 1.0)
             ),
+            alpha: Alpha::new(0, 1.0),
             visible: true,
             highlight: false
         };
@@ -48,6 +50,7 @@ impl Instance
             name: name,
             node: node,
             transform: transform,
+            alpha: Alpha::new(0, 1.0),
             visible: true,
             highlight: false
         };
@@ -63,6 +66,7 @@ impl Instance
             name: name,
             node: node,
             transform: Transformation::new(0, position, rotation, scale),
+            alpha: Alpha::new(0, 1.0),
             visible: true,
             highlight: false
         };
@@ -78,6 +82,18 @@ impl Instance
             trans * self.transform.get_transform(),
             normal * self.transform.get_normal_matrix(),
         )
+    }
+
+    pub fn get_alpha(&self) -> f32
+    {
+        if self.visible == false
+        {
+            return 0.0;
+        }
+
+        let alpha = Node::get_full_alpha(self.node.clone());
+
+        self.alpha.get_alpha() * alpha
     }
 
     pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)

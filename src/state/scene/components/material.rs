@@ -94,7 +94,6 @@ pub struct MaterialData
 
     pub normal_map_strength: f32,
 
-    pub alpha_inheritance: bool,
     pub cast_shadow: bool,
     pub receive_shadow: bool,
     pub shadow_softness: f32,
@@ -151,7 +150,6 @@ impl Material
 
             normal_map_strength: 1.0,
 
-            alpha_inheritance: true,
             cast_shadow: true,
             receive_shadow: true,
             shadow_softness: 0.01,
@@ -237,7 +235,6 @@ impl Material
 
         if !helper::math::approx_equal(default_material_data.normal_map_strength, new_mat_data.normal_map_strength) { data.normal_map_strength = new_mat_data.normal_map_strength; }
 
-        if default_material_data.alpha_inheritance != new_mat_data.alpha_inheritance { data.alpha_inheritance = new_mat_data.alpha_inheritance; }
         if default_material_data.cast_shadow != new_mat_data.cast_shadow { data.cast_shadow = new_mat_data.cast_shadow; }
         if default_material_data.receive_shadow != new_mat_data.receive_shadow { data.receive_shadow = new_mat_data.receive_shadow; }
         if !helper::math::approx_equal(default_material_data.shadow_softness, new_mat_data.shadow_softness) { data.shadow_softness = new_mat_data.shadow_softness; }
@@ -329,7 +326,6 @@ impl Material
 
         println!("normal_map_strength: {:?}", data.normal_map_strength);
 
-        println!("alpha_inheritance: {:?}", data.alpha_inheritance);
         println!("cast_shadow: {:?}", data.cast_shadow);
         println!("receive_shadow: {:?}", data.receive_shadow);
         println!("shadow_softness: {:?}", data.shadow_softness);
@@ -545,7 +541,6 @@ impl Component for Material
         let mut refraction_index;
         let mut normal_map_strength;
 
-        let mut alpha_inheritance;
         let mut cast_shadow;
         let mut receive_shadow;
 
@@ -570,7 +565,6 @@ impl Component for Material
             refraction_index = data.refraction_index;
             normal_map_strength = data.normal_map_strength;
 
-            alpha_inheritance = data.alpha_inheritance;
             cast_shadow = data.cast_shadow;
             receive_shadow = data.receive_shadow;
 
@@ -611,8 +605,7 @@ impl Component for Material
         apply_settings = ui.add(egui::Slider::new(&mut normal_map_strength, 0.0..=100.0).text("normal map strength")).changed() || apply_settings;
 
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
-        apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
-        apply_settings = ui.checkbox(&mut alpha_inheritance, "alpha inheritance").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=PI/2.0).text("roughness")).changed() || apply_settings;
@@ -656,7 +649,6 @@ impl Component for Material
             data.refraction_index = refraction_index;
             data.normal_map_strength = normal_map_strength;
 
-            data.alpha_inheritance = alpha_inheritance;
             data.cast_shadow = cast_shadow;
             data.receive_shadow = receive_shadow;
 

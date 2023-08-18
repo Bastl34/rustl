@@ -2,7 +2,7 @@ use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker};
 
 use super::component::{Component, ComponentBase};
 

@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Matrix3, Vector3};
 
 use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker};
 
-use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation, material::Material}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation, material::Material, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemChangeTrack = RefCell<ChangeTracker<InstanceItem>>;
@@ -347,30 +347,45 @@ impl Node
         }
     }
 
-    pub fn get_alpha(node: NodeItem) -> f32
+    pub fn get_alpha(&self) -> (f32, bool)
     {
-        let node = node.read().unwrap();
+        let alpha_component = self.find_component::<Alpha>();
 
-        let mat = node.find_shared_component::<Material>();
-
-        if let Some(mat) = mat
+        if let Some(alpha_component) = alpha_component
         {
-            let mat = mat.read().unwrap();
-            let mat = mat.as_any().downcast_ref::<Material>().unwrap();
-            let mat_data = mat.get_data();
-            let alpha = mat_data.alpha;
-
-            if mat_data.alpha_inheritance && node.parent.is_some()
+            if alpha_component.get_base().is_enabled
             {
-                return Self::get_alpha(node.parent.as_ref().unwrap().clone()) * alpha;
-            }
-            else
-            {
-                return alpha;
+                return
+                (
+                    alpha_component.get_alpha(),
+                    alpha_component.has_alpha_inheritance()
+                );
             }
         }
 
-        1.0
+        (1.0, true)
+    }
+
+    pub fn get_full_alpha(node: NodeItem) -> f32
+    {
+        let node = node.read().unwrap();
+
+        let (node_alpha, node_parent_inheritance) = node.get_alpha();
+        let mut parent_alpha = 1.0;
+
+        if let Some(parent_node) = &node.parent
+        {
+            parent_alpha = Self::get_full_alpha(parent_node.clone());
+        }
+
+        if node_parent_inheritance
+        {
+            parent_alpha * node_alpha
+        }
+        else
+        {
+            node_alpha
+        }
     }
 
     pub fn is_empty(&self) -> bool

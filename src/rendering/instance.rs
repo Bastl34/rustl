@@ -19,12 +19,13 @@ pub struct Instance
 {
     pub transform: [[f32; 4]; 4],
     pub normal: [[f32; 3]; 3],
+    pub alpha: f32,
     pub highlight: f32,
 }
 
 impl Instance
 {
-    const SHADER_LOCATION_START: u32 = 5;
+    const SHADER_LOCATION_START: u32 = 5; // based on vertex input
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
@@ -81,11 +82,19 @@ impl Instance
                     format: wgpu::VertexFormat::Float32x3,
                 },
 
-                // ***** highlight *****
+                // ***** alpha *****
                 wgpu::VertexAttribute
                 {
                     offset: mem::size_of::<[f32; 25]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 7,
+                    format: wgpu::VertexFormat::Float32,
+                },
+
+                // ***** highlight *****
+                wgpu::VertexAttribute
+                {
+                    offset: mem::size_of::<[f32; 26]>() as wgpu::BufferAddress,
+                    shader_location: Self::SHADER_LOCATION_START + 8,
                     format: wgpu::VertexFormat::Float32,
                 },
             ],
@@ -128,11 +137,13 @@ impl InstanceBuffer
             let instance = instance.borrow();
             let instance = instance.get_ref();
             let (transform, normal) = instance.get_transform();
+            let alpha = instance.get_alpha();
 
             Instance
             {
                 transform: transform.into(),
                 normal: normal.into(),
+                alpha: alpha,
                 highlight: f32::from(instance.highlight)
             }
         }).collect::<Vec<_>>();
@@ -160,11 +171,13 @@ impl InstanceBuffer
         }
 
         let (transform, normal) = instance.get_transform();
+        let alpha = instance.get_alpha();
 
         let data = Instance
         {
             transform: transform.into(),
             normal: normal.into(),
+            alpha: alpha,
             highlight: f32::from(instance.highlight)
         };
 
@@ -192,11 +205,13 @@ impl InstanceBuffer
             let instance = instance.borrow();
             let instance = instance.get_ref();
             let (transform, normal) = instance.get_transform();
+            let alpha = instance.get_alpha();
 
             Instance
             {
                 transform: transform.into(),
                 normal: normal.into(),
+                alpha: alpha,
                 highlight: f32::from(instance.highlight)
             }
         }).collect::<Vec<_>>();
