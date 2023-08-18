@@ -247,7 +247,7 @@ impl Component for Mesh
     {
     }
 
-    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui)
     {
 
     }

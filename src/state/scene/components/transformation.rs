@@ -1,4 +1,4 @@
-use std::{any::Any};
+use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
@@ -292,7 +292,7 @@ impl Component for Transformation
     {
     }
 
-    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui)
     {
         let mut changed = false;
 

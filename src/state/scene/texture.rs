@@ -3,7 +3,7 @@ use std::sync::{RwLock, Arc};
 use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer};
 use nalgebra::Vector4;
 
-use crate::{helper, state::helper::render_item::RenderItemOption};
+use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
@@ -21,11 +21,8 @@ pub enum TextureFilterMode
     Linear
 }
 
-pub struct Texture
+pub struct TextureData
 {
-    pub id: u64,
-    pub name: String,
-    pub hash: String,
     pub image: DynamicImage,
 
     pub address_mode_u: TextureAddressMode,
@@ -34,6 +31,15 @@ pub struct Texture
     pub mag_filter: TextureFilterMode,
     pub min_filter: TextureFilterMode,
     pub mipmap_filter: TextureFilterMode,
+}
+
+pub struct Texture
+{
+    pub id: u64,
+    pub name: String,
+    pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
+
+    pub data: ChangeTracker<TextureData>,
 
     pub render_item: RenderItemOption
 }
@@ -42,12 +48,8 @@ impl Texture
 {
     pub fn empty() -> Texture
     {
-        Texture
+        let data: TextureData = TextureData
         {
-            id: 0,
-            name: "empty".to_string(),
-            hash: "".to_string(),
-
             image: DynamicImage::new_rgba8(0,0),
 
             address_mode_u: TextureAddressMode::ClampToEdge,
@@ -55,7 +57,16 @@ impl Texture
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Nearest,
-            mipmap_filter: TextureFilterMode::Nearest,
+            mipmap_filter: TextureFilterMode::Nearest
+        };
+
+        Texture
+        {
+            id: 0,
+            name: "empty".to_string(),
+            hash: "".to_string(),
+
+            data: ChangeTracker::new(data),
 
             render_item: None
         }
@@ -80,12 +91,8 @@ impl Texture
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
         //let hash = helper::crypto::get_hash_from_byte_vec(&rgba.to_vec());
 
-        Texture
+        let data: TextureData = TextureData
         {
-            id,
-            name: name.to_string(),
-            hash,
-
             image: image::DynamicImage::ImageRgba8(rgba),
 
             address_mode_u: TextureAddressMode::ClampToEdge,
@@ -93,7 +100,16 @@ impl Texture
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Nearest,
-            mipmap_filter: TextureFilterMode::Nearest,
+            mipmap_filter: TextureFilterMode::Nearest
+        };
+
+        Texture
+        {
+            id,
+            name: name.to_string(),
+            hash,
+
+            data: ChangeTracker::new(data),
 
             render_item: None
         }
@@ -106,11 +122,13 @@ impl Texture
 
         let mut image = ImageBuffer::new(width, height);
 
+        let data = texture.get_data();
+
         for x in 0..width
         {
             for y in 0..height
             {
-                let pixel = texture.image.get_pixel(x, y);
+                let pixel = data.image.get_pixel(x, y);
                 image.put_pixel(x, y, Rgba([pixel[channel], 0 , 0, 0]));
             }
         }
@@ -118,12 +136,8 @@ impl Texture
         let bytes = &image.to_vec();
         let hash = helper::crypto::get_hash_from_byte_vec(&bytes);
 
-        Texture
+        let data: TextureData = TextureData
         {
-            id,
-            name: name.to_string(),
-            hash,
-
             image: image::DynamicImage::ImageRgba8(image),
 
             address_mode_u: TextureAddressMode::ClampToEdge,
@@ -131,35 +145,59 @@ impl Texture
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Nearest,
-            mipmap_filter: TextureFilterMode::Nearest,
+            mipmap_filter: TextureFilterMode::Nearest
+        };
+
+        Texture
+        {
+            id,
+            name: name.to_string(),
+            hash,
+
+            data: ChangeTracker::new(data),
 
             render_item: None
         }
     }
 
+    pub fn get_data(&self) -> &TextureData
+    {
+        &self.data.get_ref()
+    }
+
+    pub fn get_data_tracker(&self) -> &ChangeTracker<TextureData>
+    {
+        &self.data
+    }
+
+    pub fn get_data_mut(&mut self) -> &mut ChangeTracker<TextureData>
+    {
+        &mut self.data
+    }
+
     pub fn get_dynamic_image(&self) -> &DynamicImage
     {
-        &self.image
+        &self.get_data().image
     }
 
     pub fn get_dynamic_image_mut(&mut self) -> &mut DynamicImage
     {
-        &mut self.image
+        &mut self.get_data_mut().get_mut().image
     }
 
     pub fn width(&self) -> u32
     {
-        self.image.width()
+        self.data.get_ref().image.width()
     }
 
     pub fn height(&self) -> u32
     {
-        self.image.height()
+        self.data.get_ref().image.height()
     }
 
     pub fn dimensions(&self) -> (u32, u32)
     {
-        (self.image.width(), self.image.height())
+        (self.data.get_ref().image.width(), self.data.get_ref().image.height())
     }
 
     pub fn get_pixel_as_float_vec(&self, x: u32, y: u32) -> Vector4<f32>
@@ -169,7 +207,7 @@ impl Texture
             return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
         }
 
-        let pixel = self.image.get_pixel(x, y);
+        let pixel = self.data.get_ref().image.get_pixel(x, y);
 
         let rgba = pixel.to_rgba();
 
@@ -184,7 +222,7 @@ impl Texture
 
     pub fn rgba_data(&self) -> &[u8]
     {
-        self.image.as_bytes()
+        self.data.get_ref().image.as_bytes()
     }
 
 }

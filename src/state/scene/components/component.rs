@@ -16,7 +16,7 @@ pub trait Component: Any
 
     fn update(&mut self, frame_scale: f32);
 
-    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui);
+    fn ui(&mut self, ui: &mut egui::Ui);
 
     fn id(&self) -> u64
     {

@@ -21,7 +21,7 @@ pub struct Node
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
-    pub instances: ChangeTracker<Vec<InstanceItemChangeTrack>>,
+    pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
 
     pub components: Vec<ComponentItem>,
     pub shared_components: Vec<SharedComponentItem>,

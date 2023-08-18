@@ -1,3 +1,4 @@
+use std::f32::consts::PI;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
@@ -389,10 +390,21 @@ impl Material
         }
     }
 
+    pub fn has_texture_id(&self, texture_id: u64) -> bool
+    {
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if let Some(texture) = self.get_texture_by_type(texture_type)
+            {
+                return texture.read().unwrap().id == texture_id;
+            }
+        }
+
+        false
+    }
+
     pub fn has_any_texture(&self) -> bool
     {
-        let data = self.data.get_ref();
-
         for texture_type in ALL_TEXTURE_TYPES
         {
             if self.get_texture_by_type(texture_type).is_some()
@@ -426,7 +438,6 @@ impl Material
             TextureType::Custom1 => { tex = data.texture_custom1.clone() },
             TextureType::Custom2 => { tex = data.texture_custom2.clone() },
             TextureType::Custom3 => { tex = data.texture_custom3.clone() },
-
         }
 
         tex
@@ -525,8 +536,156 @@ impl Component for Material
     {
     }
 
-    fn ui(&mut self, node: NodeItem, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui)
     {
+        // material settings
+        let mut alpha;
+        let mut shininess;
+        let mut reflectivity;
+        let mut refraction_index;
+        let mut normal_map_strength;
 
+        let mut alpha_inheritance;
+        let mut cast_shadow;
+        let mut receive_shadow;
+
+        let mut shadow_softness;
+        let mut roughness;
+        let mut monte_carlo;
+        let mut smooth_shading;
+        let mut reflection_only;
+        let mut backface_cullig;
+
+        let mut ambient_color;
+        let mut base_color;
+        let mut specular_color;
+        let mut highlight_color;
+
+        {
+            let data = self.data.get_ref();
+
+            alpha = data.alpha;
+            shininess = data.shininess;
+            reflectivity = data.reflectivity;
+            refraction_index = data.refraction_index;
+            normal_map_strength = data.normal_map_strength;
+
+            alpha_inheritance = data.alpha_inheritance;
+            cast_shadow = data.cast_shadow;
+            receive_shadow = data.receive_shadow;
+
+            shadow_softness = data.shadow_softness;
+            roughness = data.roughness;
+            monte_carlo = data.monte_carlo;
+            smooth_shading = data.smooth_shading;
+            reflection_only = data.reflection_only;
+            backface_cullig = data.backface_cullig;
+
+            let r = (data.ambient_color.x * 255.0) as u8;
+            let g = (data.ambient_color.y * 255.0) as u8;
+            let b = (data.ambient_color.z * 255.0) as u8;
+            ambient_color = egui::Color32::from_rgb(r, g, b);
+
+            let r = (data.base_color.x * 255.0) as u8;
+            let g = (data.base_color.y * 255.0) as u8;
+            let b = (data.base_color.z * 255.0) as u8;
+            base_color = egui::Color32::from_rgb(r, g, b);
+
+            let r = (data.specular_color.x * 255.0) as u8;
+            let g = (data.specular_color.y * 255.0) as u8;
+            let b = (data.specular_color.z * 255.0) as u8;
+            specular_color = egui::Color32::from_rgb(r, g, b);
+
+            let r = (data.highlight_color.x * 255.0) as u8;
+            let g = (data.highlight_color.y * 255.0) as u8;
+            let b = (data.highlight_color.z * 255.0) as u8;
+            highlight_color = egui::Color32::from_rgb(r, g, b);
+        }
+
+        let mut apply_settings = false;
+
+        apply_settings = ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).text("alpha")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut shininess, 0.0..=1.0).text("shininess")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut reflectivity, 0.0..=1.0).text("reflectivity")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut refraction_index, 1.0..=5.0).text("refraction index")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut normal_map_strength, 0.0..=100.0).text("normal map strength")).changed() || apply_settings;
+
+        apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut alpha_inheritance, "alpha inheritance").changed() || apply_settings;
+
+        apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=PI/2.0).text("roughness")).changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut monte_carlo, "monte carlo").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut smooth_shading, "smooth shading").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut reflection_only, "reflection only").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut backface_cullig, "backface cullig").changed() || apply_settings;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("ambient color:");
+            apply_settings = ui.color_edit_button_srgba(&mut ambient_color).changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("base color:");
+            apply_settings = ui.color_edit_button_srgba(&mut base_color).changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("specular color:");
+            apply_settings = ui.color_edit_button_srgba(&mut specular_color).changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("highlight color:");
+            apply_settings = ui.color_edit_button_srgba(&mut highlight_color).changed() || apply_settings;
+        });
+
+
+        if apply_settings
+        {
+            let data = self.get_data_mut().get_mut();
+
+            data.alpha = alpha;
+            data.shininess = shininess;
+            data.reflectivity = reflectivity;
+            data.refraction_index = refraction_index;
+            data.normal_map_strength = normal_map_strength;
+
+            data.alpha_inheritance = alpha_inheritance;
+            data.cast_shadow = cast_shadow;
+            data.receive_shadow = receive_shadow;
+
+            data.shadow_softness = shadow_softness;
+            data.roughness = roughness;
+            data.monte_carlo = monte_carlo;
+            data.smooth_shading = smooth_shading;
+            data.reflection_only = reflection_only;
+            data.backface_cullig = backface_cullig;
+
+            let r = ((ambient_color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((ambient_color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((ambient_color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            data.ambient_color = Vector3::<f32>::new(r, g, b);
+
+            let r = ((base_color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((base_color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((base_color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            data.base_color = Vector3::<f32>::new(r, g, b);
+
+            let r = ((specular_color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((specular_color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((specular_color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            data.specular_color = Vector3::<f32>::new(r, g, b);
+
+            let r = ((highlight_color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((highlight_color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((highlight_color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            data.highlight_color = Vector3::<f32>::new(r, g, b);
+        }
     }
 }

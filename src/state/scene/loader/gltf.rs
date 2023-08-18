@@ -39,27 +39,28 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
         {
             let mut tex = tex.write().unwrap();
+            let mut tex_data = tex.get_data_mut().get_mut();
 
             match texture.sampler().wrap_s()
             {
-                texture::WrappingMode::ClampToEdge => tex.address_mode_u = TextureAddressMode::ClampToEdge,
-                texture::WrappingMode::MirroredRepeat => tex.address_mode_u = TextureAddressMode::MirrorRepeat,
-                texture::WrappingMode::Repeat => tex.address_mode_u = TextureAddressMode::Repeat,
+                texture::WrappingMode::ClampToEdge => tex_data.address_mode_u = TextureAddressMode::ClampToEdge,
+                texture::WrappingMode::MirroredRepeat => tex_data.address_mode_u = TextureAddressMode::MirrorRepeat,
+                texture::WrappingMode::Repeat => tex_data.address_mode_u = TextureAddressMode::Repeat,
             }
 
             match texture.sampler().wrap_t()
             {
-                texture::WrappingMode::ClampToEdge => tex.address_mode_v = TextureAddressMode::ClampToEdge,
-                texture::WrappingMode::MirroredRepeat => tex.address_mode_v = TextureAddressMode::MirrorRepeat,
-                texture::WrappingMode::Repeat => tex.address_mode_v = TextureAddressMode::Repeat,
+                texture::WrappingMode::ClampToEdge => tex_data.address_mode_v = TextureAddressMode::ClampToEdge,
+                texture::WrappingMode::MirroredRepeat => tex_data.address_mode_v = TextureAddressMode::MirrorRepeat,
+                texture::WrappingMode::Repeat => tex_data.address_mode_v = TextureAddressMode::Repeat,
             }
 
             if let Some(mag_filter) = texture.sampler().mag_filter()
             {
                 match mag_filter
                 {
-                    texture::MagFilter::Nearest => tex.mag_filter = TextureFilterMode::Nearest,
-                    texture::MagFilter::Linear => tex.mag_filter = TextureFilterMode::Linear,
+                    texture::MagFilter::Nearest => tex_data.mag_filter = TextureFilterMode::Nearest,
+                    texture::MagFilter::Linear => tex_data.mag_filter = TextureFilterMode::Linear,
                 }
             }
 
@@ -67,27 +68,27 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
             {
                 match min_filter
                 {
-                    texture::MinFilter::Nearest => tex.min_filter = TextureFilterMode::Nearest,
-                    texture::MinFilter::Linear => tex.min_filter = TextureFilterMode::Linear,
+                    texture::MinFilter::Nearest => tex_data.min_filter = TextureFilterMode::Nearest,
+                    texture::MinFilter::Linear => tex_data.min_filter = TextureFilterMode::Linear,
                     texture::MinFilter::NearestMipmapNearest =>
                     {
-                        tex.min_filter = TextureFilterMode::Nearest;
-                        tex.mipmap_filter = TextureFilterMode::Nearest;
+                        tex_data.min_filter = TextureFilterMode::Nearest;
+                        tex_data.mipmap_filter = TextureFilterMode::Nearest;
                     },
                     texture::MinFilter::LinearMipmapNearest =>
                     {
-                        tex.min_filter = TextureFilterMode::Linear;
-                        tex.mipmap_filter = TextureFilterMode::Nearest;
+                        tex_data.min_filter = TextureFilterMode::Linear;
+                        tex_data.mipmap_filter = TextureFilterMode::Nearest;
                     },
                     texture::MinFilter::NearestMipmapLinear =>
                     {
-                        tex.min_filter = TextureFilterMode::Nearest;
-                        tex.mipmap_filter = TextureFilterMode::Linear;
+                        tex_data.min_filter = TextureFilterMode::Nearest;
+                        tex_data.mipmap_filter = TextureFilterMode::Linear;
                     },
                     texture::MinFilter::LinearMipmapLinear =>
                     {
-                        tex.min_filter = TextureFilterMode::Linear;
-                        tex.mipmap_filter = TextureFilterMode::Linear;
+                        tex_data.min_filter = TextureFilterMode::Linear;
+                        tex_data.mipmap_filter = TextureFilterMode::Linear;
                     },
                 }
             }
