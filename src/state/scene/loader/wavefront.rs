@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node}, helper, new_shared_component};
+use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node}, helper, new_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -159,7 +159,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                 else
                 {
                     let component_id = scene.id_manager.get_next_component_id();
-                    material_arc = new_shared_component!(Material::new(component_id, ""));
+                    material_arc = new_component!(Material::new(component_id, ""));
 
                     let mut material_guard = material_arc.write().unwrap();
                     let any = material_guard.as_any_mut();
@@ -305,10 +305,10 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
             let node_arc = Node::new(id, m.name.as_str());
             {
                 let mut node = node_arc.write().unwrap();
-                node.add_component(Box::new(item));
+                node.add_component(Arc::new(RwLock::new(Box::new(item))));
 
                 // add material
-                node.add_shared_component(material_arc);
+                node.add_component(material_arc);
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();

@@ -1,11 +1,11 @@
-use std::{sync::{Arc, RwLock}, cell::{RefCell}};
+use std::{sync::{Arc, RwLock}, cell::RefCell};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Matrix3, Vector3};
 
-use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker};
+use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut};
 
-use super::{components::{component::{ComponentItem, SharedComponentItem, Component}, mesh::Mesh, transformation::Transformation, material::Material, alpha::Alpha}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, Component}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemChangeTrack = RefCell<ChangeTracker<InstanceItem>>;
@@ -24,7 +24,6 @@ pub struct Node
     pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
 
     pub components: Vec<ComponentItem>,
-    pub shared_components: Vec<SharedComponentItem>,
 
     pub instance_render_item: RenderItemOption,
 
@@ -45,7 +44,6 @@ impl Node
             render_children_first: false,
 
             components: vec![],
-            shared_components: vec![],
 
             parent: None,
             nodes: vec![],
@@ -72,9 +70,44 @@ impl Node
         }
     }
 
-    pub fn add_component(&mut self, component: ComponentItem)
+    pub fn find_component<T>(&self) -> Option<ComponentItem> where T: 'static
     {
-        self.components.push(component);
+        let value = self.components.iter().find
+        (
+            |c|
+            {
+                let component = c.read().unwrap();
+                let component_item = component.as_any();
+                component_item.is::<T>()
+            }
+        );
+
+        if !value.is_some()
+        {
+            return None;
+        }
+
+        Some(value.unwrap().clone())
+    }
+
+    pub fn find_components<T: Component>(&self) -> Vec<ComponentItem> where T: 'static
+    {
+        let values: Vec<_> = self.components.iter().filter
+        (
+            |c|
+            {
+                let component = c.read().unwrap();
+                let component_item = component.as_any();
+                component_item.is::<T>()
+            }
+        ).collect();
+
+        if values.len() == 0
+        {
+            return vec![];
+        }
+
+        values.iter().map(|component| Arc::clone(component)).collect()
     }
 
     pub fn remove_component_by_type<T>(&mut self) where T: 'static
@@ -83,7 +116,8 @@ impl Node
         (
             |c|
             {
-                let component_item = c.as_any();
+                let component = c.read().unwrap();
+                let component_item = component.as_any();
                 component_item.is::<T>()
             }
         );
@@ -100,175 +134,6 @@ impl Node
         (
             |c|
             {
-                c.id() == id
-            }
-        );
-
-        if let Some(index) = index
-        {
-            self.components.remove(index);
-        }
-    }
-
-    pub fn find_component<'a, T>(&'a self) -> Option<Box<&'a T>> where T: 'static
-    {
-        let value = self.components.iter().find
-        (
-            |c|
-            {
-                let component_item = c.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if !value.is_some()
-        {
-            return None;
-        }
-
-        let any = value.unwrap().as_any();
-        let downcast = Box::new(any.downcast_ref::<T>().unwrap());
-
-        Some(downcast)
-    }
-
-    pub fn find_component_mut<'a, T>(&'a mut self) -> Option<Box<&'a mut T>> where T: 'static
-    {
-        let value = self.components.iter_mut().find
-        (
-            |c|
-            {
-                let component_item = c.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if !value.is_some()
-        {
-            return None;
-        }
-
-        let any = value.unwrap().as_any_mut();
-        let downcast = Box::new(any.downcast_mut::<T>().unwrap());
-
-        Some(downcast)
-    }
-
-    pub fn find_components<'a, T>(&'a self) -> Option<Vec<Box<&'a T>>> where T: 'static
-    {
-        let values:Vec<_>  = self.components.iter().filter
-        (
-            |c|
-            {
-                let component_item = c.as_any();
-                component_item.is::<T>()
-            }
-        ) .collect();
-
-        if values.len() == 0
-        {
-            return None;
-        }
-
-        let res = values.iter().map(|component|
-        {
-            let any = component.as_any();
-            Box::new(any.downcast_ref::<T>().unwrap())
-        }).collect::<Vec<Box<&'a T>>>();
-
-        Some(res)
-    }
-
-    pub fn find_components_mut<'a, T>(&'a mut self) -> Option<Vec<Box<&'a mut T>>> where T: 'static
-    {
-        let values:Vec<_>  = self.components.iter_mut().filter
-        (
-            |c|
-            {
-                let component_item = c.as_any();
-                component_item.is::<T>()
-            }
-        ) .collect();
-
-        if values.len() == 0
-        {
-            return None;
-        }
-
-        let mut res: Vec<Box<&mut T>> = vec![];
-        for component in values
-        {
-            let any = component.as_any_mut();
-            res.push(Box::new(any.downcast_mut::<T>().unwrap()))
-        }
-
-        Some(res)
-    }
-
-    pub fn find_shared_component<T>(&self) -> Option<SharedComponentItem> where T: 'static
-    {
-        let value = self.shared_components.iter().find
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                let component_item = component.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if !value.is_some()
-        {
-            return None;
-        }
-
-        Some(value.unwrap().clone())
-    }
-
-    pub fn find_shared_component_mut<T>(&mut self) -> Option<SharedComponentItem> where T: 'static
-    {
-        let value = self.shared_components.iter_mut().find
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                let component_item = component.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if !value.is_some()
-        {
-            return None;
-        }
-
-        Some(value.unwrap().clone())
-    }
-
-    pub fn remove_shared_component_by_type<T>(&mut self) where T: 'static
-    {
-        let index = self.shared_components.iter().position
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                let component_item = component.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if let Some(index) = index
-        {
-            self.shared_components.remove(index);
-        }
-    }
-
-    pub fn remove_shared_component_by_id(&mut self, id: u64)
-    {
-        let index = self.shared_components.iter().position
-        (
-            |c|
-            {
                 let component = c.read().unwrap();
                 component.id() == id
             }
@@ -280,17 +145,17 @@ impl Node
         }
     }
 
-    pub fn add_shared_component(&mut self, component: SharedComponentItem)
+    pub fn add_component(&mut self, component: ComponentItem)
     {
-        self.shared_components.push(component);
+        self.components.push(component);
     }
 
-    pub fn get_mesh(&self) -> Option<Box<&Mesh>>
+    pub fn get_mesh(&self) -> Option<ComponentItem>
     {
         self.find_component::<Mesh>()
     }
 
-    pub fn get_meshes(&self) -> Option<Vec<Box<&Mesh>>>
+    pub fn get_meshes(&self) -> Vec<ComponentItem>
     {
         self.find_components::<Mesh>()
     }
@@ -301,6 +166,8 @@ impl Node
 
         if let Some(transform_component) = transform_component
         {
+            component_downcast!(transform_component, Transformation);
+
             if transform_component.get_base().is_enabled
             {
                 return
@@ -353,6 +220,8 @@ impl Node
 
         if let Some(alpha_component) = alpha_component
         {
+            component_downcast!(alpha_component, Alpha);
+
             if alpha_component.get_base().is_enabled
             {
                 return
@@ -431,24 +300,39 @@ impl Node
         self.instances.get_mut().push(RefCell::new(ChangeTracker::new(instance)));
     }
 
-    pub fn update(&mut self, frame_scale: f32)
+    pub fn update(node: NodeItem, frame_scale: f32)
     {
-        // update components
-        for component in &mut self.components
+        // ***** copy all components *****
+        let all_components;
         {
-            component.update(frame_scale);
+            let node = node.write().unwrap();
+            all_components = node.components.clone();
         }
 
-        for component in &mut self.shared_components
+        for (component_id, component) in all_components.clone().iter_mut().enumerate()
         {
+            // remove the component itself  for the component update
+            {
+                let mut node = node.write().unwrap();
+                node.components = all_components.clone();
+                node.components.remove(component_id);
+            }
+
             let mut component_write = component.write().unwrap();
-            component_write.update(frame_scale);
+            component_write.update(node.clone(), frame_scale);
         }
 
-        // update nodes
-        for node in &mut self.nodes
+        // ***** reassign components *****
         {
-            node.write().unwrap().update(frame_scale);
+            let mut node = node.write().unwrap();
+            node.components = all_components;
+        }
+
+        // ***** update childs *****
+        let mut node_write = node.write().unwrap();
+        for child_node in &mut node_write.nodes
+        {
+            Self::update(child_node.clone(), frame_scale);
         }
     }
 
@@ -456,7 +340,7 @@ impl Node
     {
         let merge_read = node.read().unwrap();
         let merge_mesh = merge_read.find_component::<Mesh>();
-        let current_mesh = self.find_component_mut::<Mesh>();
+        let current_mesh = self.find_component::<Mesh>();
 
         if current_mesh.is_none() || merge_mesh.is_none()
         {
@@ -464,8 +348,14 @@ impl Node
             return false;
         }
 
-        let mesh_data = merge_mesh.unwrap().get_data();
-        current_mesh.unwrap().merge(mesh_data);
+        let merge_mesh = merge_mesh.unwrap();
+        let current_mesh = current_mesh.unwrap();
+
+        component_downcast!(merge_mesh, Mesh);
+        component_downcast_mut!(current_mesh, Mesh);
+
+        let mesh_data = merge_mesh.get_data();
+        current_mesh.merge(mesh_data);
 
         true
     }
@@ -497,7 +387,7 @@ impl Node
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);
-        println!("{} - (NODE) id={} name={} visible={} components={}, shared_components={} instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.shared_components.len(), self.instances.get_ref().len());
+        println!("{} - (NODE) id={} name={} visible={} components={}, instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.instances.get_ref().len());
 
         for node in &self.nodes
         {
@@ -520,7 +410,9 @@ impl Bounded for Node
 
         let (trans, _, _) = self.get_transform();
 
-        let mesh_data = mesh.unwrap().get_data();
+        let mesh = mesh.unwrap();
+        component_downcast!(mesh, Mesh);
+        let mesh_data = mesh.get_data();
 
         let aabb = mesh_data.b_box;
         let verts = aabb.vertices();
@@ -559,24 +451,4 @@ impl BHShape for Node
     {
         self.b_box_node_index
     }
-}
-
-// ******************** macros ********************
-#[macro_export]
-macro_rules! shared_component_write
-{
-    ($component:ident, $component_type:ty, $result:ident) =>
-    {
-        let mut writable = $component.write().unwrap();
-        let $result = writable.as_any_mut().downcast_mut::<$component_type>().unwrap();
-    };
-}
-
-macro_rules! shared_component_read
-{
-    ($component:ident, $component_type:ty, $result:ident) =>
-    {
-        let mut readable = $component.read().unwrap();
-        let $result = readable.as_any_mut().downcast_ref::<$component_type>().unwrap();
-    };
 }

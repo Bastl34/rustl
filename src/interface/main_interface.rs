@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::mem::{swap};
 use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
@@ -17,6 +18,7 @@ use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::alpha::Alpha;
 use crate::state::scene::components::transformation::Transformation;
+use crate::state::scene::components::transformation_animation::TransformationAnimation;
 use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
@@ -295,7 +297,7 @@ impl MainInterface
             let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
             {
                 let mut root_node = root_node.write().unwrap();
-                root_node.add_component(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), 1.0)));
+                root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), 1.0)))));
             }
 
             for node in &scene.nodes
@@ -305,6 +307,11 @@ impl MainInterface
 
             scene.clear_nodes();
             scene.add_node(root_node.clone());
+
+            if let Some(suzanne) = scene.find_node_by_name("Suzanne")
+            {
+                suzanne.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0))))));
+            }
 
 
             // lantern

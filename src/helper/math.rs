@@ -13,6 +13,12 @@ pub fn approx_equal(a: f32, b: f32) -> bool
     a == b
 }
 
+pub fn approx_zero(value: f32) -> bool
+{
+    let tolerance = 1e-6;
+    value.abs() < tolerance
+}
+
 pub fn interpolate(a: f32, b: f32, f: f32) -> f32
 {
     return a + f * (b - a);
