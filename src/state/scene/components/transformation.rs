@@ -2,7 +2,7 @@ use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker};
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
 
 use super::component::{Component, ComponentBase};
 
@@ -194,36 +194,68 @@ impl Transformation
         &self.data.get_ref().normal
     }
 
-    pub fn apply_transformation(&mut self, translation: Vector3<f32>, scale: Vector3<f32>, rotation: Vector3<f32>)
+    pub fn apply_transformation(&mut self, translation: Option<Vector3<f32>>, scale: Option<Vector3<f32>>, rotation: Option<Vector3<f32>>)
     {
+        if translation.is_none() && scale.is_none() && rotation.is_none()
+        {
+            return;
+        }
+
         let data = self.data.get_mut();
 
-        data.position += translation;
-        data.scale.x *= scale.x;
-        data.scale.y *= scale.y;
-        data.scale.z *= scale.z;
-        data.rotation += rotation;
+        if let Some(translation) = translation
+        {
+            data.position += translation;
+        }
+
+        if let Some(scale) = scale
+        {
+            data.scale.x *= scale.x;
+            data.scale.y *= scale.y;
+            data.scale.z *= scale.z;
+        }
+
+        if let Some(rotation) = rotation
+        {
+            data.rotation += rotation;
+        }
 
         if !data.transform_vectors
         {
-            let translation = nalgebra::Isometry3::translation(translation.x, translation.y, translation.z).to_homogeneous();
+            let mut translation_mat = Matrix4::<f32>::identity();
+            let mut rotation_mat = Matrix4::<f32>::identity();
+            let mut scale_mat = Matrix4::<f32>::identity();
 
-            let scale = Matrix4::new_nonuniform_scaling(&scale);
+            if let Some(translation) = translation
+            {
+                translation_mat = nalgebra::Isometry3::translation(translation.x, translation.y, translation.z).to_homogeneous();
+            }
 
-            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
-            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
-            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
 
-            let mut rotation = rotation_z;
-            rotation = rotation * rotation_y;
-            rotation = rotation * rotation_x;
+            if let Some(scale) = scale
+            {
+                scale_mat = Matrix4::new_nonuniform_scaling(&scale);
+            }
+
+            if let Some(rotation) = rotation
+            {
+                let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
+                let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
+                let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
+
+                let mut rotation = rotation_z;
+                rotation = rotation * rotation_y;
+                rotation = rotation * rotation_x;
+
+                rotation_mat = rotation;
+            }
 
             let mut trans = Matrix4::<f32>::identity();
-            trans = trans * translation;
-            trans = trans * rotation;
-            trans = trans * scale;
+            trans = trans * translation_mat;
+            trans = trans * rotation_mat;
+            trans = trans * scale_mat;
 
-            data.trans = data.trans * rotation;
+            data.trans = data.trans * trans;
         }
 
         self.calc_transform();
@@ -288,7 +320,7 @@ impl Component for Transformation
 {
     component_impl_default!();
 
-    fn update(&mut self, _frame_scale: f32)
+    fn update(&mut self, node: NodeItem, _frame_scale: f32)
     {
     }
 

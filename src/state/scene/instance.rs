@@ -98,7 +98,7 @@ impl Instance
 
     pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)
     {
-        self.transform.apply_transformation(position, scale, rotation);
+        self.transform.apply_transformation(Some(position), Some(scale), Some(rotation));
     }
 
     pub fn apply_translation(&mut self, translation: Vector3<f32>)

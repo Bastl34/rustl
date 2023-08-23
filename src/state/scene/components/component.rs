@@ -2,9 +2,10 @@ use std::sync::{RwLock, Arc};
 use std::any::Any;
 
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::scene::node::NodeItem;
 
-pub type ComponentItem = Box<dyn Component + Send + Sync>;
-pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
+pub type ComponentBox = Box<dyn Component + Send + Sync>;
+pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
 
 pub trait Component: Any
 {
@@ -13,7 +14,7 @@ pub trait Component: Any
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn update(&mut self, frame_scale: f32);
+    fn update(&mut self, node: NodeItem, frame_scale: f32);
 
     fn ui(&mut self, ui: &mut egui::Ui);
 
@@ -168,13 +169,33 @@ macro_rules! shared_component_downcast_mut
  */
 
 #[macro_export]
-macro_rules! new_shared_component
+macro_rules! new_component
 {
     ($component:expr) =>
     {
         {
             Arc::new(RwLock::new(Box::new($component)))
         }
+    };
+}
+
+#[macro_export]
+macro_rules! component_downcast
+{
+    ($component:ident, $type:ty) =>
+    {
+        let read = $component.read().unwrap();
+        let $component = read.as_any().downcast_ref::<$type>().unwrap();
+    };
+}
+
+#[macro_export]
+macro_rules! component_downcast_mut
+{
+    ($component:ident, $type:ty) =>
+    {
+        let mut write = $component.write().unwrap();
+        let $component = write.as_any_mut().downcast_mut::<$type>().unwrap();
     };
 }
 

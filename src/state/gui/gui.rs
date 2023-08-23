@@ -3,7 +3,7 @@ use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap};
 use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker};
+use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
 
 #[derive(PartialEq, Eq)]
@@ -584,79 +584,8 @@ impl Gui
 
         // components
         {
-            /*
-            let mut components = vec![];
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut node.components, &mut components);
-            }
-
-            for component in &mut components
-            {
-                let base = component.get_base();
-                let name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                {
-                    component.ui(node.clone(), ui);
-                });
-
-                ui.separator();
-            }
-
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut components, &mut node.components);
-            }
-             */
-
             let mut node = node.write().unwrap();
             for component in &mut node.components
-            {
-                let base = component.get_base();
-                let name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                {
-                    component.ui(ui);
-                });
-
-                ui.separator();
-            }
-        }
-
-        // shared components
-        {
-            /*
-            let mut shared_components = vec![];
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut node.shared_components, &mut shared_components);
-            }
-
-            for component in &mut shared_components
-            {
-                let name;
-                {
-                    let component = component.read().unwrap();
-                    let base = component.get_base();
-                    name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                }
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                {
-                    let mut component = component.write().unwrap();
-                    component.ui(node.clone(), ui);
-                });
-
-                ui.separator();
-            }
-
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut shared_components, &mut node.shared_components);
-            }
-            */
-
-            let mut node = node.write().unwrap();
-            for component in &mut node.shared_components
             {
                 let name;
                 {
@@ -676,7 +605,6 @@ impl Gui
 
         if let Some(instance_id) = instance_id
         {
-            let node_clone = node.clone();
             let node = node.read().unwrap();
             let instance = node.find_instance_by_id(instance_id);
 
@@ -787,12 +715,16 @@ impl Gui
             // direct items
             direct_instances_amout += node.instances.get_ref().len();
 
-            let mesh = node.find_component::<Mesh>();
-            if let Some(mesh) = mesh
             {
-                direct_meshes_amout += 1;
-                direct_vertices_amout += mesh.get_data().vertices.len();
-                direct_indices_amout += mesh.get_data().indices.len();
+                let mesh = node.find_component::<Mesh>();
+                if let Some(mesh) = mesh
+                {
+                    component_downcast!(mesh, Mesh);
+
+                    direct_meshes_amout += 1;
+                    direct_vertices_amout += mesh.get_data().vertices.len();
+                    direct_indices_amout += mesh.get_data().indices.len();
+                }
             }
 
             direct_childs_amount = scene.nodes.len();
@@ -809,6 +741,8 @@ impl Gui
                 let mesh = node.find_component::<Mesh>();
                 if let Some(mesh) = mesh
                 {
+                    component_downcast!(mesh, Mesh);
+
                     all_meshes_amout += 1;
                     all_vertices_amout += mesh.get_data().vertices.len();
                     all_indices_amout += mesh.get_data().indices.len();
@@ -1042,6 +976,8 @@ impl Gui
             let mesh = node.find_component::<Mesh>();
             if let Some(mesh) = mesh
             {
+                component_downcast!(mesh, Mesh);
+
                 meshes_amout += 1;
                 vertices_amout += mesh.get_data().vertices.len();
                 indices_amout += mesh.get_data().indices.len();
