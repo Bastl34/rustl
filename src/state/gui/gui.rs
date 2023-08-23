@@ -584,79 +584,6 @@ impl Gui
 
         // components
         {
-            /*
-            let mut components = vec![];
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut node.components, &mut components);
-            }
-
-            for component in &mut components
-            {
-                let base = component.get_base();
-                let name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                {
-                    component.ui(node.clone(), ui);
-                });
-
-                ui.separator();
-            }
-
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut components, &mut node.components);
-            }
-             */
-
-            /*
-            let mut node = node.write().unwrap();
-            for component in &mut node.components
-            {
-                let base = component.get_base();
-                let name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                {
-                    component.ui(ui);
-                });
-
-                ui.separator();
-            }
-             */
-        }
-
-        // shared components
-        {
-            /*
-            let mut shared_components = vec![];
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut node.shared_components, &mut shared_components);
-            }
-
-            for component in &mut shared_components
-            {
-                let name;
-                {
-                    let component = component.read().unwrap();
-                    let base = component.get_base();
-                    name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                }
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                {
-                    let mut component = component.write().unwrap();
-                    component.ui(node.clone(), ui);
-                });
-
-                ui.separator();
-            }
-
-            {
-                let mut node = node.write().unwrap();
-                swap(&mut shared_components, &mut node.shared_components);
-            }
-            */
-
             let mut node = node.write().unwrap();
             for component in &mut node.components
             {
@@ -678,7 +605,6 @@ impl Gui
 
         if let Some(instance_id) = instance_id
         {
-            let node_clone = node.clone();
             let node = node.read().unwrap();
             let instance = node.find_instance_by_id(instance_id);
 
