@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, self}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, self, Node}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -79,7 +79,8 @@ impl Scene
         // update nodes
         for node in &self.nodes
         {
-            node.write().unwrap().update(frame_scale);
+            //node.write().unwrap().update(frame_scale);
+            Node::update(node.clone(), frame_scale);
         }
     }
 
@@ -258,7 +259,7 @@ impl Scene
         all_nodes
     }
 
-    fn _find_node(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
+    fn _find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
     {
         for node in nodes
         {
@@ -268,7 +269,27 @@ impl Scene
             }
 
             // check child nodes
-            let result = Scene::_find_node(&node.read().unwrap().nodes, id);
+            let result = Scene::_find_node_by_id(&node.read().unwrap().nodes, id);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    fn _find_node_by_name(nodes: &Vec<NodeItem>, name: String) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Scene::_find_node_by_name(&node.read().unwrap().nodes, name.clone());
             if result.is_some()
             {
                 return result;
@@ -280,7 +301,12 @@ impl Scene
 
     pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
     {
-        Self::_find_node(&self.nodes, id)
+        Self::_find_node_by_id(&self.nodes, id)
+    }
+
+    pub fn find_node_by_name(&self, name: &str) -> Option<NodeItem>
+    {
+        Self::_find_node_by_name(&self.nodes, name.to_string())
     }
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool

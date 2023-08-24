@@ -9,11 +9,11 @@ use crate::component_impl_default;
 use crate::state::scene::node::NodeItem;
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
-use super::component::{Component, SharedComponentItem, ComponentBase};
+use super::component::{Component, ComponentItem, ComponentBase};
 
 //pub type MaterialItem = Arc<RwLock<Box<Material>>>;
 //pub type MaterialItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
-pub type MaterialItem = SharedComponentItem;
+pub type MaterialItem = ComponentItem;
 
 //pub type MaterialBoxItem = Box<dyn Any + Send + Sync>;
 //pub type MaterialItem = Arc<RwLock<MaterialBoxItem>>;
@@ -530,7 +530,7 @@ impl Component for Material
 {
     component_impl_default!();
 
-    fn update(&mut self, _frame_scale: f32)
+    fn update(&mut self, node: NodeItem, _frame_scale: f32)
     {
     }
 

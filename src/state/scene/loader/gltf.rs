@@ -333,26 +333,26 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             let node_arc = Node::new(id, name.as_str());
             {
                 let mut node = node_arc.write().unwrap();
-                node.add_component(Box::new(item));
+                node.add_component(Arc::new(RwLock::new(Box::new(item))));
 
                 // add material
                 if let Some(material_index) = material_index
                 {
                     let material_arc = loaded_materials.get(&material_index).unwrap().clone();
-                    node.add_shared_component(material_arc);
+                    node.add_component(material_arc);
                 }
                 else
                 {
                     let default_material = scene.get_default_material();
                     if let Some(default_material) = default_material
                     {
-                        node.add_shared_component(default_material);
+                        node.add_component(default_material);
                     }
                 }
 
                 // transformation
                 let component_id = scene.id_manager.get_next_component_id();
-                node.add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
+                node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)))));
 
                 // add default instance
                 node.create_default_instance(node_arc.clone(), scene.id_manager.get_next_instance_id());
@@ -391,7 +391,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             // add transformation
             {
                 let component_id = scene.id_manager.get_next_component_id();
-                scene_node.write().unwrap().add_component(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)));
+                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)))));
             }
 
             if parent_node.is_none()

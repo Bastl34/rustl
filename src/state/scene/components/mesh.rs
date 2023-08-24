@@ -243,7 +243,7 @@ impl Component for Mesh
 {
     component_impl_default!();
 
-    fn update(&mut self, _frame_scale: f32)
+    fn update(&mut self, node: NodeItem, _frame_scale: f32)
     {
     }
 

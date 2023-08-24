@@ -52,6 +52,7 @@ mod state
             pub(crate) mod mesh;
             pub(crate) mod material;
             pub(crate) mod alpha;
+            pub(crate) mod transformation_animation;
         }
 
         pub(crate) mod texture;

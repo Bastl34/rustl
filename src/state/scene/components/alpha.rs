@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default};
+use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::NodeItem};
 
 use super::component::{ComponentBase, Component};
 
@@ -66,7 +66,7 @@ impl Component for Alpha
 {
     component_impl_default!();
 
-    fn update(&mut self, _frame_scale: f32)
+    fn update(&mut self, node: NodeItem, _frame_scale: f32)
     {
     }
 
