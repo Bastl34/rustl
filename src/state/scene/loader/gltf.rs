@@ -439,12 +439,16 @@ pub fn transform_decompose(transform: gltf::scene::Transform) ->(Vector3<f32>, V
     let translate = Vector3::<f32>::new(decomposed.0[0], decomposed.0[1], decomposed.0[2]);
     let scale = Vector3::<f32>::new(decomposed.2[0], decomposed.2[1], decomposed.2[2]);
 
-    let quaternion = UnitQuaternion::new_normalize(Quaternion::new(
-        decomposed.1[3], // W
-        decomposed.1[0], // X
-        decomposed.1[1], // Y
-        decomposed.1[2], // Z
-    ));
+    let quaternion = UnitQuaternion::new_normalize
+    (
+        Quaternion::new
+        (
+            decomposed.1[3], // W
+            decomposed.1[0], // X
+            decomposed.1[1], // Y
+            decomposed.1[2], // Z
+        )
+    );
 
     let rotation: Rotation3<f32> = quaternion.into();
     let euer_angles = rotation.euler_angles();
@@ -620,6 +624,15 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
 
     // backface culling
     data.backface_cullig = !gltf_material.double_sided();
+
+    // index of refraction
+    if let Some(ior) = gltf_material.ior()
+    {
+        data.refraction_index = ior;
+    }
+
+    // unlit
+    data.unlit_shading = gltf_material.unlit();
 
     material
 }

@@ -94,6 +94,7 @@ pub struct MaterialData
 
     pub normal_map_strength: f32,
 
+    pub unlit_shading: bool, // todo (no shading at all - just base color and base texture)
     pub cast_shadow: bool,
     pub receive_shadow: bool,
     pub shadow_softness: f32,
@@ -150,6 +151,7 @@ impl Material
 
             normal_map_strength: 1.0,
 
+            unlit_shading: false,
             cast_shadow: true,
             receive_shadow: true,
             shadow_softness: 0.01,
@@ -541,6 +543,7 @@ impl Component for Material
         let mut refraction_index;
         let mut normal_map_strength;
 
+        let mut unlit_shading;
         let mut cast_shadow;
         let mut receive_shadow;
 
@@ -565,6 +568,7 @@ impl Component for Material
             refraction_index = data.refraction_index;
             normal_map_strength = data.normal_map_strength;
 
+            unlit_shading = data.unlit_shading;
             cast_shadow = data.cast_shadow;
             receive_shadow = data.receive_shadow;
 
@@ -604,6 +608,7 @@ impl Component for Material
         apply_settings = ui.add(egui::Slider::new(&mut refraction_index, 1.0..=5.0).text("refraction index")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut normal_map_strength, 0.0..=100.0).text("normal map strength")).changed() || apply_settings;
 
+        apply_settings = ui.checkbox(&mut unlit_shading, "unlit shading (just base color and base texture)").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
 
@@ -649,6 +654,7 @@ impl Component for Material
             data.refraction_index = refraction_index;
             data.normal_map_strength = normal_map_strength;
 
+            data.unlit_shading = unlit_shading;
             data.cast_shadow = cast_shadow;
             data.receive_shadow = receive_shadow;
 

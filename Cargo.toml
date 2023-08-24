@@ -29,7 +29,9 @@ gltf = { version = "1.2", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
-  "KHR_materials_specular"
+  "KHR_materials_specular",
+  "KHR_materials_ior",
+  "KHR_materials_unlit"
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
