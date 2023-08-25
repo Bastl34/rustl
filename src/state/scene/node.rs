@@ -311,6 +311,13 @@ impl Node
 
         for (component_id, component) in all_components.clone().iter_mut().enumerate()
         {
+            {
+                if !component.read().unwrap().is_enabled()
+                {
+                    continue;
+                }
+            }
+
             // remove the component itself  for the component update
             {
                 let mut node = node.write().unwrap();

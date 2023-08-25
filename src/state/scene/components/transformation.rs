@@ -2,7 +2,7 @@ use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math}, state::{scene::node::NodeItem}};
 
 use super::component::{Component, ComponentBase};
 
@@ -213,6 +213,11 @@ impl Transformation
             data.scale.x *= scale.x;
             data.scale.y *= scale.y;
             data.scale.z *= scale.z;
+
+            // if its zero -> inverse matrix can not be calculated
+            if math::approx_zero(data.scale.x) { data.scale.x = 0.00000001; }
+            if math::approx_zero(data.scale.y) { data.scale.y = 0.00000001; }
+            if math::approx_zero(data.scale.z) { data.scale.z = 0.00000001; }
         }
 
         if let Some(rotation) = rotation
@@ -284,9 +289,14 @@ impl Transformation
         data.scale.y *= scale.y;
         data.scale.z *= scale.z;
 
+        // if its zero -> inverse matrix can not be calculated
+        if math::approx_zero(data.scale.x) { data.scale.x = 0.00000001; }
+        if math::approx_zero(data.scale.y) { data.scale.y = 0.00000001; }
+        if math::approx_zero(data.scale.z) { data.scale.z = 0.00000001; }
+
         if !data.transform_vectors
         {
-            let scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            let scale = Matrix4::new_nonuniform_scaling(&scale);
             data.trans = data.trans * scale;
         }
 

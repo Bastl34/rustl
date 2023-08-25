@@ -86,11 +86,13 @@ impl Component for TransformationAnimation
                 let mut scale_vec = Vector3::<f32>::new(data.scale.x * frame_scale, data.scale.y * frame_scale, data.scale.z * frame_scale);
 
                 // if its zero -> inverse matrix can not be calculated
-                if helper::math::approx_zero(scale_vec.x) { scale_vec.x = 0.000001; }
-                if helper::math::approx_zero(scale_vec.y) { scale_vec.y = 0.000001; }
-                if helper::math::approx_zero(scale_vec.z) { scale_vec.z = 0.000001; }
+                if helper::math::approx_zero(scale_vec.x) { scale_vec.x = 0.00000001; }
+                if helper::math::approx_zero(scale_vec.y) { scale_vec.y = 0.00000001; }
+                if helper::math::approx_zero(scale_vec.z) { scale_vec.z = 0.00000001; }
 
                 scale = Some(scale_vec);
+
+                dbg!(scale);
             }
 
             transform_component.apply_transformation(translation, scale, rotation);
