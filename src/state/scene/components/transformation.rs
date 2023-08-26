@@ -281,13 +281,23 @@ impl Transformation
         self.calc_transform();
     }
 
-    pub fn apply_scale(&mut self, scale: Vector3<f32>)
+    pub fn apply_scale(&mut self, scale: Vector3<f32>, multiply: bool)
     {
         let data = self.data.get_mut();
 
-        data.scale.x *= scale.x;
-        data.scale.y *= scale.y;
-        data.scale.z *= scale.z;
+        // the default is to multiply a new scale value - but sometimes its nessesary to add the value instead of multiplying
+        if multiply
+        {
+            data.scale.x *= scale.x;
+            data.scale.y *= scale.y;
+            data.scale.z *= scale.z;
+        }
+        else
+        {
+            data.scale.x += scale.x;
+            data.scale.y += scale.y;
+            data.scale.z += scale.z;
+        }
 
         // if its zero -> inverse matrix can not be calculated
         if math::approx_zero(data.scale.x) { data.scale.x = 0.00000001; }
@@ -297,7 +307,20 @@ impl Transformation
         if !data.transform_vectors
         {
             let scale = Matrix4::new_nonuniform_scaling(&scale);
-            data.trans = data.trans * scale;
+
+            if multiply
+            {
+                data.trans = data.trans * scale;
+            }
+            else
+            {
+                data.trans = data.trans + scale;
+            }
+
+            // if its zero -> inverse matrix can not be calculated
+            if math::approx_zero(data.trans[(0, 0)]) { data.trans[(0, 0)] = 0.00000001; }
+            if math::approx_zero(data.trans[(1, 1)]) { data.trans[(1, 1)] = 0.00000001; }
+            if math::approx_zero(data.trans[(2, 2)]) { data.trans[(2, 2)] = 0.00000001; }
         }
 
         self.calc_transform();
@@ -352,21 +375,21 @@ impl Component for Transformation
             {
                 ui.horizontal(|ui|
                 {
-                    ui.label("pos");
+                    ui.label("Position: ");
                     changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
                 ui.horizontal(|ui|
                 {
-                    ui.label("rotation");
+                    ui.label("Rotation: ");
                     changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
                 ui.horizontal(|ui|
                 {
-                    ui.label("scale");
+                    ui.label("Scale: ");
                     changed = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
@@ -376,7 +399,6 @@ impl Component for Transformation
                     if scale.y == 0.0 { scale.y = 0.00000001; }
                     if scale.z == 0.0 { scale.z = 0.00000001; }
                 });
-
             });
         }
 

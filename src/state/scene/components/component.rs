@@ -90,84 +90,6 @@ macro_rules! component_impl_default
     };
 }
 
-
-/*
-#[macro_export]
-macro_rules! find_shared_component
-{
-    ($vec:expr, $type:ty) =>
-    {
-        {
-            let mut res: Option<&SharedComponentItem> = None;
-            let value = $vec.iter().find
-            (
-                |c|
-                {
-                    let component_item = c.read().unwrap();
-                    component_item.is::<$type>()
-                }
-            );
-            if !value.is_some()
-            {
-                return;
-            }
-
-            res = Some(value.unwrap());
-            res
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! find_shared_component_mut
-{
-    ($vec:expr, $type:ty) =>
-    {
-        {
-            let mut res: Option<&SharedComponentItem> = None;
-            let value = $vec.iter_mut().find
-            (
-                |c|
-                {
-                    let component_item = c.read().unwrap();
-                    component_item.is::<$type>()
-                }
-            );
-            if !value.is_some()
-            {
-                return;
-            }
-
-            res = Some(value.unwrap());
-            res
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! shared_component_downcast
-{
-    ($component:expr, $type:ty) =>
-    {
-        {
-            $component.downcast_ref::<$type>().unwrap()
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! shared_component_downcast_mut
-{
-    ($component:expr, $type:ty) =>
-    {
-        {
-            $component.downcast_mut::<$type>().unwrap()
-        }
-    };
-}
-
- */
-
 #[macro_export]
 macro_rules! new_component
 {
@@ -198,12 +120,3 @@ macro_rules! component_downcast_mut
         let $component = write.as_any_mut().downcast_mut::<$type>().unwrap();
     };
 }
-
-/*
-let component = find_shared_component!(vec, Test).unwrap().read().unwrap();
-let bla = shared_component_downcast!(component, Test);
-
-//mut
-let mut component = find_shared_component_mut!(vec, Test).unwrap().write().unwrap();
-let bla = shared_component_downcast_mut!(component, Test);
- */

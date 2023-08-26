@@ -10,7 +10,7 @@ pub struct TransformationAnimationData
 {
     pub translation: Vector3<f32>,
     pub rotation: Vector3<f32>,
-    pub scale: Vector3<f32>,
+    pub scale: Vector3<f32>
 }
 
 pub struct TransformationAnimation
@@ -27,7 +27,7 @@ impl TransformationAnimation
         {
             translation,
             rotation,
-            scale,
+            scale
         };
 
         let mut transform_animation = TransformationAnimation
@@ -81,21 +81,18 @@ impl Component for TransformationAnimation
                 rotation = Some(Vector3::<f32>::new(data.rotation.x * frame_scale, data.rotation.y * frame_scale, data.rotation.z * frame_scale));
             }
 
-            if !helper::math::approx_equal(data.scale.x, 1.0) || !helper::math::approx_equal(data.scale.y, 1.0) || !helper::math::approx_equal(data.scale.z, 1.0)
+            if !helper::math::approx_zero(data.scale.x) || !helper::math::approx_zero(data.scale.y) || !helper::math::approx_zero(data.scale.z)
             {
-                let mut scale_vec = Vector3::<f32>::new(data.scale.x * frame_scale, data.scale.y * frame_scale, data.scale.z * frame_scale);
-
-                // if its zero -> inverse matrix can not be calculated
-                if helper::math::approx_zero(scale_vec.x) { scale_vec.x = 0.00000001; }
-                if helper::math::approx_zero(scale_vec.y) { scale_vec.y = 0.00000001; }
-                if helper::math::approx_zero(scale_vec.z) { scale_vec.z = 0.00000001; }
-
-                scale = Some(scale_vec);
-
-                dbg!(scale);
+                scale = Some(Vector3::<f32>::new(data.scale.x * frame_scale, data.scale.y * frame_scale, data.scale.z * frame_scale));
             }
 
-            transform_component.apply_transformation(translation, scale, rotation);
+            transform_component.apply_transformation(translation, None, rotation);
+
+            if let Some(scale) = scale
+            {
+                transform_component.apply_scale(scale, false);
+            }
+
         }
     }
 
@@ -113,41 +110,41 @@ impl Component for TransformationAnimation
             rot = data.rotation;
             scale = data.scale;
 
-            ui.label(egui::RichText::new("The changes are applies on the Transform Component. If there is no Transform Component. Nothing is happening."));
+            ui.label(egui::RichText::new("The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening."));
 
             ui.vertical(|ui|
             {
                 ui.horizontal(|ui|
                 {
-                    ui.label("translation");
+                    ui.label("Translation: ");
                     changed = ui.add(egui::DragValue::new(&mut trans.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut trans.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut trans.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
                 ui.horizontal(|ui|
                 {
-                    ui.label("rotation");
+                    ui.label("Rotation: ");
                     changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
                 ui.horizontal(|ui|
                 {
-                    ui.label("scale");
+                    ui.label("Scale: ");
                     changed = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
-
             });
         }
 
         if changed
         {
             let data = self.get_data_mut();
-            data.get_mut().translation = trans;
-            data.get_mut().rotation = rot;
-            data.get_mut().scale = scale;
+            let data = data.get_mut();
+            data.translation = trans;
+            data.rotation = rot;
+            data.scale = scale;
         }
     }
 }

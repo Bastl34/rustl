@@ -108,7 +108,7 @@ impl Instance
 
     pub fn apply_scale(&mut self, scale: Vector3<f32>)
     {
-        self.transform.apply_scale(scale);
+        self.transform.apply_scale(scale, true);
     }
 
     pub fn apply_rotation(&mut self, rotation: Vector3<f32>)

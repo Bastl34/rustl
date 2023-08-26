@@ -310,7 +310,7 @@ impl MainInterface
 
             if let Some(suzanne) = scene.find_node_by_name("Suzanne")
             {
-                suzanne.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0))))));
+                suzanne.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
             }
 
 
