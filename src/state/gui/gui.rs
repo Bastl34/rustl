@@ -44,6 +44,8 @@ pub struct Gui
 
     settings: SettingsPanel,
 
+    hierarchy_expand_all: bool,
+
     selected_object: String,
     selected_camera: Option<u64>,
     selected_material:Option<u64>,
@@ -61,6 +63,8 @@ impl Gui
             bottom: BottomPanel::Assets,
 
             settings: SettingsPanel::Components,
+
+            hierarchy_expand_all: false,
 
             selected_object: String::new(), // sceneID_nodeID_instanceID
             selected_camera: None,
@@ -301,6 +305,8 @@ impl Gui
         {
             ui.label("🔍");
             ui.add(egui::TextEdit::singleline(&mut filter).desired_width(120.0));
+
+            ui.toggle_value(&mut self.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
         });
 
         ScrollArea::vertical().show(ui, |ui|
@@ -310,7 +316,7 @@ impl Gui
                 let scene_id = scene.id;
                 let id = format!("{}", scene_id);
                 let ui_id = ui.make_persistent_id(id.clone());
-                egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
+                egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
                 {
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                     {
@@ -351,7 +357,7 @@ impl Gui
 
             let id = format!("{}_{}", scene_id, node_id);
             let ui_id = ui.make_persistent_id(id.clone());
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
@@ -583,6 +589,7 @@ impl Gui
         let node = node.unwrap();
 
         // components
+        if instance_id.is_none()
         {
             let mut node = node.write().unwrap();
             for component in &mut node.components
@@ -610,52 +617,20 @@ impl Gui
 
             if let Some(instance) = instance
             {
-                // alpha
+                let instance = instance.borrow();
+                let instance = instance.get_ref();
+
+                for component in &instance.components
                 {
                     let name;
                     {
-                        let instance = instance.borrow();
-                        let instance = instance.get_ref();
-                        let component = &instance.alpha;
-
+                        let component = component.read().unwrap();
                         let base = component.get_base();
-                        name = format!("{} Instance {} ({})", base.icon, base.component_name, base.name);
+                        name = format!("{} {} ({})", base.icon, base.component_name, base.name);
                     }
-                    // WARNING: if shown a buffer update is triggered -> also if there is no change
-                    // thats why its not visible as default
-                    egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(false).show(ui, |ui|
+                    egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
                     {
-                        let mut instance = instance.borrow_mut();
-                        let instance = instance.get_mut();
-                        let component = &mut instance.alpha;
-
-                        ui.label(RichText::new("Info: If this component is visble: The instance buffer update is performed on every frame.").color(ui.visuals().warn_fg_color));
-                        component.ui(ui);
-                    });
-
-                    ui.separator();
-                }
-
-                // transformation
-                {
-                    let name;
-                    {
-                        let instance = instance.borrow();
-                        let instance = instance.get_ref();
-                        let component = &instance.transform;
-
-                        let base = component.get_base();
-                        name = format!("{} Instance {} ({})", base.icon, base.component_name, base.name);
-                    }
-                    // WARNING: if shown a buffer update is triggered -> also if there is no change
-                    // thats why its not visible as default
-                    egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(false).show(ui, |ui|
-                    {
-                        let mut instance = instance.borrow_mut();
-                        let instance = instance.get_mut();
-                        let component = &mut instance.transform;
-
-                        ui.label(RichText::new("Info: If this component is visble: The instance buffer update is performed on every frame.").color(ui.visuals().warn_fg_color));
+                        let mut component = component.write().unwrap();
                         component.ui(ui);
                     });
 
@@ -663,7 +638,6 @@ impl Gui
                 }
             }
         }
-
     }
 
     fn create_object_settings(&mut self, state: &mut State, ui: &mut Ui)

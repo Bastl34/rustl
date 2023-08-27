@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::NodeItem};
+use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemChangeTracker}, component_impl_no_update};
 
 use super::component::{ComponentBase, Component};
 
@@ -65,9 +65,11 @@ impl Alpha
 impl Component for Alpha
 {
     component_impl_default!();
+    component_impl_no_update!();
 
-    fn update(&mut self, node: NodeItem, _frame_scale: f32)
+    fn instantiable(&self) -> bool
     {
+        true
     }
 
     fn ui(&mut self, ui: &mut egui::Ui)

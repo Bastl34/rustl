@@ -2,7 +2,7 @@ use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math}, state::{scene::node::NodeItem}};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math}, state::{scene::node::NodeItem}, component_impl_no_update};
 
 use super::component::{Component, ComponentBase};
 
@@ -352,9 +352,11 @@ impl Transformation
 impl Component for Transformation
 {
     component_impl_default!();
+    component_impl_no_update!();
 
-    fn update(&mut self, node: NodeItem, _frame_scale: f32)
+    fn instantiable(&self) -> bool
     {
+        true
     }
 
     fn ui(&mut self, ui: &mut egui::Ui)

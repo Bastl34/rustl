@@ -5,10 +5,10 @@ use nalgebra::{Matrix4, Matrix3, Vector3};
 
 use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut};
 
-use super::{components::{component::{ComponentItem, Component}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
-pub type InstanceItemChangeTrack = RefCell<ChangeTracker<InstanceItem>>;
+pub type InstanceItemChangeTracker = RefCell<ChangeTracker<InstanceItem>>;
 
 pub struct Node
 {
@@ -70,84 +70,29 @@ impl Node
         }
     }
 
+    pub fn add_component(&mut self, component: ComponentItem)
+    {
+        self.components.push(component);
+    }
+
     pub fn find_component<T>(&self) -> Option<ComponentItem> where T: 'static
     {
-        let value = self.components.iter().find
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                let component_item = component.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if !value.is_some()
-        {
-            return None;
-        }
-
-        Some(value.unwrap().clone())
+        find_component::<T>(&self.components)
     }
 
     pub fn find_components<T: Component>(&self) -> Vec<ComponentItem> where T: 'static
     {
-        let values: Vec<_> = self.components.iter().filter
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                let component_item = component.as_any();
-                component_item.is::<T>()
-            }
-        ).collect();
-
-        if values.len() == 0
-        {
-            return vec![];
-        }
-
-        values.iter().map(|component| Arc::clone(component)).collect()
+        find_components::<T>(&self.components)
     }
 
     pub fn remove_component_by_type<T>(&mut self) where T: 'static
     {
-        let index = self.components.iter().position
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                let component_item = component.as_any();
-                component_item.is::<T>()
-            }
-        );
-
-        if let Some(index) = index
-        {
-            self.components.remove(index);
-        }
+        remove_component_by_type::<T>(&mut self.components)
     }
 
     pub fn remove_component_by_id(&mut self, id: u64)
     {
-        let index = self.components.iter().position
-        (
-            |c|
-            {
-                let component = c.read().unwrap();
-                component.id() == id
-            }
-        );
-
-        if let Some(index) = index
-        {
-            self.components.remove(index);
-        }
-    }
-
-    pub fn add_component(&mut self, component: ComponentItem)
-    {
-        self.components.push(component);
+        remove_component_by_id(&mut self.components, id)
     }
 
     pub fn get_mesh(&self) -> Option<ComponentItem>
@@ -282,14 +227,11 @@ impl Node
 
     pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)
     {
-        let instance = Instance::new_with_data
+        let instance = Instance::new
         (
             instance_id,
             "instance".to_string(),
-            self_node_item,
-            Vector3::<f32>::new(0.0, 0.0, 0.0),
-            Vector3::<f32>::new(0.0, 0.0, 0.0),
-            Vector3::<f32>::new(1.0, 1.0, 1.0)
+            self_node_item
         );
 
         self.add_instance(Box::new(instance));
@@ -335,6 +277,15 @@ impl Node
             node.components = all_components;
         }
 
+        // ***** update instances *****
+        {
+            let node_read = node.read().unwrap();
+            for instance in node_read.instances.get_ref()
+            {
+                Instance::update(node.clone(), &instance, frame_scale);
+            }
+        }
+
         // ***** update childs *****
         let mut node_write = node.write().unwrap();
         for child_node in &mut node_write.nodes
@@ -367,7 +318,7 @@ impl Node
         true
     }
 
-    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemChangeTrack>
+    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemChangeTracker>
     {
         for instance in self.instances.get_ref()
         {

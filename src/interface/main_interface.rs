@@ -310,7 +310,18 @@ impl MainInterface
 
             if let Some(suzanne) = scene.find_node_by_name("Suzanne")
             {
-                suzanne.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                let mut node = suzanne.write().unwrap();
+                {
+                    let instances = node.instances.get_mut();
+                    let instance = instances.get_mut(0).unwrap();
+
+                    let mut instance = instance.borrow_mut();
+                    let instance = instance.get_mut();
+                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())))));
+
+                    instance.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                }
+                //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
             }
 
 

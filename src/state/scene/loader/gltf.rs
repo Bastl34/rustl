@@ -10,8 +10,6 @@ use crate::{state::scene::{scene::Scene, components::{material::{Material, Mater
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
-    dbg!(path);
-
     let gltf_content = load_binary_async(path).await?;
 
     let mut gltf = Gltf::from_slice(gltf_content.as_slice())?;

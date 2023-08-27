@@ -1,10 +1,11 @@
 use std::any::Any;
 
+use egui::Color32;
 use nalgebra::Vector3;
 
 use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::scene::node::NodeItem, component_downcast, component_downcast_mut};
 
-use super::{component::{ComponentBase, Component}, transformation::Transformation};
+use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
 pub struct TransformationAnimationData
 {
@@ -53,16 +54,10 @@ impl TransformationAnimation
     {
         &mut self.data
     }
-}
 
-impl Component for TransformationAnimation
-{
-    component_impl_default!();
-
-    fn update(&mut self, node: NodeItem, frame_scale: f32)
+    fn _update(&mut self, transform_component: Option<ComponentItem>, frame_scale: f32)
     {
-        let node = node.write().unwrap();
-        if let Some(transform_component) = node.find_component::<Transformation>()
+        if let Some(transform_component) = transform_component
         {
             component_downcast_mut!(transform_component, Transformation);
 
@@ -92,8 +87,32 @@ impl Component for TransformationAnimation
             {
                 transform_component.apply_scale(scale, false);
             }
-
         }
+    }
+}
+
+impl Component for TransformationAnimation
+{
+    component_impl_default!();
+
+    fn instantiable(&self) -> bool
+    {
+        true
+    }
+
+    fn update(&mut self, node: NodeItem, frame_scale: f32)
+    {
+        let node = node.write().unwrap();
+
+        self._update(node.find_component::<Transformation>(), frame_scale);
+    }
+
+    fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, frame_scale: f32)
+    {
+        let instance = instance.borrow();
+        let instance = instance.get_ref();
+
+        self._update(instance.find_component::<Transformation>(), frame_scale);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui)
@@ -110,7 +129,21 @@ impl Component for TransformationAnimation
             rot = data.rotation;
             scale = data.scale;
 
-            ui.label(egui::RichText::new("The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening."));
+            /*
+            let bg_color = Color32::from_white_alpha(5);
+
+            // Rahmengröße
+            let frame_size = ui.available_size();
+
+            // Zeichne den Hintergrund des Rahmens
+            let painter = ui.painter();
+            painter.rect_filled(ui.max_rect(), 8.0, bg_color);
+
+            // Definiere den Inhalt des Rahmens
+            ui.allocate_ui(frame_size, |ui| {
+                ui.label(egui::RichText::new("The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening."));
+            });
+             */
 
             ui.vertical(|ui|
             {

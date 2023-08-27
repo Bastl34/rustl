@@ -2,7 +2,7 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh}, node::{Node, NodeItem}, camera::Camera, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
@@ -368,7 +368,10 @@ impl Scene
                     for (i, instance) in node_ref.iter().enumerate()
                     {
                         let mut instance = instance.borrow_mut();
-                        let (instance, instance_changed) = instance.consume_borrow();
+                        let (instance, mut instance_changed) = instance.consume_borrow();
+
+                        instance_changed = Self::find_changed_instance_data(instance) || instance_changed;
+
                         if instance_changed
                         {
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
@@ -430,6 +433,34 @@ impl Scene
         }
 
         has_changed_data
+    }
+
+    pub fn find_changed_instance_data(instance: &Box<Instance>) -> bool
+    {
+        // transformation check
+        let trans_component = instance.find_component::<Transformation>();
+        if let Some(trans_component) = trans_component
+        {
+            component_downcast_mut!(trans_component, Transformation);
+            if trans_component.get_data_mut().consume_change()
+            {
+                return true;
+            }
+        }
+
+        // alpha check
+        let alpha_component = instance.find_component::<Alpha>();
+        if let Some(alpha_component) = alpha_component
+        {
+            component_downcast_mut!(alpha_component, Alpha);
+
+            if alpha_component.get_data_mut().consume_change()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)

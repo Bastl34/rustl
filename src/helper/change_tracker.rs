@@ -35,6 +35,11 @@ impl<T> ChangeTracker<T>
         &mut self.data
     }
 
+    pub fn get_unmarked_mut(&mut self) -> &mut T
+    {
+        &mut self.data
+    }
+
     pub fn changed(&self) -> bool
     {
         self.changed
