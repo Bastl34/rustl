@@ -148,10 +148,20 @@ impl Instance
             let instance_trans = transform_component.get_transform();
             let instance_normal = transform_component.get_normal_matrix();
 
-            (
-                node_trans * instance_trans,
-                node_normal * instance_normal,
-            )
+            if transform_component.has_parent_inheritance()
+            {
+                (
+                    node_trans * instance_trans,
+                    node_normal * instance_normal,
+                )
+            }
+            else
+            {
+                (
+                    *instance_trans,
+                    *instance_normal,
+                )
+            }
         }
         else
         {
@@ -176,7 +186,15 @@ impl Instance
         if let Some(alpha_component) = alpha_component
         {
             component_downcast!(alpha_component, Alpha);
-            alpha_component.get_alpha() * node_alpha
+
+            if alpha_component.has_alpha_inheritance()
+            {
+                alpha_component.get_alpha() * node_alpha
+            }
+            else
+            {
+                alpha_component.get_alpha()
+            }
         }
         else
         {
