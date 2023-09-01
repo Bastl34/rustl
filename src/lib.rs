@@ -66,6 +66,8 @@ mod state
     pub(crate) mod gui
     {
         pub(crate) mod gui;
+        pub(crate) mod info_box;
+        pub(crate) mod generic_items;
     }
 }
 

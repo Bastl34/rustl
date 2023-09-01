@@ -37,9 +37,6 @@ pub struct State
     pub running: bool,
     pub scenes: Vec<SceneItem>,
 
-    pub instances: u32,
-    pub rotation_speed: f32,
-
     pub save_image: bool,
     pub save_depth_pass_image: bool,
     pub save_depth_buffer_image: bool,
@@ -90,9 +87,6 @@ impl State
 
             running: false,
             scenes: vec![],
-
-            instances: 3,
-            rotation_speed: 0.01,
 
             save_image: false,
             save_depth_pass_image: false,

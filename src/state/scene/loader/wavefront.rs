@@ -297,7 +297,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                 normals_indices = indices.clone();
             }
 
-            let item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), verts, indices, uvs, uv_indices, normals, normals_indices);
+            let item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), "mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
             let id = scene.id_manager.get_next_node_id();
             loaded_ids.push(id);

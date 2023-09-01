@@ -34,7 +34,7 @@ pub struct Mesh
 
 impl Mesh
 {
-    pub fn new_with_data(id: u64, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
+    pub fn new_with_data(id: u64, name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
         let mesh_data = MeshData
         {
@@ -56,7 +56,7 @@ impl Mesh
 
         let mut mesh = Mesh
         {
-            base: ComponentBase::new(id, "Default".to_string(), "Mesh".to_string(), "◼".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Mesh".to_string(), "◼".to_string()),
             data: ChangeTracker::new(mesh_data)
         };
 
@@ -65,7 +65,7 @@ impl Mesh
         mesh
     }
 
-    pub fn new_plane(id: u64, x0: Point3<f32>, x1: Point3<f32>, x2: Point3<f32>, x3: Point3<f32>) -> Mesh
+    pub fn new_plane(id: u64, name: &str, x0: Point3<f32>, x1: Point3<f32>, x2: Point3<f32>, x3: Point3<f32>) -> Mesh
     {
         let points = vec![ x0, x1, x2, x3 ];
 
@@ -80,16 +80,16 @@ impl Mesh
         let indices = vec![[0u32, 1, 2], [0, 2, 3]];
         let uv_indices = vec![[0u32, 1, 2], [0, 2, 3]];
 
-        let mut mesh = Mesh::new_with_data(id, points, indices, uvs, uv_indices, vec![], vec![]);
+        let mut mesh = Mesh::new_with_data(id, name, points, indices, uvs, uv_indices, vec![], vec![]);
 
         mesh.calc_bbox();
 
         mesh
     }
 
-    pub fn empty(id: u64) -> Mesh
+    pub fn empty(id: u64, name: &str) -> Mesh
     {
-        let mut mesh = Mesh::new_with_data(id, vec![], vec![], vec![], vec![], vec![], vec![]);
+        let mut mesh = Mesh::new_with_data(id, name, vec![], vec![], vec![], vec![], vec![], vec![]);
 
         mesh.calc_bbox();
 

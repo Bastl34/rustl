@@ -19,7 +19,7 @@ pub struct Alpha
 
 impl Alpha
 {
-    pub fn new(id: u64, alpha: f32) -> Alpha
+    pub fn new(id: u64, name: &str, alpha: f32) -> Alpha
     {
         let data = AlphaData
         {
@@ -29,7 +29,7 @@ impl Alpha
 
         let mut alpha = Alpha
         {
-            base: ComponentBase::new(id, "Default".to_string(), "Alpha".to_string(), "🌖".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Alpha".to_string(), "🌖".to_string()),
             data: ChangeTracker::new(data)
         };
 

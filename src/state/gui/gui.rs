@@ -5,6 +5,8 @@ use nalgebra::{Vector3, Point3};
 
 use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
+use super::generic_items;
+
 
 #[derive(PartialEq, Eq)]
 enum SettingsPanel
@@ -64,7 +66,7 @@ impl Gui
 
             settings: SettingsPanel::Components,
 
-            hierarchy_expand_all: false,
+            hierarchy_expand_all: true,
 
             selected_object: String::new(), // sceneID_nodeID_instanceID
             selected_camera: None,
@@ -94,6 +96,7 @@ impl Gui
     {
         let mut visual = Visuals::dark();
         visual.panel_fill[3] = 253;
+        //visual.override_text_color = Some(egui::Color32::WHITE);
 
         let style = Style
         {
@@ -196,7 +199,13 @@ impl Gui
             {
                 match self.settings
                 {
-                    SettingsPanel::Components => if object_settings { self.create_component_settings(state, ui); },
+                    SettingsPanel::Components => if object_settings
+                    {
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                        {
+                            self.create_component_settings(state, ui);
+                        });
+                    },
                     SettingsPanel::Object => if object_settings { self.create_object_settings(state, ui); },
                     SettingsPanel::Material => if material_settings { self.create_material_settings(state, ui); },
                     SettingsPanel::Camera => if camera_settings { },
@@ -591,50 +600,114 @@ impl Gui
         // components
         if instance_id.is_none()
         {
-            let mut node = node.write().unwrap();
-            for component in &mut node.components
+            let mut delete_component_id = None;
+
+            let node_read = node.read().unwrap();
+            for component in &node_read.components
             {
+                let component_id;
                 let name;
+                let component_name;
                 {
                     let component = component.read().unwrap();
                     let base = component.get_base();
-                    name = format!("{} {} ({})", base.icon, base.component_name, base.name);
+                    component_name = format!("{} {}", base.icon, base.component_name);
+                    name = base.name.clone();
+                    component_id = component.id();
                 }
-                egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
+                generic_items::collapse(ui, component_id, true, |ui|
                 {
+                    ui.vertical(|ui|
+                    {
+                        ui.horizontal(|ui|
+                        {
+                            ui.label(RichText::new(component_name).heading().strong());
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                            {
+                                if ui.button("🗑").clicked()
+                                {
+                                    delete_component_id = Some(component_id);
+                                }
+                            });
+                        });
+                    });
+                },
+                |ui|
+                {
+                    ui.label(format!("Id: {}", component_id));
+                    ui.label(format!("Name: {}", name));
+
                     let mut component = component.write().unwrap();
                     component.ui(ui);
                 });
+            }
 
-                ui.separator();
+            drop(node_read);
+
+            if let Some(delete_component_id) = delete_component_id
+            {
+                node.write().unwrap().remove_component_by_id(delete_component_id);
             }
         }
 
         if let Some(instance_id) = instance_id
         {
-            let node = node.read().unwrap();
+            let mut delete_component_id = None;
+
+            let node: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
             let instance = node.find_instance_by_id(instance_id);
 
             if let Some(instance) = instance
             {
-                let instance = instance.borrow();
-                let instance = instance.get_ref();
-
-                for component in &instance.components
                 {
-                    let name;
-                    {
-                        let component = component.read().unwrap();
-                        let base = component.get_base();
-                        name = format!("{} {} ({})", base.icon, base.component_name, base.name);
-                    }
-                    egui::CollapsingHeader::new(RichText::new(name).heading().strong()).default_open(true).show(ui, |ui|
-                    {
-                        let mut component = component.write().unwrap();
-                        component.ui(ui);
-                    });
+                    let instance_borrow = instance.borrow();
+                    let instance = instance_borrow.get_ref();
 
-                    ui.separator();
+                    for component in &instance.components
+                    {
+                        let component_id;
+                        let name;
+                        let component_name;
+                        {
+                            let component = component.read().unwrap();
+                            let base = component.get_base();
+                            component_name = format!("{} {}", base.icon, base.component_name);
+                            name = base.name.clone();
+                            component_id = component.id();
+                        }
+                        generic_items::collapse(ui, component_id, true, |ui|
+                        {
+                            ui.vertical(|ui|
+                            {
+                                ui.horizontal(|ui|
+                                {
+                                    ui.label(RichText::new(component_name).heading().strong());
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                                    {
+                                        if ui.button("🗑").clicked()
+                                        {
+                                            delete_component_id = Some(component_id);
+                                        }
+                                    });
+                                });
+                            });
+                        },
+                        |ui|
+                        {
+                            ui.label(format!("Id: {}", component_id));
+                            ui.label(format!("Name: {}", name));
+
+                            let mut component = component.write().unwrap();
+                            component.ui(ui);
+                        });
+                    }
+                }
+
+                if let Some(delete_component_id) = delete_component_id
+                {
+                    let mut instance = instance.borrow_mut();
+                    let instance = instance.get_mut();
+                    instance.remove_component_by_id(delete_component_id);
                 }
             }
         }
@@ -979,18 +1052,6 @@ impl Gui
 
         egui::CollapsingHeader::new(RichText::new("🐛 Debugging Settings").heading().strong()).default_open(true).show(ui, |ui|
         {
-            ui.horizontal(|ui|
-            {
-                ui.label("instances:");
-                ui.add(egui::Slider::new(&mut state.instances, 1..=10000));
-            });
-
-            ui.horizontal(|ui|
-            {
-                ui.label("rotation speed:");
-                ui.add(egui::Slider::new(&mut state.rotation_speed, 0.0..=2.0));
-            });
-
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 if ui.button("save image").clicked()

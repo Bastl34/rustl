@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::Color32;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::scene::node::NodeItem, component_downcast, component_downcast_mut};
+use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::node::NodeItem, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -22,7 +22,7 @@ pub struct TransformationAnimation
 
 impl TransformationAnimation
 {
-    pub fn new(id: u64, translation: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> TransformationAnimation
+    pub fn new(id: u64, name: &str, translation: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> TransformationAnimation
     {
         let data = TransformationAnimationData
         {
@@ -33,7 +33,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, "Default".to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
             data: ChangeTracker::new(data)
         };
 
@@ -129,21 +129,7 @@ impl Component for TransformationAnimation
             rot = data.rotation;
             scale = data.scale;
 
-            /*
-            let bg_color = Color32::from_white_alpha(5);
-
-            // Rahmengröße
-            let frame_size = ui.available_size();
-
-            // Zeichne den Hintergrund des Rahmens
-            let painter = ui.painter();
-            painter.rect_filled(ui.max_rect(), 8.0, bg_color);
-
-            // Definiere den Inhalt des Rahmens
-            ui.allocate_ui(frame_size, |ui| {
-                ui.label(egui::RichText::new("The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening."));
-            });
-             */
+            info_box(ui, "The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening.");
 
             ui.vertical(|ui|
             {

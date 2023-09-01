@@ -6,7 +6,7 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::change_tracker::ChangeTracker};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -148,7 +148,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
     let local_transform = transform_to_matrix(node.transform());
     //let world_transform = parent_transform * local_transform;
     let world_transform = local_transform * parent_transform;
-    let decomposed_transform = transform_decompose(node.transform());
+    let (translate, rotation, scale) = transform_decompose(node.transform());
 
     let mut parent_node = parent;
 
@@ -316,7 +316,12 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
                 }
             }
 
-            let mut item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), verts, indices, uvs1, uv_indices, normals, normals_indices);
+            if verts.len() == 0 || indices.len() == 0
+            {
+                continue;
+            }
+
+            let mut item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
             item.get_data_mut().get_mut().uvs_2 = uvs2;
             item.get_data_mut().get_mut().uvs_3 = uvs3;
 
@@ -349,8 +354,11 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
                 }
 
                 // transformation
-                let component_id = scene.id_manager.get_next_component_id();
-                node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)))));
+                if !approx_zero_vec3(translate) || !approx_zero_vec3(rotation) || !approx_one_vec3(scale)
+                {
+                    let component_id = scene.id_manager.get_next_component_id();
+                    node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                }
 
                 // add default instance
                 node.create_default_instance(node_arc.clone(), scene.id_manager.get_next_instance_id());
@@ -383,13 +391,14 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
         // only if the node has children -> otherwise ignore it
         if node.children().len() > 0
         {
-            let name = node.name().unwrap_or("unknown transform node");
+            let name = node.name().unwrap_or("transform node");
             let scene_node = Node::new(scene.id_manager.get_next_node_id(), name);
 
             // add transformation
+            if !approx_zero_vec3(translate) || !approx_zero_vec3(rotation) || !approx_one_vec3(scale)
             {
                 let component_id = scene.id_manager.get_next_component_id();
-                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, decomposed_transform.0, decomposed_transform.1, decomposed_transform.2)))));
+                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform Test", translate, rotation, scale)))));
             }
 
             if parent_node.is_none()

@@ -283,21 +283,22 @@ impl MainInterface
 
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
+            //scene.load("objects/temp/scene.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 
             let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
             {
                 let mut root_node = root_node.write().unwrap();
-                root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), 1.0)))));
+                root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
             }
 
             for node in &scene.nodes
@@ -317,11 +318,18 @@ impl MainInterface
 
                     let mut instance = instance.borrow_mut();
                     let instance = instance.get_mut();
-                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())))));
+                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transform")))));
 
-                    instance.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                    instance.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
                 }
                 //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+            }
+
+            // add light
+            {
+                let light_id = scene.id_manager.get_next_light_id();
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 
 

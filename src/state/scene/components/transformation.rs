@@ -29,7 +29,7 @@ pub struct Transformation
 
 impl Transformation
 {
-    pub fn new(id: u64, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
+    pub fn new(id: u64, name: &str, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
     {
         let data = TransformationData
         {
@@ -48,7 +48,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, "Default".to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data)
         };
         transform.calc_transform();
@@ -56,7 +56,7 @@ impl Transformation
         transform
     }
 
-    pub fn new_transformation_only(id: u64, trans: Matrix4::<f32>) -> Transformation
+    pub fn new_transformation_only(id: u64, name: &str, trans: Matrix4::<f32>) -> Transformation
     {
         let data = TransformationData
         {
@@ -75,7 +75,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data)
         };
         transform.calc_transform();
@@ -83,7 +83,7 @@ impl Transformation
         transform
     }
 
-    pub fn identity(id: u64) -> Transformation
+    pub fn identity(id: u64, name: &str) -> Transformation
     {
         let data = TransformationData
         {
@@ -102,7 +102,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, "".to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data)
         };
         transform.calc_transform();
