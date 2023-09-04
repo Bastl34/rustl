@@ -5,7 +5,7 @@ use nalgebra::{Vector3, Point3};
 
 use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
-use super::generic_items;
+use super::generic_items::{self, collapse_with_title};
 
 
 #[derive(PartialEq, Eq)]
@@ -251,18 +251,14 @@ impl Gui
 
     fn create_left_sidebar(&mut self, state: &mut State, ui: &mut Ui)
     {
-        ui.separator();
-
         // statistics
-        egui::CollapsingHeader::new(RichText::new("📈 Statistics").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "statistic", true, "📈 Statistics", |ui|
         {
             self.create_statistic(state, ui);
         });
 
-        ui.separator();
-
         // hierarchy
-        egui::CollapsingHeader::new(RichText::new("🗄 Hierarchy").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", |ui|
         {
             ui.horizontal(|ui|
             {
@@ -615,21 +611,15 @@ impl Gui
                     name = base.name.clone();
                     component_id = component.id();
                 }
-                generic_items::collapse(ui, component_id, true, |ui|
+                generic_items::collapse(ui, component_id.to_string(), true, |ui|
                 {
-                    ui.vertical(|ui|
+                    ui.label(RichText::new(component_name).heading().strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                     {
-                        ui.horizontal(|ui|
+                        if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
                         {
-                            ui.label(RichText::new(component_name).heading().strong());
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
-                            {
-                                if ui.button("🗑").clicked()
-                                {
-                                    delete_component_id = Some(component_id);
-                                }
-                            });
-                        });
+                            delete_component_id = Some(component_id);
+                        }
                     });
                 },
                 |ui|
@@ -675,21 +665,15 @@ impl Gui
                             name = base.name.clone();
                             component_id = component.id();
                         }
-                        generic_items::collapse(ui, component_id, true, |ui|
+                        generic_items::collapse(ui, component_id.to_string(), true, |ui|
                         {
-                            ui.vertical(|ui|
+                            ui.label(RichText::new(component_name).heading().strong());
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                             {
-                                ui.horizontal(|ui|
+                                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
                                 {
-                                    ui.label(RichText::new(component_name).heading().strong());
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
-                                    {
-                                        if ui.button("🗑").clicked()
-                                        {
-                                            delete_component_id = Some(component_id);
-                                        }
-                                    });
-                                });
+                                    delete_component_id = Some(component_id);
+                                }
                             });
                         },
                         |ui|
@@ -798,7 +782,7 @@ impl Gui
         }
 
         // General
-        egui::CollapsingHeader::new(RichText::new("ℹ Object Data").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "object_data", true, "ℹ Object Data", |ui|
         {
             {
                 let node = node.read().unwrap();
@@ -808,10 +792,9 @@ impl Gui
             }
         });
 
-        ui.separator();
 
         // statistics
-        egui::CollapsingHeader::new(RichText::new("📈 Object Info").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "object_info", true, "📈 Object Info", |ui|
         {
             ui.label(RichText::new("👤 own").strong());
             ui.label(format!(" ⚫ instances: {}", direct_instances_amout));
@@ -828,10 +811,8 @@ impl Gui
             ui.label(format!(" ⚫ indices: {}", all_indices_amout));
         });
 
-        ui.separator();
-
         // Settings
-        egui::CollapsingHeader::new(RichText::new("⛭ Object Settings").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "object_settings", true, "⛭ Object Settings", |ui|
         {
             let mut changed = false;
 
@@ -877,38 +858,9 @@ impl Gui
             });
         });
 
-
-        ui.separator();
-
         if let Some(instance_id) = instance_id
         {
             self.create_instance_settings(state, scene_id, node, instance_id, ui);
-        }
-    }
-
-    fn create_material_settings(&mut self, state: &mut State, ui: &mut Ui)
-    {
-        let (scene_id, ..) = self.get_object_ids();
-
-        // no scene selected
-        if scene_id.is_none() { return; }
-        let scene_id: u64 = scene_id.unwrap();
-
-        let scene = state.find_scene_by_id(scene_id);
-        if scene.is_none() { return; }
-
-        let scene = scene.unwrap();
-
-        if self.selected_material.is_none() { return; }
-        let material_id = self.selected_material.unwrap();
-
-        if let Some(material) = scene.get_material_by_id(material_id)
-        {
-            egui::CollapsingHeader::new(RichText::new("🎨 Material Settings").heading().strong()).default_open(true).show(ui, |ui|
-            {
-                let mut material = material.write().unwrap();
-                material.ui(ui);
-            });
         }
     }
 
@@ -925,7 +877,7 @@ impl Gui
         let instance = instance.unwrap();
 
         // General
-        egui::CollapsingHeader::new(RichText::new("ℹ Instance Data").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", |ui|
         {
             let instance = instance.borrow();
             let instance = instance.get_ref();
@@ -938,7 +890,7 @@ impl Gui
 
         // Settings
         let mut delete_instance = false;
-        egui::CollapsingHeader::new(RichText::new("⛭ Instance Settings").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "instance_settings", true, "⛭ Instance Settings", |ui|
         {
             let mut changed = false;
 
@@ -988,6 +940,32 @@ impl Gui
         }
     }
 
+    fn create_material_settings(&mut self, state: &mut State, ui: &mut Ui)
+    {
+        let (scene_id, ..) = self.get_object_ids();
+
+        // no scene selected
+        if scene_id.is_none() { return; }
+        let scene_id: u64 = scene_id.unwrap();
+
+        let scene = state.find_scene_by_id(scene_id);
+        if scene.is_none() { return; }
+
+        let scene = scene.unwrap();
+
+        if self.selected_material.is_none() { return; }
+        let material_id = self.selected_material.unwrap();
+
+        if let Some(material) = scene.get_material_by_id(material_id)
+        {
+            egui::CollapsingHeader::new(RichText::new("🎨 Material Settings").heading().strong()).default_open(true).show(ui, |ui|
+            {
+                let mut material = material.write().unwrap();
+                material.ui(ui);
+            });
+        }
+    }
+
     fn create_scene_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
         let (scene_id, ..) = self.get_object_ids();
@@ -1032,25 +1010,23 @@ impl Gui
         }
 
         // statistics
-        egui::CollapsingHeader::new(RichText::new("📈 Info").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "scene_info", true, "📈 Info", |ui|
         {
-            ui.label(format!("nodes: {}", all_nodes.len()));
-            ui.label(format!("instances: {}", instances_amout));
-            ui.label(format!("materials: {}", scene.materials.len()));
-            ui.label(format!("textures: {}", scene.textures.len()));
-            ui.label(format!("cameras: {}", scene.cameras.len()));
-            ui.label(format!("lights: {}", scene.lights.get_ref().len()));
+            ui.label(format!(" ⚫ nodes: {}", all_nodes.len()));
+            ui.label(format!(" ⚫ instances: {}", instances_amout));
+            ui.label(format!(" ⚫ materials: {}", scene.materials.len()));
+            ui.label(format!(" ⚫ textures: {}", scene.textures.len()));
+            ui.label(format!(" ⚫ cameras: {}", scene.cameras.len()));
+            ui.label(format!(" ⚫ lights: {}", scene.lights.get_ref().len()));
 
             ui.separator();
 
-            ui.label(format!("meshes: {}", meshes_amout));
-            ui.label(format!("vertices: {}", vertices_amout));
-            ui.label(format!("indices: {}", indices_amout));
+            ui.label(format!(" ⚫ meshes: {}", meshes_amout));
+            ui.label(format!(" ⚫ vertices: {}", vertices_amout));
+            ui.label(format!(" ⚫ indices: {}", indices_amout));
         });
 
-        ui.separator();
-
-        egui::CollapsingHeader::new(RichText::new("🐛 Debugging Settings").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "scene_debugging", true, "🐛 Debugging Settings", |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -1080,7 +1056,7 @@ impl Gui
     fn create_rendering_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
         // general rendering settings
-        egui::CollapsingHeader::new(RichText::new("General Settings").heading().strong()).default_open(true).show(ui, |ui|
+        collapse_with_title(ui, "render_settings", true, "General Settings", |ui|
         {
             ui.horizontal(|ui|
             {

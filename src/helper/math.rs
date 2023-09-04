@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use nalgebra::{Vector4, Vector3};
+use nalgebra::{Vector4, Vector3, Vector2};
 
 pub fn approx_equal(a: f32, b: f32) -> bool
 {
@@ -22,6 +22,11 @@ pub fn approx_zero(value: f32) -> bool
 {
     let tolerance = 1e-6;
     value.abs() < tolerance
+}
+
+pub fn approx_zero_vec2(value: Vector2::<f32>) -> bool
+{
+    approx_zero(value.x) && approx_zero(value.y)
 }
 
 pub fn approx_zero_vec3(value: Vector3::<f32>) -> bool

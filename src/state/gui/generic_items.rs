@@ -1,6 +1,6 @@
-use egui::{Ui, Color32};
+use egui::{Ui, Color32, RichText};
 
-pub fn collapse<R>(ui: &mut Ui, id: u64, open: bool, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
+pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
     let bg_color = Color32::from_white_alpha(3);
 
@@ -9,13 +9,34 @@ pub fn collapse<R>(ui: &mut Ui, id: u64, open: bool, header: impl FnOnce(&mut Ui
 
     frame.show(ui, |ui|
     {
-        let ui_id = ui.make_persistent_id(id.clone());
+        let ui_id = ui.make_persistent_id(id);
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, open).show_header(ui, |ui|
         {
-            header(ui);
+            ui.horizontal(|ui|
+            {
+                header(ui);
+            });
         }).body(|ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), body);
         });
+    });
+}
+
+pub fn collapse_with_title<R>(ui: &mut Ui, id: &str, open: bool, title: &str, body: impl FnOnce(&mut Ui) -> R)
+{
+    collapse(ui, id.to_string(), open, |ui|
+    {
+        ui.label(RichText::new(title).heading().strong());
+
+        // this is just to use the full with
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+        {
+            ui.label("");
+        });
+    },
+    |ui|
+    {
+        body(ui);
     });
 }

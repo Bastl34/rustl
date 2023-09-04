@@ -5,10 +5,13 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
-use nalgebra::{Point3, Vector3};
+use nalgebra::{Point3, Vector3, Vector2};
+use winit::event::ElementState;
 use winit::window::{Window, Fullscreen};
 
 use crate::helper::change_tracker::ChangeTracker;
+use crate::input::keyboard::{Modifier, Key};
+use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene};
 
@@ -23,6 +26,8 @@ use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::state::{State, StateItem};
+
+use super::winit::winit_map_key;
 
 const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
@@ -48,6 +53,8 @@ impl MainInterface
         let mut wgpu: WGpu;
         {
             let state = &mut *(state.borrow_mut());
+            state.width = window.inner_size().width;
+            state.height = window.inner_size().height;
             wgpu = WGpu::new(&window, state).await;
 
             dbg!(state.adapter.max_msaa_samples);
@@ -114,6 +121,9 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
+            state.width = width;
+            state.height = height;
+
             for scene in &mut state.scenes
             {
                 let mut render_item = scene.render_item.take();
@@ -123,6 +133,9 @@ impl MainInterface
 
                 scene.render_item = render_item;
             }
+
+            // reset input states
+            state.input_manager.reset();
         }
     }
 
@@ -284,12 +297,12 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
-            //scene.load("objects/temp/lotus.glb").await.unwrap();
+            scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
             //scene.load("objects/temp/scene.glb").await.unwrap();
 
@@ -448,6 +461,12 @@ impl MainInterface
     {
         let frame_time = Instant::now();
 
+        // update inputs
+        {
+            let state = &mut *(self.state.borrow_mut());
+            state.input_manager.update();
+        }
+
         // update states
         {
             let state = &mut *(self.state.borrow_mut());
@@ -604,6 +623,18 @@ impl MainInterface
             state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
 
             state.fps_absolute = (1000.0 / (state.render_time + state.update_time)) as u32;
+
+            // frame update
+            state.frame += 1;
+        }
+
+        {
+            let state = &mut *(self.state.borrow_mut());
+            let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
+            if changed
+            {
+                self.window.set_cursor_visible(*visible);
+            }
         }
     }
 
@@ -617,6 +648,112 @@ impl MainInterface
         if self.egui.on_event(event)
         {
             return;
+        }
+        else
+        {
+            let global_state = &mut *(self.state.borrow_mut());
+
+            match event
+            {
+                winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
+                {
+                    if let Some(key) = input.virtual_keycode
+                    {
+                        let key = winit_map_key(key);
+                        if input.state == ElementState::Pressed
+                        {
+                            global_state.input_manager.keyboard.set_key(key, true);
+                        }
+                        else
+                        {
+                            global_state.input_manager.keyboard.set_key(key, false);
+                        }
+                    }
+                },
+                winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
+                {
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt());
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl());
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo());
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift());
+                },
+                winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
+                {
+                    let pressed;
+                    match state
+                    {
+                        ElementState::Pressed => pressed = true,
+                        ElementState::Released => pressed = false,
+                    }
+
+                    let button = winit_map_mouse_button(button);
+
+                    global_state.input_manager.mouse.set_button(button, pressed);
+                },
+                winit::event::WindowEvent::MouseWheel { device_id: _, delta, phase: _, ..} =>
+                {
+                    match delta
+                    {
+                        winit::event::MouseScrollDelta::LineDelta(x, y) =>
+                        {
+                            global_state.input_manager.mouse.set_wheel_delta_x(*x);
+                            global_state.input_manager.mouse.set_wheel_delta_y(*y);
+                        },
+                        winit::event::MouseScrollDelta::PixelDelta(delta) =>
+                        {
+                            global_state.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
+                            global_state.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
+                        },
+                    }
+
+                },
+                winit::event::WindowEvent::CursorMoved { device_id: _, position, ..} =>
+                {
+                    // offset maybe for later usage
+                    let offset_x = 0.0;
+                    let offset_y = 0.0;
+
+                    let mut pos = Vector2::<f32>::new(position.x as f32, position.y as f32);
+
+                    pos.x = pos.x - offset_x;
+                    // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
+                    pos.y = global_state.height as f32 + offset_y - pos.y;
+                },
+                winit::event::WindowEvent::Focused(focus) =>
+                {
+                    global_state.in_focus = *focus;
+                    global_state.input_manager.reset();
+                },
+                _ => {}
+                /*
+                winit::event::WindowEvent::Resized(_) => todo!(),
+                winit::event::WindowEvent::Moved(_) => todo!(),
+                winit::event::WindowEvent::CloseRequested => todo!(),
+                winit::event::WindowEvent::Destroyed => todo!(),
+                winit::event::WindowEvent::DroppedFile(_) => todo!(),
+                winit::event::WindowEvent::HoveredFile(_) => todo!(),
+                winit::event::WindowEvent::HoveredFileCancelled => todo!(),
+                winit::event::WindowEvent::ReceivedCharacter(_) => todo!(),
+                winit::event::WindowEvent::Focused(_) => todo!(),
+                winit::event::WindowEvent::KeyboardInput { device_id, input, is_synthetic } => todo!(),
+                winit::event::WindowEvent::ModifiersChanged(_) => todo!(),
+                winit::event::WindowEvent::Ime(_) => todo!(),
+                winit::event::WindowEvent::CursorMoved { device_id, position, modifiers } => todo!(),
+                winit::event::WindowEvent::CursorEntered { device_id } => todo!(),
+                winit::event::WindowEvent::CursorLeft { device_id } => todo!(),
+                winit::event::WindowEvent::MouseWheel { device_id, delta, phase, modifiers } => todo!(),
+                winit::event::WindowEvent::MouseInput { device_id, state, button, modifiers } => todo!(),
+                winit::event::WindowEvent::TouchpadMagnify { device_id, delta, phase } => todo!(),
+                winit::event::WindowEvent::SmartMagnify { device_id } => todo!(),
+                winit::event::WindowEvent::TouchpadRotate { device_id, delta, phase } => todo!(),
+                winit::event::WindowEvent::TouchpadPressure { device_id, pressure, stage } => todo!(),
+                winit::event::WindowEvent::AxisMotion { device_id, axis, value } => todo!(),
+                winit::event::WindowEvent::Touch(_) => todo!(),
+                winit::event::WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => todo!(),
+                winit::event::WindowEvent::ThemeChanged(_) => todo!(),
+                winit::event::WindowEvent::Occluded(_) => todo!(),
+                 */
+            }
         }
     }
 }

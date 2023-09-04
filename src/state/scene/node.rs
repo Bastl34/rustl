@@ -342,6 +342,33 @@ impl Node
         self.instances.get_ref().len() != len
     }
 
+    pub fn delete_node_by_id(&mut self, id: u64) -> bool
+    {
+        let len = self.nodes.len();
+        self.nodes.retain(|node|
+        {
+            node.read().unwrap().id != id
+        });
+
+        if self.nodes.len() != len
+        {
+            return true;
+        }
+
+        // if not found -> check children
+        for node in &self.nodes
+        {
+            let deleted = node.write().unwrap().delete_node_by_id(id);
+
+            if deleted
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);

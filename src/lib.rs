@@ -71,6 +71,18 @@ mod state
     }
 }
 
+pub(crate) mod input
+{
+    pub(crate) mod input_manager;
+
+    pub(crate) mod press_state;
+    pub(crate) mod input_point;
+
+    pub(crate) mod keyboard;
+    pub(crate) mod mouse;
+
+}
+
 mod window
 {
     pub(crate) mod window;
@@ -79,6 +91,7 @@ mod window
 mod interface
 {
     pub(crate) mod main_interface;
+    pub(crate) mod winit;
 }
 
 mod helper

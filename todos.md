@@ -3,7 +3,6 @@ todo:
  * active camera (camera width/height based on 0<->1)
  * consider using ComponentBase for all state structs
  * everything should be dynamic
- * buffer update on model matrix change
  * TODOs
  * normal matrix is wrong -> its actually this: https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
 
@@ -17,3 +16,4 @@ done:
  * screenshot (render pass color attachment)
  * update camera/s on resize
  * do not save state on scene (just pass it on update/render)
+ * buffer update on model matrix change

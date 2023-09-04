@@ -317,6 +317,22 @@ impl Scene
             node.read().unwrap().id != id
         });
 
-        self.nodes.len() != len
+        if self.nodes.len() != len
+        {
+            return true;
+        }
+
+        // if not found -> check children
+        for node in &self.nodes
+        {
+            let deleted = node.write().unwrap().delete_node_by_id(id);
+
+            if deleted
+            {
+                return true;
+            }
+        }
+
+        false
     }
 }

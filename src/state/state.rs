@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use instant::Instant;
 use nalgebra::Vector3;
 
-use crate::helper::change_tracker::ChangeTracker;
+use crate::{helper::change_tracker::ChangeTracker, input::input_manager::InputManager};
 
 use super::scene::scene::SceneItem;
 
@@ -33,9 +33,15 @@ pub struct State
 {
     pub adapter: AdapterFeatures,
     pub rendering: Rendering,
+    pub input_manager: InputManager,
 
     pub running: bool,
     pub scenes: Vec<SceneItem>,
+
+    pub in_focus: bool,
+
+    pub width: u32,
+    pub height: u32,
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -56,6 +62,8 @@ pub struct State
     pub frame_time: f32,
     pub update_time: f32,
     pub render_time: f32,
+
+    pub frame: u64,
 
     pub exit: bool,
 }
@@ -85,8 +93,15 @@ impl State
                 msaa: ChangeTracker::new(8)
             },
 
+            input_manager: InputManager::new(),
+
             running: false,
             scenes: vec![],
+
+            in_focus: true,
+
+            width: 0,
+            height: 0,
 
             save_image: false,
             save_depth_pass_image: false,
@@ -106,6 +121,8 @@ impl State
             frame_time: 0.0,
             update_time: 0.0,
             render_time: 0.0,
+
+            frame: 0,
 
             exit: false
         }
