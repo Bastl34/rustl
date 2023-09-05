@@ -3,7 +3,7 @@ use strum_macros::EnumIter;
 
 use super::press_state::{PressState, PressStateType, is_pressed_by_state};
 
-#[derive(EnumIter, Debug, PartialEq)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy)]
 pub enum Key
 {
     Key1 = 0,
@@ -274,6 +274,19 @@ impl Keyboard
     pub fn is_holding(&self, key: Key) -> bool
     {
         self.keys[key as usize].holding()
+    }
+
+    pub fn is_holding_by_keys(&self, keys: Vec<Key>) -> bool
+    {
+        for key in keys
+        {
+            if self.keys[key as usize].holding()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn is_holding_modifier(&self, modifier: Modifier) -> bool

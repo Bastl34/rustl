@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
-use nalgebra::{Point3, Vector3, Vector2};
+use nalgebra::{Point3, Vector3, Vector2, Rotation3};
 use winit::event::ElementState;
 use winit::window::{Window, Fullscreen};
 
@@ -302,9 +302,9 @@ impl MainInterface
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
-            scene.load("objects/temp/lotus.glb").await.unwrap();
+            //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            //scene.load("objects/temp/scene.glb").await.unwrap();
+            scene.load("objects/temp/scene.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 
@@ -375,8 +375,7 @@ impl MainInterface
 
                 //node.remove_component_by_type::<Transformation>();
             }
-             */
-
+            */
 
             // ********** scene add **********
             state.scenes.push(Box::new(scene));
@@ -400,6 +399,107 @@ impl MainInterface
             return;
         }
         let scene = scene.unwrap();
+
+        if state.input_manager.mouse.is_any_button_holding()
+        {
+            let mut cam = scene.cameras[0].borrow_mut();
+            let cam = cam.get_mut();
+
+            let up: Vector3::<f32> = cam.up.normalize();
+            let dir: Vector3::<f32> = cam.dir.normalize();
+
+            let velocity = state.input_manager.mouse.point.velocity;
+            let sensitivity = state.frame_scale * 0.0025;
+
+            let delta_x = -velocity.x * sensitivity;
+            let delta_y = velocity.y * sensitivity;
+
+            let yaw = dir.y.atan2(dir.x) + delta_x;
+            let pitch = (dir.y / dir.norm()).asin();
+
+            let mut dir = Vector3::<f32>::zeros();
+
+            dir.x = yaw.cos() * pitch.cos();
+            dir.y = pitch.sin();
+            dir.z = yaw.sin() * pitch.cos();
+            dir = dir.normalize();
+
+            /*
+            direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+            direction.y = sin(glm::radians(pitch));
+            direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+
+
+            let delta_x  = Rotation3::from_euler_angles(0.0, delta_x, 0.0);
+            let delta_y  = Rotation3::from_euler_angles(delta_y, 0.0, 0.0);
+
+            cam.dir.
+            */
+
+            //cam.dir = (rotation_yaw * (rotation_pitch * dir)).normalize();
+            /*
+            cam.dir = delta_y * (delta_x * dir).normalize();
+            cam.up = delta_y * (delta_x * up).normalize();
+             */
+            //cam.dir = (delta_x * cam.dir).normalize();
+            //cam.dir = (delta_y * cam.dir).normalize();
+
+            /*
+            cam.up = (delta_x * cam.up).normalize();
+            cam.up = (delta_y * cam.up).normalize();
+            */
+
+            /*
+            let dir = Vector3::<f32>::new
+            direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+            direction.y = sin(glm::radians(pitch));
+            direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+            cameraFront = glm::normalize(direction);
+            */
+
+            cam.dir = dir;
+            cam.init_matrices();
+        }
+
+        if state.input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D].to_vec())
+        {
+            let mut cam = scene.cameras[0].borrow_mut();
+            let cam = cam.get_mut();
+
+            let dir = cam.dir.normalize();
+            let up = cam.up.normalize();
+            let right = up.cross(&dir);
+
+            let mut vec = Vector3::<f32>::zeros();
+
+            let mut factor = 0.1;
+            if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            {
+                factor = 0.2;
+            }
+
+            let sensitivity = state.frame_scale * factor;
+
+            if state.input_manager.keyboard.is_holding(Key::W)
+            {
+                vec += dir * sensitivity;
+            }
+            if state.input_manager.keyboard.is_holding(Key::S)
+            {
+                vec -= dir * sensitivity;
+            }
+            if state.input_manager.keyboard.is_holding(Key::D)
+            {
+                vec -= right * sensitivity;
+            }
+            if state.input_manager.keyboard.is_holding(Key::A)
+            {
+                vec += right * sensitivity;
+            }
+
+            cam.eye_pos += vec;
+            cam.init_matrices();
+        }
 
         // get node
         /*
@@ -460,12 +560,6 @@ impl MainInterface
     pub fn update(&mut self)
     {
         let frame_time = Instant::now();
-
-        // update inputs
-        {
-            let state = &mut *(self.state.borrow_mut());
-            state.input_manager.update();
-        }
 
         // update states
         {
@@ -628,6 +722,12 @@ impl MainInterface
             state.frame += 1;
         }
 
+        // update inputs
+        {
+            let state = &mut *(self.state.borrow_mut());
+            state.input_manager.update();
+        }
+
         {
             let state = &mut *(self.state.borrow_mut());
             let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
@@ -718,6 +818,8 @@ impl MainInterface
                     pos.x = pos.x - offset_x;
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 + offset_y - pos.y;
+
+                    global_state.input_manager.mouse.set_pos(pos, global_state.frame);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
