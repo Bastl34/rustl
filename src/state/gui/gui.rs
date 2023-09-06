@@ -620,6 +620,18 @@ impl Gui
                         {
                             delete_component_id = Some(component_id);
                         }
+
+                        // enabled checkbox
+                        let mut enabled;
+                        {
+                            enabled = component.read().unwrap().get_base().is_enabled;
+                        }
+                        if ui.checkbox(&mut enabled, "").changed()
+                        {
+                            component.write().unwrap().get_base_mut().is_enabled = enabled;
+                        }
+
+                        ui.label(RichText::new("⏺").color(Color32::GREEN));
                     });
                 },
                 |ui|
@@ -674,6 +686,18 @@ impl Gui
                                 {
                                     delete_component_id = Some(component_id);
                                 }
+
+                                // enabled checkbox
+                                let mut enabled;
+                                {
+                                    enabled = component.read().unwrap().get_base().is_enabled;
+                                }
+                                if ui.checkbox(&mut enabled, "").changed()
+                                {
+                                    component.write().unwrap().get_base_mut().is_enabled = enabled;
+                                }
+
+                                ui.label(RichText::new("⏺").color(Color32::GREEN));
                             });
                         },
                         |ui|
