@@ -9,6 +9,7 @@ use nalgebra::{Point3, Vector3, Vector2, Rotation3};
 use winit::event::ElementState;
 use winit::window::{Window, Fullscreen};
 
+use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::yaw_pitch_from_direction;
 use crate::input::keyboard::{Modifier, Key};
@@ -343,8 +344,21 @@ impl MainInterface
             if let Some(train) = scene.find_node_by_name("Train")
             {
                 let mut node = train.write().unwrap();
-                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+
+                let components_len = node.components.len();
+                {
+                    let component = node.components.get_mut(components_len - 2).unwrap();
+                    component_downcast_mut!(component, TransformationAnimation);
+                    component.keyboard_key = Some(Key::Left as usize);
+                }
+
+                {
+                    let component = node.components.get_mut(components_len - 1).unwrap();
+                    component_downcast_mut!(component, TransformationAnimation);
+                    component.keyboard_key = Some(Key::Right as usize);
+                }
             }
 
             // add light
