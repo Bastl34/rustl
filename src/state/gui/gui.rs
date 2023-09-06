@@ -626,12 +626,12 @@ impl Gui
                         {
                             enabled = component.read().unwrap().get_base().is_enabled;
                         }
-                        if ui.checkbox(&mut enabled, "").changed()
+                        if ui.checkbox(&mut enabled, "").on_hover_text("component enabled/disabled").changed()
                         {
                             component.write().unwrap().get_base_mut().is_enabled = enabled;
                         }
 
-                        ui.label(RichText::new("⏺").color(Color32::GREEN));
+                        ui.label(RichText::new("⏺").color(Color32::GREEN)).on_hover_text("component active/inactive");
                     });
                 },
                 |ui|
@@ -692,12 +692,12 @@ impl Gui
                                 {
                                     enabled = component.read().unwrap().get_base().is_enabled;
                                 }
-                                if ui.checkbox(&mut enabled, "").changed()
+                                if ui.checkbox(&mut enabled, "").on_hover_text("component enabled/disabled").changed()
                                 {
                                     component.write().unwrap().get_base_mut().is_enabled = enabled;
                                 }
 
-                                ui.label(RichText::new("⏺").color(Color32::GREEN));
+                                ui.label(RichText::new("⏺").color(Color32::GREEN)).on_hover_text("component active/inactive");
                             });
                         },
                         |ui|

@@ -828,6 +828,11 @@ impl Scene
             {
                 let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
 
+                if !mesh.get_base().is_enabled
+                {
+                    continue;
+                }
+
                 if let Some(render_item) = mesh.get_base().render_item.as_ref()
                 {
                     let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);
