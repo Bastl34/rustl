@@ -159,7 +159,7 @@ impl State
         // update scenes
         for scene in &mut self.scenes
         {
-            scene.update(time_delta);
+            scene.update(&mut self.input_manager, time_delta);
         }
     }
 

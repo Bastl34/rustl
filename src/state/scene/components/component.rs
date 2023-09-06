@@ -1,6 +1,7 @@
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
+use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::node::{NodeItem, InstanceItemChangeTracker};
 
@@ -16,8 +17,8 @@ pub trait Component: Any
 
     fn ui(&mut self, ui: &mut egui::Ui);
 
-    fn update(&mut self, node: NodeItem, frame_scale: f32);
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemChangeTracker, frame_scale: f32);
+    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32);
+    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32);
 
     fn instantiable(&self) -> bool;
 
@@ -99,11 +100,11 @@ macro_rules! component_impl_no_update
 {
     () =>
     {
-        fn update(&mut self, node: NodeItem, _frame_scale: f32)
+        fn update(&mut self, node: NodeItem, input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
         {
         }
 
-        fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, frame_scale: f32)
+        fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, input_manager: &mut crate::input::input_manager::InputManager, frame_scale: f32)
         {
         }
     };

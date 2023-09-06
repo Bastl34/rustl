@@ -2,8 +2,9 @@ use std::any::Any;
 
 use egui::Color32;
 use nalgebra::Vector3;
+use strum::IntoEnumIterator;
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::node::NodeItem, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut};
+use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::node::NodeItem, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -11,13 +12,15 @@ pub struct TransformationAnimationData
 {
     pub translation: Vector3<f32>,
     pub rotation: Vector3<f32>,
-    pub scale: Vector3<f32>
+    pub scale: Vector3<f32>,
 }
 
 pub struct TransformationAnimation
 {
     base: ComponentBase,
-    data: ChangeTracker<TransformationAnimationData>
+    data: ChangeTracker<TransformationAnimationData>,
+
+    pub keyboard_key: Option<usize>,
 }
 
 impl TransformationAnimation
@@ -34,7 +37,8 @@ impl TransformationAnimation
         let mut transform_animation = TransformationAnimation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+            keyboard_key: None
         };
 
         transform_animation
@@ -55,8 +59,16 @@ impl TransformationAnimation
         &mut self.data
     }
 
-    fn _update(&mut self, transform_component: Option<ComponentItem>, frame_scale: f32)
+    fn _update(&mut self, transform_component: Option<ComponentItem>, input_manager: &mut InputManager, frame_scale: f32)
     {
+        if let Some(keyboard_key) = self.keyboard_key
+        {
+            if !input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
+            {
+                return;
+            }
+        }
+
         if let Some(transform_component) = transform_component
         {
             component_downcast_mut!(transform_component, Transformation);
@@ -100,19 +112,19 @@ impl Component for TransformationAnimation
         true
     }
 
-    fn update(&mut self, node: NodeItem, frame_scale: f32)
+    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
     {
         let node = node.write().unwrap();
 
-        self._update(node.find_component::<Transformation>(), frame_scale);
+        self._update(node.find_component::<Transformation>(), input_manager, frame_scale);
     }
 
-    fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, frame_scale: f32)
+    fn update_instance(&mut self, _node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32)
     {
         let instance = instance.borrow();
         let instance = instance.get_ref();
 
-        self._update(instance.find_component::<Transformation>(), frame_scale);
+        self._update(instance.find_component::<Transformation>(), input_manager, frame_scale);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui)
@@ -156,6 +168,52 @@ impl Component for TransformationAnimation
                 });
             });
         }
+
+        let keys = get_keys_as_string_vec();
+
+        let no_key = "no key";
+        let mut current_key_name = no_key;
+
+        if let Some(keyboard_key) = self.keyboard_key
+        {
+            current_key_name = keys[keyboard_key].as_str();
+        }
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Keyboard key: ");
+            egui::ComboBox::from_label("").selected_text(current_key_name).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap = Some(false);
+                ui.set_min_width(60.0);
+
+                let mut new_key = 0;
+                if let Some(keyboard_key) = self.keyboard_key
+                {
+                    new_key = keyboard_key + 1;
+                }
+
+                let mut changed = false;
+
+                changed = ui.selectable_value(&mut new_key, 0, "no key").changed() || changed;
+                for (key_id, key) in keys.iter().enumerate()
+                {
+                    changed = ui.selectable_value(&mut new_key, key_id + 1, key).changed() || changed;
+                }
+
+                if changed
+                {
+                    if new_key == 0
+                    {
+                        self.keyboard_key = None;
+                    }
+                    else
+                    {
+                        self.keyboard_key = Some(new_key - 1);
+                    }
+                }
+            });
+        });
 
         if changed
         {

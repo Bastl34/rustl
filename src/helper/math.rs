@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::f32::consts::PI;
+
 use nalgebra::{Vector4, Vector3, Vector2};
 
 pub fn approx_equal(a: f32, b: f32) -> bool
@@ -54,6 +56,34 @@ pub fn interpolate_vec4(a: Vector4<f32>, b: Vector4<f32>, f: f32) -> Vector4<f32
         interpolate(a.w, b.w, f)
     )
 }
+
+pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)
+{
+    // https://github.com/bergerkiller/BKCommonLib/blob/master/src/main/java/com/bergerkiller/bukkit/common/utils/MathUtil.java
+
+    let yaw;
+    {
+        // x and z are changed (because otherwise the result its not pointing in the right direction)
+        let dx = dir.z;
+        let dz = dir.x;
+
+        yaw = dz.atan2(dx) - PI;
+    }
+
+    let pitch;
+    {
+        let dx = dir.x;
+        let dy = -dir.y; // somewhow y is flipped
+        let dz = dir.z;
+
+        let dxz = ((dx * dx) + (dz * dz)).sqrt();
+
+        pitch = -((dy / dxz)).atan();
+    }
+
+    (yaw, pitch)
+}
+
 /*
 pub fn extract_rotation(matrix: Matrix4<f32>) -> Matrix3<f32>
 {

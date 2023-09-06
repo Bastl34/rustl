@@ -2,9 +2,9 @@ use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell};
 
 use anyhow::Ok;
 
-use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
+use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption, input::input_manager::InputManager};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, self, Node}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -74,13 +74,13 @@ impl Scene
         Ok(vec![])
     }
 
-    pub fn update(&mut self, frame_scale: f32)
+    pub fn update(&mut self, input_manager: &mut InputManager, frame_scale: f32)
     {
         // update nodes
         for node in &self.nodes
         {
             //node.write().unwrap().update(frame_scale);
-            Node::update(node.clone(), frame_scale);
+            Node::update(node.clone(), input_manager, frame_scale);
         }
     }
 

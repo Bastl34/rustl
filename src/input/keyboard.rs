@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use strum_macros::{EnumIter, Display, FromRepr};
 
 use super::press_state::{PressState, PressStateType, is_pressed_by_state};
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
 pub enum Key
 {
     Key1 = 0,
@@ -182,7 +184,13 @@ pub enum Key
     Cut,
 }
 
-#[derive(EnumIter, Debug, PartialEq)]
+pub fn get_keys_as_string_vec() -> Vec<String>
+{
+    let key_vec: Vec<Key> = Key::iter().collect::<Vec<_>>();
+    key_vec.iter().map(|key| { key.to_string() }).collect::<Vec<_>>()
+}
+
+#[derive(EnumIter, Debug, PartialEq, Display)]
 pub enum Modifier
 {
     Shift = 0,
@@ -204,8 +212,8 @@ impl Keyboard
         let key_vec = Key::iter().collect::<Vec<_>>();
         let modifiers_vec = Modifier::iter().collect::<Vec<_>>();
 
-        let key_states = key_vec.iter().map(|key| { PressState::new() }).collect::<Vec<_>>();
-        let mod_states = modifiers_vec.iter().map(|key| { PressState::new() }).collect::<Vec<_>>();
+        let key_states = key_vec.iter().map(|_key| { PressState::new() }).collect::<Vec<_>>();
+        let mod_states = modifiers_vec.iter().map(|_key| { PressState::new() }).collect::<Vec<_>>();
 
         Self
         {

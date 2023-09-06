@@ -3,7 +3,7 @@ use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Matrix3, Vector3};
 
-use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut};
+use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
 use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
@@ -242,7 +242,7 @@ impl Node
         self.instances.get_mut().push(RefCell::new(ChangeTracker::new(instance)));
     }
 
-    pub fn update(node: NodeItem, frame_scale: f32)
+    pub fn update(node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
     {
         // ***** copy all components *****
         let all_components;
@@ -268,7 +268,7 @@ impl Node
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update(node.clone(), frame_scale);
+            component_write.update(node.clone(), input_manager, frame_scale);
         }
 
         // ***** reassign components *****
@@ -282,7 +282,7 @@ impl Node
             let node_read = node.read().unwrap();
             for instance in node_read.instances.get_ref()
             {
-                Instance::update(node.clone(), &instance, frame_scale);
+                Instance::update(node.clone(), &instance, input_manager, frame_scale);
             }
         }
 
@@ -290,7 +290,7 @@ impl Node
         let mut node_write = node.write().unwrap();
         for child_node in &mut node_write.nodes
         {
-            Self::update(child_node.clone(), frame_scale);
+            Self::update(child_node.clone(), input_manager, frame_scale);
         }
     }
 

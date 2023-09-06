@@ -10,6 +10,7 @@ use winit::event::ElementState;
 use winit::window::{Window, Fullscreen};
 
 use crate::helper::change_tracker::ChangeTracker;
+use crate::helper::math::yaw_pitch_from_direction;
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
@@ -304,7 +305,8 @@ impl MainInterface
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            scene.load("objects/temp/scene.glb").await.unwrap();
+            //scene.load("objects/temp/scene.glb").await.unwrap();
+            scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 
@@ -338,11 +340,30 @@ impl MainInterface
                 //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
             }
 
+            if let Some(train) = scene.find_node_by_name("Train")
+            {
+                let mut node = train.write().unwrap();
+                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+            }
+
             // add light
             {
                 let light_id = scene.id_manager.get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            }
+
+            // add camera
+            if scene.cameras.len() == 0
+            {
+                let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                cam.fovy = 45.0f32.to_radians();
+                cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
+                cam.clipping_near = 0.1;
+                cam.clipping_far = 1000.0;
+                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
             }
 
 
@@ -405,8 +426,8 @@ impl MainInterface
             let mut cam = scene.cameras[0].borrow_mut();
             let cam = cam.get_mut();
 
-            let up: Vector3::<f32> = cam.up.normalize();
-            let dir: Vector3::<f32> = cam.dir.normalize();
+            let up: Vector3::<f32> = cam.up;
+            let dir: Vector3::<f32> = cam.dir;
 
             let velocity = state.input_manager.mouse.point.velocity;
             let sensitivity = state.frame_scale * 0.0025;
@@ -414,6 +435,36 @@ impl MainInterface
             let delta_x = -velocity.x * sensitivity;
             let delta_y = velocity.y * sensitivity;
 
+            let (mut yaw, mut pitch) = yaw_pitch_from_direction(dir);
+
+            pitch += delta_y;
+            yaw -= delta_x;
+
+            dbg!(pitch);
+
+            let mut dir = Vector3::<f32>::zeros();
+
+            dir.x = yaw.cos() * pitch.cos();
+            dir.y = pitch.sin();
+            dir.z = yaw.sin() * pitch.cos();
+            dir = dir.normalize();
+
+
+            cam.dir = dir;
+            cam.init_matrices();
+
+            /*
+            dbg!(pitch);
+
+            let rotation_pitch  = Rotation3::from_euler_angles(0.0, pitch, 0.0);
+
+            //cam.dir = (rotation_pitch * Vector3::<f32>::new(1.0, 0.0, 0.0)).normalize();
+            cam.dir = (rotation_pitch * Vector3::<f32>::new(1.0, 0.0, 0.0));
+
+            cam.init_matrices();
+            */
+
+            /*
             let yaw = dir.y.atan2(dir.x) + delta_x;
             let pitch = (dir.y / dir.norm()).asin();
 
@@ -423,6 +474,7 @@ impl MainInterface
             dir.y = pitch.sin();
             dir.z = yaw.sin() * pitch.cos();
             dir = dir.normalize();
+            */
 
             /*
             direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
@@ -457,11 +509,11 @@ impl MainInterface
             cameraFront = glm::normalize(direction);
             */
 
-            cam.dir = dir;
-            cam.init_matrices();
+            //cam.dir = dir;
+            //cam.init_matrices();
         }
 
-        if state.input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D].to_vec())
+        if state.input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec())
         {
             let mut cam = scene.cameras[0].borrow_mut();
             let cam = cam.get_mut();
@@ -495,6 +547,14 @@ impl MainInterface
             if state.input_manager.keyboard.is_holding(Key::A)
             {
                 vec += right * sensitivity;
+            }
+            if state.input_manager.keyboard.is_holding(Key::Space)
+            {
+                vec += up * sensitivity;
+            }
+            if state.input_manager.keyboard.is_holding(Key::C)
+            {
+                vec -= up * sensitivity;
             }
 
             cam.eye_pos += vec;

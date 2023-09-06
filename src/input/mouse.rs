@@ -1,14 +1,14 @@
-use std::f32::consts::E;
+#![allow(dead_code)]
 
 use nalgebra::Vector2;
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use strum_macros::{EnumIter, Display, FromRepr};
 
 use crate::{helper::{generic, math, change_tracker::ChangeTracker}, input::input_point::PointState};
 
 use super::{press_state::{PressState, is_pressed_by_state}, input_point::InputPoint};
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
 pub enum MouseButton
 {
     Left,
@@ -45,7 +45,7 @@ impl Mouse
     {
         let button_vec = MouseButton::iter().collect::<Vec<_>>();
 
-        let button_states = button_vec.iter().map(|key| { PressState::new() }).collect::<Vec<_>>();
+        let button_states = button_vec.iter().map(|_key| { PressState::new() }).collect::<Vec<_>>();
 
         Self
         {

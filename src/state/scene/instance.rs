@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix3, Matrix4, Vector3};
 
-use crate::{component_downcast, component_downcast_mut};
+use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
 use super::{node::{NodeItem, Node, InstanceItemChangeTracker}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id}}};
 
@@ -97,7 +97,7 @@ impl Instance
         remove_component_by_id(&mut self.components, id)
     }
 
-    pub fn update(node: NodeItem, instance: &InstanceItemChangeTracker, frame_scale: f32)
+    pub fn update(node: NodeItem, instance: &InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32)
     {
         // ***** copy all components *****
         let all_components;
@@ -125,7 +125,7 @@ impl Instance
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.clone(), instance, frame_scale);
+            component_write.update_instance(node.clone(), instance, input_manager, frame_scale);
         }
 
         // ***** reassign components *****
