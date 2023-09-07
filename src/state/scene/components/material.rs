@@ -5,7 +5,7 @@ use std::any::Any;
 use nalgebra::{Vector3, Vector4};
 
 use crate::helper::change_tracker::ChangeTracker;
-use crate::{component_impl_default, component_impl_no_update};
+use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
@@ -530,6 +530,7 @@ impl Component for Material
 {
     component_impl_default!();
     component_impl_no_update!();
+    component_impl_set_enabled!();
 
     fn instantiable(&self) -> bool
     {

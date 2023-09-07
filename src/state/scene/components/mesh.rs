@@ -3,7 +3,7 @@ use std::any::Any;
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::TriMesh, bounding_volume::Aabb};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem, component_impl_no_update};
+use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem, component_impl_no_update, component_impl_set_enabled};
 
 use super::component::{Component, ComponentBase};
 
@@ -243,6 +243,7 @@ impl Component for Mesh
 {
     component_impl_default!();
     component_impl_no_update!();
+    component_impl_set_enabled!();
 
     fn instantiable(&self) -> bool
     {

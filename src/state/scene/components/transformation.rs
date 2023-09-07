@@ -359,6 +359,17 @@ impl Component for Transformation
         true
     }
 
+    fn set_enabled(&mut self, state: bool)
+    {
+        if self.base.is_enabled != state
+        {
+            self.base.is_enabled = state;
+
+            // force update
+            self.data.force_change();
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui)
     {
         let mut changed = false;
@@ -366,15 +377,20 @@ impl Component for Transformation
         let mut pos;
         let mut rot;
         let mut scale;
+        let mut inheritance;
+
         {
             let data = self.get_data();
 
             pos = data.position;
             rot = data.rotation;
             scale = data.scale;
+            inheritance = data.parent_inheritance;
 
             ui.vertical(|ui|
             {
+                changed = ui.checkbox(&mut inheritance, "parent transformation inheritance").changed() || changed;
+
                 ui.horizontal(|ui|
                 {
                     ui.label("Position: ");
@@ -410,6 +426,7 @@ impl Component for Transformation
             data.get_mut().position = pos;
             data.get_mut().rotation = rot;
             data.get_mut().scale = scale;
+            data.get_mut().parent_inheritance = inheritance;
             self.calc_transform();
         }
     }

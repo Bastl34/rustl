@@ -304,10 +304,11 @@ impl MainInterface
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
-            //scene.load("objects/temp/lotus.glb").await.unwrap();
+            scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            scene.load("objects/temp/scene.glb").await.unwrap();
+            //scene.load("objects/temp/scene.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
+            //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
 
             scene.clear_empty_nodes();

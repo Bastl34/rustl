@@ -5,7 +5,7 @@ use nalgebra::{Vector3, Point3};
 
 use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
-use super::generic_items::{self, collapse_with_title};
+use super::generic_items::{self, collapse_with_title, modal_with_title};
 
 
 #[derive(PartialEq, Eq)]
@@ -235,13 +235,16 @@ impl Gui
             });
         });
 
+        // create component
+        self.create_component_add_modal(state, ctx);
 
+    }
+
+    fn create_component_add_modal(&mut self, state: &mut State, ctx: &egui::Context)
+    {
         let mut dialog_add_component = self.dialog_add_component;
-        egui::Window::new("Add component")
-            .anchor(Align2::CENTER_CENTER, egui::Vec2::new(0.0, 0.0))
-            .collapsible(false)
-            .open(&mut dialog_add_component)
-            .show(ctx, |ui|
+
+        modal_with_title(ctx, &mut dialog_add_component, "Add component", |ui|
         {
             ui.label("Add your component");
 
@@ -705,7 +708,7 @@ impl Gui
                         }
                         if ui.checkbox(&mut enabled, "").on_hover_text("component enabled/disabled").changed()
                         {
-                            component.write().unwrap().get_base_mut().is_enabled = enabled;
+                            component.write().unwrap().set_enabled(enabled);
                         }
 
                         ui.label(RichText::new("⏺").color(Color32::GREEN)).on_hover_text("component active/inactive");
@@ -771,7 +774,7 @@ impl Gui
                                 }
                                 if ui.checkbox(&mut enabled, "").on_hover_text("component enabled/disabled").changed()
                                 {
-                                    component.write().unwrap().get_base_mut().is_enabled = enabled;
+                                    component.write().unwrap().set_enabled(enabled);
                                 }
 
                                 ui.label(RichText::new("⏺").color(Color32::GREEN)).on_hover_text("component active/inactive");

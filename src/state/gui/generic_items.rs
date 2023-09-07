@@ -1,4 +1,4 @@
-use egui::{Ui, Color32, RichText};
+use egui::{Ui, Color32, RichText, Align2};
 
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
@@ -39,4 +39,13 @@ pub fn collapse_with_title<R>(ui: &mut Ui, id: &str, open: bool, title: &str, bo
     {
         body(ui);
     });
+}
+
+pub fn modal_with_title<R>(ctx: &egui::Context, open: &mut bool, title: &str, body: impl FnOnce(&mut Ui) -> R)
+{
+    egui::Window::new(title)
+    .anchor(Align2::CENTER_CENTER, egui::Vec2::new(0.0, 0.0))
+    .collapsible(false)
+    .open(open)
+    .show(ctx, body);
 }

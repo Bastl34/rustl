@@ -614,6 +614,17 @@ impl Scene
         let mut meshes = vec![];
         let mut meshes_read = vec![];
 
+        let default_material = scene.get_default_material();
+
+        if scene.get_default_material().is_none()
+        {
+            dbg!("default material not found -> please do not delete it");
+            return 0;
+        }
+
+        let default_material = default_material.unwrap();
+        let default_material = &default_material.read().unwrap();
+
         for node in &all_nodes
         {
             let read_node = node.read().unwrap();
@@ -646,12 +657,22 @@ impl Scene
         let mut render_data = vec![];
         for (i, material) in materials_read.iter().enumerate()
         {
+            let mat;
+            if !material.is_enabled()
+            {
+                mat = default_material;
+            }
+            else
+            {
+                mat = material;
+            }
+
             render_data.push
             (
                 RenderData
                 {
                     node: nodes_read.get(i).unwrap(),
-                    material: material,
+                    material: mat,
                     meshes: meshes_read.get(i).unwrap(),
                 }
             );

@@ -19,8 +19,8 @@ fn setup_window() -> (winit::event_loop::EventLoop<()>, winit::window::Window)
 
     */
 
-    let width = 1280;
-    let height = 800;
+    let width = 1600;
+    let height = 900;
 
     let event_loop = winit::event_loop::EventLoop::new();
     let window = winit::window::WindowBuilder::new()

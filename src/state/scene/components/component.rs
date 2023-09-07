@@ -20,6 +20,8 @@ pub trait Component: Any
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32);
     fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32);
 
+    fn set_enabled(&mut self, state: bool);
+
     fn instantiable(&self) -> bool;
 
     fn id(&self) -> u64
@@ -106,6 +108,18 @@ macro_rules! component_impl_no_update
 
         fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, input_manager: &mut crate::input::input_manager::InputManager, frame_scale: f32)
         {
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component_impl_set_enabled
+{
+    () =>
+    {
+        fn set_enabled(&mut self, state: bool)
+        {
+            self.get_base_mut().is_enabled = state;
         }
     };
 }

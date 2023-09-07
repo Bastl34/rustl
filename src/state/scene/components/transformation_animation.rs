@@ -131,6 +131,17 @@ impl Component for TransformationAnimation
         true
     }
 
+    fn set_enabled(&mut self, state: bool)
+    {
+        if self.base.is_enabled != state
+        {
+            self.base.is_enabled = state;
+
+            // force update
+            self.data.force_change();
+        }
+    }
+
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
     {
         let node = node.write().unwrap();
