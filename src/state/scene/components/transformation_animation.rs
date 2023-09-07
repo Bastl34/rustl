@@ -34,7 +34,26 @@ impl TransformationAnimation
             scale
         };
 
-        let mut transform_animation = TransformationAnimation
+        let transform_animation = TransformationAnimation
+        {
+            base: ComponentBase::new(id, name.to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
+            data: ChangeTracker::new(data),
+            keyboard_key: None
+        };
+
+        transform_animation
+    }
+
+    pub fn new_empty(id: u64, name: &str) -> TransformationAnimation
+    {
+        let data = TransformationAnimationData
+        {
+            translation: Vector3::<f32>::zeros(),
+            rotation: Vector3::<f32>::zeros(),
+            scale: Vector3::<f32>::zeros()
+        };
+
+        let transform_animation = TransformationAnimation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
             data: ChangeTracker::new(data),

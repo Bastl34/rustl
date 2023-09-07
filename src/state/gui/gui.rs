@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap};
 
-use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style};
+use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style, Align2};
 use nalgebra::{Vector3, Point3};
 
 use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
@@ -52,7 +52,11 @@ pub struct Gui
     selected_camera: Option<u64>,
     selected_material:Option<u64>,
     selected_texture: Option<u64>,
-    selected_light: Option<u64>
+    selected_light: Option<u64>,
+
+    dialog_add_component: bool,
+    add_component_id: usize,
+    add_component_name: String,
 }
 
 impl Gui
@@ -72,7 +76,11 @@ impl Gui
             selected_camera: None,
             selected_material: None,
             selected_texture: None,
-            selected_light: None
+            selected_light: None,
+
+            dialog_add_component: false,
+            add_component_id: 0,
+            add_component_name: "Component".to_string()
         }
     }
 
@@ -226,6 +234,75 @@ impl Gui
                 self.create_tool_menu(state, ui);
             });
         });
+
+
+        let mut dialog_add_component = self.dialog_add_component;
+        egui::Window::new("Add component")
+            .anchor(Align2::CENTER_CENTER, egui::Vec2::new(0.0, 0.0))
+            .collapsible(false)
+            .open(&mut dialog_add_component)
+            .show(ctx, |ui|
+        {
+            ui.label("Add your component");
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Name: ");
+                ui.text_edit_singleline(&mut self.add_component_name);
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Component: ");
+
+                let current_component_name = state.registered_components.get(self.add_component_id).unwrap().0.clone();
+
+                egui::ComboBox::from_label("").selected_text(current_component_name).show_ui(ui, |ui|
+                {
+                    ui.style_mut().wrap = Some(false);
+                    ui.set_min_width(40.0);
+
+                    for (component_id, component) in state.registered_components.iter().enumerate()
+                    {
+                        ui.selectable_value(&mut self.add_component_id, component_id, component.0.clone());
+                    }
+                });
+            });
+            if ui.button("Add").clicked()
+            {
+                let (scene_id, node_id, instance_id) = self.get_object_ids();
+
+                if let (Some(scene_id), Some(node_id)) = (scene_id, node_id)
+                {
+                    let component = state.registered_components.get(self.add_component_id).unwrap().clone();
+
+                    let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                    let node = scene.find_node_by_id(node_id).unwrap();
+
+
+                    if let Some(instance_id) = instance_id
+                    {
+                        let node = node.read().unwrap();
+                        let instance = node.find_instance_by_id(instance_id).unwrap();
+                        let mut instance_borrow = instance.borrow_mut();
+                        let instance = instance_borrow.get_mut();
+                        instance.add_component(component.1(scene.id_manager.get_next_instance_id(), self.add_component_name.as_str()));
+                    }
+                    else
+                    {
+                        node.write().unwrap().add_component(component.1(scene.id_manager.get_next_instance_id(), self.add_component_name.as_str()));
+                    }
+                }
+
+                self.dialog_add_component = false;
+                self.add_component_name = "Component".to_string();
+            }
+        });
+
+        if !dialog_add_component
+        {
+            self.dialog_add_component = dialog_add_component;
+        }
     }
 
     fn create_tool_menu(&mut self, state: &mut State, ui: &mut Ui)
@@ -719,6 +796,14 @@ impl Gui
                 }
             }
         }
+
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Add Component").heading().strong().color(Color32::WHITE)).clicked()
+            {
+                self.dialog_add_component = true;
+            }
+        });
     }
 
     fn create_object_settings(&mut self, state: &mut State, ui: &mut Ui)

@@ -1,11 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 
 use instant::Instant;
 use nalgebra::Vector3;
 
 use crate::{helper::change_tracker::ChangeTracker, input::input_manager::InputManager};
 
-use super::scene::scene::SceneItem;
+use super::scene::{scene::SceneItem, components::component::ComponentItem};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -37,6 +37,8 @@ pub struct State
 
     pub running: bool,
     pub scenes: Vec<SceneItem>,
+
+    pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
 
     pub in_focus: bool,
 
@@ -72,6 +74,13 @@ impl State
 {
     pub fn new() -> State
     {
+        let mut components: Vec<(String, fn(u64, &str) -> ComponentItem)> = vec![];
+        components.push(("Alpha".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
+        components.push(("Material".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
+        //components.push(("Mesh".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
+        components.push(("Transform Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
+        components.push(("Transform".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
+
         Self
         {
             adapter: AdapterFeatures
@@ -97,6 +106,8 @@ impl State
 
             running: false,
             scenes: vec![],
+
+            registered_components: components,
 
             in_focus: true,
 
