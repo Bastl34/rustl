@@ -1121,9 +1121,23 @@ impl Gui
             }
         }
 
+        let mut memory_usage = 0.0;
+        let mut gpu_memory_usage = 0.0;
+        for texture in &scene.textures
+        {
+            let texture = texture.1.as_ref().read().unwrap();
+            let texture = texture.as_ref();
+            memory_usage += texture.memory_usage() as f32;
+            gpu_memory_usage += texture.gpu_usage() as f32;
+        }
+
+        memory_usage = memory_usage / 1024.0 / 1024.0;
+        gpu_memory_usage = gpu_memory_usage / 1024.0 / 1024.0;
+
         // statistics
         collapse_with_title(ui, "scene_info", true, "📈 Info", |ui|
         {
+            ui.label(RichText::new("🎬 scene").strong());
             ui.label(format!(" ⚫ nodes: {}", all_nodes.len()));
             ui.label(format!(" ⚫ instances: {}", instances_amout));
             ui.label(format!(" ⚫ materials: {}", scene.materials.len()));
@@ -1131,11 +1145,17 @@ impl Gui
             ui.label(format!(" ⚫ cameras: {}", scene.cameras.len()));
             ui.label(format!(" ⚫ lights: {}", scene.lights.get_ref().len()));
 
-            ui.separator();
-
+            ui.label(RichText::new("◼ geometry").strong());
             ui.label(format!(" ⚫ meshes: {}", meshes_amout));
             ui.label(format!(" ⚫ vertices: {}", vertices_amout));
             ui.label(format!(" ⚫ indices: {}", indices_amout));
+
+            ui.label(RichText::new("🖴 RAM memory usage").strong());
+            ui.label(format!(" ⚫ textures: {:.2} MB", memory_usage));
+
+            ui.label(RichText::new("🖵 GPU memory usage").strong());
+            ui.label(format!(" ⚫ textures: {:.2} MB", gpu_memory_usage));
+            ui.label(format!(" ⚫ buffers: TODO"));
         });
 
         collapse_with_title(ui, "scene_debugging", true, "🐛 Debugging Settings", |ui|

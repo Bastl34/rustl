@@ -578,13 +578,15 @@ impl Scene
 
         for node in nodes
         {
-            let visible;
+            if check_visibility
             {
-                visible = node.read().unwrap().visible;
-            }
-            if check_visibility && !visible
-            {
-                continue;
+                let node = node.read().unwrap();
+                let visible = node.visible;
+
+                if !visible
+                {
+                    continue;
+                }
             }
 
             let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes, check_visibility);

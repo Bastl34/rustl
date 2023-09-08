@@ -25,6 +25,9 @@ pub struct TextureData
 {
     pub image: DynamicImage,
 
+    pub width: u64,
+    pub height: u64,
+
     pub address_mode_u: TextureAddressMode,
     pub address_mode_v: TextureAddressMode,
     pub address_mode_w: TextureAddressMode,
@@ -51,6 +54,9 @@ impl Texture
         let data: TextureData = TextureData
         {
             image: DynamicImage::new_rgba8(0,0),
+
+            width: 0,
+            height: 0,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -93,6 +99,9 @@ impl Texture
 
         let data: TextureData = TextureData
         {
+            width: rgba.width() as u64,
+            height: rgba.height() as u64,
+
             image: image::DynamicImage::ImageRgba8(rgba),
 
             address_mode_u: TextureAddressMode::ClampToEdge,
@@ -138,6 +147,9 @@ impl Texture
 
         let data: TextureData = TextureData
         {
+            width: image.width() as u64,
+            height: image.height() as u64,
+
             image: image::DynamicImage::ImageRgba8(image),
 
             address_mode_u: TextureAddressMode::ClampToEdge,
@@ -193,6 +205,34 @@ impl Texture
     pub fn height(&self) -> u32
     {
         self.data.get_ref().image.height()
+    }
+
+    pub fn channels(&self) -> u32
+    {
+        let image = &self.data.get_ref().image;
+
+        if image.width() == 0 || image.height() == 0
+        {
+            return 0;
+        }
+
+        image.get_pixel(0, 0).channels().len() as u32
+    }
+
+    pub fn memory_usage(&self) -> u64
+    {
+        self.get_data().width * self.get_data().height * self.channels() as u64
+    }
+
+    pub fn gpu_usage(&self) -> u64
+    {
+        if self.render_item.is_none()
+        {
+            return 0;
+        }
+
+        // gpu memory: 4 channels
+        self.get_data().width * self.get_data().height * 4
     }
 
     pub fn dimensions(&self) -> (u32, u32)
