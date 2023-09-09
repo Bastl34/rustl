@@ -1,5 +1,6 @@
-use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, cmp::Ordering};
 
+use nalgebra::{Vector3, Point3, distance, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
 use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh}, node::{Node, NodeItem}, camera::Camera, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
@@ -14,6 +15,10 @@ pub struct RenderData<'a>
     node: &'a RwLockReadGuard<'a, Box<Node>>,
     material: &'a RwLockReadGuard<'a, ComponentBox>,
     meshes: &'a Vec<RwLockReadGuard<'a, ComponentBox>>,
+
+    has_transparency: bool,
+    alpha_index: u64,
+    middle: Point3::<f32>
 }
 
 pub struct Scene
@@ -24,6 +29,7 @@ pub struct Scene
     depth_shader: String,
 
     samples: u32,
+    pub distance_sorting: bool,
 
     depth_pipe: Option<Pipeline>,
     color_pipe: Option<Pipeline>,
@@ -53,6 +59,7 @@ impl Scene
             depth_shader,
 
             samples,
+            distance_sorting: true,
 
             color_pipe: None,
             depth_pipe: None,
@@ -363,9 +370,9 @@ impl Scene
                 {
                     let node = nodes.get(node_id).unwrap();
                     let node = node.read().unwrap();
-                    let node_ref = node.instances.get_ref();
+                    let instances_ref = node.instances.get_ref();
 
-                    for (i, instance) in node_ref.iter().enumerate()
+                    for (i, instance) in instances_ref.iter().enumerate()
                     {
                         let mut instance = instance.borrow_mut();
                         let (instance, mut instance_changed) = instance.consume_borrow();
@@ -656,7 +663,7 @@ impl Scene
             meshes_read.push(mesh_read);
         }
 
-        let mut render_data = vec![];
+        let mut render_data = Vec::with_capacity(materials_read.len());
         for (i, material) in materials_read.iter().enumerate()
         {
             let mat;
@@ -669,13 +676,69 @@ impl Scene
                 mat = material;
             }
 
+            let node = nodes_read.get(i).unwrap();
+            let meshes = meshes_read.get(i).unwrap();
+
+            let mut item_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
+
+            // ***** get center for depth sorting (alpha blending)
+            if self.distance_sorting
+            {
+                if meshes.len() == 0 || node.instances.get_ref().len() == 0
+                {
+                    continue;
+                }
+
+
+                let mut mesh_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
+                for mesh in meshes
+                {
+                    let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
+                    let center = mesh.get_data().b_box.center();
+                    mesh_middle.x += center.x;
+                    mesh_middle.y += center.y;
+                    mesh_middle.z += center.z;
+                }
+
+                let len_f32 = meshes.len() as f32;
+                mesh_middle.x /= len_f32;
+                mesh_middle.y /= len_f32;
+                mesh_middle.z /= len_f32;
+
+                let instance_render_item = node.instance_render_item.as_ref().unwrap();
+                let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
+
+                for transform in &instance_buffer.transformations
+                {
+                    let p = transform.transform_point(&mesh_middle);
+                    item_middle.x += p.x;
+                    item_middle.y += p.y;
+                    item_middle.z += p.z;
+                }
+
+                let len_f32 = instance_buffer.transformations.len() as f32;
+                item_middle.x /= len_f32;
+                item_middle.y /= len_f32;
+                item_middle.z /= len_f32;
+            }
+
+            let has_transparency;
+            {
+                let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+                has_transparency = mat.has_transparency();
+            }
+
             render_data.push
             (
                 RenderData
                 {
                     node: nodes_read.get(i).unwrap(),
                     material: mat,
-                    meshes: meshes_read.get(i).unwrap(),
+                    meshes: meshes,
+
+                    has_transparency: has_transparency,
+                    alpha_index: node.alpha_index,
+                    middle: item_middle
                 }
             );
         }
@@ -688,6 +751,38 @@ impl Scene
             let cam = cam.borrow();
             let cam = cam.get_ref();
             if !cam.enabled { continue; }
+
+            // sort
+            if self.distance_sorting
+            {
+                let cam_pos = cam.eye_pos;
+                render_data.sort_by(|a, b|
+                {
+                    if a.has_transparency != b.has_transparency
+                    {
+                        b.has_transparency.cmp(&a.has_transparency)
+                    }
+                    else if a.alpha_index != b.alpha_index
+                    {
+                        a.alpha_index.cmp(&b.alpha_index)
+                    }
+                    else
+                    {
+                        // we do not need the exact distance here - squared is fine
+                        let a_dist = distance_squared(&a.middle, &cam_pos);
+                        let b_dist = distance_squared(&b.middle, &cam_pos);
+
+                        b_dist.partial_cmp(&a_dist).unwrap()
+                    }
+
+                    /*
+                    a.alpha_index.cmp(&b.alpha_index)
+                    .then_with(|| b_dist.partial_cmp(&a_dist).unwrap())
+                    */
+
+                    //b.partial_cmp(&a).unwrap()
+                });
+            }
 
             let clear;
             if i == 0 { clear = true; } else { clear = false; }

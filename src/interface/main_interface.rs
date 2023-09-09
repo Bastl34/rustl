@@ -749,6 +749,7 @@ impl MainInterface
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                render_scene.distance_sorting = state.rendering.distance_sorting;
                 state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                 scene.render_item = render_item;
@@ -774,6 +775,7 @@ impl MainInterface
                         let mut render_item = scene.render_item.take();
 
                         let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;

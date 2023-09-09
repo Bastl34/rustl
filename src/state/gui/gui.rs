@@ -930,11 +930,13 @@ impl Gui
 
             let mut visible;
             let mut render_children_first;
+            let mut alpha_index;
             let mut name;
             {
                 let node = node.read().unwrap();
                 visible = node.visible;
                 render_children_first = node.render_children_first;
+                alpha_index = node.alpha_index;
                 name = node.name.clone();
             }
 
@@ -945,12 +947,18 @@ impl Gui
             });
             changed = ui.checkbox(&mut visible, "visible").changed() || changed;
             changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
+            ui.horizontal(|ui|
+            {
+                ui.label("alpha index: ");
+                changed = ui.add(egui::DragValue::new(&mut alpha_index).speed(1)).changed() || changed;
+            });
 
             if changed
             {
                 let mut node = node.write().unwrap();
                 node.visible = visible;
                 node.render_children_first = render_children_first;
+                node.alpha_index = alpha_index;
                 node.name = name;
             }
 
@@ -1225,6 +1233,10 @@ impl Gui
                 {
                     state.rendering.v_sync.set(v_sync);
                 }
+            }
+
+            {
+                ui.checkbox(&mut state.rendering.distance_sorting, "Distance Sorting (for better alpha blending)");
             }
 
             ui.horizontal(|ui|

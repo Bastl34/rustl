@@ -3,6 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::mem;
 
 use colored::Colorize;
+use nalgebra::Matrix4;
 use wgpu::util::DeviceExt;
 
 use crate::helper::change_tracker::ChangeTracker;
@@ -107,6 +108,8 @@ pub struct InstanceBuffer
     pub name: String,
     count: u32,
     buffer: wgpu::Buffer,
+
+    pub transformations: Vec::<Matrix4::<f32>>
 }
 
 impl RenderItem for InstanceBuffer
@@ -122,7 +125,8 @@ impl InstanceBuffer
         {
             name: name.to_string(),
             count: instances.len() as u32,
-            buffer: create_empty_buffer(wgpu)
+            buffer: create_empty_buffer(wgpu),
+            transformations: Vec::with_capacity(instances.len())
         };
 
         instance_buffer.to_buffer(wgpu, instances);
@@ -132,12 +136,16 @@ impl InstanceBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>)
     {
+        self.transformations = Vec::with_capacity(instances.len());
+
         let instance_data = instances.iter().map(|instance|
         {
             let instance = instance.borrow();
             let instance = instance.get_ref();
             let (transform, normal) = instance.get_transform();
             let alpha = instance.get_alpha();
+
+            self.transformations.push(transform);
 
             Instance
             {
@@ -157,6 +165,7 @@ impl InstanceBuffer
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }
         );
+
 
         self.count = instances.len() as u32;
     }
@@ -181,6 +190,8 @@ impl InstanceBuffer
             highlight: f32::from(instance.highlight)
         };
 
+        self.transformations[index] = transform;
+
         wgpu.queue_mut().write_buffer
         (
             &self.buffer,
@@ -200,12 +211,17 @@ impl InstanceBuffer
 
         let slice = &instances[range.clone()];
 
+        let mut i = range.start;
         let instance_data = slice.iter().map(|instance|
         {
             let instance = instance.borrow();
             let instance = instance.get_ref();
             let (transform, normal) = instance.get_transform();
             let alpha = instance.get_alpha();
+
+            self.transformations[i] = transform;
+
+            i += 1;
 
             Instance
             {

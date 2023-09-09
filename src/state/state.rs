@@ -27,6 +27,8 @@ pub struct Rendering
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
+
+    pub distance_sorting: bool
 }
 
 pub struct State
@@ -99,7 +101,9 @@ impl State
                 v_sync: ChangeTracker::new(true),
 
                 fullscreen: ChangeTracker::new(false),
-                msaa: ChangeTracker::new(8)
+                msaa: ChangeTracker::new(8),
+
+                distance_sorting: true
             },
 
             input_manager: InputManager::new(),

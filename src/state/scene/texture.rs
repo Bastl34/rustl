@@ -28,6 +28,8 @@ pub struct TextureData
     pub width: u64,
     pub height: u64,
 
+    pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
+
     pub address_mode_u: TextureAddressMode,
     pub address_mode_v: TextureAddressMode,
     pub address_mode_w: TextureAddressMode,
@@ -57,6 +59,8 @@ impl Texture
 
             width: 0,
             height: 0,
+
+            has_transparency: false,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -97,10 +101,14 @@ impl Texture
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
         //let hash = helper::crypto::get_hash_from_byte_vec(&rgba.to_vec());
 
+        let has_transparency = rgba.enumerate_pixels().find(|pixel| { pixel.2[3] < 255 }).is_some();
+
         let data: TextureData = TextureData
         {
             width: rgba.width() as u64,
             height: rgba.height() as u64,
+
+            has_transparency: has_transparency,
 
             image: image::DynamicImage::ImageRgba8(rgba),
 
@@ -138,7 +146,7 @@ impl Texture
             for y in 0..height
             {
                 let pixel = data.image.get_pixel(x, y);
-                image.put_pixel(x, y, Rgba([pixel[channel], 0 , 0, 0]));
+                image.put_pixel(x, y, Rgba([pixel[channel], 0 , 0, 255]));
             }
         }
 
@@ -149,6 +157,8 @@ impl Texture
         {
             width: image.width() as u64,
             height: image.height() as u64,
+
+            has_transparency: false,
 
             image: image::DynamicImage::ImageRgba8(image),
 

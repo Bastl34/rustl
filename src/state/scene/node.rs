@@ -17,6 +17,7 @@ pub struct Node
     pub visible: bool,
 
     pub render_children_first: bool,
+    pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
 
     pub parent: Option<NodeItem>,
 
@@ -42,6 +43,7 @@ impl Node
             visible: true,
 
             render_children_first: false,
+            alpha_index: 0,
 
             components: vec![],
 
