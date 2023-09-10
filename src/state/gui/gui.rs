@@ -387,7 +387,7 @@ impl Gui
         Plot::new("FPS")
             .legend(legend)
             .clamp_grid(true)
-            .y_axis_width(2)
+            .y_axis_width(4)
             .y_axis_position(egui_plot::HPlacement::Right)
             .allow_zoom(false)
             .height(120.0)
