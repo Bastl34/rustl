@@ -27,7 +27,7 @@ use crate::state::scene::components::transformation_animation::TransformationAni
 use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
-use crate::state::state::{State, StateItem};
+use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
 
 use super::winit::winit_map_key;
 
@@ -306,8 +306,8 @@ impl MainInterface
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            scene.load("objects/temp/scene.glb").await.unwrap();
-            //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
+            //scene.load("objects/temp/scene.glb").await.unwrap();
+            scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
 
@@ -665,6 +665,12 @@ impl MainInterface
                 state.last_time = state.fps_timer.elapsed().as_millis();
 
                 state.last_fps = state.fps;
+                state.fps_chart.push(state.last_fps);
+                if state.fps_chart.len() > FPS_CHART_VALUES
+                {
+                    state.fps_chart.remove(0);
+                }
+
                 state.fps = 0;
             }
             else

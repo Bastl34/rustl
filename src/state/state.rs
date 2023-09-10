@@ -9,6 +9,8 @@ use super::scene::{scene::SceneItem, components::component::ComponentItem};
 
 pub type StateItem = Rc<RefCell<State>>;
 
+pub const FPS_CHART_VALUES: usize = 100;
+
 pub struct AdapterFeatures
 {
     pub name: String,
@@ -59,6 +61,7 @@ pub struct State
     pub fps: u32,
     pub last_fps: u32,
     pub fps_absolute: u32,
+    pub fps_chart: Vec<u32>,
 
     pub frame_update_time: u128,
     pub frame_scale: f32,
@@ -129,6 +132,7 @@ impl State
             fps: 0,
             last_fps: 0,
             fps_absolute: 0,
+            fps_chart: vec![0; 100],
 
             frame_update_time: 0,
             frame_scale: 0.0,

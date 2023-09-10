@@ -1,6 +1,7 @@
 use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap};
 
 use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style, Align2};
+use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
 use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
@@ -332,7 +333,13 @@ impl Gui
     fn create_left_sidebar(&mut self, state: &mut State, ui: &mut Ui)
     {
         // statistics
-        collapse_with_title(ui, "statistic", true, "📈 Statistics", |ui|
+        collapse_with_title(ui, "chart", true, "📈 Chart", |ui|
+        {
+            self.create_chart(state, ui);
+        });
+
+        // statistics
+        collapse_with_title(ui, "statistic", true, "ℹ Statistics", |ui|
         {
             self.create_statistic(state, ui);
         });
@@ -359,6 +366,33 @@ impl Gui
                 HierarchyPanel::Textures => {},
             }
         });
+    }
+
+    fn create_chart(&mut self, state: &mut State, ui: &mut Ui)
+    {
+        // https://github.com/emilk/egui/blob/master/crates/egui_demo_lib/src/demo/plot_demo.rs#L888
+
+        let chart = BarChart::new
+        (
+            state.fps_chart.iter().enumerate().map(|(i, value)|
+            {
+                Bar::new(i as f64, *value as f64).width(0.095)
+            }).collect(),
+        )
+        .color(Color32::WHITE)
+        .name("FPS");
+
+        let legend = Legend::default().position(Corner::LeftTop);
+
+        Plot::new("FPS")
+            .legend(legend)
+            .clamp_grid(true)
+            .y_axis_width(2)
+            .y_axis_position(egui_plot::HPlacement::Right)
+            .allow_zoom(false)
+            .height(120.0)
+            .allow_drag(false)
+            .show(ui, |plot_ui| plot_ui.bar_chart(chart));
     }
 
     fn create_statistic(&mut self, state: &mut State, ui: &mut Ui)
