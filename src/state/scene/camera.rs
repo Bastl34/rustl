@@ -1,8 +1,10 @@
-use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3};
+use std::mem::swap;
+
+use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3, Vector2};
 
 use crate::{helper::{math::approx_equal, change_tracker::ChangeTracker}, state::helper::render_item::{RenderItemOption}, input::input_manager::InputManager};
 
-use super::{node::NodeItem, camera_controller::camera_controller::CameraControllerBox};
+use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController}};
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -162,12 +164,28 @@ impl Camera
 
     pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
     {
-        if let Some(controller) = &mut self.controller
+        let mut changed = false;
+        let mut controller: Option<CameraControllerBox> = None;
+        swap(&mut self.controller, &mut controller);
+
+        let node = self.node.clone();
+        let data = self.get_data_mut();
+
+        if let Some(controller) = &mut controller
         {
-            return controller.update(self.node.clone(), scene, input_manager, frame_scale);
+            controller.update(node, scene, input_manager, data, frame_scale);
+
+            // re-calculate matrices on if there was a change
+            if self.data.changed()
+            {
+                self.init_matrices();
+                changed = true;
+            }
         }
 
-        false
+        swap(&mut controller, &mut self.controller);
+
+        changed
     }
 
     pub fn update_resolution(&mut self, resolution_width: u32, resolution_height: u32)
@@ -193,6 +211,16 @@ impl Camera
 
         data.projection_inverse = data.projection.inverse();
         data.view_inverse = data.view.try_inverse().unwrap();
+    }
+
+    pub fn add_controller_fly(&mut self, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
+    {
+        self.controller = Some(Box::new(FlyController::new(mouse_sensitivity, move_speed, move_speed_shift)));
+    }
+
+    pub fn remove_controller(&mut self)
+    {
+        self.controller = None;
     }
 
     pub fn is_default_cam(&self) -> bool

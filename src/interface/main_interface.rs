@@ -303,11 +303,11 @@ impl MainInterface
             //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
-            //scene.load("objects/temp/Workbench.glb").await.unwrap();
+            scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            scene.load("objects/temp/scene.glb").await.unwrap();
+            //scene.load("objects/temp/scene.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
@@ -384,6 +384,13 @@ impl MainInterface
                 scene.cameras.push(Box::new(cam));
             }
 
+            // camera movement controller
+            if scene.cameras.len() > 0
+            {
+                let cam = scene.cameras.get_mut(0).unwrap();
+                cam.add_controller_fly(Vector2::<f32>::new(0.0025, 0.0025), 0.1, 0.2);
+            }
+
 
             // lantern
             /*
@@ -437,147 +444,7 @@ impl MainInterface
         {
             return;
         }
-        let scene = scene.unwrap();
 
-        if state.input_manager.mouse.is_any_button_holding() && scene.cameras.len() > 0
-        {
-            let mut cam = scene.cameras.get_mut(0).unwrap();
-
-            let velocity = state.input_manager.mouse.point.velocity;
-            if approx_zero_vec2(velocity) == false
-            {
-                let cam_data = cam.get_data_mut().get_mut();
-                let dir: Vector3::<f32> = cam_data.dir.normalize();
-
-                let sensitivity = state.frame_scale * 0.0025;
-
-                let delta_x = velocity.x * sensitivity;
-                let delta_y = velocity.y * sensitivity;
-
-                let (mut yaw, mut pitch) = math::yaw_pitch_from_direction(dir);
-
-                pitch += delta_y;
-                yaw -= delta_x;
-
-                // check that you can not look up/down to 90°
-                if pitch > (PI/2.0) - 0.0001
-                {
-                    pitch = (PI/2.0) - 0.0001;
-                }
-                else if pitch < (-PI/2.0) + 0.0001
-                {
-                    pitch = (-PI / 2.0) + 0.0001;
-                }
-
-                let dir = math::yaw_pitch_to_direction(yaw, pitch);
-
-                cam_data.dir = dir;
-                cam.init_matrices();
-            }
-        }
-
-        if state.input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec()) && scene.cameras.len() > 0
-        {
-            let mut cam = scene.cameras.get_mut(0).unwrap();
-            let cam_data = cam.get_data_mut().get_mut();
-
-            let dir = cam_data.dir.normalize();
-            let up = cam_data.up.normalize();
-            let right = up.cross(&dir);
-
-            let mut vec = Vector3::<f32>::zeros();
-
-            let mut factor = 0.1;
-            if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-            {
-                factor = 0.2;
-            }
-
-            let sensitivity = state.frame_scale * factor;
-
-            if state.input_manager.keyboard.is_holding(Key::W)
-            {
-                vec += dir * sensitivity;
-            }
-            if state.input_manager.keyboard.is_holding(Key::S)
-            {
-                vec -= dir * sensitivity;
-            }
-            if state.input_manager.keyboard.is_holding(Key::D)
-            {
-                vec -= right * sensitivity;
-            }
-            if state.input_manager.keyboard.is_holding(Key::A)
-            {
-                vec += right * sensitivity;
-            }
-            if state.input_manager.keyboard.is_holding(Key::Space)
-            {
-                vec += up * sensitivity;
-            }
-            if state.input_manager.keyboard.is_holding(Key::C)
-            {
-                vec -= up * sensitivity;
-            }
-
-            cam_data.eye_pos += vec;
-            cam.init_matrices();
-        }
-
-        // get node
-        /*
-        let node_arc = scene.nodes.get_mut(node_id);
-
-        if node_arc.is_none()
-        {
-            return;
-        }
-        let node_arc = node_arc.unwrap();
-        let mut node: std::sync::RwLockWriteGuard<'_, Box<Node>> = node_arc.write().unwrap();
-
-        {
-            let instances = &mut node.instances;
-
-            if instances.get_ref().len() != state.instances as usize
-            {
-                //dbg!("recreate instances");
-
-                instances.get_mut().clear();
-
-                for i in 0..state.instances
-                {
-                    let x = (i as f32 * 5.0) - ((state.instances - 1) as f32 * 5.0) / 2.0;
-
-                    let instance = Instance::new_with_data
-                    (
-                        scene.id_manager.get_next_instance_id(),
-                        "instance".to_string(),
-                        node_arc.clone(),
-                        Vector3::<f32>::new(x, 0.0, 0.0),
-                        Vector3::<f32>::new(0.0, i as f32, 0.0),
-                        Vector3::<f32>::new(1.0, 1.0, 1.0)
-                    );
-
-                    node.add_instance(Box::new(instance));
-                }
-            }
-            else
-            {
-                if state.rotation_speed > 0.0
-                {
-                    for instance in instances.get_ref()
-                    {
-                        let mut instance = instance.borrow_mut();
-                        let instance = instance.get_mut();
-
-                        let rotation: f32 = state.rotation_speed * state.frame_scale;
-
-                        instance.apply_rotation(Vector3::<f32>::new(0.0, rotation, 0.0));
-                    }
-                }
-            }
-        }
-        */
     }
 
     pub fn update(&mut self)
