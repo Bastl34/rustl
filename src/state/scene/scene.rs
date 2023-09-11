@@ -1,4 +1,4 @@
-use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell};
+use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
 
 use anyhow::Ok;
 
@@ -18,7 +18,7 @@ pub struct Scene
     pub max_lights: u32,
 
     pub nodes: Vec<NodeItem>,
-    pub cameras: Vec<RefCell<ChangeTracker<CameraItem>>>,
+    pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
@@ -82,6 +82,15 @@ impl Scene
             //node.write().unwrap().update(frame_scale);
             Node::update(node.clone(), input_manager, frame_scale);
         }
+
+        let mut cameras = vec![];
+        swap(&mut self.cameras, &mut cameras);
+        for cam in &mut cameras
+        {
+            cam.update(self, input_manager, frame_scale);
+        }
+
+        swap(&mut cameras, &mut self.cameras);
     }
 
     pub fn print(&self)
@@ -97,7 +106,7 @@ impl Scene
         // cameras
         for cam in &self.cameras
         {
-            cam.borrow().get_ref().print_short();
+            cam.print_short();
         }
 
         // lights

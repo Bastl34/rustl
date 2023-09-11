@@ -1,6 +1,8 @@
 use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3};
 
-use crate::{helper::math::approx_equal, state::helper::render_item::{RenderItemOption}};
+use crate::{helper::{math::approx_equal, change_tracker::ChangeTracker}, state::helper::render_item::{RenderItemOption}, input::input_manager::InputManager};
+
+use super::{node::NodeItem, camera_controller::camera_controller::CameraControllerBox};
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -35,12 +37,8 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
 
 pub type CameraItem = Box<Camera>;
 
-pub struct Camera
+pub struct CameraData
 {
-    pub id: u64,
-    pub name: String,
-    pub enabled: bool,
-
     pub viewport_x: f32,    // 0.0-1.0
     pub viewport_y: f32, // 0.0-1.0
     pub viewport_width: f32, // 0.0-1.0
@@ -66,6 +64,18 @@ pub struct Camera
 
     pub projection_inverse: Matrix4<f32>,
     pub view_inverse: Matrix4<f32>,
+}
+
+pub struct Camera
+{
+    pub id: u64,
+    pub name: String,
+    pub enabled: bool,
+
+    pub data: ChangeTracker<CameraData>,
+
+    pub controller: Option<CameraControllerBox>,
+    pub node: Option<NodeItem>,
 
     pub render_item: RenderItemOption,
     pub bind_group_render_item: RenderItemOption,
@@ -81,122 +91,167 @@ impl Camera
             name: name,
             enabled: true,
 
-            viewport_x: 0.0,
-            viewport_y: 0.0,
-            viewport_width: 1.0,
-            viewport_height: 1.0,
+            data: ChangeTracker::new(CameraData
+            {
+                viewport_x: 0.0,
+                viewport_y: 0.0,
+                viewport_width: 1.0,
+                viewport_height: 1.0,
 
-            resolution_aspect_ratio: 0.0,
+                resolution_aspect_ratio: 0.0,
 
-            resolution_width: 0,
-            resolution_height: 0,
+                resolution_width: 0,
+                resolution_height: 0,
 
-            fovy: DEFAULT_FOVY.to_radians(),
+                fovy: DEFAULT_FOVY.to_radians(),
 
-            eye_pos: DEFAULT_CAM_POS,
+                eye_pos: DEFAULT_CAM_POS,
 
-            up: DEFAULT_CAM_UP,
-            dir: DEFAULT_CAM_DIR,
+                up: DEFAULT_CAM_UP,
+                dir: DEFAULT_CAM_DIR,
 
-            clipping_near: DEFAULT_CLIPPING_NEAR,
-            clipping_far: DEFAULT_CLIPPING_FAR,
+                clipping_near: DEFAULT_CLIPPING_NEAR,
+                clipping_far: DEFAULT_CLIPPING_FAR,
 
-            projection: Perspective3::<f32>::new(1.0f32, 0.0f32, DEFAULT_CLIPPING_NEAR, DEFAULT_CLIPPING_FAR),
-            view: Matrix4::<f32>::identity(),
+                projection: Perspective3::<f32>::new(1.0f32, 0.0f32, DEFAULT_CLIPPING_NEAR, DEFAULT_CLIPPING_FAR),
+                view: Matrix4::<f32>::identity(),
 
-            projection_inverse: Matrix4::<f32>::identity(),
-            view_inverse: Matrix4::<f32>::identity(),
+                projection_inverse: Matrix4::<f32>::identity(),
+                view_inverse: Matrix4::<f32>::identity(),
+            }),
+
+            controller: None,
+            node: None,
 
             render_item: None,
             bind_group_render_item: None
         }
     }
 
+    pub fn get_data(&self) -> &CameraData
+    {
+        &self.data.get_ref()
+    }
+
+    pub fn get_data_tracker(&self) -> &ChangeTracker<CameraData>
+    {
+        &self.data
+    }
+
+    pub fn get_data_mut(&mut self) -> &mut ChangeTracker<CameraData>
+    {
+        &mut self.data
+    }
+
     pub fn init(&mut self, viewport_x: f32, viewport_y: f32, viewport_width: f32, viewport_height: f32, resolution_width: u32, resolution_height: u32)
     {
-        self.viewport_x = viewport_x;
-        self.viewport_y = viewport_y;
-        self.viewport_width = viewport_width;
-        self.viewport_height = viewport_height;
+        let data = self.data.get_mut();
 
-        self.resolution_width = resolution_width;
-        self.resolution_height = resolution_height;
+        data.viewport_x = viewport_x;
+        data.viewport_y = viewport_y;
+        data.viewport_width = viewport_width;
+        data.viewport_height = viewport_height;
 
-        self.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
+        data.resolution_width = resolution_width;
+        data.resolution_height = resolution_height;
+
+        data.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
 
         self.init_matrices();
     }
 
+    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    {
+        if let Some(controller) = &mut self.controller
+        {
+            return controller.update(self.node.clone(), scene, input_manager, frame_scale);
+        }
+
+        false
+    }
+
     pub fn update_resolution(&mut self, resolution_width: u32, resolution_height: u32)
     {
-        self.resolution_width = resolution_width;
-        self.resolution_height = resolution_height;
+        let data = self.data.get_mut();
 
-        self.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
+        data.resolution_width = resolution_width;
+        data.resolution_height = resolution_height;
+
+        data.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
     }
 
     pub fn init_matrices(&mut self)
     {
-        self.projection = Perspective3::new(self.resolution_aspect_ratio, self.fovy, self.clipping_near, self.clipping_far);
+        let data = self.data.get_mut();
+
+        data.projection = Perspective3::new(data.resolution_aspect_ratio, data.fovy, data.clipping_near, data.clipping_far);
 
         //let target = Point3::<f32>::new(self.dir.x, self.dir.y, self.dir.z);
-        let target = self.eye_pos + self.dir;
+        let target = data.eye_pos + data.dir;
 
-        self.view = Isometry3::look_at_rh(&self.eye_pos, &target, &self.up).to_homogeneous();
+        data.view = Isometry3::look_at_rh(&data.eye_pos, &target, &data.up).to_homogeneous();
 
-        self.projection_inverse = self.projection.inverse();
-        self.view_inverse = self.view.try_inverse().unwrap();
+        data.projection_inverse = data.projection.inverse();
+        data.view_inverse = data.view.try_inverse().unwrap();
     }
 
     pub fn is_default_cam(&self) -> bool
     {
+        let data = self.data.get_ref();
+
         (
-            approx_equal(self.eye_pos.x, DEFAULT_CAM_POS.x)
+            approx_equal(data.eye_pos.x, DEFAULT_CAM_POS.x)
             &&
-            approx_equal(self.eye_pos.y, DEFAULT_CAM_POS.y)
+            approx_equal(data.eye_pos.y, DEFAULT_CAM_POS.y)
             &&
-            approx_equal(self.eye_pos.z, DEFAULT_CAM_POS.z)
+            approx_equal(data.eye_pos.z, DEFAULT_CAM_POS.z)
         )
         &&
         (
-            approx_equal(self.dir.x, DEFAULT_CAM_DIR.x)
+            approx_equal(data.dir.x, DEFAULT_CAM_DIR.x)
             &&
-            approx_equal(self.dir.y, DEFAULT_CAM_DIR.y)
+            approx_equal(data.dir.y, DEFAULT_CAM_DIR.y)
             &&
-            approx_equal(self.dir.z, DEFAULT_CAM_DIR.z)
+            approx_equal(data.dir.z, DEFAULT_CAM_DIR.z)
         )
         &&
         (
-            approx_equal(self.up.x, DEFAULT_CAM_UP.x)
+            approx_equal(data.up.x, DEFAULT_CAM_UP.x)
             &&
-            approx_equal(self.up.y, DEFAULT_CAM_UP.y)
+            approx_equal(data.up.y, DEFAULT_CAM_UP.y)
             &&
-            approx_equal(self.up.z, DEFAULT_CAM_UP.z)
+            approx_equal(data.up.z, DEFAULT_CAM_UP.z)
         )
         &&
-        approx_equal(self.fovy, DEFAULT_FOVY.to_radians())
+        approx_equal(data.fovy, DEFAULT_FOVY.to_radians())
         &&
-        approx_equal(self.clipping_near, DEFAULT_CLIPPING_NEAR)
+        approx_equal(data.clipping_near, DEFAULT_CLIPPING_NEAR)
         &&
-        approx_equal(self.clipping_far, DEFAULT_CLIPPING_FAR)
+        approx_equal(data.clipping_far, DEFAULT_CLIPPING_FAR)
     }
 
     pub fn set_cam_position(&mut self, eye_pos: Point3::<f32>, dir: Vector3::<f32>)
     {
-        self.eye_pos = eye_pos;
-        self.dir = dir;
+        let data = self.data.get_mut();
+
+        data.eye_pos = eye_pos;
+        data.dir = dir;
 
         self.init_matrices();
     }
 
     pub fn webgpu_projection(&self) -> nalgebra::Matrix4<f32>
     {
-        OPENGL_TO_WGPU_MATRIX * self.projection.to_homogeneous()
+        let data = self.data.get_ref();
+
+        OPENGL_TO_WGPU_MATRIX * data.projection.to_homogeneous()
     }
 
     pub fn is_point_in_frustum(&self, point: &Point3<f32>) -> bool
     {
-        let pv = self.projection.to_homogeneous() * self.view;
+        let data = self.data.get_ref();
+
+        let pv = data.projection.to_homogeneous() * data.view;
         let point_clip = pv * point.to_homogeneous();
 
         // Check if point is inside NDC space (Normalized Device Coordinates Space)
@@ -205,38 +260,42 @@ impl Camera
 
     pub fn print(&self)
     {
+        let data = self.data.get_ref();
+
         println!("name: {:?}", self.name);
 
         println!("id: {:?}", self.id);
         println!("name: {:?}", self.name);
         println!("enabled: {:?}", self.enabled);
 
-        println!("viewport x: {:?}", self.viewport_x);
-        println!("viewport y: {:?}", self.viewport_y);
-        println!("viewport width: {:?}", self.viewport_width);
-        println!("viewport height: {:?}", self.viewport_height);
+        println!("viewport x: {:?}", data.viewport_x);
+        println!("viewport y: {:?}", data.viewport_y);
+        println!("viewport width: {:?}", data.viewport_width);
+        println!("viewport height: {:?}", data.viewport_height);
 
-        println!("resolution aspect_ratio: {:?}", self.resolution_aspect_ratio);
+        println!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
 
-        println!("resolution width: {:?}", self.resolution_width);
-        println!("resolution height: {:?}", self.resolution_height);
+        println!("resolution width: {:?}", data.resolution_width);
+        println!("resolution height: {:?}", data.resolution_height);
 
-        println!("fov: {:?}", self.fovy);
+        println!("fov: {:?}", data.fovy);
 
-        println!("eye_pos: {:?}", self.eye_pos);
+        println!("eye_pos: {:?}", data.eye_pos);
 
-        println!("up: {:?}", self.up);
-        println!("dir: {:?}", self.dir);
+        println!("up: {:?}", data.up);
+        println!("dir: {:?}", data.dir);
 
-        println!("clipping_near: {:?}", self.clipping_near);
-        println!("clipping_far: {:?}", self.clipping_far);
+        println!("clipping_near: {:?}", data.clipping_near);
+        println!("clipping_far: {:?}", data.clipping_far);
 
-        println!("projection: {:?}", self.projection);
-        println!("view: {:?}", self.view);
+        println!("projection: {:?}", data.projection);
+        println!("view: {:?}", data.view);
     }
 
     pub fn print_short(&self)
     {
-        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, self.viewport_x, self.viewport_y, self.viewport_width, self.viewport_height, self.resolution_width, self.resolution_height, self.fovy, self.eye_pos, self.clipping_near, self.clipping_far);
+        let data = self.data.get_ref();
+
+        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
     }
 }

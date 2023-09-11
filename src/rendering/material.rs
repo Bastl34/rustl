@@ -31,7 +31,7 @@ use super::{wgpu::WGpu, uniform, texture::Texture};
     14: depth
 */
 
-pub const ADDITIONAL_START_INDEX: u32 = 20;
+//pub const ADDITIONAL_START_INDEX: u32 = 20;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -52,7 +52,11 @@ pub struct MaterialUniform
     pub roughness: f32,
     pub receive_shadow: u32,
 
+    pub unlit: u32,
+
     pub textures_used: u32,
+
+    pub __padding: [u32; 3]
 }
 
 impl MaterialUniform
@@ -114,7 +118,10 @@ impl MaterialUniform
             normal_map_strength: material_data.normal_map_strength,
             roughness: material_data.roughness,
             receive_shadow: material_data.receive_shadow as u32,
-            textures_used: textures_used
+            unlit: material_data.unlit_shading as u32,
+            textures_used: textures_used,
+
+            __padding: [0, 0, 0]
         }
     }
 }

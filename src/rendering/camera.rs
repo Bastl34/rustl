@@ -67,8 +67,10 @@ impl CameraBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
     {
+        let data = cam.get_data();
+
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(cam.eye_pos, cam.webgpu_projection(), cam.view);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -83,8 +85,10 @@ impl CameraBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
     {
+        let data = cam.get_data();
+
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(cam.eye_pos, cam.webgpu_projection(), cam.view);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
     }

@@ -210,15 +210,16 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             gltf::camera::Projection::Perspective(pers) =>
             {
                 let mut cam = Camera::new(cam_id, name.to_string());
+                let cam_data = cam.get_data_mut().get_mut();
                 //cam.fovy = pers.yfov().to_radians();
-                cam.fovy = pers.yfov();
-                cam.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
-                cam.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
-                cam.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
-                cam.clipping_near = pers.znear();
-                cam.clipping_far = pers.zfar().unwrap_or(1000.0);
+                cam_data.fovy = pers.yfov();
+                cam_data.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
+                cam_data.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
+                cam_data.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
+                cam_data.clipping_near = pers.znear();
+                cam_data.clipping_far = pers.zfar().unwrap_or(1000.0);
 
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+                scene.cameras.push(Box::new(cam));
             },
         };
     }

@@ -59,29 +59,20 @@ pub fn interpolate_vec4(a: Vector4<f32>, b: Vector4<f32>, f: f32) -> Vector4<f32
 
 pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)
 {
-    // https://github.com/bergerkiller/BKCommonLib/blob/master/src/main/java/com/bergerkiller/bukkit/common/utils/MathUtil.java
-
-    let yaw;
-    {
-        // x and z are changed (because otherwise the result its not pointing in the right direction)
-        let dx = dir.z;
-        let dz = dir.x;
-
-        yaw = dz.atan2(dx) - PI;
-    }
-
-    let pitch;
-    {
-        let dx = dir.x;
-        let dy = -dir.y; // somewhow y is flipped
-        let dz = dir.z;
-
-        let dxz = ((dx * dx) + (dz * dz)).sqrt();
-
-        pitch = -((dy / dxz)).atan();
-    }
+    let pitch = dir.y.asin();
+    let yaw = dir.x.atan2(dir.z);
 
     (yaw, pitch)
+}
+
+pub fn yaw_pitch_to_direction(yaw: f32, pitch: f32) -> Vector3::<f32>
+{
+    Vector3::<f32>::new
+    (
+        pitch.cos() * yaw.sin(),
+        pitch.sin(),
+        pitch.cos() * yaw.cos()
+    )
 }
 
 /*

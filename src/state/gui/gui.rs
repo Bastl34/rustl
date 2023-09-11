@@ -4,7 +4,7 @@ use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Sty
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::State, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -376,7 +376,8 @@ impl Gui
         (
             state.fps_chart.iter().enumerate().map(|(i, value)|
             {
-                Bar::new(i as f64, *value as f64).width(0.095)
+                //Bar::new((i - FPS_CHART_VALUES) as f64, *value as f64).width(0.05)
+                Bar::new(i as f64, *value as f64).width(0.05)
             }).collect(),
         )
         .color(Color32::WHITE)

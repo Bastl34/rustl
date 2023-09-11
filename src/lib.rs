@@ -55,6 +55,12 @@ mod state
             pub(crate) mod transformation_animation;
         }
 
+        pub(crate) mod camera_controller
+        {
+            pub(crate) mod camera_controller;
+            pub(crate) mod fly_controller;
+        }
+
         pub(crate) mod texture;
         pub(crate) mod camera;
         pub(crate) mod light;

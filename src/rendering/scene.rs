@@ -3,7 +3,7 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, cmp::Ordering};
 use nalgebra::{Vector3, Point3, distance, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh}, node::{Node, NodeItem}, camera::Camera, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh}, node::{Node, NodeItem}, camera::{Camera, CameraData}, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
@@ -241,8 +241,7 @@ impl Scene
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
         {
-            let mut cam = cam.borrow_mut();
-            let (cam, cam_changed) = cam.consume_borrow_mut();
+            let cam_changed = cam.get_data_mut().consume_change();
 
             // create cam render item
             if cam.render_item.is_none()
@@ -320,6 +319,16 @@ impl Scene
                     {
                         component_downcast_mut!(trans_component, Transformation);
                         all_instances_changed = trans_component.get_data_mut().consume_change() || all_instances_changed;
+                    }
+
+                    if !all_instances_changed
+                    {
+                        let alpha_component = node.find_component::<Alpha>();
+                        if let Some(alpha_component) = alpha_component
+                        {
+                            component_downcast_mut!(alpha_component, Alpha);
+                            all_instances_changed = alpha_component.get_data_mut().consume_change() || all_instances_changed;
+                        }
                     }
                 }
 
@@ -571,8 +580,8 @@ impl Scene
         dbg!("resize");
         for cam in &mut scene.cameras
         {
-            cam.borrow_mut().get_mut().update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
-            cam.borrow_mut().get_mut().init_matrices();
+            cam.update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.init_matrices();
         }
 
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
@@ -748,14 +757,15 @@ impl Scene
         let mut i = 0;
         for cam in &scene.cameras
         {
-            let cam = cam.borrow();
-            let cam = cam.get_ref();
             if !cam.enabled { continue; }
+
+            let cam_data = cam.get_data();
 
             // sort
             if self.distance_sorting
             {
-                let cam_pos = cam.eye_pos;
+
+                let cam_pos = cam_data.eye_pos;
                 render_data.sort_by(|a, b|
                 {
                     if a.has_transparency != b.has_transparency
@@ -791,8 +801,8 @@ impl Scene
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
 
-            draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam, &bind_group_render_item.bind_group, clear);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
 
             i += 1;
         }
@@ -800,7 +810,7 @@ impl Scene
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
         let mut clear_depth = wgpu::LoadOp::Clear(1.0);
@@ -849,18 +859,18 @@ impl Scene
             })
         });
 
-        let x = cam.viewport_x * cam.resolution_width as f32;
-        let y = cam.viewport_y * cam.resolution_height as f32;
+        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
+        let y = cam_data.viewport_y * cam_data.resolution_height as f32;
 
-        let width = cam.viewport_width * cam.resolution_width as f32;
-        let height = cam.viewport_height * cam.resolution_height as f32;
+        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -907,11 +917,11 @@ impl Scene
             })
         });
 
-        let x = cam.viewport_x * cam.resolution_width as f32;
-        let y = cam.viewport_y * cam.resolution_height as f32;
+        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
+        let y = cam_data.viewport_y * cam_data.resolution_height as f32;
 
-        let width = cam.viewport_width * cam.resolution_width as f32;
-        let height = cam.viewport_height * cam.resolution_height as f32;
+        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 

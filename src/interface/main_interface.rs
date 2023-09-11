@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::f32::consts::PI;
 use std::mem::{swap};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
@@ -11,7 +12,7 @@ use winit::window::{Window, Fullscreen};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
-use crate::helper::math::yaw_pitch_from_direction;
+use crate::helper::math::{yaw_pitch_from_direction, self, approx_zero_vec2};
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
@@ -306,8 +307,8 @@ impl MainInterface
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            //scene.load("objects/temp/scene.glb").await.unwrap();
-            scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
+            scene.load("objects/temp/scene.glb").await.unwrap();
+            //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
 
@@ -374,12 +375,13 @@ impl MainInterface
             if scene.cameras.len() == 0
             {
                 let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
-                cam.fovy = 45.0f32.to_radians();
-                cam.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
-                cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y, -cam.eye_pos.z);
-                cam.clipping_near = 0.1;
-                cam.clipping_far = 1000.0;
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+                let cam_data = cam.get_data_mut().get_mut();
+                cam_data.fovy = 45.0f32.to_radians();
+                cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                cam_data.clipping_near = 0.1;
+                cam_data.clipping_far = 1000.0;
+                scene.cameras.push(Box::new(cam));
             }
 
 
@@ -437,105 +439,50 @@ impl MainInterface
         }
         let scene = scene.unwrap();
 
-        if state.input_manager.mouse.is_any_button_holding()
+        if state.input_manager.mouse.is_any_button_holding() && scene.cameras.len() > 0
         {
-            let mut cam = scene.cameras[0].borrow_mut();
-            let cam = cam.get_mut();
-
-            let up: Vector3::<f32> = cam.up;
-            let dir: Vector3::<f32> = cam.dir;
+            let mut cam = scene.cameras.get_mut(0).unwrap();
 
             let velocity = state.input_manager.mouse.point.velocity;
-            let sensitivity = state.frame_scale * 0.0025;
+            if approx_zero_vec2(velocity) == false
+            {
+                let cam_data = cam.get_data_mut().get_mut();
+                let dir: Vector3::<f32> = cam_data.dir.normalize();
 
-            let delta_x = -velocity.x * sensitivity;
-            let delta_y = velocity.y * sensitivity;
+                let sensitivity = state.frame_scale * 0.0025;
 
-            let (mut yaw, mut pitch) = yaw_pitch_from_direction(dir);
+                let delta_x = velocity.x * sensitivity;
+                let delta_y = velocity.y * sensitivity;
 
-            pitch += delta_y;
-            yaw -= delta_x;
+                let (mut yaw, mut pitch) = math::yaw_pitch_from_direction(dir);
 
-            dbg!(pitch);
+                pitch += delta_y;
+                yaw -= delta_x;
 
-            let mut dir = Vector3::<f32>::zeros();
+                // check that you can not look up/down to 90°
+                if pitch > (PI/2.0) - 0.0001
+                {
+                    pitch = (PI/2.0) - 0.0001;
+                }
+                else if pitch < (-PI/2.0) + 0.0001
+                {
+                    pitch = (-PI / 2.0) + 0.0001;
+                }
 
-            dir.x = yaw.cos() * pitch.cos();
-            dir.y = pitch.sin();
-            dir.z = yaw.sin() * pitch.cos();
-            dir = dir.normalize();
+                let dir = math::yaw_pitch_to_direction(yaw, pitch);
 
-
-            cam.dir = dir;
-            cam.init_matrices();
-
-            /*
-            dbg!(pitch);
-
-            let rotation_pitch  = Rotation3::from_euler_angles(0.0, pitch, 0.0);
-
-            //cam.dir = (rotation_pitch * Vector3::<f32>::new(1.0, 0.0, 0.0)).normalize();
-            cam.dir = (rotation_pitch * Vector3::<f32>::new(1.0, 0.0, 0.0));
-
-            cam.init_matrices();
-            */
-
-            /*
-            let yaw = dir.y.atan2(dir.x) + delta_x;
-            let pitch = (dir.y / dir.norm()).asin();
-
-            let mut dir = Vector3::<f32>::zeros();
-
-            dir.x = yaw.cos() * pitch.cos();
-            dir.y = pitch.sin();
-            dir.z = yaw.sin() * pitch.cos();
-            dir = dir.normalize();
-            */
-
-            /*
-            direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-            direction.y = sin(glm::radians(pitch));
-            direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-
-
-            let delta_x  = Rotation3::from_euler_angles(0.0, delta_x, 0.0);
-            let delta_y  = Rotation3::from_euler_angles(delta_y, 0.0, 0.0);
-
-            cam.dir.
-            */
-
-            //cam.dir = (rotation_yaw * (rotation_pitch * dir)).normalize();
-            /*
-            cam.dir = delta_y * (delta_x * dir).normalize();
-            cam.up = delta_y * (delta_x * up).normalize();
-             */
-            //cam.dir = (delta_x * cam.dir).normalize();
-            //cam.dir = (delta_y * cam.dir).normalize();
-
-            /*
-            cam.up = (delta_x * cam.up).normalize();
-            cam.up = (delta_y * cam.up).normalize();
-            */
-
-            /*
-            let dir = Vector3::<f32>::new
-            direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-            direction.y = sin(glm::radians(pitch));
-            direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-            cameraFront = glm::normalize(direction);
-            */
-
-            //cam.dir = dir;
-            //cam.init_matrices();
+                cam_data.dir = dir;
+                cam.init_matrices();
+            }
         }
 
-        if state.input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec())
+        if state.input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec()) && scene.cameras.len() > 0
         {
-            let mut cam = scene.cameras[0].borrow_mut();
-            let cam = cam.get_mut();
+            let mut cam = scene.cameras.get_mut(0).unwrap();
+            let cam_data = cam.get_data_mut().get_mut();
 
-            let dir = cam.dir.normalize();
-            let up = cam.up.normalize();
+            let dir = cam_data.dir.normalize();
+            let up = cam_data.up.normalize();
             let right = up.cross(&dir);
 
             let mut vec = Vector3::<f32>::zeros();
@@ -573,7 +520,7 @@ impl MainInterface
                 vec -= up * sensitivity;
             }
 
-            cam.eye_pos += vec;
+            cam_data.eye_pos += vec;
             cam.init_matrices();
         }
 

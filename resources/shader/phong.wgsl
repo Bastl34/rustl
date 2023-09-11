@@ -131,6 +131,8 @@ struct MaterialUniform
     roughness: f32,
     receive_shadow: u32,
 
+    unlit_shading: u32,
+
     textures_used: u32,
 };
 
@@ -220,36 +222,43 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
-    let view_dir = normalize(in.tangent_view_position - in.tangent_position);
-
-    for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
+    if (material.unlit_shading != 0u)
     {
-        let light_color = lights[i].color.rgb;
-        let ambient_strength = 0.1;
-        let ambient_color = (light_color * ambient_strength).rgb;
-
-        //let light_dir = normalize(light.position.xyz - in.world_position);
-        //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
-        let light_dir = normalize((tangent_matrix * lights[i].position.xyz) - in.tangent_position);
-
-        let half_dir = normalize(view_dir + light_dir);
-
-        let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
-        let diffuse_color = (lights[i].color * diffuse_strength).rgb;
-
-        let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), material.shininess);
-        let specular_color = (specular_strength * lights[i].color).rgb;
-
-        color += (ambient_color + diffuse_color + specular_color) * object_color.rgb;
+        color = object_color.rgb;
     }
-
-    // ambient occlusion
-    if (has_ambient_occlusion_texture())
+    else
     {
-        let ambient_occlusion = textureSample(t_ambient_occlusion, s_ambient_occlusion, uvs);
-        color.x *= ambient_occlusion.x;
-        color.y *= ambient_occlusion.x;
-        color.z *= ambient_occlusion.x;
+        let view_dir = normalize(in.tangent_view_position - in.tangent_position);
+
+        for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
+        {
+            let light_color = lights[i].color.rgb;
+            let ambient_strength = 0.1;
+            let ambient_color = (light_color * ambient_strength).rgb;
+
+            //let light_dir = normalize(light.position.xyz - in.world_position);
+            //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
+            let light_dir = normalize((tangent_matrix * lights[i].position.xyz) - in.tangent_position);
+
+            let half_dir = normalize(view_dir + light_dir);
+
+            let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
+            let diffuse_color = (lights[i].color * diffuse_strength).rgb;
+
+            let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), material.shininess);
+            let specular_color = (specular_strength * lights[i].color).rgb;
+
+            color += (ambient_color + diffuse_color + specular_color) * object_color.rgb;
+        }
+
+        // ambient occlusion
+        if (has_ambient_occlusion_texture())
+        {
+            let ambient_occlusion = textureSample(t_ambient_occlusion, s_ambient_occlusion, uvs);
+            color.x *= ambient_occlusion.x;
+            color.y *= ambient_occlusion.x;
+            color.z *= ambient_occlusion.x;
+        }
     }
 
     // highlight color
