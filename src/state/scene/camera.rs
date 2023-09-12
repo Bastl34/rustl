@@ -168,18 +168,21 @@ impl Camera
         let mut controller: Option<CameraControllerBox> = None;
         swap(&mut self.controller, &mut controller);
 
-        let node = self.node.clone();
-        let data = self.get_data_mut();
-
         if let Some(controller) = &mut controller
         {
-            controller.update(node, scene, input_manager, data, frame_scale);
-
-            // re-calculate matrices on if there was a change
-            if self.data.changed()
+            if controller.get_base().is_enabled
             {
-                self.init_matrices();
-                changed = true;
+                let node = self.node.clone();
+                let data = self.get_data_mut();
+
+                controller.update(node, scene, input_manager, data, frame_scale);
+
+                // re-calculate matrices on if there was a change
+                if self.data.changed()
+                {
+                    self.init_matrices();
+                    changed = true;
+                }
             }
         }
 

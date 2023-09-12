@@ -79,7 +79,6 @@ impl Scene
         // update nodes
         for node in &self.nodes
         {
-            //node.write().unwrap().update(frame_scale);
             Node::update(node.clone(), input_manager, frame_scale);
         }
 

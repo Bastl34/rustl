@@ -1,10 +1,11 @@
-use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap};
+use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap, collections::HashMap};
 
+use colored::Color;
 use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style, Align2};
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::Material, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -23,7 +24,7 @@ enum SettingsPanel
 }
 
 #[derive(PartialEq, Eq)]
-enum HierarchyPanel
+enum HierarchyType
 {
     Objects,
     Cameras,
@@ -42,18 +43,16 @@ enum BottomPanel
 
 pub struct Gui
 {
-    side_hierarchy: HierarchyPanel,
     bottom: BottomPanel,
 
     settings: SettingsPanel,
 
     hierarchy_expand_all: bool,
+    hierarchy_filter: String,
 
+    selected_scene_id: Option<u64>,
+    selected_type: HierarchyType,
     selected_object: String,
-    selected_camera: Option<u64>,
-    selected_material:Option<u64>,
-    selected_texture: Option<u64>,
-    selected_light: Option<u64>,
 
     dialog_add_component: bool,
     add_component_id: usize,
@@ -66,18 +65,17 @@ impl Gui
     {
         Self
         {
-            side_hierarchy: HierarchyPanel::Objects,
+            //side_hierarchy: HierarchyPanel::Objects,
             bottom: BottomPanel::Assets,
 
-            settings: SettingsPanel::Components,
+            settings: SettingsPanel::Rendering,
 
             hierarchy_expand_all: true,
+            hierarchy_filter: String::new(),
 
-            selected_object: String::new(), // sceneID_nodeID_instanceID
-            selected_camera: None,
-            selected_material: None,
-            selected_texture: None,
-            selected_light: None,
+            selected_scene_id: None,
+            selected_type: HierarchyType::Objects,
+            selected_object: String::new(), // type_nodeID/elementID_instanceID
 
             dialog_add_component: false,
             add_component_id: 0,
@@ -137,24 +135,18 @@ impl Gui
         });
 
         //left
-        egui::SidePanel::left("my_left_panel").frame(frame).show(ctx, |ui|
+        egui::SidePanel::left("left_panel").frame(frame).show(ctx, |ui|
         {
+            ui.set_min_width(300.0);
+
             self.create_left_sidebar(state, ui);
-
-            /*
-            egui::Window::new("Statistics")
-                .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-                .show(ui.ctx(), |ui|
-            {
-                self.create_statistic(state, ui);
-            });
-            */
         });
-
 
         //right
         egui::SidePanel::right("right_panel").frame(frame).show(ctx, |ui|
         {
+            ui.set_min_width(300.0);
+
             let mut object_settings = false;
             let mut camera_settings = false;
             let mut light_settings = false;
@@ -163,7 +155,7 @@ impl Gui
 
             ui.horizontal(|ui|
             {
-                if self.side_hierarchy == HierarchyPanel::Objects
+                if self.selected_type == HierarchyType::Objects && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Components, " Components");
                     ui.selectable_value(&mut self.settings, SettingsPanel::Object, "◼ Object");
@@ -171,35 +163,39 @@ impl Gui
                     object_settings = true;
                 }
 
-                if self.side_hierarchy == HierarchyPanel::Cameras
+                if self.selected_type == HierarchyType::Cameras && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Camera, "📷 Camera");
 
                     camera_settings = true;
                 }
 
-                if self.side_hierarchy == HierarchyPanel::Lights
+                if self.selected_type == HierarchyType::Lights && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Light, "💡 Light");
 
                     light_settings = true;
                 }
 
-                if self.side_hierarchy == HierarchyPanel::Materials
+                if self.selected_type == HierarchyType::Materials && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Material, "🎨 Material");
 
                     material_settings = true;
                 }
 
-                if self.side_hierarchy == HierarchyPanel::Textures
+                if self.selected_type == HierarchyType::Textures && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Texture, "🖼 Texture");
 
                     texture_settings = true;
                 }
 
-                ui.selectable_value(&mut self.settings, SettingsPanel::Scene, "🎬 Scene");
+                if self.selected_scene_id.is_some()
+                {
+                    ui.selectable_value(&mut self.settings, SettingsPanel::Scene, "🎬 Scene");
+                }
+
                 ui.selectable_value(&mut self.settings, SettingsPanel::Rendering, "📷 Rendering");
             });
             ui.separator();
@@ -274,9 +270,9 @@ impl Gui
             });
             if ui.button("Add").clicked()
             {
-                let (scene_id, node_id, instance_id) = self.get_object_ids();
+                let (node_id, instance_id) = self.get_object_ids();
 
-                if let (Some(scene_id), Some(node_id)) = (scene_id, node_id)
+                if let (Some(scene_id), Some(node_id)) = (self.selected_scene_id, node_id)
                 {
                     let component = state.registered_components.get(self.add_component_id).unwrap().clone();
 
@@ -347,24 +343,10 @@ impl Gui
         // hierarchy
         collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", |ui|
         {
-            ui.horizontal(|ui|
+            ScrollArea::vertical().show(ui, |ui|
             {
-                ui.selectable_value(&mut self.side_hierarchy, HierarchyPanel::Objects, "◼ Objects");
-                ui.selectable_value(&mut self.side_hierarchy, HierarchyPanel::Cameras, "📷 Cameras");
-                ui.selectable_value(&mut self.side_hierarchy, HierarchyPanel::Lights, "💡 Lights");
-                ui.selectable_value(&mut self.side_hierarchy, HierarchyPanel::Materials, "🎨 Materials");
-                ui.selectable_value(&mut self.side_hierarchy, HierarchyPanel::Textures, "🖼 Textures");
+                self.create_hierarchy(state, ui);
             });
-            ui.separator();
-
-            match self.side_hierarchy
-            {
-                HierarchyPanel::Objects => self.create_objects_hierarchy(state, ui),
-                HierarchyPanel::Cameras => {},
-                HierarchyPanel::Lights => {},
-                HierarchyPanel::Materials => self.create_materials_hierarchy(state, ui),
-                HierarchyPanel::Textures => {},
-            }
         });
     }
 
@@ -417,50 +399,137 @@ impl Gui
         ui.label(format!(" ⚫ materials: {}", materials));
     }
 
-    fn create_objects_hierarchy(&mut self, state: &mut State, ui: &mut Ui)
+    fn create_hierarchy(&mut self, state: &mut State, ui: &mut Ui)
     {
-        let mut filter = String::new();
-
         ui.horizontal(|ui|
         {
             ui.label("🔍");
-            ui.add(egui::TextEdit::singleline(&mut filter).desired_width(120.0));
+            ui.add(egui::TextEdit::singleline(&mut self.hierarchy_filter).desired_width(120.0));
 
             ui.toggle_value(&mut self.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
         });
 
-        ScrollArea::vertical().show(ui, |ui|
+        for scene in &state.scenes
         {
-            for scene in &state.scenes
+            let scene_id = scene.id;
+            let id = format!("scene_{}", scene_id);
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
             {
-                let scene_id = scene.id;
-                let id = format!("{}", scene_id);
-                let ui_id = ui.make_persistent_id(id.clone());
-                egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() { selection = true; } else { selection = false; }
+                    if ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong()).clicked()
                     {
-                        let mut selection; if self.selected_object == id { selection = true; } else { selection = false; }
-                        if ui.toggle_value(&mut selection, format!("🎬 {}: {}", scene_id, scene.name)).clicked()
+                        if selection
                         {
-                            if self.selected_object != id
-                            {
-                                self.selected_object = id;
-                            }
-                            else
-                            {
-                                self.selected_object.clear();
-                            }
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_object.clear();
+                            self.settings = SettingsPanel::Scene;
                         }
-                    });
-                }).body(|ui|
-                {
-                    self.build_node_list(ui, &scene.nodes, scene_id, true);
+                        else
+                        {
+                            self.selected_scene_id = None;
+                            self.settings = SettingsPanel::Rendering;
+                        }
+                    }
                 });
-            }
+            }).body(|ui|
+            {
+                //self.build_node_list(ui, &scene.nodes, scene_id, true);
+                self.create_hierarchy_type_entries(&scene, ui);
+            });
+        }
+    }
 
-            ui.separator();
-        });
+    fn create_hierarchy_type_entries(&mut self, scene: &Box<Scene>, ui: &mut Ui)
+    {
+        let scene_id = scene.id;
+
+        // objects
+        {
+            let id = format!("objects_{}", scene.id);
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
+            {
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                {
+                    let mut selection = false;
+                    ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong())
+                });
+            }).body(|ui|
+            {
+                self.build_node_list(ui, &scene.nodes, scene.id, true);
+            });
+        }
+
+        // cameras
+        {
+            let id = format!("cameras_{}", scene.id);
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
+            {
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                {
+                    let mut selection = false;
+                    ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong())
+                });
+            }).body(|ui|
+            {
+
+            });
+        }
+
+        // lights
+        {
+            let id = format!("lights_{}", scene.id);
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
+            {
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                {
+                    let mut selection = false;
+                    ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong())
+                });
+            }).body(|ui|
+            {
+
+            });
+        }
+
+        // materials
+        {
+            let id = format!("materials_{}", scene.id);
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
+            {
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                {
+                    let mut selection = false;
+                    ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong())
+                });
+            }).body(|ui|
+            {
+                self.build_material_list(&scene.materials, ui, scene_id);
+            });
+        }
+
+        // textures
+        {
+            let id = format!("textures_{}", scene.id);
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
+            {
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                {
+                    let mut selection = false;
+                    ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong())
+                });
+            }).body(|ui|
+            {
+
+            });
+        }
     }
 
     pub fn build_node_list(&mut self, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
@@ -475,7 +544,7 @@ impl Gui
             let name = node.name.clone();
             let node_id = node.id;
 
-            let id = format!("{}_{}", scene_id, node_id);
+            let id = format!("objects_{}", node_id);
             let ui_id = ui.make_persistent_id(id.clone());
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, self.hierarchy_expand_all).show_header(ui, |ui|
             {
@@ -511,10 +580,18 @@ impl Gui
                         if self.selected_object != id
                         {
                             self.selected_object = id;
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_type = HierarchyType::Objects;
+
+                            if self.settings != SettingsPanel::Components && self.settings != SettingsPanel::Object
+                            {
+                                self.settings = SettingsPanel::Components;
+                            }
                         }
                         else
                         {
                             self.selected_object.clear();
+                            self.selected_scene_id = None;
                         }
                     }
                 });
@@ -546,7 +623,7 @@ impl Gui
                 let instance = instance.get_ref();
                 let instance_id = instance.id;
 
-                let id = format!("{}_{}_{}", scene_id, node.id, instance_id);
+                let id = format!("objects_{}_{}", node.id, instance_id);
                 let headline_name = format!("⚫ {}: {}", instance_id, instance.name);
 
                 let mut heading = RichText::new(headline_name);
@@ -573,121 +650,95 @@ impl Gui
                     if self.selected_object != id
                     {
                         self.selected_object = id;
+                        self.selected_scene_id = Some(scene_id);
+                        self.selected_type = HierarchyType::Objects;
+
+                        if self.settings != SettingsPanel::Components && self.settings != SettingsPanel::Object
+                        {
+                            self.settings = SettingsPanel::Components;
+                        }
                     }
                     else
                     {
                         self.selected_object.clear();
+                        self.selected_scene_id = None;
                     }
                 }
             }
         });
     }
 
-    fn create_materials_hierarchy(&mut self, state: &mut State, ui: &mut Ui)
+    pub fn build_material_list(&mut self, materials: &HashMap<u64, MaterialItem>, ui: &mut Ui, scene_id: u64)
     {
-        let mut filter = String::new();
-
-        ui.horizontal(|ui|
-        {
-            ui.label("🔍");
-            ui.add(egui::TextEdit::singleline(&mut filter).desired_width(120.0));
-        });
-
-        ScrollArea::vertical().show(ui, |ui|
-        {
-            for scene in &state.scenes
-            {
-                let scene_id = scene.id;
-                let id = format!("{}", scene_id);
-                let ui_id = ui.make_persistent_id(id.clone());
-                egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
-                {
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
-                    {
-                        let mut selection = false;
-                        ui.toggle_value(&mut selection, format!("🎬 {}: {}", scene_id, scene.name));
-                    });
-                }).body(|ui|
-                {
-                    self.build_material_list(state, ui, scene_id);
-                });
-            }
-
-            ui.separator();
-        });
-    }
-
-    pub fn build_material_list(&mut self, state: &State, ui: &mut Ui, scene_id: u64)
-    {
-        let scene = state.find_scene_by_id(scene_id).unwrap();
-
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
         {
-            for (material_id, material) in &scene.materials
+            for (material_id, material) in materials
             {
                 let material = material.read().unwrap();
-                let headline_name = format!("🎨 {}: {}", material_id, material.get_base().name);
+                let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
+
+                let id = format!("material_{}", material_id);
 
                 let heading = RichText::new(headline_name).strong();
 
-                let mut selection; if self.selected_material.is_some() && self.selected_material.unwrap() == *material_id { selection = true; } else { selection = false; }
+                let mut selection; if self.selected_type == HierarchyType::Materials && self.selected_object == id { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, heading).clicked()
                 {
-                    if self.selected_material.is_none() || (self.selected_material.is_some() && self.selected_material.unwrap() != *material_id)
+                    //if self.selected_material.is_none() || (self.selected_material.is_some() && self.selected_material.unwrap() != *material_id)
+                    if selection
                     {
-                        self.selected_material = Some(*material_id);
+
+                        self.selected_object = id;
+                        self.selected_scene_id = Some(scene_id);
+                        self.selected_type = HierarchyType::Materials;
+                        self.settings = SettingsPanel::Material;
                     }
                     else
                     {
-                        self.selected_material = None;
+                        self.selected_object.clear();
+                        self.selected_scene_id = None;
                     }
                 }
             }
         });
     }
 
-    fn get_object_ids(&self) -> (Option<u64>, Option<u64>, Option<u64>)
+    fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
         // no scene selected
-        if self.selected_object.is_empty()
+        if self.selected_scene_id == None || self.selected_object.is_empty()
         {
-            return (None, None, None);
+            return (None, None);
         }
 
         let parts: Vec<&str> = self.selected_object.split('_').collect();
 
-        let mut scene_id: Option<u64> = None;
-        let mut node_id: Option<u64> = None;
-        let mut instance_id: Option<u64> = None;
-
-        if parts.len() >= 1
-        {
-            scene_id = Some(parts.get(0).unwrap().parse().unwrap());
-        }
+        let mut item_id: Option<u64> = None;
+        let mut subitem_id: Option<u64> = None; // like instance id
 
         if parts.len() >= 2
         {
-            node_id = Some(parts.get(1).unwrap().parse().unwrap());
+            item_id = Some(parts.get(1).unwrap().parse().unwrap());
         }
 
         if parts.len() >= 3
         {
-            instance_id = Some(parts.get(2).unwrap().parse().unwrap());
+            subitem_id = Some(parts.get(2).unwrap().parse().unwrap());
         }
 
-        (scene_id, node_id, instance_id)
+        (item_id, subitem_id)
     }
 
     fn create_component_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
-        let (scene_id, node_id, instance_id) = self.get_object_ids();
+        let (node_id, instance_id) = self.get_object_ids();
 
-        if scene_id.is_none() || node_id.is_none()
+        if self.selected_scene_id.is_none() || node_id.is_none()
         {
             return;
         }
 
-        let scene_id: u64 = scene_id.unwrap();
+        let scene_id: u64 = self.selected_scene_id.unwrap();
         let node_id: u64 = node_id.unwrap();
 
         let scene = state.find_scene_by_id(scene_id);
@@ -736,17 +787,32 @@ impl Gui
                             delete_component_id = Some(component_id);
                         }
 
-                        // enabled checkbox
+                        // enabled toggle
                         let mut enabled;
                         {
                             enabled = component.read().unwrap().get_base().is_enabled;
                         }
-                        if ui.checkbox(&mut enabled, "").on_hover_text("component enabled/disabled").changed()
+
+                        let toggle_text;
+                        if enabled
+                        {
+                            toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                        }
+                        else
+                        {
+                            toggle_text = RichText::new("⏺").color(Color32::RED);
+                        }
+
+
+                        if ui.toggle_value(&mut enabled, toggle_text).clicked()
                         {
                             component.write().unwrap().set_enabled(enabled);
                         }
 
-                        ui.label(RichText::new("⏺").color(Color32::GREEN)).on_hover_text("component active/inactive");
+                        if let Some(info) = &component.read().unwrap().get_base().info
+                        {
+                            ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
+                        }
                     });
                 },
                 |ui|
@@ -771,8 +837,8 @@ impl Gui
         {
             let mut delete_component_id = None;
 
-            let node: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
-            let instance = node.find_instance_by_id(instance_id);
+            let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
+            let instance = node_read.find_instance_by_id(instance_id);
 
             if let Some(instance) = instance
             {
@@ -802,17 +868,32 @@ impl Gui
                                     delete_component_id = Some(component_id);
                                 }
 
-                                // enabled checkbox
+                                // enabled toggle
                                 let mut enabled;
                                 {
                                     enabled = component.read().unwrap().get_base().is_enabled;
                                 }
-                                if ui.checkbox(&mut enabled, "").on_hover_text("component enabled/disabled").changed()
+
+                                let toggle_text;
+                                if enabled
+                                {
+                                    toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                                }
+                                else
+                                {
+                                    toggle_text = RichText::new("⏺").color(Color32::RED);
+                                }
+
+
+                                if ui.toggle_value(&mut enabled, toggle_text).clicked()
                                 {
                                     component.write().unwrap().set_enabled(enabled);
                                 }
 
-                                ui.label(RichText::new("⏺").color(Color32::GREEN)).on_hover_text("component active/inactive");
+                                if let Some(info) = &component.read().unwrap().get_base().info
+                                {
+                                    ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
+                                }
                             });
                         },
                         |ui|
@@ -846,15 +927,15 @@ impl Gui
 
     fn create_object_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
-        let (scene_id, node_id, instance_id) = self.get_object_ids();
+        let (node_id, instance_id) = self.get_object_ids();
 
         // no scene selected
-        if scene_id.is_none() || node_id.is_none()
+        if self.selected_scene_id.is_none() || node_id.is_none()
         {
             return;
         }
 
-        let scene_id: u64 = scene_id.unwrap();
+        let scene_id: u64 = self.selected_scene_id.unwrap();
         let node_id: u64 = node_id.unwrap();
 
         let scene = state.find_scene_by_id(scene_id);
@@ -1097,19 +1178,19 @@ impl Gui
 
     fn create_material_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
-        let (scene_id, ..) = self.get_object_ids();
-
         // no scene selected
-        if scene_id.is_none() { return; }
-        let scene_id: u64 = scene_id.unwrap();
+        if self.selected_scene_id.is_none() { return; }
+        let scene_id: u64 = self.selected_scene_id.unwrap();
+
+        let (material_id, ..) = self.get_object_ids();
 
         let scene = state.find_scene_by_id(scene_id);
         if scene.is_none() { return; }
 
         let scene = scene.unwrap();
 
-        if self.selected_material.is_none() { return; }
-        let material_id = self.selected_material.unwrap();
+        if material_id.is_none() { return; }
+        let material_id = material_id.unwrap();
 
         if let Some(material) = scene.get_material_by_id(material_id)
         {
@@ -1123,7 +1204,7 @@ impl Gui
 
     fn create_scene_settings(&mut self, state: &mut State, ui: &mut Ui)
     {
-        let (scene_id, ..) = self.get_object_ids();
+        let scene_id = self.selected_scene_id;
 
         // no scene selected
         if scene_id.is_none()

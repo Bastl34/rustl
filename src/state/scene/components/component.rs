@@ -3,6 +3,7 @@ use std::any::Any;
 
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::scene::instance::InstanceItem;
 use crate::state::scene::node::{NodeItem, InstanceItemChangeTracker};
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
@@ -47,6 +48,7 @@ pub struct ComponentBase
     pub name: String,
     pub component_name: String,
     pub icon: String,
+    pub info: Option<String>,
 
     pub render_item: RenderItemOption
 }
@@ -62,7 +64,8 @@ impl ComponentBase
             component_name,
             icon,
             is_enabled: true,
-            render_item: None
+            render_item: None,
+            info: None
         }
     }
 }

@@ -1,12 +1,11 @@
-use std::any::Any;
-
 use egui::Color32;
 use nalgebra::Vector3;
-use strum::IntoEnumIterator;
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::node::NodeItem, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
+use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemChangeTracker}, instance::InstanceItem}, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
+
+const INFO_STRING: &str = "The changes are applies on the Transform Component.\nThey are multiplied by frame_scale for each frame.\nIf there is no Transform Component: Nothing is happening.";
 
 pub struct TransformationAnimationData
 {
@@ -34,12 +33,14 @@ impl TransformationAnimation
             scale
         };
 
-        let transform_animation = TransformationAnimation
+        let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Transform. Animation".to_string(), "🏃".to_string()),
             data: ChangeTracker::new(data),
             keyboard_key: None
         };
+
+        transform_animation.base.info = Some(INFO_STRING.to_string());
 
         transform_animation
     }
@@ -53,12 +54,14 @@ impl TransformationAnimation
             scale: Vector3::<f32>::zeros()
         };
 
-        let transform_animation = TransformationAnimation
+        let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation Animation".to_string(), "🏃".to_string()),
+            base: ComponentBase::new(id, name.to_string(), "Transform. Animation".to_string(), "🏃".to_string()),
             data: ChangeTracker::new(data),
             keyboard_key: None
         };
+
+        transform_animation.base.info = Some(INFO_STRING.to_string());
 
         transform_animation
     }
@@ -149,7 +152,7 @@ impl Component for TransformationAnimation
         self._update(node.find_component::<Transformation>(), input_manager, frame_scale);
     }
 
-    fn update_instance(&mut self, _node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32)
+    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32)
     {
         let instance = instance.borrow();
         let instance = instance.get_ref();
@@ -171,7 +174,7 @@ impl Component for TransformationAnimation
             rot = data.rotation;
             scale = data.scale;
 
-            info_box(ui, "The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening.");
+            //info_box(ui, "The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening.");
 
             ui.vertical(|ui|
             {

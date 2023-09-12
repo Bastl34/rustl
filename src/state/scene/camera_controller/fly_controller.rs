@@ -4,12 +4,14 @@ use nalgebra::{Vector2, Vector3};
 
 use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene::Scene, camera::CameraData}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec2, self}}};
 
-use super::camera_controller::CameraController;
+use super::camera_controller::{CameraController, CameraControllerBase};
 
 const ANGLE_OFFSET: f32 = 0.0001;
 
 pub struct FlyController
 {
+    base: CameraControllerBase,
+
     move_speed: f32,
     move_speed_shift: f32,
     mouse_sensitivity: Vector2::<f32>,
@@ -21,6 +23,8 @@ impl FlyController
     {
         FlyController
         {
+            base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
+
             move_speed,
             move_speed_shift,
             mouse_sensitivity
