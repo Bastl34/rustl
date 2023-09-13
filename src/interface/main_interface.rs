@@ -707,15 +707,11 @@ impl MainInterface
                 },
                 winit::event::WindowEvent::CursorMoved { device_id: _, position, ..} =>
                 {
-                    // offset maybe for later usage
-                    let offset_x = 0.0;
-                    let offset_y = 0.0;
-
                     let mut pos = Vector2::<f32>::new(position.x as f32, position.y as f32);
 
-                    pos.x = pos.x - offset_x;
+                    pos.x = pos.x;
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
-                    pos.y = global_state.height as f32 + offset_y - pos.y;
+                    pos.y = global_state.height as f32 - pos.y;
 
                     global_state.input_manager.mouse.set_pos(pos, global_state.frame);
                 },

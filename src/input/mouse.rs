@@ -91,12 +91,11 @@ impl Mouse
     {
         let pressed = self.is_any_button_holding();
 
-        // todo: Check old eng
         //if self.visible
         //{
         if let Some(point_pos) = self.point.pos
         {
-            self.point.velocity = pos - point_pos;
+            self.point.velocity += pos - point_pos;
         }
         //}
         /*
