@@ -13,7 +13,7 @@ pub trait CameraController: Any
 
     fn ui(&mut self, ui: &mut egui::Ui);
 
-    fn update(&mut self, node: Option<NodeItem>, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, cam_data: &mut crate::helper::change_tracker::ChangeTracker<crate::state::scene::camera::CameraData>, frame_scale: f32);
+    fn update(&mut self, node: Option<NodeItem>, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, cam_data: &mut crate::helper::change_tracker::ChangeTracker<crate::state::scene::camera::CameraData>, frame_scale: f32) -> bool;
 }
 
 pub struct CameraControllerBase

@@ -4,7 +4,7 @@ use anyhow::Ok;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption, input::input_manager::InputManager};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::CameraItem, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -260,6 +260,25 @@ impl Scene
     pub fn get_camera_by_id_mut(&mut self, id: u64) -> Option<&mut CameraItem>
     {
         self.cameras.iter_mut().find(|cam|{ cam.id == id })
+    }
+
+    pub fn delete_camera_by_id(&mut self, id: u64) -> bool
+    {
+        let len = self.cameras.len();
+        self.cameras.retain(|camera|
+        {
+            camera.id != id
+        });
+
+        self.cameras.len() != len
+    }
+
+    pub fn add_camera(&mut self, name: &str) -> &CameraItem
+    {
+        let cam = Camera::new(self.id_manager.get_next_camera_id(), name.to_string());
+        self.cameras.push(Box::new(cam));
+
+        self.cameras.last().unwrap()
     }
 
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>

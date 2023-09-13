@@ -36,8 +36,10 @@ impl CameraController for FlyController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, _node: Option<NodeItem>, _scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32)
+    fn update(&mut self, _node: Option<NodeItem>, _scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
+        let mut change = false;
+
         if input_manager.mouse.is_any_button_holding()
         {
             let velocity = input_manager.mouse.point.velocity;
@@ -68,10 +70,12 @@ impl CameraController for FlyController
                 let dir = math::yaw_pitch_to_direction(yaw, pitch);
 
                 cam_data.dir = dir;
+
+                change = true;
             }
         }
 
-        if input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec())
+        if input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec()) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
         {
             let cam_data = cam_data.get_mut();
 
@@ -109,13 +113,17 @@ impl CameraController for FlyController
             {
                 vec += up * sensitivity;
             }
-            if input_manager.keyboard.is_holding(Key::C)
+            if input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
             {
                 vec -= up * sensitivity;
             }
 
             cam_data.eye_pos += vec;
+
+            change = true;
         }
+
+        change
     }
 
     fn ui(&mut self, ui: &mut egui::Ui)

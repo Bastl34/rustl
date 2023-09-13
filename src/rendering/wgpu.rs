@@ -214,7 +214,7 @@ impl WGpu
 
     pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>, CommandEncoder)
     {
-        // TODO: this can be timeout
+        // TODO: this can timeout
         // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
         let output = self.surface.get_current_texture().unwrap();
 

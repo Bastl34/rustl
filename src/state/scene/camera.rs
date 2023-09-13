@@ -175,10 +175,10 @@ impl Camera
                 let node = self.node.clone();
                 let data = self.get_data_mut();
 
-                controller.update(node, scene, input_manager, data, frame_scale);
+                let processed = controller.update(node, scene, input_manager, data, frame_scale);
 
                 // re-calculate matrices on if there was a change
-                if self.data.changed()
+                if processed
                 {
                     self.init_matrices();
                     changed = true;
@@ -365,9 +365,9 @@ impl Camera
             changed = ui.add(egui::DragValue::new(&mut up.z).speed(0.1).prefix("z: ")).changed() || changed;
         });
 
-        changed = ui.add(egui::Slider::new(&mut fovy, 0.001..=180.0).suffix(" °").text("field of view (fov)")).changed() || changed;
-        changed = ui.add(egui::Slider::new(&mut clipping_near, 0.0..=10.0).text("near clipping plane")).changed() || changed;
-        changed = ui.add(egui::Slider::new(&mut clipping_far, 1.0..=100000.0).text("far clipping plane")).changed() || changed;
+        changed = ui.add(egui::Slider::new(&mut fovy, 0.001..=180.0).suffix(" °").text("Field of view (fov)")).changed() || changed;
+        changed = ui.add(egui::Slider::new(&mut clipping_near, 0.001..=1000.0).text("Near clipping plane")).changed() || changed;
+        changed = ui.add(egui::Slider::new(&mut clipping_far, 1.0..=100000.0).text("Far clipping plane")).changed() || changed;
 
         if changed
         {
@@ -386,6 +386,13 @@ impl Camera
 
             data.clipping_near = clipping_near;
             data.clipping_far = clipping_far;
+
+            if data.clipping_near >= data.clipping_far
+            {
+                data.clipping_near = data.clipping_far - 0.001
+            }
+
+            self.init_matrices();
         }
 
     }

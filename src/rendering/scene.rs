@@ -246,6 +246,9 @@ impl Scene
             // create cam render item
             if cam.render_item.is_none()
             {
+                cam.update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
+                cam.init_matrices();
+
                 let camera_buffer = CameraBuffer::new(wgpu, &cam);
                 cam.render_item = Some(Box::new(camera_buffer));
             }
@@ -285,7 +288,7 @@ impl Scene
             {
                 let node = nodes.get_mut(node_id).unwrap();
 
-                let mut node = node.write().unwrap();
+                let node = node.write().unwrap();
                 let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
 
                 if let Some(mesh) = mesh
@@ -313,7 +316,7 @@ impl Scene
                 }
 
                 {
-                    let mut node = node_arc.write().unwrap();
+                    let node = node_arc.write().unwrap();
                     let trans_component = node.find_component::<Transformation>();
                     if let Some(trans_component) = trans_component
                     {

@@ -157,19 +157,20 @@ impl MainInterface
             {
                 let cam_id = scene.id_manager.get_next_camera_id();
                 let mut cam = Camera::new(cam_id, format!("cam {}", i).to_string());
-                cam.fovy = 45.0f32.to_radians();
-                cam.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
-                cam.dir = Vector3::<f32>::new(-cam.eye_pos.x, -cam.eye_pos.y + 5.0, -cam.eye_pos.z);
-                cam.clipping_near = 0.1;
-                cam.clipping_far = 1000.0;
+                let cam_data = cam.get_data_mut().get_mut();
+                cam_data.fovy = 45.0f32.to_radians();
+                cam_data.eye_pos = Point3::<f32>::new(0.0, 4.0, 15.0);
+                cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y + 5.0, -cam_data.eye_pos.z);
+                cam_data.clipping_near = 0.1;
+                cam_data.clipping_far = 1000.0;
 
-                scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+                scene.cameras.push(Box::new(cam));
             }
 
-            scene.cameras[0].borrow_mut().get_mut().init(0.0, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[1].borrow_mut().get_mut().init(0.5, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[2].borrow_mut().get_mut().init(0.0, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
-            scene.cameras[3].borrow_mut().get_mut().init(0.5, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[0].init(0.0, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[1].init(0.5, 0.0, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[2].init(0.0, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
+            scene.cameras[3].init(0.5, 0.5, 0.5, 0.5, self.wgpu.surface_config().width, self.wgpu.surface_config().height);
              */
 
             // ********** light **********
@@ -300,7 +301,7 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
@@ -310,7 +311,7 @@ impl MainInterface
             //scene.load("objects/temp/scene.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
-            scene.load("objects/temp/test.glb").await.unwrap();
+            //scene.load("objects/temp/test.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 
@@ -504,6 +505,16 @@ impl MainInterface
             state.frame_update_time = now;
         }
 
+        // build ui
+        {
+            let state = &mut *(self.state.borrow_mut());
+
+            let gui_output = self.editor_gui.build_gui(state, &self.window, &mut self.egui);
+            self.egui.output = Some(gui_output);
+
+            //self.gui.request_repaint();
+        }
+
         // app update
         self.app_update();
 
@@ -543,16 +554,6 @@ impl MainInterface
             swap(&mut scenes, &mut state.scenes);
 
             state.update_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
-        }
-
-        // build ui
-        {
-            let state = &mut *(self.state.borrow_mut());
-
-            let gui_output = self.editor_gui.build_gui(state, &self.window, &mut self.egui);
-            self.egui.output = Some(gui_output);
-
-            //self.gui.request_repaint();
         }
 
         // render

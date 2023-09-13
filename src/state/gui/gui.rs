@@ -410,7 +410,7 @@ impl Gui
             ui.toggle_value(&mut self.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
         });
 
-        for scene in &state.scenes
+        for scene in &mut state.scenes
         {
             let scene_id = scene.id;
             let id = format!("scene_{}", scene_id);
@@ -439,12 +439,12 @@ impl Gui
             }).body(|ui|
             {
                 //self.build_node_list(ui, &scene.nodes, scene_id, true);
-                self.create_hierarchy_type_entries(&scene, ui);
+                self.create_hierarchy_type_entries(scene, ui);
             });
         }
     }
 
-    fn create_hierarchy_type_entries(&mut self, scene: &Box<Scene>, ui: &mut Ui)
+    fn create_hierarchy_type_entries(&mut self, scene: &mut Box<Scene>, ui: &mut Ui)
     {
         let scene_id = scene.id;
 
@@ -487,7 +487,18 @@ impl Gui
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
                     let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Cameras { selection = true; } else { selection = false; }
-                    if ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong()).clicked()
+
+                    let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
+                    let toggle = toggle.context_menu(|ui|
+                    {
+                        if ui.button("Add New Camera").clicked()
+                        {
+                            ui.close_menu();
+                            scene.add_camera("Camera");
+                        }
+                    });
+
+                    if toggle.clicked()
                     {
                         if selection
                         {
@@ -780,7 +791,11 @@ impl Gui
 
                 let id = format!("camera_{}", camera.id);
 
-                let heading = RichText::new(headline_name).strong();
+                let mut heading = RichText::new(headline_name).strong();
+                if !camera.enabled
+                {
+                    heading = heading.strikethrough();
+                }
 
                 let mut selection; if self.selected_type == HierarchyType::Cameras && self.selected_object == id { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, heading).clicked()
@@ -1211,6 +1226,8 @@ impl Gui
             return;
         }
 
+        ui.separator();
+
         let instance = instance.unwrap();
 
         // General
@@ -1222,8 +1239,6 @@ impl Gui
             ui.label(format!("name: {}", instance.name));
             ui.label(format!("id: {}", instance.id));
         });
-
-        ui.separator();
 
         // Settings
         let mut delete_instance = false;
@@ -1321,6 +1336,31 @@ impl Gui
 
         if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
         {
+            collapse_with_title(ui, "camera_general_settings", true, "⛭ General Settings", |ui|
+            {
+                let mut changed = false;
+
+                let mut enabled;
+                let mut name;
+                {
+                    enabled = camera.enabled;
+                    name = camera.name.clone();
+                }
+
+                ui.horizontal(|ui|
+                {
+                    ui.label("name: ");
+                    changed = ui.text_edit_singleline(&mut name).changed() || changed;
+                });
+                changed = ui.checkbox(&mut enabled, "enabled").changed() || changed;
+
+                if changed
+                {
+                    camera.enabled = enabled;
+                    camera.name = name;
+                }
+            });
+
             collapse_with_title(ui, "camera_settings", true, "📷 Camera Settings", |ui|
             {
                 camera.ui(ui);
@@ -1375,6 +1415,15 @@ impl Gui
                 }
             }
         }
+
+        // delete camera
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Dispose Camera").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_camera_by_id(camera_id);
+            }
+        });
     }
 
     fn create_scene_settings(&mut self, state: &mut State, ui: &mut Ui)
