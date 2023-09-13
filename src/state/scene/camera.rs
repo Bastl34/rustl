@@ -289,6 +289,107 @@ impl Camera
         point_clip.x.abs() <= point_clip.w && point_clip.y.abs() <= point_clip.w && point_clip.z.abs() <= point_clip.w
     }
 
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        let mut viewport_x;
+        let mut viewport_y;
+        let mut viewport_width;
+        let mut viewport_height;
+
+        let mut fovy;
+
+        let mut eye_pos;
+
+        let mut up;
+        let mut dir;
+
+        let mut clipping_near;
+        let mut clipping_far;
+
+        {
+            let data = self.data.get_ref();
+
+            viewport_x = data.viewport_x;
+            viewport_y = data.viewport_y;
+            viewport_width = data.viewport_width;
+            viewport_height = data.viewport_height;
+
+            fovy = data.fovy.to_degrees();
+
+            eye_pos = data.eye_pos;
+
+            up = data.up;
+            dir = data.dir;
+
+            clipping_near = data.clipping_near;
+            clipping_far = data.clipping_far;
+        }
+
+        let mut changed = false;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Viewport Offset:");
+            changed = ui.add(egui::DragValue::new(&mut viewport_x).clamp_range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_y).clamp_range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Viewport Size:");
+            changed = ui.add(egui::DragValue::new(&mut viewport_width).clamp_range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_height).clamp_range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Position:");
+            changed = ui.add(egui::DragValue::new(&mut eye_pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut eye_pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut eye_pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Direction Vector:");
+            changed = ui.add(egui::DragValue::new(&mut dir.x).speed(0.1).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut dir.y).speed(0.1).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut dir.z).speed(0.1).prefix("z: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Up Vector:");
+            changed = ui.add(egui::DragValue::new(&mut up.x).speed(0.1).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut up.y).speed(0.1).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut up.z).speed(0.1).prefix("z: ")).changed() || changed;
+        });
+
+        changed = ui.add(egui::Slider::new(&mut fovy, 0.001..=180.0).suffix(" °").text("field of view (fov)")).changed() || changed;
+        changed = ui.add(egui::Slider::new(&mut clipping_near, 0.0..=10.0).text("near clipping plane")).changed() || changed;
+        changed = ui.add(egui::Slider::new(&mut clipping_far, 1.0..=100000.0).text("far clipping plane")).changed() || changed;
+
+        if changed
+        {
+            let data = self.get_data_mut().get_mut();
+
+            data.viewport_x = viewport_x;
+            data.viewport_y = viewport_y;
+            data.viewport_width = viewport_width;
+            data.viewport_height = viewport_height;
+            data.fovy = fovy.to_radians();
+
+            data.eye_pos = eye_pos;
+
+            data.up = up;
+            data.dir = dir;
+
+            data.clipping_near = clipping_near;
+            data.clipping_far = clipping_far;
+        }
+
+    }
+
     pub fn print(&self)
     {
         let data = self.data.get_ref();

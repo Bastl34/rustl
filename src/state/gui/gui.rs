@@ -5,7 +5,7 @@ use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Sty
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -31,6 +31,7 @@ enum HierarchyType
     Lights,
     Materials,
     Textures,
+    None
 }
 
 #[derive(PartialEq, Eq)]
@@ -74,7 +75,7 @@ impl Gui
             hierarchy_filter: String::new(),
 
             selected_scene_id: None,
-            selected_type: HierarchyType::Objects,
+            selected_type: HierarchyType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
 
             dialog_add_component: false,
@@ -213,7 +214,7 @@ impl Gui
                     },
                     SettingsPanel::Object => if object_settings { self.create_object_settings(state, ui); },
                     SettingsPanel::Material => if material_settings { self.create_material_settings(state, ui); },
-                    SettingsPanel::Camera => if camera_settings { },
+                    SettingsPanel::Camera => if camera_settings { self.create_camera_settings(state, ui); },
                     SettingsPanel::Texture => if texture_settings { },
                     SettingsPanel::Light => if light_settings { },
                     SettingsPanel::Scene => self.create_scene_settings(state, ui),
@@ -418,13 +419,14 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() && self.selected_type == HierarchyType::None { selection = true; } else { selection = false; }
                     if ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong()).clicked()
                     {
                         if selection
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
+                            self.selected_type = HierarchyType::None;
                             self.settings = SettingsPanel::Scene;
                         }
                         else
@@ -454,8 +456,21 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection = false;
-                    ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong())
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Objects { selection = true; } else { selection = false; }
+                    if ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong()).clicked()
+                    {
+                        if selection
+                        {
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_object.clear();
+                            self.selected_type = HierarchyType::Objects;
+                        }
+                        else
+                        {
+                            self.selected_scene_id = None;
+                            self.selected_type = HierarchyType::None;
+                        }
+                    }
                 });
             }).body(|ui|
             {
@@ -471,12 +486,25 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection = false;
-                    ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong())
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Cameras { selection = true; } else { selection = false; }
+                    if ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong()).clicked()
+                    {
+                        if selection
+                        {
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_object.clear();
+                            self.selected_type = HierarchyType::Cameras;
+                        }
+                        else
+                        {
+                            self.selected_scene_id = None;
+                            self.selected_type = HierarchyType::None;
+                        }
+                    }
                 });
             }).body(|ui|
             {
-
+                self.build_camera_list(&scene.cameras, ui, scene_id);
             });
         }
 
@@ -488,8 +516,21 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection = false;
-                    ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong())
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Lights { selection = true; } else { selection = false; }
+                    if ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong()).clicked()
+                    {
+                        if selection
+                        {
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_object.clear();
+                            self.selected_type = HierarchyType::Lights;
+                        }
+                        else
+                        {
+                            self.selected_scene_id = None;
+                            self.selected_type = HierarchyType::None;
+                        }
+                    }
                 });
             }).body(|ui|
             {
@@ -505,8 +546,21 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection = false;
-                    ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong())
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Materials { selection = true; } else { selection = false; }
+                    if ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong()).clicked()
+                    {
+                        if selection
+                        {
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_object.clear();
+                            self.selected_type = HierarchyType::Materials;
+                        }
+                        else
+                        {
+                            self.selected_scene_id = None;
+                            self.selected_type = HierarchyType::None;
+                        }
+                    }
                 });
             }).body(|ui|
             {
@@ -522,8 +576,21 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection = false;
-                    ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong())
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Textures { selection = true; } else { selection = false; }
+                    if ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong()).clicked()
+                    {
+                        if selection
+                        {
+                            self.selected_scene_id = Some(scene_id);
+                            self.selected_object.clear();
+                            self.selected_type = HierarchyType::Textures;
+                        }
+                        else
+                        {
+                            self.selected_scene_id = None;
+                            self.selected_type = HierarchyType::None;
+                        }
+                    }
                 });
             }).body(|ui|
             {
@@ -702,6 +769,40 @@ impl Gui
             }
         });
     }
+
+    pub fn build_camera_list(&mut self, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u64)
+    {
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+        {
+            for camera in cameras
+            {
+                let headline_name = format!("⚫ {}: {}", camera.id, camera.name);
+
+                let id = format!("camera_{}", camera.id);
+
+                let heading = RichText::new(headline_name).strong();
+
+                let mut selection; if self.selected_type == HierarchyType::Cameras && self.selected_object == id { selection = true; } else { selection = false; }
+                if ui.toggle_value(&mut selection, heading).clicked()
+                {
+                    if selection
+                    {
+
+                        self.selected_object = id;
+                        self.selected_scene_id = Some(scene_id);
+                        self.selected_type = HierarchyType::Cameras;
+                        self.settings = SettingsPanel::Camera;
+                    }
+                    else
+                    {
+                        self.selected_object.clear();
+                        self.selected_scene_id = None;
+                    }
+                }
+            }
+        });
+    }
+
 
     fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
@@ -1194,11 +1295,85 @@ impl Gui
 
         if let Some(material) = scene.get_material_by_id(material_id)
         {
-            egui::CollapsingHeader::new(RichText::new("🎨 Material Settings").heading().strong()).default_open(true).show(ui, |ui|
+            collapse_with_title(ui, "material_settings", true, "🎨 Material Settings", |ui|
             {
                 let mut material = material.write().unwrap();
                 material.ui(ui);
             });
+        }
+    }
+
+    fn create_camera_settings(&mut self, state: &mut State, ui: &mut Ui)
+    {
+        // no scene selected
+        if self.selected_scene_id.is_none() { return; }
+        let scene_id: u64 = self.selected_scene_id.unwrap();
+
+        let (camera_id, ..) = self.get_object_ids();
+
+        let scene = state.find_scene_by_id_mut(scene_id);
+        if scene.is_none() { return; }
+
+        let scene = scene.unwrap();
+
+        if camera_id.is_none() { return; }
+        let camera_id = camera_id.unwrap();
+
+        if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
+        {
+            collapse_with_title(ui, "camera_settings", true, "📷 Camera Settings", |ui|
+            {
+                camera.ui(ui);
+            });
+
+            if let Some(controller) = &mut camera.controller
+            {
+                let mut delete_controller;
+                let mut enabled;
+                let name;
+                {
+                    delete_controller = false;
+                    enabled = controller.get_base().is_enabled;
+                    name = controller.get_base().name.clone();
+                }
+
+                generic_items::collapse(ui, "camera_controller".to_string(), true, |ui|
+                {
+                    ui.label(RichText::new(name).heading().strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                    {
+                        if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                        {
+                            delete_controller = true;
+                        }
+
+                        // enabled toggle
+
+                        let toggle_text;
+                        if enabled
+                        {
+                            toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                        }
+                        else
+                        {
+                            toggle_text = RichText::new("⏺").color(Color32::RED);
+                        }
+
+                        ui.toggle_value(&mut enabled, toggle_text)
+                    });
+                },
+                |ui|
+                {
+                    controller.ui(ui);
+                });
+
+                controller.get_base_mut().is_enabled = enabled;
+
+                if delete_controller
+                {
+                    camera.controller = None;
+                }
+            }
         }
     }
 

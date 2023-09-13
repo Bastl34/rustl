@@ -252,6 +252,16 @@ impl Scene
         None
     }
 
+    pub fn get_camera_by_id(&self, id: u64) -> Option<&CameraItem>
+    {
+        self.cameras.iter().find(|cam|{ cam.id == id })
+    }
+
+    pub fn get_camera_by_id_mut(&mut self, id: u64) -> Option<&mut CameraItem>
+    {
+        self.cameras.iter_mut().find(|cam|{ cam.id == id })
+    }
+
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];

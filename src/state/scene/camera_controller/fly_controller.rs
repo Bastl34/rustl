@@ -122,9 +122,9 @@ impl CameraController for FlyController
     {
         ui.horizontal(|ui|
         {
-            ui.label("Sensitivity: ");
-            ui.add(egui::DragValue::new(&mut self.mouse_sensitivity.x).speed(0.01).prefix("x: ").suffix("rad"));
-            ui.add(egui::DragValue::new(&mut self.mouse_sensitivity.y).speed(0.01).prefix("y: ").suffix("rad"));
+            ui.label("Sensitivity (rad): ");
+            ui.add(egui::DragValue::new(&mut self.mouse_sensitivity.x).speed(0.01).prefix("x: "));
+            ui.add(egui::DragValue::new(&mut self.mouse_sensitivity.y).speed(0.01).prefix("y: "));
         });
 
         ui.horizontal(|ui|
