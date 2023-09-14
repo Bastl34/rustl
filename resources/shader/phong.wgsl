@@ -94,6 +94,25 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     let world_position = model_matrix * vec4<f32>(model.position, 1.0);
 
+    // https://lxjk.github.io/2017/10/01/Stop-Using-Normal-Matrix.html
+    let scale_squared = vec3<f32>
+    (
+        dot(model_matrix[0].xyz, model_matrix[0].xyz),
+        dot(model_matrix[1].xyz, model_matrix[1].xyz),
+        dot(model_matrix[2].xyz, model_matrix[2].xyz)
+    );
+
+    var normal =
+    (
+        model_matrix * vec4<f32>
+        (
+            model.normal.x / scale_squared.x,
+            model.normal.y / scale_squared.y,
+            model.normal.z / scale_squared.z,
+            0.0
+        )
+    ).xyz;
+
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
     out.tex_coords = model.tex_coords;
@@ -104,7 +123,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     out.world_tangent = world_tangent;
     out.world_bitangent = world_bitangent;
-    out.world_normal = world_normal;
+    //out.world_normal = world_normal;
+    out.world_normal = normal;
 
     out.alpha = instance.alpha;
     out.highlight = instance.highlight;
@@ -219,6 +239,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         tangent_normal.x *= material.normal_map_strength;
         tangent_normal.y *= material.normal_map_strength;
     }
+
+    tangent_normal = normalize(tangent_normal);
 
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
