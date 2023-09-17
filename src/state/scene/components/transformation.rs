@@ -16,9 +16,7 @@ pub struct TransformationData
     pub scale: Vector3<f32>,
 
     trans: Matrix4<f32>,
-    tran_inverse: Matrix4<f32>,
-
-    normal: Matrix3<f32>,
+    tran_inverse: Matrix4<f32>
 }
 
 pub struct Transformation
@@ -41,9 +39,7 @@ impl Transformation
             scale,
 
             trans: Matrix4::<f32>::identity(),
-            tran_inverse: Matrix4::<f32>::identity(),
-
-            normal: Matrix3::<f32>::identity(),
+            tran_inverse: Matrix4::<f32>::identity()
         };
 
         let mut transform = Transformation
@@ -68,9 +64,7 @@ impl Transformation
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             trans: trans,
-            tran_inverse: Matrix4::<f32>::identity(),
-
-            normal: Matrix3::<f32>::identity(),
+            tran_inverse: Matrix4::<f32>::identity()
         };
 
         let mut transform = Transformation
@@ -95,9 +89,7 @@ impl Transformation
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             trans: Matrix4::<f32>::identity(),
-            tran_inverse: Matrix4::<f32>::identity(),
-
-            normal: Matrix3::<f32>::identity(),
+            tran_inverse: Matrix4::<f32>::identity()
         };
 
         let mut transform = Transformation
@@ -153,27 +145,7 @@ impl Transformation
             trans = trans * rotation;
             trans = trans * scale;
 
-            let col0 = rotation.column(0).xyz();
-            let col1 = rotation.column(1).xyz();
-            let col2 = rotation.column(2).xyz();
-
-            let normal_matrix = Matrix3::from_columns
-            (&[
-                col0,
-                col1,
-                col2
-            ]);
-
             data.trans = trans;
-            data.normal = normal_matrix;
-        }
-        else
-        {
-            //https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
-            let upper_left_3x3 = data.trans.fixed_view::<3, 3>(0, 0);
-            let normal_matrix = upper_left_3x3.try_inverse().map(|inv| inv.transpose()).unwrap_or_else(Matrix3::identity);
-
-            data.normal = normal_matrix;
         }
 
         data.tran_inverse = data.trans.try_inverse().unwrap();
@@ -189,10 +161,6 @@ impl Transformation
         &self.data.get_ref().tran_inverse
     }
 
-    pub fn get_normal_matrix(&self) -> &Matrix3::<f32>
-    {
-        &self.data.get_ref().normal
-    }
 
     pub fn apply_transformation(&mut self, translation: Option<Vector3<f32>>, scale: Option<Vector3<f32>>, rotation: Option<Vector3<f32>>)
     {

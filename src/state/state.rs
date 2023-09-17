@@ -67,8 +67,14 @@ pub struct State
     pub frame_scale: f32,
 
     pub frame_time: f32,
-    pub update_time: f32,
-    pub render_time: f32,
+
+    pub engine_update_time: f32,
+    pub engine_render_time: f32,
+
+    pub app_update_time: f32,
+
+    pub egui_update_time: f32,
+    pub egui_render_time: f32,
 
     pub frame: u64,
 
@@ -139,8 +145,14 @@ impl State
             frame_scale: 0.0,
 
             frame_time: 0.0,
-            update_time: 0.0,
-            render_time: 0.0,
+
+            engine_update_time: 0.0,
+            engine_render_time: 0.0,
+
+            app_update_time: 0.0,
+
+            egui_update_time: 0.0,
+            egui_render_time: 0.0,
 
             frame: 0,
 

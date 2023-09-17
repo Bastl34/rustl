@@ -136,9 +136,9 @@ impl Instance
         }
     }
 
-    pub fn get_transform(&self) -> (Matrix4::<f32>, Matrix3::<f32>)
+    pub fn get_transform(&self) -> Matrix4::<f32>
     {
-        let (node_trans, node_normal) = Node::get_full_transform(self.node.clone());
+        let node_trans = Node::get_full_transform(self.node.clone());
         let transform_component = self.find_component::<Transformation>();
 
         if let Some(transform_component) = transform_component
@@ -146,29 +146,19 @@ impl Instance
             component_downcast!(transform_component, Transformation);
 
             let instance_trans = transform_component.get_transform();
-            let instance_normal = transform_component.get_normal_matrix();
 
             if transform_component.has_parent_inheritance()
             {
-                (
-                    node_trans * instance_trans,
-                    node_normal * instance_normal,
-                )
+                node_trans * instance_trans
             }
             else
             {
-                (
-                    *instance_trans,
-                    *instance_normal,
-                )
+                *instance_trans
             }
         }
         else
         {
-            (
-                node_trans,
-                node_normal,
-            )
+            node_trans
         }
     }
 

@@ -6,7 +6,8 @@ use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
-const ANGLE_OFFSET: f32 = 0.0001;
+const ANGLE_OFFSET_UP: f32 = 0.01;
+const ANGLE_OFFSET_DOWN: f32 = 0.1;
 
 pub struct FlyController
 {
@@ -58,13 +59,13 @@ impl CameraController for FlyController
                 yaw -= delta_x;
 
                 // check that you can not look up/down to 90°
-                if pitch > (PI/2.0) - ANGLE_OFFSET
+                if pitch > (PI/2.0) - ANGLE_OFFSET_UP
                 {
-                    pitch = (PI/2.0) - ANGLE_OFFSET;
+                    pitch = (PI/2.0) - ANGLE_OFFSET_UP;
                 }
-                else if pitch < (-PI/2.0) + ANGLE_OFFSET
+                else if pitch < (-PI/2.0) + ANGLE_OFFSET_DOWN
                 {
-                    pitch = (-PI / 2.0) + ANGLE_OFFSET;
+                    pitch = (-PI / 2.0) + ANGLE_OFFSET_DOWN;
                 }
 
                 let dir = math::yaw_pitch_to_direction(yaw, pitch);

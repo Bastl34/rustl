@@ -19,7 +19,6 @@ use super::wgpu::WGpu;
 pub struct Instance
 {
     pub transform: [[f32; 4]; 4],
-    pub normal: [[f32; 3]; 3],
     pub alpha: f32,
     pub highlight: f32,
 }
@@ -63,39 +62,19 @@ impl Instance
                     format: wgpu::VertexFormat::Float32x4,
                 },
 
-                // ***** normal *****
+                // ***** alpha *****
                 wgpu::VertexAttribute
                 {
                     offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 4,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute
-                {
-                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
-                    shader_location: Self::SHADER_LOCATION_START + 5,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute
-                {
-                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
-                    shader_location: Self::SHADER_LOCATION_START + 6,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-
-                // ***** alpha *****
-                wgpu::VertexAttribute
-                {
-                    offset: mem::size_of::<[f32; 25]>() as wgpu::BufferAddress,
-                    shader_location: Self::SHADER_LOCATION_START + 7,
                     format: wgpu::VertexFormat::Float32,
                 },
 
                 // ***** highlight *****
                 wgpu::VertexAttribute
                 {
-                    offset: mem::size_of::<[f32; 26]>() as wgpu::BufferAddress,
-                    shader_location: Self::SHADER_LOCATION_START + 8,
+                    offset: mem::size_of::<[f32; 17]>() as wgpu::BufferAddress,
+                    shader_location: Self::SHADER_LOCATION_START + 5,
                     format: wgpu::VertexFormat::Float32,
                 },
             ],
@@ -142,7 +121,7 @@ impl InstanceBuffer
         {
             let instance = instance.borrow();
             let instance = instance.get_ref();
-            let (transform, normal) = instance.get_transform();
+            let transform = instance.get_transform();
             let alpha = instance.get_alpha();
 
             self.transformations.push(transform);
@@ -150,7 +129,6 @@ impl InstanceBuffer
             Instance
             {
                 transform: transform.into(),
-                normal: normal.into(),
                 alpha: alpha,
                 highlight: f32::from(instance.highlight)
             }
@@ -179,13 +157,12 @@ impl InstanceBuffer
             return;
         }
 
-        let (transform, normal) = instance.get_transform();
+        let transform = instance.get_transform();
         let alpha = instance.get_alpha();
 
         let data = Instance
         {
             transform: transform.into(),
-            normal: normal.into(),
             alpha: alpha,
             highlight: f32::from(instance.highlight)
         };
@@ -216,7 +193,7 @@ impl InstanceBuffer
         {
             let instance = instance.borrow();
             let instance = instance.get_ref();
-            let (transform, normal) = instance.get_transform();
+            let transform = instance.get_transform();
             let alpha = instance.get_alpha();
 
             self.transformations[i] = transform;
@@ -226,7 +203,6 @@ impl InstanceBuffer
             Instance
             {
                 transform: transform.into(),
-                normal: normal.into(),
                 alpha: alpha,
                 highlight: f32::from(instance.highlight)
             }

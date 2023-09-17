@@ -301,12 +301,12 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
-            //scene.load("objects/temp/lotus.glb").await.unwrap();
+            scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
             //scene.load("objects/temp/scene.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
@@ -366,9 +366,10 @@ impl MainInterface
             }
 
             // add light
+            //if scene.lights.get_ref().len() == 0
             {
                 let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 
@@ -507,19 +508,29 @@ impl MainInterface
 
         // build ui
         {
+            let now = Instant::now();
             let state = &mut *(self.state.borrow_mut());
 
             let gui_output = self.editor_gui.build_gui(state, &self.window, &mut self.egui);
             self.egui.output = Some(gui_output);
 
             //self.gui.request_repaint();
+            state.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // app update
-        self.app_update();
+        {
+            let now = Instant::now();
+            self.app_update();
+
+            let state = &mut *(self.state.borrow_mut());
+            state.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+        }
 
         // update scene
         {
+            let engine_update_time = Instant::now();
+
             let state = &mut *(self.state.borrow_mut());
 
             // msaa
@@ -553,33 +564,41 @@ impl MainInterface
 
             swap(&mut scenes, &mut state.scenes);
 
-            state.update_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+            state.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // render
         let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
         {
-            let render_time = Instant::now();
+            let state = &mut *(self.state.borrow_mut());
 
             // render scenes
-            let state = &mut *(self.state.borrow_mut());
-            state.draw_calls = 0;
-
-            for scene in &mut state.scenes
             {
-                let mut render_item = scene.render_item.take();
+                let engine_render_time = Instant::now();
 
-                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.distance_sorting = state.rendering.distance_sorting;
-                state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                state.draw_calls = 0;
 
-                scene.render_item = render_item;
+                for scene in &mut state.scenes
+                {
+                    let mut render_item = scene.render_item.take();
+
+                    let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                    render_scene.distance_sorting = state.rendering.distance_sorting;
+                    state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+
+                    scene.render_item = render_item;
+                }
+
+                state.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
             }
 
             // render egui
-            self.egui.render(&mut self.wgpu, &view, &mut encoder);
+            {
+                let now = Instant::now();
+                self.egui.render(&mut self.wgpu, &view, &mut encoder);
 
-            state.render_time = render_time.elapsed().as_micros() as f32 / 1000.0;
+                state.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+            }
         }
         self.wgpu.end_render(output, encoder);
 
@@ -611,16 +630,6 @@ impl MainInterface
             }
         }
 
-        {
-            let state = &mut *(self.state.borrow_mut());
-            state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
-
-            state.fps_absolute = (1000.0 / (state.render_time + state.update_time)) as u32;
-
-            // frame update
-            state.frame += 1;
-        }
-
         // update inputs
         {
             let state = &mut *(self.state.borrow_mut());
@@ -634,6 +643,17 @@ impl MainInterface
             {
                 self.window.set_cursor_visible(*visible);
             }
+        }
+
+        // frame time
+        {
+            let state = &mut *(self.state.borrow_mut());
+            state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+
+            state.fps_absolute = (1000.0 / (state.engine_render_time + state.engine_update_time)) as u32;
+
+            // frame update
+            state.frame += 1;
         }
     }
 

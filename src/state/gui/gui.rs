@@ -381,13 +381,6 @@ impl Gui
 
     fn create_statistic(&mut self, state: &mut State, ui: &mut Ui)
     {
-        ui.label(format!(" ⚫ fps: {}", state.last_fps));
-        ui.label(format!(" ⚫ absolute fps: {}", state.fps_absolute));
-        ui.label(format!(" ⚫ draw calls: {}", state.draw_calls));
-        ui.label(format!(" ⚫ frame time: {:.3} ms", state.frame_time));
-        ui.label(format!(" ⚫ update time: {:.3} ms", state.update_time));
-        ui.label(format!(" ⚫ render time: {:.3} ms", state.render_time));
-
         let mut textures = 0;
         let mut materials = 0;
         for scene in &state.scenes
@@ -396,8 +389,24 @@ impl Gui
             materials += scene.materials.len();
         }
 
+        ui.label(RichText::new("ℹ Info").strong());
+        ui.label(format!(" ⚫ fps: {}", state.last_fps));
+        ui.label(format!(" ⚫ absolute fps: {}", state.fps_absolute));
+        ui.label(format!(" ⚫ frame time: {:.3} ms", state.frame_time));
+
+        ui.label(RichText::new("⚙ Engine").strong());
+        ui.label(format!(" ⚫ update time: {:.3} ms", state.engine_update_time));
+        ui.label(format!(" ⚫ render time: {:.3} ms", state.engine_render_time));
+        ui.label(format!(" ⚫ draw calls: {}", state.draw_calls));
         ui.label(format!(" ⚫ textures: {}", textures));
         ui.label(format!(" ⚫ materials: {}", materials));
+
+        ui.label(RichText::new("✏ Editor").strong());
+        ui.label(format!(" ⚫ update time: {:.3} ms", state.egui_update_time));
+        ui.label(format!(" ⚫ render time: {:.3} ms", state.egui_render_time));
+
+        ui.label(RichText::new("🗖 App").strong());
+        ui.label(format!(" ⚫ update time: {:.3} ms", state.app_update_time));
     }
 
     fn create_hierarchy(&mut self, state: &mut State, ui: &mut Ui)
@@ -802,7 +811,6 @@ impl Gui
                 {
                     if selection
                     {
-
                         self.selected_object = id;
                         self.selected_scene_id = Some(scene_id);
                         self.selected_type = HierarchyType::Cameras;

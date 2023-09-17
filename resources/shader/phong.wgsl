@@ -5,6 +5,7 @@ const MAX_LIGHTS = [MAX_LIGHTS];
 struct CameraUniform
 {
     view_pos: vec4<f32>,
+    view: mat4x4<f32>,
     view_proj: mat4x4<f32>,
 };
 @group(1) @binding(0)
@@ -38,28 +39,20 @@ struct InstanceInput
     @location(7) model_matrix_2: vec4<f32>,
     @location(8) model_matrix_3: vec4<f32>,
 
-    @location(9) normal_matrix_0: vec3<f32>,
-    @location(10) normal_matrix_1: vec3<f32>,
-    @location(11) normal_matrix_2: vec3<f32>,
-
-    @location(12) alpha: f32,
-    @location(13) highlight: f32,
+    @location(9) alpha: f32,
+    @location(10) highlight: f32,
 };
 
 struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
-    @location(1) tangent_position: vec3<f32>,
-    @location(2) tangent_view_position: vec3<f32>,
-    //@location(3) tangent_light_position: vec3<f32>,
+    @location(1) position: vec3<f32>,
+    @location(2) normal: vec3<f32>,
+    @location(3) view_dir: vec3<f32>,
 
-    @location(3) world_tangent: vec3<f32>,
-    @location(4) world_bitangent: vec3<f32>,
-    @location(5) world_normal: vec3<f32>,
-
-    @location(6) alpha: f32,
-    @location(7) highlight: f32,
+    @location(4) alpha: f32,
+    @location(5) highlight: f32,
 };
 
 // ****************************** vertex ******************************
@@ -74,23 +67,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         instance.model_matrix_2,
         instance.model_matrix_3,
     );
-
-    let normal_matrix = mat3x3<f32>(
-        instance.normal_matrix_0,
-        instance.normal_matrix_1,
-        instance.normal_matrix_2,
-    );
-
-    // Construct the tangent matrix
-    let world_normal = normalize(normal_matrix * model.normal);
-    let world_tangent = normalize(normal_matrix * model.tangent);
-    let world_bitangent = normalize(normal_matrix * model.bitangent);
-    let tangent_matrix = transpose(mat3x3<f32>
-    (
-        world_tangent,
-        world_bitangent,
-        world_normal,
-    ));
 
     let world_position = model_matrix * vec4<f32>(model.position, 1.0);
 
@@ -117,14 +93,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.clip_position = camera.view_proj * world_position;
     out.tex_coords = model.tex_coords;
 
-    out.tangent_position = tangent_matrix * world_position.xyz;
-    out.tangent_view_position = tangent_matrix * camera.view_pos.xyz;
-    //out.tangent_light_position = tangent_matrix * lights[0].position.xyz;
-
-    out.world_tangent = world_tangent;
-    out.world_bitangent = world_bitangent;
-    //out.world_normal = world_normal;
-    out.world_normal = normal;
+    out.position = world_position.xyz / world_position.w;
+    out.normal = normal;
+    out.view_dir = (camera.view_pos - world_position).xyz;
 
     out.alpha = instance.alpha;
     out.highlight = instance.highlight;
@@ -214,13 +185,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
     var uvs = in.tex_coords;
 
-    let tangent_matrix = transpose(mat3x3<f32>
-    (
-        in.world_tangent,
-        in.world_bitangent,
-        in.world_normal,
-    ));
-
     // base color
     var object_color = material.base_color;
     if (has_base_texture())
@@ -230,47 +194,51 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     }
 
     // normal
-    var tangent_normal = in.world_normal;
+    var normal = in.normal;
+
+    //TODO: check
     if (has_normal_texture())
     {
         let object_normal = textureSample(t_normal, s_normal, uvs);
-        tangent_normal = object_normal.xyz * 2.0 - 1.0;
+        normal = object_normal.xyz * 2.0 - 1.0;
 
-        tangent_normal.x *= material.normal_map_strength;
-        tangent_normal.y *= material.normal_map_strength;
+        normal.x *= material.normal_map_strength;
+        normal.y *= material.normal_map_strength;
     }
 
-    tangent_normal = normalize(tangent_normal);
+    normal = normalize(normal);
 
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
-    if (material.unlit_shading != 0u)
+    if (material.unlit_shading != 0u || light_amount == 0)
     {
         color = object_color.rgb;
     }
     else
     {
-        let view_dir = normalize(in.tangent_view_position - in.tangent_position);
+        let view_dir = normalize(in.view_dir);
 
         for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
         {
             let light_color = lights[i].color.rgb;
-            let ambient_strength = 0.1;
-            let ambient_color = (light_color * ambient_strength).rgb;
+            let ambient_color = (light_color * material.ambient_color.rgb).rgb;
 
-            //let light_dir = normalize(light.position.xyz - in.world_position);
-            //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
-            let light_dir = normalize((tangent_matrix * lights[i].position.xyz) - in.tangent_position);
+            var light_pos = lights[i].position.xyz;
+
+            var light_dir = lights[i].position.xyz - in.position;
+            //var distance = length(light_dir);
+            //distance = distance * distance;
+            light_dir = normalize(light_dir);
 
             let half_dir = normalize(view_dir + light_dir);
 
-            let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
-            let diffuse_color = (lights[i].color * diffuse_strength).rgb;
+            let diffuse_strength = max(dot(normal, light_dir), 0.0);
+            let diffuse_color = (lights[i].color * object_color * diffuse_strength).rgb;
 
-            let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), material.shininess);
-            let specular_color = (specular_strength * lights[i].color).rgb;
+            let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
+            let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
 
-            color += (ambient_color + diffuse_color + specular_color) * object_color.rgb;
+            color += ambient_color + diffuse_color + specular_color;
         }
 
         // ambient occlusion
@@ -296,6 +264,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         discard;
     }
 
+    //return vec4<f32>(normal, alpha);
     return vec4<f32>(color, alpha);
     //return vec4<f32>(1.0, 1.0, 1.0, alpha);
     //return vec4<f32>(object_color.r, object_color.g, object_color.b, alpha);

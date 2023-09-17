@@ -107,7 +107,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_transform(&self) -> (Matrix4<f32>, Matrix3<f32>, bool)
+    pub fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
 
@@ -120,7 +120,6 @@ impl Node
                 return
                 (
                     transform_component.get_transform().clone(),
-                    transform_component.get_normal_matrix().clone(),
                     transform_component.has_parent_inheritance()
                 );
             }
@@ -128,36 +127,29 @@ impl Node
 
         (
             Matrix4::<f32>::identity(),
-            Matrix3::<f32>::identity(),
             true
         )
     }
 
-    pub fn get_full_transform(node: NodeItem) -> (Matrix4<f32>, Matrix3<f32>)
+    pub fn get_full_transform(node: NodeItem) -> Matrix4<f32>
     {
         let node = node.read().unwrap();
 
-        let (node_transform, node_normal_matrix, node_parent_inheritance) = node.get_transform();
-        let (mut parent_trans, mut parent_normal_matrix) = (Matrix4::<f32>::identity(), Matrix3::<f32>::identity());
+        let (node_transform, node_parent_inheritance) = node.get_transform();
+        let mut parent_trans = Matrix4::<f32>::identity();
 
         if let Some(parent_node) = &node.parent
         {
-            (parent_trans, parent_normal_matrix) = Self::get_full_transform(parent_node.clone());
+            parent_trans = Self::get_full_transform(parent_node.clone());
         }
 
         if node_parent_inheritance
         {
-            (
-                parent_trans * node_transform,
-                parent_normal_matrix * node_normal_matrix,
-            )
+            parent_trans * node_transform
         }
         else
         {
-            (
-                node_transform,
-                node_normal_matrix,
-            )
+            node_transform
         }
     }
 
@@ -395,7 +387,7 @@ impl Bounded for Node
             return bvh::aabb::AABB::empty();
         }
 
-        let (trans, _, _) = self.get_transform();
+        let (trans, _) = self.get_transform();
 
         let mesh = mesh.unwrap();
         component_downcast!(mesh, Mesh);

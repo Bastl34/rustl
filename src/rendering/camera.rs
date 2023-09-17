@@ -10,6 +10,7 @@ use super::{wgpu::WGpu};
 pub struct CameraUniform
 {
     pub view_position: [f32; 4],
+    pub view: [[f32; 4]; 4],
     pub view_proj: [[f32; 4]; 4],
 }
 
@@ -20,6 +21,7 @@ impl CameraUniform
         Self
         {
             view_position: [0.0; 4],
+            view: nalgebra::Matrix4::<f32>::identity().into(),
             view_proj: nalgebra::Matrix4::<f32>::identity().into()
         }
     }
@@ -27,6 +29,7 @@ impl CameraUniform
     pub fn update_view_proj(&mut self, pos:Point3::<f32>, projection: Matrix4<f32>, view: Matrix4<f32>)
     {
         self.view_position = pos.to_homogeneous().into();
+        self.view = view.into();
         self.view_proj = (projection * view).into();
     }
 }

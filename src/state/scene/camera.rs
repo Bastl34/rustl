@@ -394,7 +394,6 @@ impl Camera
 
             self.init_matrices();
         }
-
     }
 
     pub fn print(&self)
