@@ -304,14 +304,21 @@ impl MainInterface
             //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
-            //scene.load("objects/temp/Workbench.glb").await.unwrap();
+            scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
-            scene.load("objects/temp/lotus.glb").await.unwrap();
+            //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
             //scene.load("objects/temp/scene.glb").await.unwrap();
+            //scene.load("objects/temp/scene_2.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
+            //scene.load("objects/bastl/bastl.obj").await.unwrap();
+            //scene.load("objects/temp/brick_wall.glb").await.unwrap();
+            //scene.load("objects/temp/apocalyptic_city.glb").await.unwrap();
+            //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
+            //scene.load("objects/temp/persian_city.glb").await.unwrap();
+            //scene.load("objects/temp/cathedral.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 
@@ -369,7 +376,7 @@ impl MainInterface
             //if scene.lights.get_ref().len() == 0
             {
                 let light_id = scene.id_manager.get_next_light_id();
-                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 

@@ -1,7 +1,7 @@
 use crate::{state::{scene::components::mesh::{Mesh, MeshData}, helper::render_item::RenderItem}, render_item_impl_default};
 
 use super::wgpu::WGpu;
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector3, Vector2};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -10,7 +10,9 @@ pub struct Vertex
 {
     position: [f32; 3],
     tex_coords: [f32; 2],
-    normal: [f32; 3]
+    normal: [f32; 3],
+    tangent: [f32; 3],
+    bitangent: [f32; 3],
 }
 
 impl Vertex
@@ -68,11 +70,23 @@ impl VertexBuffer
                 uv = mesh_data.uvs_1[i];
             }
 
+            let mut tangent = n.cross(&Vector3::<f32>::new(0.0, 1.0, 0.0));
+
+            if tangent.magnitude()  <= 0.0001
+            {
+                tangent = n.cross(&Vector3::<f32>::new(0.0, 0.0, 1.0));
+            }
+
+            tangent = tangent.normalize();
+            let bitangent = n.cross(&tangent).normalize();
+
             vertices.push(Vertex
             {
                 position: [v.x, v.y, v.z],
                 tex_coords: [uv.x, 1.0 - uv.y], // flip y because in wgpu y-axis is pointing up (not down as in images)
-                normal: [n.x, n.y, n.z]
+                normal: [n.x, n.y, n.z],
+                tangent: [tangent.x, tangent.y, tangent.z],
+                bitangent: [bitangent.x, bitangent.y, bitangent.z],
             });
         }
 

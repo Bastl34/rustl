@@ -68,7 +68,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
         let mut verts: Vec<Point3::<f32>> = vec![];
         let mut uvs: Vec<Point2<f32>> = vec![];
-        let mut normals: Vec<Point3<f32>> = vec![];
+        let mut normals: Vec<Vector3<f32>> = vec![];
 
         let mut indices:Vec<[u32; 3]> = vec![];
         let mut uv_indices: Vec<[u32; 3]> = vec![];
@@ -92,7 +92,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
             let y = mesh.normals[3 * vtx + 1];
             let z = mesh.normals[3 * vtx + 2];
 
-            normals.push(Point3::<f32>::new(x, y, z));
+            normals.push(Vector3::<f32>::new(x, y, z));
         }
 
         //tex coords

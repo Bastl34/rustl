@@ -49,10 +49,13 @@ struct VertexOutput
     @location(0) tex_coords: vec2<f32>,
     @location(1) position: vec3<f32>,
     @location(2) normal: vec3<f32>,
-    @location(3) view_dir: vec3<f32>,
+    @location(3) bitangent: vec3<f32>,
+    @location(4) tangent: vec3<f32>,
 
-    @location(4) alpha: f32,
-    @location(5) highlight: f32,
+    @location(5) view_dir: vec3<f32>,
+
+    @location(6) alpha: f32,
+    @location(7) highlight: f32,
 };
 
 // ****************************** vertex ******************************
@@ -89,12 +92,50 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         )
     ).xyz;
 
+
+    var tangent =
+    (
+        model_matrix * vec4<f32>
+        (
+            model.tangent.x / scale_squared.x,
+            model.tangent.y / scale_squared.y,
+            model.tangent.z / scale_squared.z,
+            0.0
+        )
+    ).xyz;
+
+    var bitangent =
+    (
+        model_matrix * vec4<f32>
+        (
+            model.bitangent.x / scale_squared.x,
+            model.bitangent.y / scale_squared.y,
+            model.bitangent.z / scale_squared.z,
+            0.0
+        )
+    ).xyz;
+
+
+    /*
+    var tangent = cross(normal, vec3<f32>(0.0, 1.0, 0.0));
+
+    if length(tangent)  <= 0.0001
+    {
+        tangent = cross(normal, vec3<f32>(0.0, 0.0, 1.0));
+    }
+
+    tangent = normalize(tangent);
+    let bitangent = normalize(cross(normal, tangent));
+    */
+
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
     out.tex_coords = model.tex_coords;
 
     out.position = world_position.xyz / world_position.w;
     out.normal = normal;
+    out.tangent = tangent;
+    out.bitangent = bitangent;
     out.view_dir = (camera.view_pos - world_position).xyz;
 
     out.alpha = instance.alpha;
@@ -193,20 +234,41 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         object_color *= tex_color;
     }
 
-    // normal
-    var normal = in.normal;
-
-    //TODO: check
-    if (has_normal_texture())
+    // ambient color
+    var ambient_color = material.ambient_color;
+    if (has_ambient_texture())
     {
-        let object_normal = textureSample(t_normal, s_normal, uvs);
-        normal = object_normal.xyz * 2.0 - 1.0;
-
-        normal.x *= material.normal_map_strength;
-        normal.y *= material.normal_map_strength;
+        let tex_color = textureSample(t_ambient, s_ambient, uvs);
+        ambient_color *= tex_color;
     }
 
-    normal = normalize(normal);
+    // normal
+    var normal = in.normal;
+    var tangent = in.tangent;
+    var bitangent = in.bitangent;
+
+    // normal mapping
+    if (has_normal_texture())
+    {
+        var normal_map = textureSample(t_normal, s_normal, uvs).xyz;
+        normal_map = normal_map * 2.0 - 1.0;
+
+        normal_map.x *= material.normal_map_strength;
+        normal_map.y *= material.normal_map_strength;
+
+        // todo: check if normalize is needed here
+        let T = normalize(tangent);
+        let B = normalize(bitangent);
+        let N = normalize(normal);
+
+        // https://lettier.github.io/3d-game-shaders-for-beginners/normal-mapping.html
+        normal = normalize(T * normal_map.x + B * normal_map.y + N * normal_map.z);
+        //normal = normalize(mat3x3<f32>(T, B, N) * normal_map);
+    }
+    else
+    {
+        normal = normalize(normal);
+    }
 
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
@@ -221,7 +283,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
         {
             let light_color = lights[i].color.rgb;
-            let ambient_color = (light_color * material.ambient_color.rgb).rgb;
 
             var light_pos = lights[i].position.xyz;
 
@@ -238,7 +299,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
             let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
 
-            color += ambient_color + diffuse_color + specular_color;
+            color += diffuse_color + specular_color;
         }
 
         // ambient occlusion
@@ -250,6 +311,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             color.z *= ambient_occlusion.x;
         }
     }
+
+    // ambient color
+    color.x += ambient_color.x;
+    color.y += ambient_color.y;
+    color.z += ambient_color.z;
 
     // highlight color
     if (in.highlight > 0.0001)

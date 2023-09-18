@@ -637,7 +637,7 @@ impl Component for Material
         apply_settings = ui.add(egui::Slider::new(&mut shininess, 0.0..=1000.0).text("shininess")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut reflectivity, 0.0..=1.0).text("reflectivity")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut refraction_index, 1.0..=5.0).text("refraction index")).changed() || apply_settings;
-        apply_settings = ui.add(egui::Slider::new(&mut normal_map_strength, 0.0..=100.0).text("normal map strength")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut normal_map_strength, 0.0..=100.0).text("normal map strength").step_by(0.1)).changed() || apply_settings;
 
         apply_settings = ui.checkbox(&mut unlit_shading, "unlit shading (just base color and base texture)").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;

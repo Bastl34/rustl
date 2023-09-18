@@ -241,7 +241,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             let mut uvs1: Vec<Point2<f32>> = vec![];
             let mut uvs2: Vec<Point2<f32>> = vec![];
             let mut uvs3: Vec<Point2<f32>> = vec![];
-            let mut normals: Vec<Point3<f32>> = vec![];
+            let mut normals: Vec<Vector3<f32>> = vec![];
 
             let mut indices:Vec<[u32; 3]> = vec![];
             let mut uv_indices: Vec<[u32; 3]> = vec![];
@@ -263,7 +263,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             {
                 for normal in gltf_normals
                 {
-                    normals.push(Point3::<f32>::new(normal[0], normal[1], normal[2]));
+                    normals.push(Vector3::<f32>::new(normal[0], normal[1], normal[2]));
                 }
             }
 

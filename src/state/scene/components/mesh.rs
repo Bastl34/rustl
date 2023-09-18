@@ -19,7 +19,7 @@ pub struct MeshData
     pub uvs_3: Vec<Point2<f32>>,
     pub uv_indices: Vec<[u32; 3]>,
 
-    pub normals: Vec<Point3<f32>>,
+    pub normals: Vec<Vector3<f32>>,
     pub normals_indices: Vec<[u32; 3]>,
 
     pub flip_normals: bool,
@@ -34,7 +34,7 @@ pub struct Mesh
 
 impl Mesh
 {
-    pub fn new_with_data(id: u64, name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Point3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
+    pub fn new_with_data(id: u64, name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Vector3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
         let mesh_data = MeshData
         {
