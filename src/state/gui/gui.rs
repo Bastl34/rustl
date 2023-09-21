@@ -5,7 +5,7 @@ use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Sty
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::mouse::MouseButton};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::{mouse::MouseButton, keyboard::Key}};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -201,6 +201,11 @@ impl Gui
                     self.selected_scene_id = Some(scene_id);
                     self.selected_type = HierarchyType::Objects;
 
+                    if self.settings != SettingsPanel::Object || self.settings != SettingsPanel::Components
+                    {
+                        self.settings = SettingsPanel::Object;
+                    }
+
                     if let Some(instance) = node.find_instance_by_id(instance_id)
                     {
                         let mut instance = instance.borrow_mut();
@@ -212,6 +217,11 @@ impl Gui
             {
                 self.deselect_current_item(state);
             }
+        }
+
+        if state.input_manager.keyboard.is_pressed(Key::Escape)
+        {
+            self.deselect_current_item(state);
         }
     }
 

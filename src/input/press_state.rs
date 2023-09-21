@@ -4,7 +4,7 @@ const KEY_PRESS_DEFAULT_THRESHOLD: f32 = 0.999;
 const KEY_PRESS_DEFAULT_TIME: u64 = 250;
 const KEY_PRESS_DEFAULT_LONG_PRESS_TIME: u64 = 600;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum PressStateType
 {
     NotPressed = 0,

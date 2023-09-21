@@ -739,7 +739,6 @@ impl MainInterface
                             global_state.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
                         },
                     }
-
                 },
                 winit::event::WindowEvent::CursorMoved { device_id: _, position, ..} =>
                 {

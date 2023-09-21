@@ -314,13 +314,13 @@ impl Keyboard
 
     pub fn is_pressed(&mut self, key: Key) -> bool
     {
-        let state = self.keys[key as usize].pressed(false, false);
+        let state = self.keys[key as usize].pressed(true, false);
         is_pressed_by_state(state)
     }
 
     pub fn is_pressed_modifier(&mut self, modifier: Modifier) -> bool
     {
-        let state = self.modifiers[modifier as usize].pressed(false, false);
+        let state = self.modifiers[modifier as usize].pressed(true, false);
         is_pressed_by_state(state)
     }
 

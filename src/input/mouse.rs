@@ -195,7 +195,7 @@ impl Mouse
 
     pub fn is_pressed(&mut self, button: MouseButton) -> bool
     {
-        let state = self.buttons[button as usize].pressed(false, false);
+        let state = self.buttons[button as usize].pressed(true, false);
         is_pressed_by_state(state)
     }
 
