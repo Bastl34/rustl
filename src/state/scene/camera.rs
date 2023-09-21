@@ -1,6 +1,7 @@
 use std::mem::swap;
 
-use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3, Vector2};
+use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3, Vector2, Point2, Vector4};
+use parry3d::query::Ray;
 
 use crate::{helper::{math::approx_equal, change_tracker::ChangeTracker}, state::helper::render_item::{RenderItemOption}, input::input_manager::InputManager};
 
@@ -287,6 +288,65 @@ impl Camera
 
         // Check if point is inside NDC space (Normalized Device Coordinates Space)
         point_clip.x.abs() <= point_clip.w && point_clip.y.abs() <= point_clip.w && point_clip.z.abs() <= point_clip.w
+    }
+
+    pub fn is_point_in_viewport(&self, point: &Point2<f32>) -> bool
+    {
+        let data = self.get_data();
+
+        let x0 = data.viewport_x * data.resolution_width as f32;
+        let y0 = data.viewport_y * data.resolution_height as f32;
+
+        let width = data.viewport_width * data.resolution_width as f32;
+        let height = data.viewport_height * data.resolution_height as f32;
+
+        let x1 = x0 + width;
+        let y1 = y0 + height;
+
+        if point.x >= x0 && point.x < x1
+        {
+            if point.y >= y0 && point.y < y1
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>, width: u32, height: u32) -> Ray
+    {
+        let data = self.get_data();
+
+        let x_f = point.x as f32;
+        let y_f = point.y as f32;
+
+        let w = data.viewport_width as f32 * width as f32;
+        let h = data.viewport_height as f32 * height as f32;
+
+        //map x/y to -1 <=> +1
+        let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
+        //let sensor_y = 1.0 - ((y_f + 0.5) / h) * 2.0;
+        let sensor_y = ((y_f + 0.5) / h) * 2.0 - 1.0;
+
+        let half_vertical_fov = data.fovy / 2.0;
+        let tangent_half_vertical_fov = f32::tan(half_vertical_fov);
+        let distance_to_near_clip = (1.0 / tangent_half_vertical_fov) * data.clipping_near;
+
+        let mut pixel_pos = Vector4::new(sensor_x, sensor_y, -distance_to_near_clip, 1.0);
+        pixel_pos = data.projection_inverse * pixel_pos;
+        pixel_pos.w = 1.0;
+
+        let mut ray_dir = pixel_pos - DEFAULT_CAM_POS.to_homogeneous();
+        ray_dir.w = 0.0;
+
+        let origin = data.view_inverse * pixel_pos;
+        let dir = data.view_inverse * ray_dir;
+
+        let mut ray = Ray::new(Point3::<f32>::from(origin.xyz()), Vector3::<f32>::from(dir.xyz()));
+        ray.dir = ray.dir.normalize();
+
+        ray
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)

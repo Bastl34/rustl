@@ -1,4 +1,4 @@
-use nalgebra::Vector2;
+use nalgebra::{Vector2, Point2};
 use strum_macros::EnumIter;
 
 #[derive(EnumIter, Debug, PartialEq)]
@@ -14,9 +14,9 @@ pub struct InputPoint
 {
     pub id: u64,
 
-    pub start_pos: Option<Vector2::<f32>>,
-    pub last_pos: Option<Vector2::<f32>>,
-    pub pos: Option<Vector2::<f32>>,
+    pub start_pos: Option<Point2::<f32>>,
+    pub last_pos: Option<Point2::<f32>>,
+    pub pos: Option<Point2::<f32>>,
     pub velocity: Vector2::<f32>,
 
     pub state: PointState,

@@ -5,7 +5,7 @@ use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Sty
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::mouse::MouseButton};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -81,6 +81,137 @@ impl Gui
             dialog_add_component: false,
             add_component_id: 0,
             add_component_name: "Component".to_string()
+        }
+    }
+
+    pub fn deselect_current_item(&mut self, state: &mut State)
+    {
+        if self.selected_scene_id == None
+        {
+            return;
+        }
+
+        let scene_id = self.selected_scene_id.unwrap();
+
+        for scene in &mut state.scenes
+        {
+            if scene_id != scene.id
+            {
+                continue;
+            }
+
+            let (node_id, deselect_instance_id) = self.get_object_ids();
+            if let Some(node_id) = node_id
+            {
+                if let Some(node) = scene.find_node_by_id(node_id)
+                {
+                    if let Some(deselect_instance_id) = deselect_instance_id
+                    {
+                        if let Some(instance) = node.read().unwrap().find_instance_by_id(deselect_instance_id)
+                        {
+                            let mut instance = instance.borrow_mut();
+                            instance.get_mut().highlight = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.selected_object.clear();
+        self.selected_scene_id = None;
+        self.selected_type = HierarchyType::None;
+    }
+
+    pub fn update(&mut self, state: &mut State)
+    {
+        if state.input_manager.mouse.is_pressed(MouseButton::Left)
+        {
+            let width = state.width;
+            let height = state.height;
+
+            let pos = state.input_manager.mouse.point.pos;
+
+            let mut hit: Option<(f32, Vector3<f32>, NodeItem, u64, u32)> = None;
+            let mut scene_id: u64 = 0;
+
+            if let Some(pos) = pos
+            {
+                let scenes = &mut state.scenes;
+
+                for scene in scenes
+                {
+                    for camera in &scene.cameras
+                    {
+                        // check if click is insight
+                        if camera.is_point_in_viewport(&pos)
+                        {
+                            let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
+
+                            let new_hit = scene.pick(&ray, false);
+
+                            let mut save_hit = false;
+
+                            if let Some(new_hit) = new_hit.as_ref()
+                            {
+                                if let Some(hit) = hit.as_ref()
+                                {
+                                    // check if the new hit is near
+                                    if new_hit.0 < hit.0
+                                    {
+                                        save_hit = true;
+                                    }
+                                }
+                                else
+                                {
+                                    save_hit = true;
+                                }
+                            }
+
+                            if save_hit
+                            {
+                                hit = new_hit;
+                                scene_id = scene_id;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some((_t, _normal, hit_item, instance_id,_face_id)) = hit
+            {
+                let id_string;
+                {
+                    let node = hit_item.read().unwrap();
+                    id_string = format!("objects_{}_{}", node.id, instance_id);
+                }
+
+                let mut already_selected = false;
+                if self.selected_object == id_string && self.selected_scene_id == Some(scene_id)
+                {
+                    already_selected = true;
+                }
+
+                // deselect first
+                self.deselect_current_item(state);
+
+                if !already_selected
+                {
+                    let node = hit_item.read().unwrap();
+                    self.selected_object = id_string;
+                    self.selected_scene_id = Some(scene_id);
+                    self.selected_type = HierarchyType::Objects;
+
+                    if let Some(instance) = node.find_instance_by_id(instance_id)
+                    {
+                        let mut instance = instance.borrow_mut();
+                        instance.get_mut().highlight = true;
+                    }
+                }
+            }
+            else
+            {
+                self.deselect_current_item(state);
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use nalgebra::Vector2;
+use nalgebra::{Vector2, Point2};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
@@ -87,7 +87,7 @@ impl Mouse
         self.last_active_button = button;
     }
 
-    pub fn set_pos(&mut self, pos: Vector2::<f32>, engine_frame: u64)
+    pub fn set_pos(&mut self, pos: Point2::<f32>, engine_frame: u64)
     {
         let pressed = self.is_any_button_holding();
 

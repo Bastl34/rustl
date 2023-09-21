@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
-use nalgebra::{Point3, Vector3, Vector2, Rotation3};
+use nalgebra::{Point3, Vector3, Vector2, Rotation3, Point2};
 use winit::event::ElementState;
 use winit::window::{Window, Fullscreen};
 
@@ -301,10 +301,10 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
-            scene.load("objects/temp/Workbench.glb").await.unwrap();
+            //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
@@ -453,7 +453,6 @@ impl MainInterface
         {
             return;
         }
-
     }
 
     pub fn update(&mut self)
@@ -471,7 +470,7 @@ impl MainInterface
                 self.wgpu.set_vsync(v_sync);
             }
 
-            // fullscreen
+            // full screen
             let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
             if fullscreen_changed
             {
@@ -511,6 +510,15 @@ impl MainInterface
             }
 
             state.frame_update_time = now;
+        }
+
+        // editor/ui update
+        {
+            let now = Instant::now();
+            let state = &mut *(self.state.borrow_mut());
+            self.editor_gui.update(state);
+
+            state.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // build ui
@@ -735,7 +743,7 @@ impl MainInterface
                 },
                 winit::event::WindowEvent::CursorMoved { device_id: _, position, ..} =>
                 {
-                    let mut pos = Vector2::<f32>::new(position.x as f32, position.y as f32);
+                    let mut pos = Point2::<f32>::new(position.x as f32, position.y as f32);
 
                     pos.x = pos.x;
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)

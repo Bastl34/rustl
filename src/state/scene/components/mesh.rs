@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
-use parry3d::{shape::TriMesh, bounding_volume::Aabb};
+use parry3d::{shape::{TriMesh, FeatureId}, bounding_volume::Aabb, query::{Ray, RayCast}};
 
 use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem, component_impl_no_update, component_impl_set_enabled};
 
@@ -111,6 +111,49 @@ impl Mesh
         let trans = Isometry3::<f32>::identity();
         let mut data = self.data.get_mut();
         data.b_box = data.mesh.aabb(&trans);
+    }
+
+    pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
+    {
+        let data = self.get_data();
+        data.b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
+    }
+
+    pub fn intersect(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
+    {
+        let data = self.get_data();
+
+        let res = data.mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
+        if let Some(res) = res
+        {
+            let mut face_id = 0;
+            if let FeatureId::Face(i) = res.feature
+            {
+                face_id = i;
+            }
+
+            let mut normal;
+
+            // use normal based on loaded normal (not on computed normal by parry -- for smooth shading)
+            if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
+            {
+                let hit = ray.origin + (ray.dir * res.toi);
+                normal = self.get_normal(hit, face_id, trans_inverse);
+                normal = (trans * normal.to_homogeneous()).xyz().normalize();
+
+                if data.mesh.is_backface(res.feature)
+                {
+                    normal = -normal;
+                }
+            }
+            else
+            {
+                normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
+            }
+
+            return Some((res.toi, normal, face_id))
+        }
+        None
     }
 
     fn apply_transform(&mut self, trasform: &Matrix4<f32>)

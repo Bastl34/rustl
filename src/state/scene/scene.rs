@@ -1,10 +1,12 @@
 use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
 
 use anyhow::Ok;
+use nalgebra::Vector3;
+use parry3d::{query::Ray, transformation};
 
-use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption, input::input_manager::InputManager};
+use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::material::{MaterialItem, Material}, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType}, mesh::Mesh}, light::LightItem};
 
 pub type SceneItem = Box<Scene>;
 
@@ -296,6 +298,24 @@ impl Scene
         all_nodes
     }
 
+    pub fn list_all_child_nodes_with_mesh(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
+    {
+        let mut all_nodes = vec![];
+
+        for node in nodes
+        {
+            let child_nodes = Scene::list_all_child_nodes_with_mesh(&node.read().unwrap().nodes);
+
+            if node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                all_nodes.push(node.clone());
+            }
+            all_nodes.extend(child_nodes);
+        }
+
+        all_nodes
+    }
+
     fn _find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
     {
         for node in nodes
@@ -371,5 +391,130 @@ impl Scene
         }
 
         false
+    }
+
+    pub fn get_material_or_default(&self, node: NodeItem) -> Option<MaterialItem>
+    {
+        let node = node.read().unwrap();
+        let mut material = node.find_component::<Material>();
+
+        if material.is_none()
+        {
+            material = self.get_default_material();
+        }
+
+        material
+    }
+
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool) -> Option<(f32, Vector3<f32>, NodeItem, u64, u32)>
+    {
+        let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
+
+        // find hits (bbox based)
+        let mut hits = vec![];
+
+        for node_arc in &nodes
+        {
+            let node = node_arc.read().unwrap();
+
+            // early "return" check
+            if !node.visible
+            {
+                continue;
+            }
+
+            // mesh
+            let mesh = node.find_component::<Mesh>();
+
+            if mesh.is_none()
+            {
+                continue;
+            }
+
+            let mesh = mesh.unwrap();
+            component_downcast!(mesh, Mesh);
+
+            if !mesh.get_base().is_enabled
+            {
+                continue;
+            }
+
+            for instance in node.instances.get_ref()
+            {
+                let instance = instance.borrow();
+                let instance = instance.get_ref();
+
+                let alpha = instance.get_alpha();
+
+                if approx_zero(alpha)
+                {
+                    continue;
+                }
+
+                // transformation
+                let transform = instance.get_transform();
+                let transform_inverse = transform.try_inverse().unwrap();
+
+                let ray_inverse = math::inverse_ray(ray, &transform_inverse);
+
+                let solid = true;
+                let dist = mesh.intersect_b_box(&ray_inverse, solid);
+                if let Some(dist) = dist
+                {
+                    hits.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
+                }
+            }
+        }
+
+        if hits.len() == 0
+        {
+            return None;
+        }
+
+        // sort bbox dist (to get the nearest)
+        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        let mut best_hit: Option<(f32, Vector3<f32>, NodeItem, u64, u32)> = None;
+
+        for (node_arc, instance_id, _dist, transform, transform_inverse, ray_inverse) in hits
+        {
+            let node = node_arc.read().unwrap();
+
+            let mesh = node.find_component::<Mesh>().unwrap();
+            component_downcast!(mesh, Mesh);
+
+            let material = self.get_material_or_default(node_arc.clone());
+            let material = material.unwrap();
+            component_downcast!(material, Material);
+            let material_data = material.get_data();
+
+            let solid = !material_data.backface_cullig;
+
+            let intersection = mesh.intersect(ray, &ray_inverse, &transform, &transform_inverse, solid, material_data.smooth_shading);
+
+            if let Some(intersection) = intersection
+            {
+                //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
+                if best_hit.is_none()
+                {
+                    best_hit = Some((intersection.0, intersection.1, node_arc.clone(), instance_id, intersection.2));
+                }
+                else if let Some(current_best_hit) = &best_hit
+                {
+                    if intersection.0 < current_best_hit.0
+                    {
+                        best_hit = Some((intersection.0, intersection.1, node_arc.clone(), instance_id, intersection.2));
+                    }
+                }
+            }
+
+            //if it should return on first hit
+            if best_hit.is_some() && stop_on_first_hit
+            {
+                return best_hit;
+            }
+        }
+
+        best_hit
     }
 }

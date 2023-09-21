@@ -2,7 +2,8 @@
 
 use std::f32::consts::PI;
 
-use nalgebra::{Vector4, Vector3, Vector2};
+use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
+use parry3d::query::Ray;
 
 pub fn approx_equal(a: f32, b: f32) -> bool
 {
@@ -73,6 +74,14 @@ pub fn yaw_pitch_to_direction(yaw: f32, pitch: f32) -> Vector3::<f32>
         pitch.sin(),
         pitch.cos() * yaw.cos()
     )
+}
+
+pub fn inverse_ray(ray: &Ray, trans_inverse: &Matrix4<f32>) -> Ray
+{
+    let ray_inverse_start = trans_inverse * ray.origin.to_homogeneous();
+    let ray_inverse_dir = trans_inverse * ray.dir.to_homogeneous();
+
+    Ray::new(Point3::from_homogeneous(ray_inverse_start).unwrap(), Vector3::from_homogeneous(ray_inverse_dir).unwrap())
 }
 
 /*

@@ -73,6 +73,8 @@ pub struct State
 
     pub app_update_time: f32,
 
+    pub editor_update_time: f32,
+
     pub egui_update_time: f32,
     pub egui_render_time: f32,
 
@@ -150,6 +152,8 @@ impl State
             engine_render_time: 0.0,
 
             app_update_time: 0.0,
+
+            editor_update_time: 0.0,
 
             egui_update_time: 0.0,
             egui_render_time: 0.0,
