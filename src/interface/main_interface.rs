@@ -302,13 +302,13 @@ impl MainInterface
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/monkey.glb").await.unwrap();
-            //scene.load("objects/temp/Corset.glb").await.unwrap();
+            scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
             //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            scene.load("objects/temp/scene.glb").await.unwrap();
+            //scene.load("objects/temp/scene.glb").await.unwrap();
             //scene.load("objects/temp/scene_2.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
@@ -319,6 +319,10 @@ impl MainInterface
             //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
             //scene.load("objects/temp/persian_city.glb").await.unwrap();
             //scene.load("objects/temp/cathedral.glb").await.unwrap();
+            //scene.load("objects/temp/plaza_night_time.glb").await.unwrap();
+            //scene.load("objects/temp/de_dust.glb").await.unwrap();
+            //scene.load("objects/temp/de_dust2.glb").await.unwrap();
+            //scene.load("objects/temp/de_dust2_8k.glb").await.unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
 
             scene.clear_empty_nodes();
 
@@ -522,6 +526,7 @@ impl MainInterface
         }
 
         // build ui
+        if self.editor_gui.visible
         {
             let now = Instant::now();
             let state = &mut *(self.state.borrow_mut());
@@ -608,6 +613,7 @@ impl MainInterface
             }
 
             // render egui
+            if self.editor_gui.visible
             {
                 let now = Instant::now();
                 self.egui.render(&mut self.wgpu, &view, &mut encoder);
@@ -679,7 +685,7 @@ impl MainInterface
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.egui.on_event(event)
+        if self.editor_gui.visible && self.egui.on_event(event)
         {
             return;
         }

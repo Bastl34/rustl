@@ -5,7 +5,7 @@ use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Sty
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::{mouse::MouseButton, keyboard::Key}};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::{mouse::MouseButton, keyboard::{Key, Modifier}}};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -44,6 +44,11 @@ enum BottomPanel
 
 pub struct Gui
 {
+    pub visible: bool,
+    pub try_out: bool,
+    pub selectable: bool,
+    pub fly_camera: bool,
+
     bottom: BottomPanel,
 
     settings: SettingsPanel,
@@ -66,7 +71,11 @@ impl Gui
     {
         Self
         {
-            //side_hierarchy: HierarchyPanel::Objects,
+            visible: true,
+            try_out: false,
+            selectable: true,
+            fly_camera: true,
+
             bottom: BottomPanel::Assets,
 
             settings: SettingsPanel::Rendering,
@@ -84,7 +93,7 @@ impl Gui
         }
     }
 
-    pub fn deselect_current_item(&mut self, state: &mut State)
+    pub fn de_select_current_item(&mut self, state: &mut State)
     {
         if self.selected_scene_id == None
         {
@@ -124,7 +133,32 @@ impl Gui
 
     pub fn update(&mut self, state: &mut State)
     {
-        if state.input_manager.mouse.is_pressed(MouseButton::Left)
+        // start try out mde
+        if !self.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)) && state.input_manager.keyboard.is_pressed(Key::R)
+        {
+            self.set_try_out(state, true);
+        }
+
+        // end try out mode
+        if self.try_out && state.input_manager.keyboard.is_pressed(Key::Escape)
+        {
+            self.set_try_out(state, false);
+        }
+
+        // hide ui
+        if state.input_manager.keyboard.is_pressed(Key::H)
+        {
+            self.visible = !self.visible;
+        }
+
+        // fullscreen
+        if state.input_manager.keyboard.is_pressed(Key::F)
+        {
+            state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
+        }
+
+        // select objects
+        if !self.try_out && self.selectable && state.input_manager.mouse.is_pressed(MouseButton::Left)
         {
             let width = state.width;
             let height = state.height;
@@ -192,7 +226,7 @@ impl Gui
                 }
 
                 // deselect first
-                self.deselect_current_item(state);
+                self.de_select_current_item(state);
 
                 if !already_selected
                 {
@@ -215,13 +249,25 @@ impl Gui
             }
             else
             {
-                self.deselect_current_item(state);
+                self.de_select_current_item(state);
             }
         }
 
         if state.input_manager.keyboard.is_pressed(Key::Escape)
         {
-            self.deselect_current_item(state);
+            self.de_select_current_item(state);
+        }
+    }
+
+    pub fn set_try_out(&mut self, state: &mut State, try_out: bool)
+    {
+        self.try_out = try_out;
+        self.visible = !try_out;
+        state.rendering.fullscreen.set(try_out);
+
+        if try_out
+        {
+            self.de_select_current_item(state);
         }
     }
 
@@ -449,22 +495,37 @@ impl Gui
 
     fn create_tool_menu(&mut self, state: &mut State, ui: &mut Ui)
     {
+        let icon_size = 20.0;
+
         ui.horizontal(|ui|
         {
             let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
+            let mut try_out = self.try_out;
+
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
+            {
+                // selectable
+                ui.toggle_value(&mut self.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects");
+                ui.toggle_value(&mut self.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
+            });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
-                let mut changed = false;
-
-                changed = ui.selectable_value(& mut fullscreen, true, RichText::new("⛶").size(20.0)).on_hover_text("fullscreen").changed() || changed;
-                changed = ui.selectable_value(& mut fullscreen, false, RichText::new("🗖").size(20.0)).on_hover_text("window mode").changed() || changed;
-
-                if changed
+                // fullscreen change
+                if ui.toggle_value(&mut fullscreen, RichText::new("⛶").size(icon_size)).on_hover_text("fullscreen").changed()
                 {
                     state.rendering.fullscreen.set(fullscreen);
                 }
+
+                // try out mode
+                if ui.toggle_value(&mut try_out, RichText::new("🚀").size(icon_size)).on_hover_text("try out").changed()
+                {
+                    self.set_try_out(state, try_out);
+                };
             });
+
+
+            //🖱
         });
     }
 
@@ -1523,7 +1584,7 @@ impl Gui
                 {
                     delete_controller = false;
                     enabled = controller.get_base().is_enabled;
-                    name = controller.get_base().name.clone();
+                    name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
                 }
 
                 generic_items::collapse(ui, "camera_controller".to_string(), true, |ui|
