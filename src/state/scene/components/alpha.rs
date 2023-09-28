@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemChangeTracker}, component_impl_no_update};
+use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemRefCell}, component_impl_no_update};
 
 use super::component::{ComponentBase, Component};
 

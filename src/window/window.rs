@@ -78,7 +78,11 @@ fn run(event_loop: winit::event_loop::EventLoop<()>, mut interface: MainInterfac
                 *control_flow = ControlFlow::Exit
             }
         },
-        Event::MainEventsCleared => interface.window().request_redraw(),
+        Event::MainEventsCleared =>
+        {
+            interface.window().request_redraw();
+            interface.update_done();
+        },
         _ => (),
     });
 }

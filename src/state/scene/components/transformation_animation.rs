@@ -1,7 +1,7 @@
 use egui::Color32;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemChangeTracker}, instance::InstanceItem}, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
+use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemRefCell}, instance::InstanceItem}, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -148,15 +148,12 @@ impl Component for TransformationAnimation
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
     {
         let node = node.write().unwrap();
-
         self._update(node.find_component::<Transformation>(), input_manager, frame_scale);
     }
 
-    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32)
+    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemRefCell, input_manager: &mut InputManager, frame_scale: f32)
     {
         let instance = instance.borrow();
-        let instance = instance.get_ref();
-
         self._update(instance.find_component::<Transformation>(), input_manager, frame_scale);
     }
 

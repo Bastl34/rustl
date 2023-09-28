@@ -4,7 +4,7 @@ use std::any::Any;
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::instance::InstanceItem;
-use crate::state::scene::node::{NodeItem, InstanceItemChangeTracker};
+use crate::state::scene::node::{NodeItem, InstanceItemRefCell};
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -19,7 +19,7 @@ pub trait Component: Any
     fn ui(&mut self, ui: &mut egui::Ui);
 
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32);
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemChangeTracker, input_manager: &mut InputManager, frame_scale: f32);
+    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemRefCell, input_manager: &mut InputManager, frame_scale: f32);
 
     fn set_enabled(&mut self, state: bool);
 
@@ -109,7 +109,7 @@ macro_rules! component_impl_no_update
         {
         }
 
-        fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemChangeTracker, input_manager: &mut crate::input::input_manager::InputManager, frame_scale: f32)
+        fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemRefCell, input_manager: &mut crate::input::input_manager::InputManager, frame_scale: f32)
         {
         }
     };
@@ -131,6 +131,11 @@ macro_rules! component_impl_set_enabled
 
 pub fn find_component<T>(components: &Vec<ComponentItem>) -> Option<ComponentItem> where T: 'static
 {
+    if components.len() == 0
+    {
+        return None;
+    }
+
     let value = components.iter().find
     (
         |c|
@@ -151,6 +156,11 @@ pub fn find_component<T>(components: &Vec<ComponentItem>) -> Option<ComponentIte
 
 pub fn find_components<T: Component>(components: &Vec<ComponentItem>) -> Vec<ComponentItem> where T: 'static
 {
+    if components.len() == 0
+    {
+        return vec![];
+    }
+
     let values: Vec<_> = components.iter().filter
     (
         |c|
@@ -169,7 +179,7 @@ pub fn find_components<T: Component>(components: &Vec<ComponentItem>) -> Vec<Com
     values.iter().map(|component| Arc::clone(component)).collect()
 }
 
-pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) where T: 'static
+pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) -> bool where T: 'static
 {
     let index = components.iter().position
     (
@@ -184,10 +194,13 @@ pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) where T:
     if let Some(index) = index
     {
         components.remove(index);
+        return true;
     }
+
+    false
 }
 
-pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64)
+pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> bool
 {
     let index = components.iter().position
     (
@@ -201,7 +214,10 @@ pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64)
     if let Some(index) = index
     {
         components.remove(index);
+        return true;
     }
+
+    false
 }
 
 // ******************** macros ********************

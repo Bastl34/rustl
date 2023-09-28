@@ -8,7 +8,9 @@ use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker
 use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
-pub type InstanceItemChangeTracker = RefCell<ChangeTracker<InstanceItem>>;
+pub type InstanceItemRefCell = RefCell<InstanceItem>;
+
+const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
 pub struct Node
 {
@@ -22,7 +24,8 @@ pub struct Node
     pub parent: Option<NodeItem>,
 
     pub nodes: Vec<NodeItem>,
-    pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
+    //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
+    pub instances: ChangeTracker<Vec<RefCell<InstanceItem>>>,
 
     pub components: Vec<ComponentItem>,
 
@@ -89,12 +92,18 @@ impl Node
 
     pub fn remove_component_by_type<T>(&mut self) where T: 'static
     {
-        remove_component_by_type::<T>(&mut self.components)
+        if remove_component_by_type::<T>(&mut self.components)
+        {
+            self.force_instances_update();
+        }
     }
 
     pub fn remove_component_by_id(&mut self, id: u64)
     {
-        remove_component_by_id(&mut self.components, id)
+        if remove_component_by_id(&mut self.components, id)
+        {
+            self.force_instances_update();
+        }
     }
 
     pub fn get_mesh(&self) -> Option<ComponentItem>
@@ -233,7 +242,7 @@ impl Node
 
     pub fn add_instance(&mut self, instance: InstanceItem)
     {
-        self.instances.get_mut().push(RefCell::new(ChangeTracker::new(instance)));
+        self.instances.get_mut().push(RefCell::new(instance));
     }
 
     pub fn update(node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
@@ -273,16 +282,48 @@ impl Node
 
         // ***** update instances *****
         {
-            let node_read = node.read().unwrap();
-            for instance in node_read.instances.get_ref()
+            let mut updates = 0;
             {
-                Instance::update(node.clone(), &instance, input_manager, frame_scale);
+                let node_read = node.read().unwrap();
+                for instance in node_read.instances.get_ref()
+                {
+                    if Instance::update(&instance, input_manager, frame_scale)
+                    {
+                        updates += 1;
+                    }
+                }
             }
+
+            // if more than UPDATE_ALL_INSTANCES_THRESHOLD instances got an update -> update all instances at once to save performance
+            if updates >= UPDATE_ALL_INSTANCES_THRESHOLD
+            {
+                let mut node = node.write().unwrap();
+                node.instances.force_change();
+            }
+
+            // consume alpha and transform manually (not prevent useless updates)
+            /*
+            let node_read = node.read().unwrap();
+            let transform_component = node_read.find_component::<Transformation>();
+            let alpha_component = node_read.find_component::<Alpha>();
+
+            if let Some(transform_component) = transform_component
+            {
+                component_downcast_mut!(transform_component, Transformation);
+                transform_component.get_data_mut().consume();
+            }
+
+            if let Some(alpha_component) = alpha_component
+            {
+                component_downcast_mut!(alpha_component, Alpha);
+                alpha_component.get_data_mut().consume();
+            }
+             */
         }
 
         // ***** update childs *****
-        let mut node_write = node.write().unwrap();
-        for child_node in &mut node_write.nodes
+        let node_read = node.read().unwrap();
+        for child_node in &node_read.nodes
         {
             Self::update(child_node.clone(), input_manager, frame_scale);
         }
@@ -312,11 +353,82 @@ impl Node
         true
     }
 
-    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemChangeTracker>
+    pub fn merge_instances(&mut self) -> bool
+    {
+        let meshes = self.get_meshes();
+
+        if meshes.len() == 0
+        {
+            return false;
+        }
+
+        if self.instances.get_ref().len() == 0
+        {
+            return false;
+        }
+
+        // get all transformations
+        let mut transformations = vec![];
+
+        let instances = self.instances.get_ref();
+        for instance in instances
+        {
+            let instance = instance.borrow();
+
+            let mut matrix = Matrix4::<f32>::identity();
+
+            let transform_component: Option<Arc<RwLock<Box<dyn Component + Send + Sync>>>> = instance.find_component::<Transformation>();
+
+            if let Some(transform_component) = transform_component
+            {
+                component_downcast_mut!(transform_component, Transformation);
+
+                // force update
+                transform_component.calc_transform();
+                matrix = transform_component.get_transform().clone();
+            }
+
+            transformations.push(matrix);
+        }
+
+        // apply all transformations
+        for mesh in meshes
+        {
+            component_downcast_mut!(mesh, Mesh);
+            mesh.merge_instances_by_transformation(&transformations);
+        }
+
+        // clear and create new single instance
+        let instance_id;
+        let node;
+        {
+            let first_instance = self.instances.get_ref().first().unwrap();
+            let first_instance = first_instance.borrow();
+
+            instance_id = first_instance.id;
+            node = first_instance.node.clone();
+        }
+
+        self.clear_instances();
+        self.create_default_instance(node, instance_id);
+
+        true
+    }
+
+    pub fn force_instances_update(&mut self)
     {
         for instance in self.instances.get_ref()
         {
-            if instance.borrow().get_ref().id == id
+            let mut instance = instance.borrow_mut();
+            instance.set_force_update();
+        }
+    }
+
+    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemRefCell>
+    {
+        for instance in self.instances.get_ref()
+        {
+            if instance.borrow().id == id
             {
                 return Some(instance);
             }
@@ -330,10 +442,15 @@ impl Node
         let len = self.instances.get_ref().len();
         self.instances.get_mut().retain(|instance|
         {
-            instance.borrow().get_ref().id != id
+            instance.borrow().id != id
         });
 
         self.instances.get_ref().len() != len
+    }
+
+    pub fn clear_instances(&mut self)
+    {
+        self.instances.get_mut().clear();
     }
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool

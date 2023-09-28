@@ -2,11 +2,12 @@ use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, 
 
 use anyhow::Ok;
 use nalgebra::Vector3;
+use nalgebra::Point3;
 use parry3d::{query::Ray, transformation};
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType}, mesh::Mesh}, light::LightItem};
+use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType}, mesh::Mesh}, light::{LightItem, Light}};
 
 pub type SceneItem = Box<Scene>;
 
@@ -283,6 +284,57 @@ impl Scene
         self.cameras.last().unwrap()
     }
 
+    pub fn get_light_by_id(&self, id: u64) -> Option<&RefCell<ChangeTracker<Box<Light>>>>
+    {
+        let lights = self.lights.get_ref();
+        lights.iter().find(|light|{ light.borrow().get_ref().id == id })
+    }
+
+    pub fn delete_light_by_id(&mut self, id: u64) -> bool
+    {
+        // only mark as changed if there was a change
+        let lights = self.lights.get_unmarked_mut();
+
+        let len = lights.len();
+        lights.retain(|light|
+        {
+            light.borrow().get_ref().id != id
+        });
+
+        if lights.len() != len
+        {
+            // only mark as changed if there was a change
+            self.lights.force_change();
+            return true;
+        }
+
+        false
+    }
+
+    pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        let light = Light::new_point(self.id_manager.get_next_light_id(), name.to_string(), pos, color, intensity);
+        self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+        self.lights.get_ref().last().unwrap()
+    }
+
+    pub fn add_light_directional(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        let light = Light::new_directional(self.id_manager.get_next_light_id(), name.to_string(), pos, dir, color, intensity);
+        self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+        self.lights.get_ref().last().unwrap()
+    }
+
+    pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        let light = Light::new_spot(self.id_manager.get_next_light_id(), name.to_string(), pos, dir, color, max_angle, intensity);
+        self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+        self.lights.get_ref().last().unwrap()
+    }
+
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];
@@ -442,7 +494,11 @@ impl Scene
             for instance in node.instances.get_ref()
             {
                 let instance = instance.borrow();
-                let instance = instance.get_ref();
+
+                if !instance.pickable
+                {
+                    continue;
+                }
 
                 let alpha = instance.get_alpha();
 

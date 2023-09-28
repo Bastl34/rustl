@@ -1,11 +1,11 @@
-use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap, collections::HashMap};
+use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap, collections::HashMap, sync::{Arc, RwLock}, f32::consts::PI};
 
 use colored::Color;
 use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style, Align2};
 use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
-use nalgebra::{Vector3, Point3};
+use nalgebra::{Vector3, Point3, Point2, distance, ComplexField};
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::Light, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::Component}, node::NodeItem, scene::Scene, camera::CameraItem}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::{mouse::MouseButton, keyboard::{Key, Modifier}}};
+use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::{Light, LightItem}, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::{Component, ComponentItem}}, node::NodeItem, scene::Scene, camera::CameraItem, instance::Instance}}, rendering::{egui::EGui, instance}, helper::change_tracker::ChangeTracker, component_downcast, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut};
 
 use super::generic_items::{self, collapse_with_title, modal_with_title};
 
@@ -24,7 +24,7 @@ enum SettingsPanel
 }
 
 #[derive(PartialEq, Eq)]
-enum HierarchyType
+enum SelectionType
 {
     Objects,
     Cameras,
@@ -42,12 +42,21 @@ enum BottomPanel
     Console,
 }
 
+#[derive(Clone, Copy)]
+pub enum EditMode
+{
+    Movement(Point2::<f32>, bool, bool, bool),
+    Rotate(Point2::<f32>, bool, bool, bool)
+}
+
 pub struct Gui
 {
     pub visible: bool,
     pub try_out: bool,
     pub selectable: bool,
     pub fly_camera: bool,
+
+    pub edit_mode: Option<EditMode>,
 
     bottom: BottomPanel,
 
@@ -57,7 +66,7 @@ pub struct Gui
     hierarchy_filter: String,
 
     selected_scene_id: Option<u64>,
-    selected_type: HierarchyType,
+    selected_type: SelectionType,
     selected_object: String,
 
     dialog_add_component: bool,
@@ -76,6 +85,8 @@ impl Gui
             selectable: true,
             fly_camera: true,
 
+            edit_mode: None,
+
             bottom: BottomPanel::Assets,
 
             settings: SettingsPanel::Rendering,
@@ -84,7 +95,7 @@ impl Gui
             hierarchy_filter: String::new(),
 
             selected_scene_id: None,
-            selected_type: HierarchyType::None,
+            selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
 
             dialog_add_component: false,
@@ -119,7 +130,8 @@ impl Gui
                         if let Some(instance) = node.read().unwrap().find_instance_by_id(deselect_instance_id)
                         {
                             let mut instance = instance.borrow_mut();
-                            instance.get_mut().highlight = false;
+                            let instance_data = instance.get_data_mut().get_mut();
+                            instance_data.highlight = false;
                         }
                     }
                 }
@@ -128,7 +140,7 @@ impl Gui
 
         self.selected_object.clear();
         self.selected_scene_id = None;
-        self.selected_type = HierarchyType::None;
+        self.selected_type = SelectionType::None;
     }
 
     pub fn update(&mut self, state: &mut State)
@@ -158,7 +170,7 @@ impl Gui
         }
 
         // select objects
-        if !self.try_out && self.selectable && state.input_manager.mouse.is_pressed(MouseButton::Left)
+        if !self.try_out && self.selectable && self.edit_mode.is_none() && state.input_manager.mouse.clicked(MouseButton::Left)
         {
             let width = state.width;
             let height = state.height;
@@ -233,9 +245,9 @@ impl Gui
                     let node = hit_item.read().unwrap();
                     self.selected_object = id_string;
                     self.selected_scene_id = Some(scene_id);
-                    self.selected_type = HierarchyType::Objects;
+                    self.selected_type = SelectionType::Objects;
 
-                    if self.settings != SettingsPanel::Object || self.settings != SettingsPanel::Components
+                    if self.settings != SettingsPanel::Object && self.settings != SettingsPanel::Components
                     {
                         self.settings = SettingsPanel::Object;
                     }
@@ -243,7 +255,8 @@ impl Gui
                     if let Some(instance) = node.find_instance_by_id(instance_id)
                     {
                         let mut instance = instance.borrow_mut();
-                        instance.get_mut().highlight = true;
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = true;
                     }
                 }
             }
@@ -253,10 +266,331 @@ impl Gui
             }
         }
 
+        // ***************** DELETE OBJECT *****************
+        if !self.selected_object.is_empty() && self.selected_type == SelectionType::Objects
+        {
+            if state.input_manager.keyboard.is_pressed(Key::X) || state.input_manager.keyboard.is_pressed(Key::Delete)
+            {
+                if let (Some(scene), Some(node), instance_id) = self.get_selected_node(state)
+                {
+                    let instances_amount = node.read().unwrap().instances.get_ref().len();
+
+                    //scene.delete_node_by_id(id)
+                    if instance_id.is_some() && instances_amount > 1
+                    {
+                        let instance_id = instance_id.unwrap();
+                        node.write().unwrap().delete_instance_by_id(instance_id);
+                    }
+                    else
+                    {
+                        scene.delete_node_by_id(node.read().unwrap().id);
+                    }
+
+                    self.de_select_current_item(state);
+                }
+            }
+        }
+
+        // ***************** ESCAPE *****************
         if state.input_manager.keyboard.is_pressed(Key::Escape)
         {
-            self.de_select_current_item(state);
+            if self.edit_mode.is_some()
+            {
+                self.edit_mode = None;
+            }
+            else
+            {
+                self.de_select_current_item(state);
+            }
         }
+
+        // ***************** EDIT MODE *****************
+        // TODO: move this out -> editor.rs
+
+        let step_size = 1.0;
+        let angle_steps = PI / 8.0;
+        let factor = 0.01;
+
+        if !self.selected_object.is_empty() && self.selected_type == SelectionType::Objects && state.input_manager.mouse.point.pos.is_some()
+        {
+            if state.input_manager.keyboard.is_pressed(Key::G)
+            {
+                let start_pos = state.input_manager.mouse.point.pos.unwrap();
+                self.edit_mode = Some(EditMode::Movement(start_pos, true, false, true));
+            }
+            if state.input_manager.keyboard.is_pressed(Key::R)
+            {
+                let start_pos = state.input_manager.mouse.point.pos.unwrap();
+                self.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+            }
+
+            if self.edit_mode.is_some() && state.input_manager.mouse.is_pressed(MouseButton::Left)
+            {
+                self.edit_mode = None;
+            }
+
+            if self.edit_mode.is_some()
+            {
+                let moving;
+                let start_pos;
+                match self.edit_mode.as_ref().unwrap()
+                {
+                    EditMode::Movement(pos, _, _, _) => { moving = true; start_pos = pos.clone(); },
+                    EditMode::Rotate(pos, _, _, _) => { moving = false; start_pos = pos.clone(); },
+                }
+
+                if state.input_manager.keyboard.is_pressed(Key::X)
+                {
+                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    {
+                        if moving { self.edit_mode = Some(EditMode::Movement(start_pos.clone(), true, false, false)); }
+                        else      { self.edit_mode = Some(EditMode::Rotate  (start_pos.clone(), true, false, false)); }
+                    }
+                    else
+                    {
+                        if moving { self.edit_mode = Some(EditMode::Movement(start_pos, false, true, true)); }
+                        else      { self.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, true)); }
+                    }
+                }
+
+                if state.input_manager.keyboard.is_pressed(Key::Y)
+                {
+                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    {
+                        if moving { self.edit_mode = Some(EditMode::Movement(start_pos, false, true, false)); }
+                        else      { self.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, false)); }
+                    }
+                    else
+                    {
+                        if moving { self.edit_mode = Some(EditMode::Movement(start_pos, true, false, true)); }
+                        else      { self.edit_mode = Some(EditMode::Rotate  (start_pos, true, false, true)); }
+                    }
+                }
+
+                if state.input_manager.keyboard.is_pressed(Key::Z)
+                {
+                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    {
+                        if moving { self.edit_mode = Some(EditMode::Movement(start_pos, false, false, true)); }
+                        else      { self.edit_mode = Some(EditMode::Rotate  (start_pos, false, false, true)); }
+                    }
+                    else
+                    {
+                        if moving { self.edit_mode = Some(EditMode::Movement(start_pos, true, true, false)); }
+                        else      { self.edit_mode = Some(EditMode::Rotate  (start_pos, true, true, false)); }
+                    }
+                }
+
+                let edit_mode = self.edit_mode.unwrap();
+
+                let mouse_pos = state.input_manager.mouse.point.pos.unwrap();
+                let movement = (mouse_pos - start_pos) * factor;
+
+                if let (Some(scene), Some(node), Some(instance_id)) = self.get_selected_node(state)
+                {
+                    let edit_transformation: ComponentItem;
+                    let node_transform;
+                    let instance_transform;
+                    let instances_amount;
+
+                    {
+                        let node = node.read().unwrap();
+                        instances_amount = node.instances.get_ref().len();
+                        let instance = node.find_instance_by_id(instance_id).unwrap() ;
+
+                        let instance = instance.borrow_mut();
+
+                        node_transform = node.find_component::<Transformation>();
+                        instance_transform = instance.find_component::<Transformation>();
+                    }
+
+                    // if there are multiple instances in the node -> use instance transform
+                    if instances_amount > 1
+                    {
+                        if let Some(instance_transform) = instance_transform
+                        {
+                            edit_transformation = instance_transform.clone();
+                        }
+                        else
+                        {
+                            let node = node.read().unwrap();
+                            let instance = node.find_instance_by_id(instance_id).unwrap() ;
+                            let mut instance = instance.borrow_mut();
+
+                            instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
+
+                            let transformation = node.find_component::<Transformation>().unwrap();
+                            edit_transformation = transformation.clone();
+                        }
+                    }
+                    // if there is no node and instance transform -> use node transform
+                    else if instance_transform.is_none() && node_transform.is_none()
+                    {
+                        let mut node = node.write().unwrap();
+                        node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
+
+                        let transformation = node.find_component::<Transformation>().unwrap();
+                        edit_transformation = transformation.clone();
+                    }
+                    // if there is already a transform on the instance -> use it
+                    else if let Some(instance_transform) = instance_transform
+                    {
+                        edit_transformation = instance_transform.clone();
+                    }
+                    // otherwise use node transform
+                    else
+                    {
+                        let node_transform = node_transform.unwrap();
+                        edit_transformation = node_transform.clone();
+                    }
+
+                    component_downcast_mut!(edit_transformation, Transformation);
+
+                    match edit_mode
+                    {
+                        EditMode::Movement(_, x, y, z) =>
+                        {
+                            let mut applied = false;
+
+                            let mut vec = Vector3::<f32>::zeros();
+                            if x
+                            {
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                {
+                                    let sign = movement.x.signum();
+                                    if movement.x.abs() >= step_size
+                                    {
+                                        vec.x = step_size * sign;
+                                        applied = true;
+                                    }
+                                }
+                                else
+                                {
+                                    vec.x = movement.x;
+                                    applied = true;
+                                }
+                            }
+
+                            if y
+                            {
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                {
+                                    let sign = movement.y.signum();
+                                    if movement.y.abs() >= step_size
+                                    {
+                                        vec.y = step_size * sign;
+                                        applied = true;
+                                    }
+                                }
+                                else
+                                {
+                                    vec.y = movement.y;
+                                    applied = true;
+                                }
+                            }
+
+                            if z
+                            {
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                {
+                                    let sign = movement.y.signum();
+                                    if movement.y.abs() >= step_size
+                                    {
+                                        vec.z = -step_size * sign;
+                                        applied = true;
+                                    }
+                                }
+                                else
+                                {
+                                    vec.z = -movement.y;
+                                    applied = true;
+                                }
+                            }
+
+                            if applied
+                            {
+                                edit_transformation.apply_translation(vec);
+                            }
+
+                            if applied
+                            {
+                                self.edit_mode = Some(EditMode::Movement(mouse_pos, x, y, z));
+                            }
+                        },
+                        EditMode::Rotate(_, x, y, z) =>
+                        {
+                            let mut applied = false;
+
+                            let mut vec = Vector3::<f32>::zeros();
+                            if x
+                            {
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                {
+                                    let sign = movement.y.signum();
+                                    if movement.y.abs() >= angle_steps
+                                    {
+                                        vec.x = angle_steps * sign;
+                                        applied = true;
+                                    }
+                                }
+                                else
+                                {
+                                    vec.x = movement.y;
+                                    applied = true;
+                                }
+                            }
+
+                            if y
+                            {
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                {
+                                    let sign = movement.x.signum();
+                                    if movement.x.abs() >= angle_steps
+                                    {
+                                        vec.y = angle_steps * sign;
+                                        applied = true;
+                                    }
+                                }
+                                else
+                                {
+                                    vec.y = movement.x;
+                                    applied = true;
+                                }
+                            }
+
+                            if z
+                            {
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                {
+                                    let sign = movement.x.signum();
+                                    if movement.x.abs() >= angle_steps
+                                    {
+                                        vec.z = -angle_steps * sign;
+                                        applied = true;
+                                    }
+                                }
+                                else
+                                {
+                                    vec.z = -movement.x;
+                                    applied = true;
+                                }
+                            }
+
+                            if applied
+                            {
+                                edit_transformation.apply_rotation(vec);
+                            }
+
+                            if applied
+                            {
+                                self.edit_mode = Some(EditMode::Rotate(mouse_pos, x, y, z));
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
     }
 
     pub fn set_try_out(&mut self, state: &mut State, try_out: bool)
@@ -264,6 +598,7 @@ impl Gui
         self.try_out = try_out;
         self.visible = !try_out;
         state.rendering.fullscreen.set(try_out);
+        state.input_manager.mouse.visible.set(!try_out);
 
         if try_out
         {
@@ -343,7 +678,7 @@ impl Gui
 
             ui.horizontal(|ui|
             {
-                if self.selected_type == HierarchyType::Objects && !self.selected_object.is_empty()
+                if self.selected_type == SelectionType::Objects && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Components, " Components");
                     ui.selectable_value(&mut self.settings, SettingsPanel::Object, "◼ Object");
@@ -351,28 +686,28 @@ impl Gui
                     object_settings = true;
                 }
 
-                if self.selected_type == HierarchyType::Cameras && !self.selected_object.is_empty()
+                if self.selected_type == SelectionType::Cameras && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Camera, "📷 Camera");
 
                     camera_settings = true;
                 }
 
-                if self.selected_type == HierarchyType::Lights && !self.selected_object.is_empty()
+                if self.selected_type == SelectionType::Lights && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Light, "💡 Light");
 
                     light_settings = true;
                 }
 
-                if self.selected_type == HierarchyType::Materials && !self.selected_object.is_empty()
+                if self.selected_type == SelectionType::Materials && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Material, "🎨 Material");
 
                     material_settings = true;
                 }
 
-                if self.selected_type == HierarchyType::Textures && !self.selected_object.is_empty()
+                if self.selected_type == SelectionType::Textures && !self.selected_object.is_empty()
                 {
                     ui.selectable_value(&mut self.settings, SettingsPanel::Texture, "🖼 Texture");
 
@@ -403,7 +738,7 @@ impl Gui
                     SettingsPanel::Material => if material_settings { self.create_material_settings(state, ui); },
                     SettingsPanel::Camera => if camera_settings { self.create_camera_settings(state, ui); },
                     SettingsPanel::Texture => if texture_settings { },
-                    SettingsPanel::Light => if light_settings { },
+                    SettingsPanel::Light => if light_settings { self.create_light_settings(state, ui); },
                     SettingsPanel::Scene => self.create_scene_settings(state, ui),
                     SettingsPanel::Rendering => self.create_rendering_settings(state, ui),
                 }
@@ -472,8 +807,7 @@ impl Gui
                     {
                         let node = node.read().unwrap();
                         let instance = node.find_instance_by_id(instance_id).unwrap();
-                        let mut instance_borrow = instance.borrow_mut();
-                        let instance = instance_borrow.get_mut();
+                        let mut instance = instance.borrow_mut();
                         instance.add_component(component.1(scene.id_manager.get_next_instance_id(), self.add_component_name.as_str()));
                     }
                     else
@@ -505,7 +839,14 @@ impl Gui
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
             {
                 // selectable
-                ui.toggle_value(&mut self.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects");
+                if ui.toggle_value(&mut self.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects").changed()
+                {
+                    if !self.selectable
+                    {
+                        self.de_select_current_item(state);
+                    }
+                }
+
                 ui.toggle_value(&mut self.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
             });
 
@@ -630,14 +971,14 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() && self.selected_type == HierarchyType::None { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() && self.selected_type == SelectionType::None { selection = true; } else { selection = false; }
                     if ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong()).clicked()
                     {
                         if selection
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
-                            self.selected_type = HierarchyType::None;
+                            self.selected_type = SelectionType::None;
                             self.settings = SettingsPanel::Scene;
                         }
                         else
@@ -667,19 +1008,19 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Objects { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == SelectionType::Objects { selection = true; } else { selection = false; }
                     if ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong()).clicked()
                     {
                         if selection
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
-                            self.selected_type = HierarchyType::Objects;
+                            self.selected_type = SelectionType::Objects;
                         }
                         else
                         {
                             self.selected_scene_id = None;
-                            self.selected_type = HierarchyType::None;
+                            self.selected_type = SelectionType::None;
                         }
                     }
                 });
@@ -697,7 +1038,7 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Cameras { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == SelectionType::Cameras { selection = true; } else { selection = false; }
 
                     let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
                     let toggle = toggle.context_menu(|ui|
@@ -715,12 +1056,12 @@ impl Gui
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
-                            self.selected_type = HierarchyType::Cameras;
+                            self.selected_type = SelectionType::Cameras;
                         }
                         else
                         {
                             self.selected_scene_id = None;
-                            self.selected_type = HierarchyType::None;
+                            self.selected_type = SelectionType::None;
                         }
                     }
                 });
@@ -738,25 +1079,25 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Lights { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == SelectionType::Lights { selection = true; } else { selection = false; }
                     if ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong()).clicked()
                     {
                         if selection
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
-                            self.selected_type = HierarchyType::Lights;
+                            self.selected_type = SelectionType::Lights;
                         }
                         else
                         {
                             self.selected_scene_id = None;
-                            self.selected_type = HierarchyType::None;
+                            self.selected_type = SelectionType::None;
                         }
                     }
                 });
             }).body(|ui|
             {
-
+                self.build_light_list(&scene.lights, ui, scene_id);
             });
         }
 
@@ -768,19 +1109,19 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Materials { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == SelectionType::Materials { selection = true; } else { selection = false; }
                     if ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong()).clicked()
                     {
                         if selection
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
-                            self.selected_type = HierarchyType::Materials;
+                            self.selected_type = SelectionType::Materials;
                         }
                         else
                         {
                             self.selected_scene_id = None;
-                            self.selected_type = HierarchyType::None;
+                            self.selected_type = SelectionType::None;
                         }
                     }
                 });
@@ -798,19 +1139,19 @@ impl Gui
             {
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
                 {
-                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == HierarchyType::Textures { selection = true; } else { selection = false; }
+                    let mut selection; if self.selected_scene_id == Some(scene_id) && self.selected_object.is_empty() &&  self.selected_type == SelectionType::Textures { selection = true; } else { selection = false; }
                     if ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong()).clicked()
                     {
                         if selection
                         {
                             self.selected_scene_id = Some(scene_id);
                             self.selected_object.clear();
-                            self.selected_type = HierarchyType::Textures;
+                            self.selected_type = SelectionType::Textures;
                         }
                         else
                         {
                             self.selected_scene_id = None;
-                            self.selected_type = HierarchyType::None;
+                            self.selected_type = SelectionType::None;
                         }
                     }
                 });
@@ -870,7 +1211,7 @@ impl Gui
                         {
                             self.selected_object = id;
                             self.selected_scene_id = Some(scene_id);
-                            self.selected_type = HierarchyType::Objects;
+                            self.selected_type = SelectionType::Objects;
 
                             if self.settings != SettingsPanel::Components && self.settings != SettingsPanel::Object
                             {
@@ -909,17 +1250,15 @@ impl Gui
             for instance in node.instances.get_ref()
             {
                 let instance = instance.borrow();
-                let instance = instance.get_ref();
                 let instance_id = instance.id;
+                let instance_data = instance.get_data();
 
                 let id = format!("objects_{}_{}", node.id, instance_id);
                 let headline_name = format!("⚫ {}: {}", instance_id, instance.name);
 
                 let mut heading = RichText::new(headline_name);
 
-                let visible = instance.visible && parent_visible;
-
-                if visible
+                if instance_data.visible && parent_visible
                 {
                     heading = heading.strong()
                 }
@@ -928,7 +1267,7 @@ impl Gui
                     heading = heading.strikethrough();
                 }
 
-                if instance.highlight
+                if instance_data.highlight
                 {
                     heading = heading.color(Color32::from_rgb(255, 175, 175));
                 }
@@ -940,7 +1279,7 @@ impl Gui
                     {
                         self.selected_object = id;
                         self.selected_scene_id = Some(scene_id);
-                        self.selected_type = HierarchyType::Objects;
+                        self.selected_type = SelectionType::Objects;
 
                         if self.settings != SettingsPanel::Components && self.settings != SettingsPanel::Object
                         {
@@ -970,7 +1309,7 @@ impl Gui
 
                 let heading = RichText::new(headline_name).strong();
 
-                let mut selection; if self.selected_type == HierarchyType::Materials && self.selected_object == id { selection = true; } else { selection = false; }
+                let mut selection; if self.selected_type == SelectionType::Materials && self.selected_object == id { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, heading).clicked()
                 {
                     //if self.selected_material.is_none() || (self.selected_material.is_some() && self.selected_material.unwrap() != *material_id)
@@ -979,7 +1318,7 @@ impl Gui
 
                         self.selected_object = id;
                         self.selected_scene_id = Some(scene_id);
-                        self.selected_type = HierarchyType::Materials;
+                        self.selected_type = SelectionType::Materials;
                         self.settings = SettingsPanel::Material;
                     }
                     else
@@ -1008,14 +1347,14 @@ impl Gui
                     heading = heading.strikethrough();
                 }
 
-                let mut selection; if self.selected_type == HierarchyType::Cameras && self.selected_object == id { selection = true; } else { selection = false; }
+                let mut selection; if self.selected_type == SelectionType::Cameras && self.selected_object == id { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, heading).clicked()
                 {
                     if selection
                     {
                         self.selected_object = id;
                         self.selected_scene_id = Some(scene_id);
-                        self.selected_type = HierarchyType::Cameras;
+                        self.selected_type = SelectionType::Cameras;
                         self.settings = SettingsPanel::Camera;
                     }
                     else
@@ -1028,6 +1367,45 @@ impl Gui
         });
     }
 
+    pub fn build_light_list(&mut self, lights: &ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>, ui: &mut Ui, scene_id: u64)
+    {
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+        {
+            let lights = lights.get_ref();
+            for light in lights
+            {
+                let light = light.borrow();
+                let light = light.get_ref();
+
+                let headline_name = format!("⚫ {}: {}", light.id, light.name);
+
+                let id = format!("light_{}", light.id);
+
+                let mut heading = RichText::new(headline_name).strong();
+                if !light.enabled
+                {
+                    heading = heading.strikethrough();
+                }
+
+                let mut selection; if self.selected_type == SelectionType::Lights && self.selected_object == id { selection = true; } else { selection = false; }
+                if ui.toggle_value(&mut selection, heading).clicked()
+                {
+                    if selection
+                    {
+                        self.selected_object = id;
+                        self.selected_scene_id = Some(scene_id);
+                        self.selected_type = SelectionType::Lights;
+                        self.settings = SettingsPanel::Light;
+                    }
+                    else
+                    {
+                        self.selected_object.clear();
+                        self.selected_scene_id = None;
+                    }
+                }
+            }
+        });
+    }
 
     fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
@@ -1053,6 +1431,39 @@ impl Gui
         }
 
         (item_id, subitem_id)
+    }
+
+    fn get_selected_node<'a>(&'a mut self, state: &'a mut State) -> (Option<&'a mut Box<Scene>>, Option<NodeItem>, Option<u64>)
+    {
+        let (node_id, instance_id) = self.get_object_ids();
+
+        if self.selected_scene_id.is_none() || node_id.is_none()
+        {
+            return (None, None, None);
+        }
+
+        let scene_id: u64 = self.selected_scene_id.unwrap();
+        let node_id: u64 = node_id.unwrap();
+
+        let scene = state.find_scene_by_id_mut(scene_id);
+
+        if scene.is_none()
+        {
+            return (None, None, None);
+        }
+
+        let scene = scene.unwrap();
+
+        let node = scene.find_node_by_id(node_id);
+
+        if node.is_none()
+        {
+            return (None, None, None);
+        }
+
+        let node = node.unwrap();
+
+        (Some(scene), Some(node.clone()), instance_id)
     }
 
     fn create_component_settings(&mut self, state: &mut State, ui: &mut Ui)
@@ -1169,8 +1580,7 @@ impl Gui
             if let Some(instance) = instance
             {
                 {
-                    let instance_borrow = instance.borrow();
-                    let instance = instance_borrow.get_ref();
+                    let instance = instance.borrow();
 
                     for component in &instance.components
                     {
@@ -1236,7 +1646,6 @@ impl Gui
                 if let Some(delete_component_id) = delete_component_id
                 {
                     let mut instance = instance.borrow_mut();
-                    let instance = instance.get_mut();
                     instance.remove_component_by_id(delete_component_id);
                 }
             }
@@ -1444,7 +1853,6 @@ impl Gui
         collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", |ui|
         {
             let instance = instance.borrow();
-            let instance = instance.get_ref();
 
             ui.label(format!("name: {}", instance.name));
             ui.label(format!("id: {}", instance.id));
@@ -1457,14 +1865,18 @@ impl Gui
             let mut changed = false;
 
             let mut visible;
+            let mut collision;
             let mut highlight;
             let mut name;
+            let mut pickable;
             {
                 let instance = instance.borrow();
-                let instance = instance.get_ref();
-                visible = instance.visible;
-                highlight = instance.highlight;
+                let instance_data = instance.get_data();
+                visible = instance_data.visible;
+                collision = instance_data.collision;
+                highlight = instance_data.highlight;
                 name = instance.name.clone();
+                pickable = instance.pickable;
             }
 
             ui.horizontal(|ui|
@@ -1473,15 +1885,19 @@ impl Gui
                 changed = ui.text_edit_singleline(&mut name).changed() || changed;
             });
             changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+            changed = ui.checkbox(&mut collision, "collision").changed() || changed;
             changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
+            changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
 
             if changed
             {
                 let mut instance = instance.borrow_mut();
-                let instance = instance.get_mut();
-                instance.visible = visible;
-                instance.highlight = highlight;
+                let instance_data = instance.get_data_mut().get_mut();
+                instance_data.visible = visible;
+                instance_data.collision = collision;
+                instance_data.highlight = highlight;
                 instance.name = name;
+                instance.pickable = pickable;
             }
 
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
@@ -1632,6 +2048,71 @@ impl Gui
             if ui.button(RichText::new("Dispose Camera").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 scene.delete_camera_by_id(camera_id);
+            }
+        });
+    }
+
+    fn create_light_settings(&mut self, state: &mut State, ui: &mut Ui)
+    {
+        // no scene selected
+        if self.selected_scene_id.is_none() { return; }
+        let scene_id: u64 = self.selected_scene_id.unwrap();
+
+        let (light_id, ..) = self.get_object_ids();
+
+        let scene = state.find_scene_by_id_mut(scene_id);
+        if scene.is_none() { return; }
+
+        let scene = scene.unwrap();
+
+        if light_id.is_none() { return; }
+        let light_id = light_id.unwrap();
+
+        if let Some(light) = scene.get_light_by_id(light_id)
+        {
+            collapse_with_title(ui, "light_general_settings", true, "⛭ General Settings", |ui|
+            {
+                let mut changed = false;
+
+                let mut enabled;
+                let mut name;
+                {
+                    let mut light = light.borrow();
+                    let light = light.get_ref();
+
+                    enabled = light.enabled;
+                    name = light.name.clone();
+                }
+
+                ui.horizontal(|ui|
+                {
+                    ui.label("name: ");
+                    changed = ui.text_edit_singleline(&mut name).changed() || changed;
+                });
+                changed = ui.checkbox(&mut enabled, "enabled").changed() || changed;
+
+                if changed
+                {
+                    let mut light = light.borrow_mut();
+                    let light = light.get_mut();
+
+                    light.enabled = enabled;
+                    light.name = name;
+                }
+            });
+
+            collapse_with_title(ui, "light_settings", true, "💡 Light Settings", |ui|
+            {
+                Light::ui(light, ui);
+            });
+        }
+
+        // delete light
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Dispose Light").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_light_by_id(light_id);
             }
         });
     }

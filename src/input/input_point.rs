@@ -1,4 +1,4 @@
-use nalgebra::{Vector2, Point2};
+use nalgebra::{Vector2, Point2, distance};
 use strum_macros::EnumIter;
 
 #[derive(EnumIter, Debug, PartialEq)]
@@ -49,5 +49,18 @@ impl InputPoint
             first_action_frame: 0,
             last_action_frame: 0,
         }
+    }
+
+    pub fn moved_distance(&self) -> f32
+    {
+        if self.pos.is_none() || self.start_pos.is_none()
+        {
+            return 0.0;
+        }
+
+        let pos = self.pos.unwrap();
+        let start_pos = self.start_pos.unwrap();
+
+        distance(&pos, &start_pos)
     }
 }

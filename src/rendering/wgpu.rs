@@ -1,4 +1,7 @@
+use std::thread;
+
 use image::{DynamicImage, ImageBuffer, Rgba};
+use instant::Duration;
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
 use crate::{helper::image::brga_to_rgba, state::state::State};
@@ -217,6 +220,25 @@ impl WGpu
         // TODO: this can timeout
         // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
         let output = self.surface.get_current_texture().unwrap();
+        /*
+        let mut output: Result<wgpu::SurfaceTexture, wgpu::SurfaceError> = Err(wgpu::SurfaceError::Outdated);
+        loop
+        {
+            println!("getting surface texture...");
+            output = self.surface.get_current_texture();
+
+            if output.is_err()
+            {
+                thread::sleep(Duration::from_millis(100));
+                println!("retry get surface texture");
+            }
+            else
+            {
+                break;
+            }
+        }
+        let output = output.unwrap();
+        */
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 

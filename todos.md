@@ -1,12 +1,13 @@
 todo:
- * instance visibility (in rendering)
- * active camera (camera width/height based on 0<->1)
- * consider using ComponentBase for all state structs
  * everything should be dynamic
  * TODOs
- * normal matrix is wrong -> its actually this: https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
 
 done:
+ * consider using ComponentBase for all state structs
+ * blender like movement (g +xyz, r +xyz)
+ * normal matrix is wrong -> its actually this: https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
+ * active camera (camera width/height based on 0<->1)
+ * instance visibility (in rendering)
  * cleanup vertex/instancing structure
  * dynamic light amount
  * view space ligthning (https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#the-normal-matrix)

@@ -336,10 +336,12 @@ impl Scene
                 }
 
                 // check parents for changed transforms
+                /*
                 if !all_instances_changed
                 {
                     all_instances_changed = Scene::find_changed_parent_data(node_arc.clone());
                 }
+                */
 
                 if all_instances_changed
                 {
@@ -387,14 +389,15 @@ impl Scene
                     for (i, instance) in instances_ref.iter().enumerate()
                     {
                         let mut instance = instance.borrow_mut();
-                        let (instance, mut instance_changed) = instance.consume_borrow();
+                        //let (instance_data, mut instance_changed) = instance.get_data_mut().consume_borrow();
+                        let instance_changed = instance.get_data_mut().consume_change();
 
-                        instance_changed = Self::find_changed_instance_data(instance) || instance_changed;
+                        //instance_changed = Self::find_changed_instance_data(instance) || instance_changed;
 
                         if instance_changed
                         {
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
-                            render_item.update_buffer(wgpu, instance, i);
+                            render_item.update_buffer(wgpu, &instance, i);
 
                             //dbg!(" ============ ONE instance updated");
                         }
@@ -411,6 +414,7 @@ impl Scene
         }
     }
 
+    /*
     pub fn find_changed_parent_data(node: Arc<RwLock<Box<Node>>>) -> bool
     {
         let node_read = node.read().unwrap();
@@ -481,6 +485,7 @@ impl Scene
 
         false
     }
+    */
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {

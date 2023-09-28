@@ -61,6 +61,11 @@ mod state
             pub(crate) mod fly_controller;
         }
 
+        pub(crate) mod utilities
+        {
+            pub(crate) mod scene_utils;
+        }
+
         pub(crate) mod texture;
         pub(crate) mod camera;
         pub(crate) mod light;
@@ -74,6 +79,7 @@ mod state
         pub(crate) mod gui;
         pub(crate) mod info_box;
         pub(crate) mod generic_items;
+        pub(crate) mod camera;
     }
 }
 

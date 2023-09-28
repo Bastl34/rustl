@@ -1,4 +1,10 @@
+const PI: f32 = 3.141592653589793;
+
 const MAX_LIGHTS = [MAX_LIGHTS];
+
+const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
+const LIGHT_TYPE_POINT: u32 = 1u;
+const LIGHT_TYPE_SPOT: u32 = 2u;
 
 // ****************************** inputs ******************************
 
@@ -14,8 +20,12 @@ var<uniform> camera: CameraUniform;
 struct LightUniform
 {
     position: vec4<f32>,
+    dir: vec4<f32>,
     color: vec4<f32>,
-    lintensity: f32,
+    intensity: f32,
+    light_type: u32,
+    max_angle: f32,
+    distance_based_intensity: u32,
 };
 @group(1) @binding(1)
 var<uniform> light_amount: i32;
@@ -283,23 +293,75 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
         {
             let light_color = lights[i].color.rgb;
-
             var light_pos = lights[i].position.xyz;
+            var direction_to_light = lights[i].position.xyz - in.position;
 
-            var light_dir = lights[i].position.xyz - in.position;
-            //var distance = length(light_dir);
-            //distance = distance * distance;
-            light_dir = normalize(light_dir);
+            // light intensity
+            var intensity = 1.0;
+            if lights[i].distance_based_intensity == 1u
+            {
+                switch lights[i].light_type
+                {
+                    case 0u //LIGHT_TYPE_DIRECTIONAL
+                    {
+                        intensity = lights[i].intensity;
+                    }
+                    case 1u //LIGHT_TYPE_POINT
+                    {
+                        var distance = length(direction_to_light);
+                        //distance = distance * distance;
+                        intensity = lights[i].intensity / (4.0 * PI * distance);
+                    }
+                    case 2u //LIGHT_TYPE_SPOT
+                    {
+                        var distance = length(direction_to_light);
+                        //distance = distance * distance;
+                        intensity = lights[i].intensity / (4.0 * PI * distance);
 
-            let half_dir = normalize(view_dir + light_dir);
+                        let dir_from_light = -normalize(direction_to_light);
+                        let dot = dot(dir_from_light, lights[i].dir.xyz);
+                        let angle = acos(dot);
 
-            let diffuse_strength = max(dot(normal, light_dir), 0.0);
+                        if angle > lights[i].max_angle
+                        {
+                            intensity = 0.0;
+                        }
+                    }
+                    default {}
+                }
+            }
+
+            intensity = min(intensity, 1.0);
+            intensity = 1.0;
+
+            // phong light dir
+            switch lights[i].light_type
+            {
+                case 0u //LIGHT_TYPE_DIRECTIONAL
+                {
+                    direction_to_light = -lights[i].dir.xyz;
+                }
+                default {}
+            }
+
+            direction_to_light = normalize(direction_to_light);
+
+            let half_dir = normalize(view_dir + direction_to_light);
+
+            let diffuse_strength = max(dot(normal, direction_to_light), 0.0);
             let diffuse_color = (lights[i].color * object_color * diffuse_strength).rgb;
 
             let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
+
+            /*
+            let reflect_dir = reflect(-direction_to_light, normal);
+            let spec_dot = max(dot(reflect_dir, view_dir), 0.0);
+            let specular_strength = pow(spec_dot, material.shininess);
+            */
+
             let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
 
-            color += diffuse_color + specular_color;
+            color += (diffuse_color + specular_color) * intensity;
         }
 
         // ambient occlusion

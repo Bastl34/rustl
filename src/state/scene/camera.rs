@@ -217,9 +217,9 @@ impl Camera
         data.view_inverse = data.view.try_inverse().unwrap();
     }
 
-    pub fn add_controller_fly(&mut self, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
+    pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
     {
-        self.controller = Some(Box::new(FlyController::new(mouse_sensitivity, move_speed, move_speed_shift)));
+        self.controller = Some(Box::new(FlyController::new(collision, mouse_sensitivity, move_speed, move_speed_shift)));
     }
 
     pub fn remove_controller(&mut self)

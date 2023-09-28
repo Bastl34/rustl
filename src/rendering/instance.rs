@@ -6,7 +6,6 @@ use colored::Colorize;
 use nalgebra::Matrix4;
 use wgpu::util::DeviceExt;
 
-use crate::helper::change_tracker::ChangeTracker;
 use crate::render_item_impl_default;
 use crate::state::helper::render_item::RenderItem;
 use crate::state::scene::instance::InstanceItem;
@@ -98,7 +97,7 @@ impl RenderItem for InstanceBuffer
 
 impl InstanceBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>) -> InstanceBuffer
+    pub fn new(wgpu: &mut WGpu, name: &str, instances: &Vec<RefCell<InstanceItem>>) -> InstanceBuffer
     {
         let mut instance_buffer = InstanceBuffer
         {
@@ -113,16 +112,18 @@ impl InstanceBuffer
         instance_buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<InstanceItem>>)
     {
+        dbg!("update all instances");
+
         self.transformations = Vec::with_capacity(instances.len());
 
-        let instance_data = instances.iter().map(|instance|
+        let buffer_data = instances.iter().map(|instance|
         {
             let instance = instance.borrow();
-            let instance = instance.get_ref();
             let transform = instance.get_transform();
             let alpha = instance.get_alpha();
+            let instance_data = instance.get_data();
 
             self.transformations.push(transform);
 
@@ -130,7 +131,7 @@ impl InstanceBuffer
             {
                 transform: transform.into(),
                 alpha: alpha,
-                highlight: f32::from(instance.highlight)
+                highlight: f32::from(instance_data.highlight)
             }
         }).collect::<Vec<_>>();
 
@@ -139,7 +140,7 @@ impl InstanceBuffer
             &wgpu::util::BufferInitDescriptor
             {
                 label: Some(&self.name),
-                contents: bytemuck::cast_slice(&instance_data),
+                contents: bytemuck::cast_slice(&buffer_data),
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -150,6 +151,8 @@ impl InstanceBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)
     {
+        dbg!("update instance");
+
         if index + 1 > self.count as usize
         {
             let warning = format!("index {} out of range {} lights are supported", index, self.count);
@@ -159,12 +162,13 @@ impl InstanceBuffer
 
         let transform = instance.get_transform();
         let alpha = instance.get_alpha();
+        let instance_data = instance.get_data();
 
         let data = Instance
         {
             transform: transform.into(),
             alpha: alpha,
-            highlight: f32::from(instance.highlight)
+            highlight: f32::from(instance_data.highlight)
         };
 
         self.transformations[index] = transform;
@@ -177,7 +181,7 @@ impl InstanceBuffer
         );
     }
 
-    pub fn update_buffer_range(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<ChangeTracker<InstanceItem>>>, range: std::ops::Range<usize>)
+    pub fn update_buffer_range(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<InstanceItem>>, range: std::ops::Range<usize>)
     {
         if range.start + 1 > self.count as usize
         {
@@ -189,12 +193,12 @@ impl InstanceBuffer
         let slice = &instances[range.clone()];
 
         let mut i = range.start;
-        let instance_data = slice.iter().map(|instance|
+        let buffer_data = slice.iter().map(|instance|
         {
             let instance = instance.borrow();
-            let instance = instance.get_ref();
             let transform = instance.get_transform();
             let alpha = instance.get_alpha();
+            let instance_data = instance.get_data();
 
             self.transformations[i] = transform;
 
@@ -204,7 +208,7 @@ impl InstanceBuffer
             {
                 transform: transform.into(),
                 alpha: alpha,
-                highlight: f32::from(instance.highlight)
+                highlight: f32::from(instance_data.highlight)
             }
         }).collect::<Vec<_>>();
 
@@ -212,7 +216,7 @@ impl InstanceBuffer
         (
             &self.buffer,
             (range.start * mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            bytemuck::cast_slice(&instance_data),
+            bytemuck::cast_slice(&buffer_data),
         );
     }
 

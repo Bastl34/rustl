@@ -7,8 +7,10 @@ use std::time::Instant;
 use std::{vec, cmp};
 
 use nalgebra::{Point3, Vector3, Vector2, Rotation3, Point2};
+use parry3d::transformation::utils::transform;
+use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
-use winit::window::{Window, Fullscreen};
+use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
@@ -23,11 +25,13 @@ use crate::state::gui::gui::Gui;
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::alpha::Alpha;
+use crate::state::scene::components::material::Material;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::components::transformation_animation::TransformationAnimation;
 use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
+use crate::state::scene::utilities::scene_utils;
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
 
 use super::winit::winit_map_key;
@@ -38,6 +42,8 @@ pub struct MainInterface
 {
     pub state: StateItem,
     start_time: Instant,
+
+    window_title: String,
 
     editor_gui: Gui,
 
@@ -73,6 +79,8 @@ impl MainInterface
         {
             state,
             start_time: Instant::now(),
+
+            window_title: window.title().clone(),
 
             editor_gui: Gui::new(),
 
@@ -302,7 +310,7 @@ impl MainInterface
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/monkey.glb").await.unwrap();
-            scene.load("objects/temp/Corset.glb").await.unwrap();
+            //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
@@ -314,11 +322,12 @@ impl MainInterface
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
             //scene.load("objects/bastl/bastl.obj").await.unwrap();
-            //scene.load("objects/temp/brick_wall.glb").await.unwrap();
+            scene.load("objects/temp/brick_wall.glb").await.unwrap();
             //scene.load("objects/temp/apocalyptic_city.glb").await.unwrap();
             //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
             //scene.load("objects/temp/persian_city.glb").await.unwrap();
             //scene.load("objects/temp/cathedral.glb").await.unwrap();
+            //scene.load("objects/temp/minecraft_village.glb").await.unwrap();
             //scene.load("objects/temp/plaza_night_time.glb").await.unwrap();
             //scene.load("objects/temp/de_dust.glb").await.unwrap();
             //scene.load("objects/temp/de_dust2.glb").await.unwrap();
@@ -340,6 +349,7 @@ impl MainInterface
             scene.clear_nodes();
             scene.add_node(root_node.clone());
 
+            /*
             if let Some(suzanne) = scene.find_node_by_name("Suzanne")
             {
                 let mut node = suzanne.write().unwrap();
@@ -355,6 +365,7 @@ impl MainInterface
                 }
                 //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
             }
+             */
 
             if let Some(train) = scene.find_node_by_name("Train")
             {
@@ -401,7 +412,7 @@ impl MainInterface
             if scene.cameras.len() > 0
             {
                 let cam = scene.cameras.get_mut(0).unwrap();
-                cam.add_controller_fly(Vector2::<f32>::new(0.0025, 0.0025), 0.1, 0.2);
+                cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
             }
 
 
@@ -436,7 +447,11 @@ impl MainInterface
             }
             */
 
+            scene_utils::create_grid(&mut scene, 500, 1.0).await;
+            //scene_utils::create_grid(&mut scene, 1, 1.0).await;
+
             // ********** scene add **********
+            scene.update(&mut state.input_manager, state.frame_scale);
             state.scenes.push(Box::new(scene));
 
             state.print();
@@ -497,6 +512,7 @@ impl MainInterface
                     state.fps_chart.remove(0);
                 }
 
+                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.last_fps).as_str());
                 state.fps = 0;
             }
             else
@@ -754,7 +770,7 @@ impl MainInterface
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
-                    global_state.input_manager.mouse.set_pos(pos, global_state.frame);
+                    global_state.input_manager.mouse.set_pos(pos, global_state.frame, global_state.width, global_state.height);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
@@ -791,6 +807,37 @@ impl MainInterface
                 winit::event::WindowEvent::Occluded(_) => todo!(),
                  */
             }
+        }
+    }
+
+    pub fn update_done(&mut self)
+    {
+        let global_state = &mut *(self.state.borrow_mut());
+
+        let (visible, change) = global_state.input_manager.mouse.visible.consume_clone();
+
+        if change
+        {
+            if visible
+            {
+                _ = self.window.set_cursor_grab(CursorGrabMode::None);
+            }
+            else
+            {
+                self.window.set_cursor_grab(CursorGrabMode::Confined)
+                .or_else(|_e| self.window.set_cursor_grab(CursorGrabMode::Locked))
+                .unwrap();
+            }
+        }
+
+        if !*global_state.input_manager.mouse.visible.get_ref()
+        {
+            let window_size = self.window.inner_size();
+            let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);
+
+            self.window.set_cursor_position(center).unwrap_or_else(|e|{
+                dbg!("Failed to set mouse position: {:?}", e);
+            });
         }
     }
 }

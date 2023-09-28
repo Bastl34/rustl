@@ -8,6 +8,8 @@ use crate::{helper::{generic, math, change_tracker::ChangeTracker}, input::input
 
 use super::{press_state::{PressState, is_pressed_by_state}, input_point::InputPoint};
 
+const MOUSE_MAX_CLICK_MOVEMENT: f32 = 12.0;
+
 #[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
 pub enum MouseButton
 {
@@ -85,25 +87,29 @@ impl Mouse
 
         self.point.last_action = generic::get_millis();
         self.last_active_button = button;
+
+        if status && self.point.last_pos.is_some()
+        {
+            self.point.start_pos = Some(self.point.last_pos.unwrap().clone());
+        }
     }
 
-    pub fn set_pos(&mut self, pos: Point2::<f32>, engine_frame: u64)
+    pub fn set_pos(&mut self, pos: Point2::<f32>, engine_frame: u64, window_width: u32, window_height: u32)
     {
         let pressed = self.is_any_button_holding();
 
-        //if self.visible
-        //{
-        if let Some(point_pos) = self.point.pos
+        if *self.visible.get_ref()
         {
-            self.point.velocity += pos - point_pos;
+            if let Some(point_pos) = self.point.pos
+            {
+                self.point.velocity += pos - point_pos;
+            }
         }
-        //}
-        /*
         else
         {
-            self.point.velocity = pos - Vector2::<f32>::new((width / 2.0).round(), height / 2.0).round())
+            self.point.velocity += pos - Point2::<f32>::new(window_width as f32 / 2.0, window_height as f32 / 2.0);
         }
-        */
+
 
         if self.point.start_pos.is_none()
         {
@@ -197,6 +203,19 @@ impl Mouse
     {
         let state = self.buttons[button as usize].pressed(true, false);
         is_pressed_by_state(state)
+    }
+
+    pub fn clicked(&mut self, button: MouseButton) -> bool
+    {
+        let distance = self.point.moved_distance();
+
+        if distance < MOUSE_MAX_CLICK_MOVEMENT
+        {
+            let state = self.buttons[button as usize].pressed(true, false);
+            return is_pressed_by_state(state);
+        }
+
+        false
     }
 
     pub fn has_input(&self) -> bool
