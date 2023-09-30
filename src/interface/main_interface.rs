@@ -19,9 +19,8 @@ use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene};
-
+use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::{WGpu};
-use crate::state::gui::gui::Gui;
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::alpha::Alpha;
@@ -45,7 +44,7 @@ pub struct MainInterface
 
     window_title: String,
 
-    editor_gui: Gui,
+    editor_gui: Editor,
 
     wgpu: WGpu,
     window: Window,
@@ -82,7 +81,7 @@ impl MainInterface
 
             window_title: window.title().clone(),
 
-            editor_gui: Gui::new(),
+            editor_gui: Editor::new(),
 
             wgpu,
             window,
@@ -309,13 +308,13 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
+            scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
-            scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
+            //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
             //scene.load("objects/temp/scene.glb").await.unwrap();
             //scene.load("objects/temp/scene_2.glb").await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
@@ -332,6 +331,7 @@ impl MainInterface
             //scene.load("objects/temp/de_dust.glb").await.unwrap();
             //scene.load("objects/temp/de_dust2.glb").await.unwrap();
             //scene.load("objects/temp/de_dust2_8k.glb").await.unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
+            //scene.load("objects/temp/bistro.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 
@@ -542,7 +542,7 @@ impl MainInterface
         }
 
         // build ui
-        if self.editor_gui.visible
+        if self.editor_gui.editor_state.visible
         {
             let now = Instant::now();
             let state = &mut *(self.state.borrow_mut());
@@ -629,7 +629,7 @@ impl MainInterface
             }
 
             // render egui
-            if self.editor_gui.visible
+            if self.editor_gui.editor_state.visible
             {
                 let now = Instant::now();
                 self.egui.render(&mut self.wgpu, &view, &mut encoder);
@@ -701,7 +701,7 @@ impl MainInterface
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.editor_gui.visible && self.egui.on_event(event)
+        if self.editor_gui.editor_state.visible && self.egui.on_event(event)
         {
             return;
         }

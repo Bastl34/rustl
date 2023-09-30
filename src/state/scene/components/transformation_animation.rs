@@ -1,7 +1,7 @@
 use egui::Color32;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemRefCell}, instance::InstanceItem}, gui::info_box::{info_box, success_box, error_box, warn_box}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
+use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemRefCell}, instance::InstanceItem}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 

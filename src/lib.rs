@@ -76,10 +76,26 @@ mod state
 
     pub(crate) mod gui
     {
-        pub(crate) mod gui;
-        pub(crate) mod info_box;
-        pub(crate) mod generic_items;
-        pub(crate) mod camera;
+        pub(crate) mod helper
+        {
+            pub(crate) mod info_box;
+            pub(crate) mod generic_items;
+        }
+
+        pub(crate) mod editor
+        {
+            pub(crate) mod editor;
+            pub(crate) mod editor_state;
+            pub(crate) mod main_frame;
+            pub(crate) mod modals;
+            pub(crate) mod statistics;
+            pub(crate) mod cameras;
+            pub(crate) mod objects;
+            pub(crate) mod materials;
+            pub(crate) mod lights;
+            pub(crate) mod scenes;
+            pub(crate) mod rendering;
+        }
     }
 }
 

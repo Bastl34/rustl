@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Matrix4, Vector3};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
-use super::{node::{NodeItem, Node, InstanceItemRefCell}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id}}};
+use super::{node::{NodeItem, Node, InstanceItemRefCell}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -52,7 +52,7 @@ impl Instance
             node: node,
             components: vec![],
 
-            force_update: true,
+            force_update: true, // force update on creation
 
             data: ChangeTracker::new(InstanceData
             {
@@ -82,7 +82,7 @@ impl Instance
             node: node,
             components: vec![],
 
-            force_update: true,
+            force_update: true, // force update on creation
 
             data: ChangeTracker::new(InstanceData
             {
@@ -131,6 +131,11 @@ impl Instance
     pub fn find_component<T>(&self) -> Option<ComponentItem> where T: 'static
     {
         find_component::<T>(&self.components)
+    }
+
+    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    {
+        find_component_by_id(&self.components, id)
     }
 
     pub fn find_components<T: Component>(&self) -> Vec<ComponentItem> where T: 'static

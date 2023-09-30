@@ -255,6 +255,49 @@ impl Scene
         None
     }
 
+    pub fn get_material_or_default(&self, node: NodeItem) -> Option<MaterialItem>
+    {
+        let node = node.read().unwrap();
+        let mut material = node.find_component::<Material>();
+
+        if material.is_none()
+        {
+            material = self.get_default_material();
+        }
+
+        material
+    }
+
+    pub fn delete_material_by_id(&mut self, id: u64) -> bool
+    {
+        // remove material from all nodes
+        let all_nodes = Self::list_all_child_nodes(&self.nodes);
+
+        for node in all_nodes
+        {
+            let mut node = node.write().unwrap();
+            node.remove_component_by_id(id);
+
+            for instance in node.instances.get_ref()
+            {
+                if instance.borrow().find_component_by_id(id).is_some()
+                {
+                    instance.borrow_mut().remove_component_by_id(id);
+                }
+            }
+        }
+
+        let len = self.materials.len();
+        self.materials.remove(&id);
+
+        if self.materials.len() != len
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub fn get_camera_by_id(&self, id: u64) -> Option<&CameraItem>
     {
         self.cameras.iter().find(|cam|{ cam.id == id })
@@ -443,19 +486,6 @@ impl Scene
         }
 
         false
-    }
-
-    pub fn get_material_or_default(&self, node: NodeItem) -> Option<MaterialItem>
-    {
-        let node = node.read().unwrap();
-        let mut material = node.find_component::<Material>();
-
-        if material.is_none()
-        {
-            material = self.get_default_material();
-        }
-
-        material
     }
 
     pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool) -> Option<(f32, Vector3<f32>, NodeItem, u64, u32)>

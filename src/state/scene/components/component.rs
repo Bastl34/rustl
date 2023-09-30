@@ -154,6 +154,30 @@ pub fn find_component<T>(components: &Vec<ComponentItem>) -> Option<ComponentIte
     Some(value.unwrap().clone())
 }
 
+pub fn find_component_by_id(components: &Vec<ComponentItem>, id: u64) -> Option<ComponentItem>
+{
+    if components.len() == 0
+    {
+        return None;
+    }
+
+    let value = components.iter().find
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            component.id() == id
+        }
+    );
+
+    if !value.is_some()
+    {
+        return None;
+    }
+
+    Some(value.unwrap().clone())
+}
+
 pub fn find_components<T: Component>(components: &Vec<ComponentItem>) -> Vec<ComponentItem> where T: 'static
 {
     if components.len() == 0

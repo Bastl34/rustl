@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Matrix3, Vector3};
 
 use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
-use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemRefCell = RefCell<InstanceItem>;
@@ -83,6 +83,11 @@ impl Node
     pub fn find_component<T>(&self) -> Option<ComponentItem> where T: 'static
     {
         find_component::<T>(&self.components)
+    }
+
+    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    {
+        find_component_by_id(&self.components, id)
     }
 
     pub fn find_components<T: Component>(&self) -> Vec<ComponentItem> where T: 'static
