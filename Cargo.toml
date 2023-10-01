@@ -21,6 +21,7 @@ colored = "2.0.4"
 base64 = "0.21"
 strum = "0.25"
 strum_macros = "0.25"
+rfd = "0.12.0"
 
 parry3d = "0.13"
 bvh = "0.7"

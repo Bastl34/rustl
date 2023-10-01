@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use egui::{Ui, RichText};
+use egui::{Ui, RichText, Color32};
+use rfd::FileDialog;
 
 use crate::state::{state::State, gui::helper::generic_items::collapse_with_title, scene::texture::TextureItem};
 
@@ -48,7 +49,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
 
     let (texture_id, ..) = editor_state.get_object_ids();
 
-    let scene = state.find_scene_by_id(scene_id);
+    let scene = state.find_scene_by_id_mut(scene_id);
     if scene.is_none() { return; }
 
     let scene = scene.unwrap();
@@ -60,8 +61,54 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
     {
         collapse_with_title(ui, "texture_settings", true, "🖼 Texture Settings", |ui|
         {
-            let mut texture = texture.write().unwrap();
-            texture.ui(ui);
+
+            let mut changed = false;
+
+            let mut name;
+            {
+                let texture = texture.read().unwrap();
+
+                name = texture.name.clone();
+            }
+
+            ui.horizontal(|ui|
+            {
+                ui.label("name: ");
+                changed = ui.text_edit_singleline(&mut name).changed() || changed;
+            });
+
+            if changed
+            {
+                let mut texture = texture.write().unwrap();
+
+                texture.name = name;
+            }
+
+            {
+                let mut texture = texture.write().unwrap();
+                texture.ui(ui);
+            }
+        });
+
+        // load
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Load Texture").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
+            {
+                if let Some(path) = FileDialog::new().add_filter("Image", &["jpg", "png"]).set_directory("/").pick_file()
+                {
+                    // TODO
+                }
+            }
+        });
+
+        // delete texture
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Dispose Texture").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_texture_by_id(texture_id);
+            }
         });
     }
 }

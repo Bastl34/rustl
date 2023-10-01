@@ -49,7 +49,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     let (material_id, ..) = editor_state.get_object_ids();
 
-    let scene = state.find_scene_by_id(scene_id);
+    let scene = state.find_scene_by_id_mut(scene_id);
     if scene.is_none() { return; }
 
     let scene = scene.unwrap();
@@ -64,5 +64,14 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             let mut material = material.write().unwrap();
             material.ui(ui);
         });
+
+            // delete texture
+    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+    {
+        if ui.button(RichText::new("Dispose Material").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+        {
+            scene.delete_material_by_id(material_id);
+        }
+    });
     }
 }
