@@ -36,6 +36,15 @@ impl Texture
         let device = wgpu.device();
         let queue = wgpu.queue_mut();
 
+        let mut mipmaps = vec![];
+        if scene_texture.get_data().mipmapping
+        {
+            let mipmap_creation_time = std::time::Instant::now();
+            mipmaps = scene_texture.create_mipmap_levels();
+            //dbg!("mipmap levels: {}", mipmaps.len());
+            //dbg!("mipmap_creation_time: {}", mipmap_creation_time.elapsed().as_millis());
+        }
+
         let format;
         if srgb
         {
@@ -59,7 +68,7 @@ impl Texture
             &wgpu::TextureDescriptor
             {
                 size: texture_size,
-                mip_level_count: 1,
+                mip_level_count: 1 + mipmaps.len() as u32,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: format,
@@ -71,7 +80,7 @@ impl Texture
             }
         );
 
-        // upload
+        // upload texture
         queue.write_texture
         (
             wgpu::ImageCopyTexture
@@ -87,10 +96,32 @@ impl Texture
                 offset: 0,
                 bytes_per_row: Some(4 * scene_texture.width()), // 4 = RGBA
                 rows_per_image: Some(scene_texture.height()),
-                //rows_per_image: Some(scene_texture.width()),
             },
             texture_size,
         );
+
+        // upload mipmaps
+        for (i, mipmap) in mipmaps.iter().enumerate()
+        {
+            queue.write_texture
+            (
+                wgpu::ImageCopyTexture
+                {
+                    texture: &texture,
+                    mip_level: i as u32 + 1,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                mipmap.as_bytes(),
+                wgpu::ImageDataLayout
+                {
+                    offset: 0,
+                    bytes_per_row: Some(4 * mipmap.width()), // 4 = RGBA
+                    rows_per_image: Some(mipmap.height()),
+                },
+                texture_size,
+            );
+        }
 
         let sampler = Self::create_sampler(device, scene_texture);
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -310,6 +341,8 @@ impl Texture
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene_texture: &crate::state::scene::texture::Texture)
     {
+        dbg!("upldate texture");
+
         let device = wgpu.device();
         let queue = wgpu.queue_mut();
 

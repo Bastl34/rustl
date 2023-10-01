@@ -1,12 +1,15 @@
 use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops};
 use nalgebra::Vector4;
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
+const MAX_MIPMAPS: usize = 11; // max allowed mipmaps
+
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum TextureAddressMode
 {
     ClampToEdge,
@@ -15,6 +18,7 @@ pub enum TextureAddressMode
     ClampToBorder
 }
 
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum TextureFilterMode
 {
     Nearest,
@@ -27,6 +31,8 @@ pub struct TextureData
 
     pub width: u64,
     pub height: u64,
+
+    pub mipmapping: bool,
 
     pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
 
@@ -59,6 +65,8 @@ impl Texture
 
             width: 0,
             height: 0,
+
+            mipmapping: true,
 
             has_transparency: false,
 
@@ -107,6 +115,8 @@ impl Texture
         {
             width: rgba.width() as u64,
             height: rgba.height() as u64,
+
+            mipmapping: true,
 
             has_transparency: has_transparency,
 
@@ -160,6 +170,8 @@ impl Texture
 
             has_transparency: false,
 
+            mipmapping: true,
+
             image: image::DynamicImage::ImageRgba8(image),
 
             address_mode_u: TextureAddressMode::ClampToEdge,
@@ -180,6 +192,31 @@ impl Texture
 
             render_item: None
         }
+    }
+
+    pub fn create_mipmap_levels(&self) -> Vec<DynamicImage>
+    {
+        let mut mipmaps = Vec::new();
+
+        let mut current_level = self.get_data().image.clone();
+        loop
+        {
+            let width = current_level.width() / 2;
+            let height = current_level.height() / 2;
+
+            current_level = image::DynamicImage::ImageRgba8(imageops::resize(&current_level, width, height, imageops::FilterType::Triangle));
+
+            if current_level.width() >= 1 && current_level.height() >= 1 && mipmaps.len() > MAX_MIPMAPS
+            {
+                mipmaps.push(current_level.clone());
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        mipmaps
     }
 
     pub fn get_data(&self) -> &TextureData
@@ -242,7 +279,15 @@ impl Texture
         }
 
         // gpu memory: 4 channels
-        self.get_data().width * self.get_data().height * 4
+        let mut bytes = self.get_data().width * self.get_data().height * 4;
+
+        // mipmaps are using around + 1/3 more gpu memory --> https://en.wikipedia.org/wiki/Mipmap
+        if self.get_data().mipmapping
+        {
+            bytes += (bytes as f32 * (1.0 / 3.0)).round() as u64;
+        }
+
+        bytes
     }
 
     pub fn dimensions(&self) -> (u32, u32)
@@ -273,6 +318,97 @@ impl Texture
     pub fn rgba_data(&self) -> &[u8]
     {
         self.data.get_ref().image.as_bytes()
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        let mut mipmapping;
+
+        let mut address_mode_u;
+        let mut address_mode_v;
+        let mut address_mode_w;
+        let mut mag_filter;
+        let mut min_filter;
+        let mut mipmap_filter;
+
+        {
+            let data = self.data.get_ref();
+
+            mipmapping = data.mipmapping;
+
+            address_mode_u = data.address_mode_u;
+            address_mode_v = data.address_mode_v;
+            address_mode_w = data.address_mode_w;
+            mag_filter = data.mag_filter;
+            min_filter = data.min_filter;
+            mipmap_filter = data.mipmap_filter;
+        }
+
+        let mut apply_settings = false;
+
+        apply_settings = ui.checkbox(&mut mipmapping, "use mipmap").changed() || apply_settings;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Address Mode U:");
+            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Address Mode V:");
+            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Address Mode W:");
+            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mag Filter: ");
+            apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Min Filter: ");
+            apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mipmap Filter: ");
+            apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+        });
+
+        if apply_settings
+        {
+            let data = self.get_data_mut().get_mut();
+
+            data.mipmapping = mipmapping;
+
+            data.address_mode_u = address_mode_u;
+            data.address_mode_v = address_mode_v;
+            data.address_mode_w = address_mode_w;
+            data.mag_filter = mag_filter;
+            data.min_filter = min_filter;
+            data.mipmap_filter = mipmap_filter;
+        }
     }
 
 }

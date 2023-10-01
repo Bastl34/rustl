@@ -95,6 +95,7 @@ mod state
             pub(crate) mod lights;
             pub(crate) mod scenes;
             pub(crate) mod rendering;
+            pub(crate) mod textures;
         }
     }
 }

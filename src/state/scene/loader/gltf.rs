@@ -31,13 +31,14 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 
     for texture in gltf.textures()
     {
+        dbg!(texture.name());
         let (bytes, extension) = load_texture(path, &texture, &buffers).await;
 
         let tex = scene.load_texture_byte_or_reuse(&bytes, texture.name().unwrap_or("unknown"), extension).await?;
 
         {
             let mut tex = tex.write().unwrap();
-            let mut tex_data = tex.get_data_mut().get_mut();
+            let tex_data = tex.get_data_mut().get_mut();
 
             match texture.sampler().wrap_s()
             {

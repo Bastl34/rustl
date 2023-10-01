@@ -209,6 +209,17 @@ impl Editor
                         scene.delete_material_by_id(material_id);
                     }
                 }
+
+                // texture
+                if self.editor_state.selected_type == SelectionType::Textures
+                {
+                    let (texture_id, _) = self.editor_state.get_object_ids();
+                    let scene = self.editor_state.get_selected_scene(state);
+                    if let (Some(texture_id), Some(scene)) = (texture_id, scene)
+                    {
+                        scene.delete_texture_by_id(texture_id);
+                    }
+                }
             }
         }
 

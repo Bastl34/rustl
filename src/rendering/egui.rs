@@ -25,9 +25,6 @@ impl EGui
 
         let ctx = egui::Context::default();
 
-        // init egui extras
-        egui_extras::install_image_loaders(&ctx);
-
         Self
         {
             ctx: ctx,

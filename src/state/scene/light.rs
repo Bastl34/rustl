@@ -141,7 +141,7 @@ impl Light
 
             ui.horizontal(|ui|
             {
-                ui.label("color:");
+                ui.label("Color:");
                 apply_settings = ui.color_edit_button_srgba(&mut color).changed() || apply_settings;
             });
 
@@ -157,6 +157,7 @@ impl Light
 
             ui.horizontal(|ui|
             {
+                ui.label("Type:");
                 apply_settings = ui.selectable_value(& mut light_type, LightType::Directional, "Directional").changed() || apply_settings;
                 apply_settings = ui.selectable_value(& mut light_type, LightType::Point, "Point").changed() || apply_settings;
                 apply_settings = ui.selectable_value(& mut light_type, LightType::Spot, "Spot").changed() || apply_settings;

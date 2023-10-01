@@ -105,11 +105,11 @@ macro_rules! component_impl_no_update
 {
     () =>
     {
-        fn update(&mut self, node: NodeItem, input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
+        fn update(&mut self, _node: NodeItem, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
         {
         }
 
-        fn update_instance(&mut self, node: NodeItem, instance: &crate::state::scene::node::InstanceItemRefCell, input_manager: &mut crate::input::input_manager::InputManager, frame_scale: f32)
+        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemRefCell, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
         {
         }
     };

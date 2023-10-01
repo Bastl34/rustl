@@ -476,6 +476,24 @@ impl Material
         tex.is_some()
     }
 
+    pub fn remove_texture_by_id(&mut self, id: u64) -> bool
+    {
+        let mut removed = false;
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if let Some(texture) = self.get_texture_by_type(texture_type)
+            {
+                if texture.read().unwrap().id == id
+                {
+                    self.remove_texture(texture_type);
+                    removed = true;
+                }
+            }
+        }
+
+        removed
+    }
+
     pub fn texture_dimension(&self, tex_type: TextureType) -> (u32, u32)
     {
         let tex = self.get_texture_by_type(tex_type);

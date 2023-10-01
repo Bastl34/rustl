@@ -308,7 +308,7 @@ impl MainInterface
 
             //scene.load("objects/monkey/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            scene.load("objects/monkey/monkey.glb").await.unwrap();
+            //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
@@ -321,7 +321,7 @@ impl MainInterface
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
             //scene.load("objects/bastl/bastl.obj").await.unwrap();
-            //scene.load("objects/temp/brick_wall.glb").await.unwrap();
+            scene.load("objects/temp/brick_wall.glb").await.unwrap();
             //scene.load("objects/temp/apocalyptic_city.glb").await.unwrap();
             //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
             //scene.load("objects/temp/persian_city.glb").await.unwrap();
@@ -332,6 +332,7 @@ impl MainInterface
             //scene.load("objects/temp/de_dust2.glb").await.unwrap();
             //scene.load("objects/temp/de_dust2_8k.glb").await.unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
             //scene.load("objects/temp/bistro.glb").await.unwrap();
+            //scene.load("objects/temp/lowpoly__fps__tdm__game__map.glb").await.unwrap();
 
             scene.clear_empty_nodes();
 

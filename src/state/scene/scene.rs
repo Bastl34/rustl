@@ -5,7 +5,7 @@ use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::{query::Ray, transformation};
 
-use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast};
+use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 
 use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType}, mesh::Mesh}, light::{LightItem, Light}};
 
@@ -296,6 +296,40 @@ impl Scene
         }
 
         false
+    }
+
+    pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
+    {
+        for texture_arc in self.textures.values()
+        {
+            let texture =  texture_arc.read().unwrap();
+            if texture.id == id
+            {
+                return Some(texture_arc.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn delete_texture_by_id(&mut self, id: u64) -> bool
+    {
+        // remove texture from all materials
+        for material in &mut self.materials
+        {
+            let material = material.1;
+            component_downcast_mut!(material, Material);
+            material.remove_texture_by_id(id);
+        }
+
+        let len = self.textures.len();
+        self.textures.retain(|_key, texture|
+        {
+            let texture = texture.read().unwrap();
+            texture.id != id
+        });
+
+        self.textures.len() != len
     }
 
     pub fn get_camera_by_id(&self, id: u64) -> Option<&CameraItem>

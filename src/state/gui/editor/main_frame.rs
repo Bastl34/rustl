@@ -13,6 +13,7 @@ use super::objects::{build_objects_list, create_object_settings};
 use super::rendering::create_rendering_settings;
 use super::scenes::create_scene_settings;
 use super::statistics::{create_chart, create_statistic};
+use super::textures::{create_texture_settings, build_texture_list};
 
 pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: &mut State)
 {
@@ -223,7 +224,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Object => if object_settings { create_object_settings(editor_state, state, ui); },
             SettingsPanel::Material => if material_settings { create_material_settings(editor_state, state, ui); },
             SettingsPanel::Camera => if camera_settings { create_camera_settings(editor_state, state, ui); },
-            SettingsPanel::Texture => if texture_settings { },
+            SettingsPanel::Texture => if texture_settings { create_texture_settings(editor_state, state, ui);},
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
             SettingsPanel::Rendering => create_rendering_settings(editor_state, state, ui),
@@ -437,7 +438,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
             });
         }).body(|ui|
         {
-
+            build_texture_list(editor_state, &scene.textures, ui, scene_id);
         });
     }
 }
