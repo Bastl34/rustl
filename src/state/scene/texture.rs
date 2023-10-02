@@ -1,12 +1,16 @@
 use std::sync::{RwLock, Arc};
 
+use egui::WidgetWithState;
 use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops};
 use nalgebra::Vector4;
+
+use egui::Image;
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
+const PREVIEW_SIZE: u32 = 256;
 const MAX_MIPMAPS: usize = 11; // max allowed mipmaps
 
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -25,14 +29,27 @@ pub enum TextureFilterMode
     Linear
 }
 
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum MipmapSamplingFilterType
+{
+    Nearest,
+    Triangle,
+    CatmullRom,
+    Gaussian,
+    Lanczos3,
+}
+
 pub struct TextureData
 {
+    pub preview: DynamicImage,
     pub image: DynamicImage,
 
     pub width: u64,
     pub height: u64,
 
     pub mipmapping: bool,
+
+    pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
 
@@ -61,12 +78,15 @@ impl Texture
     {
         let data: TextureData = TextureData
         {
+            preview: DynamicImage::new_rgba8(0,0),
             image: DynamicImage::new_rgba8(0,0),
 
             width: 0,
             height: 0,
 
             mipmapping: true,
+
+            mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
             has_transparency: false,
 
@@ -111,16 +131,21 @@ impl Texture
 
         let has_transparency = rgba.enumerate_pixels().find(|pixel| { pixel.2[3] < 255 }).is_some();
 
+        let image = image::DynamicImage::ImageRgba8(rgba);
+
         let data: TextureData = TextureData
         {
-            width: rgba.width() as u64,
-            height: rgba.height() as u64,
+            width: image.width() as u64,
+            height: image.height() as u64,
 
             mipmapping: true,
 
+            mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
             has_transparency: has_transparency,
 
-            image: image::DynamicImage::ImageRgba8(rgba),
+            preview: Self::create_preview(&image),
+            image: image,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -163,6 +188,8 @@ impl Texture
         let bytes = &image.to_vec();
         let hash = helper::crypto::get_hash_from_byte_vec(&bytes);
 
+        let image = image::DynamicImage::ImageRgba8(image);
+
         let data: TextureData = TextureData
         {
             width: image.width() as u64,
@@ -172,7 +199,10 @@ impl Texture
 
             mipmapping: true,
 
-            image: image::DynamicImage::ImageRgba8(image),
+            mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            preview: Self::create_preview(&image),
+            image: image,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -204,9 +234,19 @@ impl Texture
             let width = current_level.width() / 2;
             let height = current_level.height() / 2;
 
-            current_level = image::DynamicImage::ImageRgba8(imageops::resize(&current_level, width, height, imageops::FilterType::Triangle));
+            let filter_method;
+            match self.get_data().mipmap_sampling_type
+            {
+                MipmapSamplingFilterType::Nearest => filter_method = imageops::FilterType::Nearest,
+                MipmapSamplingFilterType::Triangle => filter_method = imageops::FilterType::Triangle,
+                MipmapSamplingFilterType::CatmullRom => filter_method = imageops::FilterType::CatmullRom,
+                MipmapSamplingFilterType::Gaussian => filter_method = imageops::FilterType::Gaussian,
+                MipmapSamplingFilterType::Lanczos3 => filter_method = imageops::FilterType::Lanczos3,
+            }
 
-            if current_level.width() >= 1 && current_level.height() >= 1 && mipmaps.len() > MAX_MIPMAPS
+            current_level = image::DynamicImage::ImageRgba8(imageops::resize(&current_level, width, height, filter_method));
+
+            if current_level.width() >= 1 && current_level.height() >= 1 && mipmaps.len() < MAX_MIPMAPS
             {
                 mipmaps.push(current_level.clone());
             }
@@ -217,6 +257,25 @@ impl Texture
         }
 
         mipmaps
+    }
+
+    pub fn create_preview(image: &DynamicImage) -> DynamicImage
+    {
+        if image.width() < PREVIEW_SIZE && image.height() < PREVIEW_SIZE
+        {
+            return image.clone();
+        }
+
+        let mut width = PREVIEW_SIZE;
+        let mut height = ((PREVIEW_SIZE as f32) * image.height() as f32 / image.width() as f32).floor() as u32;
+        if image.height() > image.width()
+        {
+            height = PREVIEW_SIZE;
+            width = ((PREVIEW_SIZE as f32) * image.width() as f32 / image.height() as f32).floor() as u32;
+        }
+
+        let preview_filter = imageops::FilterType::Gaussian;
+        image.resize(width, height, preview_filter)
     }
 
     pub fn get_data(&self) -> &TextureData
@@ -320,9 +379,51 @@ impl Texture
         self.data.get_ref().image.as_bytes()
     }
 
+    pub fn ui_info(&self, ui: &mut egui::Ui)
+    {
+        let data = self.get_data();
+        /*
+
+        let preview = data.preview.clone()
+        let preview = data.preview.clone().as_bytes();
+
+        let egui_image = Image::from_bytes("image", preview);
+        //let egui_image = egui::Texture
+        //let texture = egui::TextureTexture::from_image(data.preview);
+        //ui.image(texture);
+
+        */
+
+        /*
+        let image = self.image.clone();
+        let image = image_to_retained_image(image);
+
+        image.show(ui);
+        */
+
+        let pixels = data.preview.as_flat_samples_u8();
+        let pixels = pixels.unwrap();
+
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [data.preview.width() as usize, data.preview.height() as usize],
+            pixels.as_slice());
+
+        //let image = egui_extras::RetainedImage::from_color_image("image", color_image);
+        //let image = egui::Image::from_bytes("image", pixels.as_slice());
+
+        //ui.add(image.max_width(200.0)
+        //.rounding(10.0));
+
+        //ui.image(image);
+        //image.show(ui);
+
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui)
     {
         let mut mipmapping;
+
+        let mut mipmap_sampling_type;
 
         let mut address_mode_u;
         let mut address_mode_v;
@@ -336,6 +437,10 @@ impl Texture
 
             mipmapping = data.mipmapping;
 
+            mipmap_sampling_type = data.mipmap_sampling_type;
+
+            address_mode_u = data.address_mode_u;
+
             address_mode_u = data.address_mode_u;
             address_mode_v = data.address_mode_v;
             address_mode_w = data.address_mode_w;
@@ -347,6 +452,16 @@ impl Texture
         let mut apply_settings = false;
 
         apply_settings = ui.checkbox(&mut mipmapping, "use mipmap").changed() || apply_settings;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mipmap Sample Type:");
+            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Nearest, "Nearest").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Triangle, "Triangle").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Lanczos3, "Lanczos3").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Gaussian, "Gaussian").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::CatmullRom, "CatmullRom").changed() || apply_settings;
+        });
 
         ui.horizontal(|ui|
         {
@@ -401,6 +516,8 @@ impl Texture
             let data = self.get_data_mut().get_mut();
 
             data.mipmapping = mipmapping;
+
+            data.mipmap_sampling_type = mipmap_sampling_type;
 
             data.address_mode_u = address_mode_u;
             data.address_mode_v = address_mode_v;

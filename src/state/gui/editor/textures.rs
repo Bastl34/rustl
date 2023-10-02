@@ -59,6 +59,14 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
 
     if let Some(texture) = scene.get_texture_by_id(texture_id)
     {
+        collapse_with_title(ui, "texture_info", true, "🖼 Texture Info", |ui|
+        {
+            {
+                let mut texture = texture.read().unwrap();
+                texture.ui_info(ui);
+            }
+        });
+
         collapse_with_title(ui, "texture_settings", true, "🖼 Texture Settings", |ui|
         {
 

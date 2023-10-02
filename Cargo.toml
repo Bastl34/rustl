@@ -44,6 +44,7 @@ image = { version = "0.24.7", default-features = false, features = [ "png", "jpe
 egui = "0.23.0"
 egui-wgpu = "0.23.0"
 egui_plot = "0.23.0"
+egui_extras = { version = "0.23.0", features = ["image"] }
 #egui = { git = "https://github.com/emilk/egui" }
 #egui-wgpu = { git = "https://github.com/emilk/egui" }
 #egui_plot = { git = "https://github.com/emilk/egui" }

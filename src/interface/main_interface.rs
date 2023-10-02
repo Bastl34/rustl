@@ -321,7 +321,8 @@ impl MainInterface
             //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
             //scene.load("objects/temp/test.glb").await.unwrap();
             //scene.load("objects/bastl/bastl.obj").await.unwrap();
-            scene.load("objects/temp/brick_wall.glb").await.unwrap();
+            //scene.load("objects/temp/brick_wall.glb").await.unwrap();
+            scene.load("objects/temp/textured.glb").await.unwrap();
             //scene.load("objects/temp/apocalyptic_city.glb").await.unwrap();
             //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
             //scene.load("objects/temp/persian_city.glb").await.unwrap();

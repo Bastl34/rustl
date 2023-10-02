@@ -134,11 +134,13 @@ impl Scene
                     buffer_recreate_needed = render_item.width != texture.width() || render_item.height != texture.height();
                 }
 
-                if texture.render_item.is_none() || buffer_recreate_needed
+                if texture.render_item.is_none() || buffer_recreate_needed || texture_changed
                 {
                     let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, true);
                     texture.render_item = Some(Box::new(render_item));
+                    buffer_recreate_needed = true;
                 }
+                /*
                 else if texture_changed
                 {
                     let mut render_item = texture.render_item.take();
@@ -150,6 +152,7 @@ impl Scene
 
                     texture.render_item = render_item;
                 }
+                 */
             }
 
             // mark material as "dirty" if the buffer needs a recreate

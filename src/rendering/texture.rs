@@ -39,7 +39,7 @@ impl Texture
         let mut mipmaps = vec![];
         if scene_texture.get_data().mipmapping
         {
-            let mipmap_creation_time = std::time::Instant::now();
+            //let mipmap_creation_time = std::time::Instant::now();
             mipmaps = scene_texture.create_mipmap_levels();
             //dbg!("mipmap levels: {}", mipmaps.len());
             //dbg!("mipmap_creation_time: {}", mipmap_creation_time.elapsed().as_millis());
@@ -94,7 +94,7 @@ impl Texture
             wgpu::ImageDataLayout
             {
                 offset: 0,
-                bytes_per_row: Some(4 * scene_texture.width()), // 4 = RGBA
+                bytes_per_row: Some(scene_texture.width() * 4), // 4 = RGBA
                 rows_per_image: Some(scene_texture.height()),
             },
             texture_size,
@@ -103,6 +103,13 @@ impl Texture
         // upload mipmaps
         for (i, mipmap) in mipmaps.iter().enumerate()
         {
+            let texture_size = wgpu::Extent3d
+            {
+                width: mipmap.width(),
+                height: mipmap.height(),
+                depth_or_array_layers: 1,
+            };
+
             queue.write_texture
             (
                 wgpu::ImageCopyTexture
@@ -116,7 +123,7 @@ impl Texture
                 wgpu::ImageDataLayout
                 {
                     offset: 0,
-                    bytes_per_row: Some(4 * mipmap.width()), // 4 = RGBA
+                    bytes_per_row: Some(mipmap.width() * 4), // 4 = RGBA
                     rows_per_image: Some(mipmap.height()),
                 },
                 texture_size,
@@ -339,9 +346,10 @@ impl Texture
         sampler
     }
 
+    /*
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene_texture: &crate::state::scene::texture::Texture)
     {
-        dbg!("upldate texture");
+        dbg!("update texture");
 
         let device = wgpu.device();
         let queue = wgpu.queue_mut();
@@ -377,6 +385,7 @@ impl Texture
 
         self.sampler = Self::create_sampler(device, scene_texture);
     }
+     */
 
     pub fn get_texture(&self) -> &wgpu::Texture
     {
