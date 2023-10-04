@@ -2,6 +2,7 @@ todo:
  * everything should be dynamic
  * TODOs
  * mipmap off by default? it uses a lot of GPU mempry (+1/3)
+ * normal map: rotation/transformation is not applied correctly
 
 done:
  * consider using ComponentBase for all state structs
