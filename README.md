@@ -5,7 +5,8 @@
 
 
 ## current state
-<img src="history/2023-05-21.png" width="720">
+<img src="history/2023-10-05.png" width="720">
+<sub>model from: https://sketchfab.com/3d-models/cathedral-faed84a829114e378be255414a7826ca</sub>
 <br>
 
 ## requrements
