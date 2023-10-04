@@ -66,20 +66,20 @@ impl MaterialUniform
         let material_data = material.get_data();
 
         let mut textures_used: u32 = 0;
-        if material.has_texture(TextureType::AmbientEmissive)   { textures_used |= 1 << 1; }
-        if material.has_texture(TextureType::Base)              { textures_used |= 1 << 2; }
-        if material.has_texture(TextureType::Specular)          { textures_used |= 1 << 3; }
-        if material.has_texture(TextureType::Normal)            { textures_used |= 1 << 4; }
-        if material.has_texture(TextureType::Alpha)             { textures_used |= 1 << 5; }
-        if material.has_texture(TextureType::Roughness)         { textures_used |= 1 << 6; }
-        if material.has_texture(TextureType::AmbientOcclusion)  { textures_used |= 1 << 7; }
-        if material.has_texture(TextureType::Reflectivity)      { textures_used |= 1 << 8; }
-        if material.has_texture(TextureType::Shininess)         { textures_used |= 1 << 9; }
+        if material.is_texture_enabled(TextureType::AmbientEmissive)   { textures_used |= 1 << 1; }
+        if material.is_texture_enabled(TextureType::Base)              { textures_used |= 1 << 2; }
+        if material.is_texture_enabled(TextureType::Specular)          { textures_used |= 1 << 3; }
+        if material.is_texture_enabled(TextureType::Normal)            { textures_used |= 1 << 4; }
+        if material.is_texture_enabled(TextureType::Alpha)             { textures_used |= 1 << 5; }
+        if material.is_texture_enabled(TextureType::Roughness)         { textures_used |= 1 << 6; }
+        if material.is_texture_enabled(TextureType::AmbientOcclusion)  { textures_used |= 1 << 7; }
+        if material.is_texture_enabled(TextureType::Reflectivity)      { textures_used |= 1 << 8; }
+        if material.is_texture_enabled(TextureType::Shininess)         { textures_used |= 1 << 9; }
 
-        if material.has_texture(TextureType::Custom0)           { textures_used |= 1 << 10; }
-        if material.has_texture(TextureType::Custom1)           { textures_used |= 1 << 11; }
-        if material.has_texture(TextureType::Custom2)           { textures_used |= 1 << 12; }
-        if material.has_texture(TextureType::Custom3)           { textures_used |= 1 << 13; }
+        if material.is_texture_enabled(TextureType::Custom0)           { textures_used |= 1 << 10; }
+        if material.is_texture_enabled(TextureType::Custom1)           { textures_used |= 1 << 11; }
+        if material.is_texture_enabled(TextureType::Custom2)           { textures_used |= 1 << 12; }
+        if material.is_texture_enabled(TextureType::Custom3)           { textures_used |= 1 << 13; }
 
         MaterialUniform
         {
@@ -223,7 +223,6 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
-
         let mut texture_render_items: HashMap<u64, RenderItemType> = HashMap::new();
         let mut texture_render_items_dir = vec![];
 
@@ -233,18 +232,28 @@ impl MaterialBuffer
             {
                 let texture = material.get_texture_by_type(texture_type);
                 let texture = texture.unwrap().clone();
-                let mut texture = texture.write().unwrap();
+                let enabled = texture.enabled;
 
-                if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                if enabled
                 {
-                    let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                    let texture = texture.get();
+                    let mut texture = texture.write().unwrap();
 
-                    swap(&mut texture.render_item, &mut render_item);
+                    if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                    {
+                        let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
 
-                    texture_render_items.insert(texture.id, render_item.unwrap());
+                        swap(&mut texture.render_item, &mut render_item);
+
+                        texture_render_items.insert(texture.id, render_item.unwrap());
+                    }
+
+                    texture_render_items_dir.push((Some(texture.id), bind_id));
                 }
-
-                texture_render_items_dir.push((Some(texture.id), bind_id));
+                else
+                {
+                    texture_render_items_dir.push((None, bind_id));
+                }
             }
             else
             {
@@ -316,6 +325,7 @@ impl MaterialBuffer
             {
                 let texture = material.get_texture_by_type(texture_type);
                 let texture = texture.unwrap().clone();
+                let texture = texture.get();
                 let mut texture = texture.write().unwrap();
 
                 if texture.render_item.is_none() && texture_render_items.contains_key(&texture.id)

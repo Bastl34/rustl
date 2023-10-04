@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{node::NodeItem, components::mesh::Mesh, scene::Scene}, state::State, gui::helper::generic_items::collapse_with_title}, component_downcast};
+use crate::{state::{scene::{node::NodeItem, components::mesh::Mesh, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -395,4 +395,198 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
         let mut node = node_arc.write().unwrap();
         node.delete_instance_by_id(instance_id);
     }
+}
+
+pub fn create_component_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    let (node_id, instance_id) = editor_state.get_object_ids();
+
+    if editor_state.selected_scene_id.is_none() || node_id.is_none()
+    {
+        return;
+    }
+
+    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
+    let node_id: u64 = node_id.unwrap();
+
+    let scene = state.find_scene_by_id(scene_id);
+
+    if scene.is_none()
+    {
+        return;
+    }
+
+    let scene = scene.unwrap();
+
+    let node = scene.find_node_by_id(node_id);
+
+    if node.is_none()
+    {
+        return;
+    }
+
+    let node = node.unwrap();
+
+    // components
+    if instance_id.is_none()
+    {
+        let mut delete_component_id = None;
+
+        let node_read = node.read().unwrap();
+        for component in &node_read.components
+        {
+            let component_id;
+            let name;
+            let component_name;
+            {
+                let component = component.read().unwrap();
+                let base = component.get_base();
+                component_name = format!("{} {}", base.icon, base.component_name);
+                name = base.name.clone();
+                component_id = component.id();
+            }
+            generic_items::collapse(ui, component_id.to_string(), true, |ui|
+            {
+                ui.label(RichText::new(component_name).heading().strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                {
+                    if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                    {
+                        delete_component_id = Some(component_id);
+                    }
+
+                    // enabled toggle
+                    let mut enabled;
+                    {
+                        enabled = component.read().unwrap().get_base().is_enabled;
+                    }
+
+                    let toggle_text;
+                    if enabled
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                    }
+                    else
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::RED);
+                    }
+
+
+                    if ui.toggle_value(&mut enabled, toggle_text).clicked()
+                    {
+                        component.write().unwrap().set_enabled(enabled);
+                    }
+
+                    if let Some(info) = &component.read().unwrap().get_base().info
+                    {
+                        ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
+                    }
+                });
+            },
+            |ui|
+            {
+                ui.label(format!("Id: {}", component_id));
+                ui.label(format!("Name: {}", name));
+
+                let mut component = component.write().unwrap();
+                component.ui(ui);
+            });
+        }
+
+        drop(node_read);
+
+        if let Some(delete_component_id) = delete_component_id
+        {
+            node.write().unwrap().remove_component_by_id(delete_component_id);
+        }
+    }
+
+    if let Some(instance_id) = instance_id
+    {
+        let mut delete_component_id = None;
+
+        let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
+        let instance = node_read.find_instance_by_id(instance_id);
+
+        if let Some(instance) = instance
+        {
+            {
+                let instance = instance.borrow();
+
+                for component in &instance.components
+                {
+                    let component_id;
+                    let name;
+                    let component_name;
+                    {
+                        let component = component.read().unwrap();
+                        let base = component.get_base();
+                        component_name = format!("{} {}", base.icon, base.component_name);
+                        name = base.name.clone();
+                        component_id = component.id();
+                    }
+                    generic_items::collapse(ui, component_id.to_string(), true, |ui|
+                    {
+                        ui.label(RichText::new(component_name).heading().strong());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                        {
+                            if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                            {
+                                delete_component_id = Some(component_id);
+                            }
+
+                            // enabled toggle
+                            let mut enabled;
+                            {
+                                enabled = component.read().unwrap().get_base().is_enabled;
+                            }
+
+                            let toggle_text;
+                            if enabled
+                            {
+                                toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                            }
+                            else
+                            {
+                                toggle_text = RichText::new("⏺").color(Color32::RED);
+                            }
+
+
+                            if ui.toggle_value(&mut enabled, toggle_text).clicked()
+                            {
+                                component.write().unwrap().set_enabled(enabled);
+                            }
+
+                            if let Some(info) = &component.read().unwrap().get_base().info
+                            {
+                                ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
+                            }
+                        });
+                    },
+                    |ui|
+                    {
+                        ui.label(format!("Id: {}", component_id));
+                        ui.label(format!("Name: {}", name));
+
+                        let mut component = component.write().unwrap();
+                        component.ui(ui);
+                    });
+                }
+            }
+
+            if let Some(delete_component_id) = delete_component_id
+            {
+                let mut instance = instance.borrow_mut();
+                instance.remove_component_by_id(delete_component_id);
+            }
+        }
+    }
+
+    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+    {
+        if ui.button(RichText::new("Add Component").heading().strong().color(Color32::WHITE)).clicked()
+        {
+            editor_state.dialog_add_component = true;
+        }
+    });
 }

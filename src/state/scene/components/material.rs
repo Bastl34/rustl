@@ -64,6 +64,30 @@ pub enum TextureFiltering
     Linear
 }
 
+#[derive(Clone)]
+pub struct TextureState
+{
+    pub item: TextureItem,
+    pub enabled: bool
+}
+
+impl TextureState
+{
+    pub fn new(item: TextureItem) -> TextureState
+    {
+        TextureState
+        {
+            item,
+            enabled: true
+        }
+    }
+
+    pub fn get(&self) -> &TextureItem
+    {
+        &self.item
+    }
+}
+
 pub struct MaterialData
 {
     pub ambient_color: Vector3<f32>,
@@ -72,20 +96,20 @@ pub struct MaterialData
 
     pub highlight_color: Vector3<f32>,
 
-    pub texture_ambient: Option<TextureItem>,
-    pub texture_base: Option<TextureItem>,
-    pub texture_specular: Option<TextureItem>,
-    pub texture_normal: Option<TextureItem>,
-    pub texture_alpha: Option<TextureItem>,
-    pub texture_roughness: Option<TextureItem>,
-    pub texture_ambient_occlusion: Option<TextureItem>,
-    pub texture_reflectivity: Option<TextureItem>,
-    pub texture_shininess: Option<TextureItem>,
+    pub texture_ambient: Option<TextureState>,
+    pub texture_base: Option<TextureState>,
+    pub texture_specular: Option<TextureState>,
+    pub texture_normal: Option<TextureState>,
+    pub texture_alpha: Option<TextureState>,
+    pub texture_roughness: Option<TextureState>,
+    pub texture_ambient_occlusion: Option<TextureState>,
+    pub texture_reflectivity: Option<TextureState>,
+    pub texture_shininess: Option<TextureState>,
 
-    pub texture_custom0: Option<TextureItem>,
-    pub texture_custom1: Option<TextureItem>,
-    pub texture_custom2: Option<TextureItem>,
-    pub texture_custom3: Option<TextureItem>,
+    pub texture_custom0: Option<TextureState>,
+    pub texture_custom1: Option<TextureState>,
+    pub texture_custom2: Option<TextureState>,
+    pub texture_custom3: Option<TextureState>,
 
     pub filtering_mode: TextureFiltering,
 
@@ -273,7 +297,7 @@ impl Material
                     (
                         $default_material_tex.is_some() && $new_mat_tex.is_some()
                         &&
-                        $default_material_tex.unwrap().read().unwrap().hash != $new_mat_tex.unwrap().read().unwrap().hash
+                        $default_material_tex.unwrap().get().read().unwrap().hash != $new_mat_tex.unwrap().get().read().unwrap().hash
                     )
                 {
                     $self_tex = $new_mat_tex.clone();
@@ -373,21 +397,31 @@ impl Material
 
         match tex_type
         {
-            TextureType::Base => { data.texture_base = Some(tex.clone()); },
-            TextureType::AmbientEmissive => { data.texture_ambient = Some(tex.clone()); },
-            TextureType::Specular => { data.texture_specular = Some(tex.clone()); },
-            TextureType::Normal => { data.texture_normal = Some(tex.clone()); },
-            TextureType::Alpha => { data.texture_alpha = Some(tex.clone()); },
-            TextureType::Roughness => { data.texture_roughness = Some(tex.clone()); },
-            TextureType::AmbientOcclusion => { data.texture_ambient_occlusion = Some(tex.clone()); },
-            TextureType::Reflectivity => { data.texture_reflectivity = Some(tex.clone()); },
-            TextureType::Shininess => { data.texture_shininess = Some(tex.clone()); },
+            TextureType::Base => { data.texture_base = Some(TextureState::new(tex.clone())); },
+            TextureType::AmbientEmissive => { data.texture_ambient = Some(TextureState::new(tex.clone())); },
+            TextureType::Specular => { data.texture_specular = Some(TextureState::new(tex.clone())); },
+            TextureType::Normal => { data.texture_normal = Some(TextureState::new(tex.clone())); },
+            TextureType::Alpha => { data.texture_alpha = Some(TextureState::new(tex.clone())); },
+            TextureType::Roughness => { data.texture_roughness = Some(TextureState::new(tex.clone())); },
+            TextureType::AmbientOcclusion => { data.texture_ambient_occlusion = Some(TextureState::new(tex.clone())); },
+            TextureType::Reflectivity => { data.texture_reflectivity = Some(TextureState::new(tex.clone())); },
+            TextureType::Shininess => { data.texture_shininess = Some(TextureState::new(tex.clone())); },
 
-            TextureType::Custom0 => { data.texture_custom0 = Some(tex.clone()); },
-            TextureType::Custom1 => { data.texture_custom1 = Some(tex.clone()); },
-            TextureType::Custom2 => { data.texture_custom2 = Some(tex.clone()); },
-            TextureType::Custom3 => { data.texture_custom3 = Some(tex.clone()); },
+            TextureType::Custom0 => { data.texture_custom0 = Some(TextureState::new(tex.clone())); },
+            TextureType::Custom1 => { data.texture_custom1 = Some(TextureState::new(tex.clone())); },
+            TextureType::Custom2 => { data.texture_custom2 = Some(TextureState::new(tex.clone())); },
+            TextureType::Custom3 => { data.texture_custom3 = Some(TextureState::new(tex.clone())); },
         }
+    }
+
+    pub fn set_texture_state(&mut self, tex_type: TextureType, state: bool)
+    {
+        if !self.has_texture(tex_type)
+        {
+            return;
+        }
+
+        self.get_texture_by_type_mut(tex_type).unwrap().enabled = state;
     }
 
     pub fn has_texture_id(&self, texture_id: u64) -> bool
@@ -396,7 +430,7 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                return texture.read().unwrap().id == texture_id;
+                return texture.get().read().unwrap().id == texture_id;
             }
         }
 
@@ -429,7 +463,7 @@ impl Material
         // base texture alpha channel
         if let Some(texture_base) = &data.texture_base
         {
-            if texture_base.read().unwrap().get_data().has_transparency
+            if texture_base.get().read().unwrap().get_data().has_transparency
             {
                 return true;
             }
@@ -443,7 +477,7 @@ impl Material
         false
     }
 
-    pub fn get_texture_by_type(&self, tex_type: TextureType) -> Option<Arc<RwLock<Box<Texture>>>>
+    pub fn get_texture_by_type(&self, tex_type: TextureType) -> Option<TextureState>
     {
         let tex;
 
@@ -470,11 +504,45 @@ impl Material
         tex
     }
 
+    pub fn get_texture_by_type_mut(&mut self, tex_type: TextureType) -> Option<&mut TextureState>
+    {
+        let tex: Option<&mut TextureState>;
+
+        let data = self.data.get_mut();
+
+        match tex_type
+        {
+            TextureType::Base => { if let Some(tex_state) = data.texture_base.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::AmbientEmissive => { if let Some(tex_state) = data.texture_ambient.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Specular => { if let Some(tex_state) = data.texture_specular.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Normal => { if let Some(tex_state) = data.texture_normal.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Alpha => { if let Some(tex_state) = data.texture_alpha.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Roughness => { if let Some(tex_state) = data.texture_roughness.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::AmbientOcclusion => { if let Some(tex_state) = data.texture_ambient_occlusion.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Reflectivity => { if let Some(tex_state) = data.texture_reflectivity.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Shininess => { if let Some(tex_state) = data.texture_shininess.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+
+            TextureType::Custom0 => { if let Some(tex_state) = data.texture_custom0.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Custom1 => { if let Some(tex_state) = data.texture_custom1.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Custom2 => { if let Some(tex_state) = data.texture_custom2.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Custom3 => { if let Some(tex_state) = data.texture_custom3.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+        }
+
+        tex
+    }
+
     pub fn has_texture(&self, tex_type: TextureType) -> bool
     {
         let tex = self.get_texture_by_type(tex_type);
 
         tex.is_some()
+    }
+
+    pub fn is_texture_enabled(&self, tex_type: TextureType) -> bool
+    {
+        let tex = self.get_texture_by_type(tex_type);
+
+        tex.is_some() && tex.unwrap().enabled
     }
 
     pub fn remove_texture_by_id(&mut self, id: u64) -> bool
@@ -484,7 +552,7 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                if texture.read().unwrap().id == id
+                if texture.get().read().unwrap().id == id
                 {
                     self.remove_texture(texture_type);
                     removed = true;
@@ -501,7 +569,7 @@ impl Material
 
         if tex.is_some()
         {
-            return tex.unwrap().read().unwrap().dimensions()
+            return tex.unwrap().get().read().unwrap().dimensions()
         }
 
         (0,0)
@@ -518,7 +586,7 @@ impl Material
 
         if tex.is_some()
         {
-            return tex.unwrap().read().unwrap().get_pixel_as_float_vec(x, y);
+            return tex.unwrap().get().read().unwrap().get_pixel_as_float_vec(x, y);
         }
 
         Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0)
@@ -534,6 +602,7 @@ impl Material
         let tex = self.get_texture_by_type(tex_type);
 
         let tex_arc = tex.unwrap();
+        let tex_arc = tex_arc.get();
         let tex = tex_arc.read().unwrap();
 
         let width = tex.width();

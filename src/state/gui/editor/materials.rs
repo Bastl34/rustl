@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use egui::{Ui, RichText};
+use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material}, state::State, gui::helper::generic_items::collapse_with_title}, component_downcast, component_downcast_mut};
+use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, component_downcast_mut};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -75,7 +75,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
         });
 
         {
-            component_downcast!(material, Material);
+            component_downcast_mut!(material, Material);
 
             for texture_type in ALL_TEXTURE_TYPES
             {
@@ -83,15 +83,59 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                 {
                     let texture = material.get_texture_by_type(texture_type);
                     let texture = texture.unwrap();
+                    let mut enabled = texture.enabled;
+                    let texture = texture.get();
                     let mut texture = texture.write().unwrap();
 
                     let title = format!("🖼 {}", texture_type.to_string());
                     let id = format!("texture_{}", texture_type.to_string());
 
-                    collapse_with_title(ui, id.as_str(), true, title.as_str(), |ui|
+                    let mut remove_texture = false;
+                    let mut changed = false;
+
+                    generic_items::collapse(ui, id, true, |ui|
+                    {
+                        ui.label(RichText::new(title).heading().strong());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                        {
+                            if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                            {
+                                remove_texture = true;
+                            }
+
+                            // enabled toggle
+                            let toggle_text;
+                            if enabled
+                            {
+                                toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                            }
+                            else
+                            {
+                                toggle_text = RichText::new("⏺").color(Color32::RED);
+                            }
+
+
+                            if ui.toggle_value(&mut enabled, toggle_text).clicked()
+                            {
+                                changed = true;
+                            }
+                        });
+                    },
+                    |ui|
                     {
                         texture.ui_info(ui);
                     });
+
+                    if changed
+                    {
+                        //texture.get_data_mut().get_mut().enabled = enabled;
+                        material.set_texture_state(texture_type , enabled);
+                    }
+
+                    if remove_texture
+                    {
+                        material.remove_texture(texture_type)
+                    }
                 }
             }
         }

@@ -168,7 +168,6 @@ impl Scene
 
                     if material.has_texture_id(texture.id)
                     {
-                        println!("material: {}", material.get_base().name);
                         material.get_data_mut().force_change();
                     }
                 }
@@ -533,7 +532,7 @@ impl Scene
 
                 {
                     let base_tex = data.texture_base.clone().unwrap();
-                    let base_tex = base_tex.read().unwrap();
+                    let base_tex = base_tex.get().read().unwrap();
                     let render_item = base_tex.render_item.as_ref().unwrap();
                     let render_item = get_render_item::<Texture>(&render_item);
 
@@ -543,7 +542,7 @@ impl Scene
 
                 {
                     let base_tex = data.texture_normal.clone().unwrap();
-                    let base_tex = base_tex.read().unwrap();
+                    let base_tex = base_tex.get().read().unwrap();
                     let render_item = base_tex.render_item.as_ref().unwrap();
                     let render_item = get_render_item::<Texture>(&render_item);
 

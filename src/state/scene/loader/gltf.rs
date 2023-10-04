@@ -6,7 +6,7 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
 
 pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
 {
@@ -533,7 +533,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
-            data.texture_base = Some(texture);
+            data.texture_base = Some(TextureState::new(texture));
         }
     }
 
@@ -542,7 +542,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_normal_texture_by_index(&tex, &loaded_textures)
         {
-            data.texture_normal = Some(texture);
+            data.texture_normal = Some(TextureState::new(texture));
         }
     }
 
@@ -560,7 +560,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
         {
             if let Some(texture) = get_texture_by_index(&specular_tex, &loaded_textures)
             {
-                data.texture_specular = Some(texture);
+                data.texture_specular = Some(TextureState::new(texture));
             }
         }
     }
@@ -584,7 +584,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let name = format!("{} metallic", tex.name);
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
             let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
-            data.texture_reflectivity = Some(tex_arc);
+            data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures
             clear_textures.push(texture.clone());
@@ -602,7 +602,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let name = format!("{} roughness", tex.name);
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 1);
             let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
-            data.texture_reflectivity = Some(tex_arc);
+            data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures
             clear_textures.push(texture.clone());
@@ -617,7 +617,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
-            data.texture_ambient = Some(texture);
+            data.texture_ambient = Some(TextureState::new(texture));
         }
     }
 
@@ -626,7 +626,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_ao_texture_by_index(&tex, &loaded_textures)
         {
-            data.texture_ambient_occlusion = Some(texture);
+            data.texture_ambient_occlusion = Some(TextureState::new(texture));
         }
     }
 
