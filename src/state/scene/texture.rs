@@ -404,7 +404,7 @@ impl Texture
         let name = format!("{}_preview",self.name);
 
         let data = self.get_data_mut();
-        let data = data.get_mut();
+        let data = data.get_unmarked_mut();
 
         let pixels = data.preview.as_flat_samples_u8();
         let pixels = pixels.unwrap();

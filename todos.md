@@ -5,6 +5,7 @@ todo:
  * normal map: rotation/transformation is not applied correctly
 
 done:
+ * something is wrong while showing a preview (8k textures) - load time is way to high
  * consider using ComponentBase for all state structs
  * blender like movement (g +xyz, r +xyz)
  * normal matrix is wrong -> its actually this: https://stackoverflow.com/questions/21079623/how-to-calculate-the-normal-matrix
