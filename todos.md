@@ -1,6 +1,7 @@
 todo:
  * everything should be dynamic
  * TODOs
+ * mipmap off by default? it uses a lot of GPU mempry (+1/3)
 
 done:
  * consider using ComponentBase for all state structs

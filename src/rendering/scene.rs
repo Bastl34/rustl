@@ -128,6 +128,7 @@ impl Scene
                 let texture_changed = texture.get_data_mut().consume_change();
 
                 // check if buffer recreation is needed
+                // TODO: check if this even needed anymore (because of the changetracker data from texture)
                 if let Some(render_item) = &texture.render_item
                 {
                     let render_item = get_render_item::<Texture>(render_item);
@@ -167,6 +168,7 @@ impl Scene
 
                     if material.has_texture_id(texture.id)
                     {
+                        println!("material: {}", material.get_base().name);
                         material.get_data_mut().force_change();
                     }
                 }

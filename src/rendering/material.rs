@@ -1,8 +1,8 @@
-use std::mem::swap;
+use std::{mem::swap, collections::HashMap};
 
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
-use crate::{state::{helper::render_item::{RenderItem, get_render_item}, scene::components::{material::{Material, TextureType, ALL_TEXTURE_TYPES}, component::Component}}, render_item_impl_default};
+use crate::{state::{helper::render_item::{RenderItem, get_render_item, RenderItemType}, scene::components::{material::{Material, TextureType, ALL_TEXTURE_TYPES}, component::Component}}, render_item_impl_default};
 
 use super::{wgpu::WGpu, uniform, texture::Texture};
 
@@ -223,48 +223,54 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
-        let mut render_items = vec![];
+
+        let mut texture_render_items: HashMap<u64, RenderItemType> = HashMap::new();
+        let mut texture_render_items_dir = vec![];
 
         for texture_type in ALL_TEXTURE_TYPES
         {
             if material.has_texture(texture_type)
             {
-                //let texture = material.get_data().texture_ambient.as_ref().unwrap().read().unwrap();
-                //let render_item = texture.render_item.as_ref();
                 let texture = material.get_texture_by_type(texture_type);
                 let texture = texture.unwrap().clone();
                 let mut texture = texture.write().unwrap();
 
-                let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                {
+                    let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
 
-                swap(&mut texture.render_item, &mut render_item);
+                    swap(&mut texture.render_item, &mut render_item);
 
-                render_items.push((render_item, bind_id));
+                    texture_render_items.insert(texture.id, render_item.unwrap());
+                }
+
+                texture_render_items_dir.push((Some(texture.id), bind_id));
             }
             else
             {
-                render_items.push((None, bind_id));
+                texture_render_items_dir.push((None, bind_id));
             }
 
             bind_id += 2;
         }
 
-        for (render_item, id) in &render_items
+        for (texture_id, bind_id) in &texture_render_items_dir
         {
-            if let Some(render_item) = render_item
+            if let Some(texture_id) = texture_id
             {
+                let render_item = texture_render_items.get(texture_id).unwrap();
                 let render_item = get_render_item::<Texture>(render_item);
 
-                let textures_layout_group = render_item.get_bind_group_layout_entries(*id);
-                let textures_group = render_item.get_bind_group_entries(*id);
+                let textures_layout_group = render_item.get_bind_group_layout_entries(*bind_id);
+                let textures_group = render_item.get_bind_group_entries(*bind_id);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
             }
             else
             {
-                let textures_layout_group = self.empty_texture.get_bind_group_layout_entries(*id);
-                let textures_group = self.empty_texture.get_bind_group_entries(*id);
+                let textures_layout_group = self.empty_texture.get_bind_group_layout_entries(*bind_id);
+                let textures_group = self.empty_texture.get_bind_group_entries(*bind_id);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -304,7 +310,6 @@ impl MaterialBuffer
         );
 
         // ********* swap back *********
-        let mut i = 0;
         for texture_type in ALL_TEXTURE_TYPES
         {
             if material.has_texture(texture_type)
@@ -313,10 +318,12 @@ impl MaterialBuffer
                 let texture = texture.unwrap().clone();
                 let mut texture = texture.write().unwrap();
 
-                swap(&mut render_items[i].0, &mut texture.render_item);
+                if texture.render_item.is_none() && texture_render_items.contains_key(&texture.id)
+                {
+                    let render_item = texture_render_items.remove(&texture.id);
+                    texture.render_item = render_item;
+                }
             }
-
-            i += 1;
         }
 
         self.bind_group_layout = Some(bind_group_layout);

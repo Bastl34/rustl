@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText};
 
-use crate::state::{scene::components::material::MaterialItem, state::State, gui::helper::generic_items::collapse_with_title};
+use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material}, state::State, gui::helper::generic_items::collapse_with_title}, component_downcast, component_downcast_mut};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -65,13 +65,35 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             material.ui(ui);
         });
 
-            // delete texture
-    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
-    {
-        if ui.button(RichText::new("Dispose Material").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+        // delete material
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
-            scene.delete_material_by_id(material_id);
+            if ui.button(RichText::new("Dispose Material").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_material_by_id(material_id);
+            }
+        });
+
+        {
+            component_downcast!(material, Material);
+
+            for texture_type in ALL_TEXTURE_TYPES
+            {
+                if material.has_texture(texture_type)
+                {
+                    let texture = material.get_texture_by_type(texture_type);
+                    let texture = texture.unwrap();
+                    let mut texture = texture.write().unwrap();
+
+                    let title = format!("🖼 {}", texture_type.to_string());
+                    let id = format!("texture_{}", texture_type.to_string());
+
+                    collapse_with_title(ui, id.as_str(), true, title.as_str(), |ui|
+                    {
+                        texture.ui_info(ui);
+                    });
+                }
+            }
         }
-    });
     }
 }

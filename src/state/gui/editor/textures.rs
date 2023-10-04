@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
@@ -62,14 +62,13 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
         collapse_with_title(ui, "texture_info", true, "🖼 Texture Info", |ui|
         {
             {
-                let mut texture = texture.read().unwrap();
+                let mut texture = texture.write().unwrap();
                 texture.ui_info(ui);
             }
         });
 
         collapse_with_title(ui, "texture_settings", true, "🖼 Texture Settings", |ui|
         {
-
             let mut changed = false;
 
             let mut name;
@@ -99,13 +98,28 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
         });
 
         // load
+        /*
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
             if ui.button(RichText::new("Load Texture").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
                 if let Some(path) = FileDialog::new().add_filter("Image", &["jpg", "png"]).set_directory("/").pick_file()
                 {
-                    // TODO
+                    // TODO load
+                    // TODO: replace hash in scene.textures
+                }
+            }
+        });
+        */
+
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Save Texture").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
+            {
+                let name = format!("{}.png", texture.read().unwrap().name.clone());
+                if let Some(path) = FileDialog::new().add_filter("Image", &["png"]).set_directory("/").set_file_name(name).save_file()
+                {
+                    _ = texture.read().unwrap().get_data().image.save(path);
                 }
             }
         });

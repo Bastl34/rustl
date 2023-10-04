@@ -1,4 +1,4 @@
-use std::sync::{RwLock, Arc};
+use std::{sync::{RwLock, Arc}, fmt::format};
 
 use egui::WidgetWithState;
 use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops};
@@ -43,6 +43,7 @@ pub struct TextureData
 {
     pub preview: DynamicImage,
     pub image: DynamicImage,
+    pub egui_preview: Option<egui::TextureHandle>,
 
     pub width: u64,
     pub height: u64,
@@ -80,6 +81,7 @@ impl Texture
         {
             preview: DynamicImage::new_rgba8(0,0),
             image: DynamicImage::new_rgba8(0,0),
+            egui_preview: None,
 
             width: 0,
             height: 0,
@@ -146,6 +148,7 @@ impl Texture
 
             preview: Self::create_preview(&image),
             image: image,
+            egui_preview: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -203,6 +206,7 @@ impl Texture
 
             preview: Self::create_preview(&image),
             image: image,
+            egui_preview: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -327,7 +331,13 @@ impl Texture
 
     pub fn memory_usage(&self) -> u64
     {
-        self.get_data().width * self.get_data().height * self.channels() as u64
+        // image
+        let mut bytes = self.get_data().width * self.get_data().height * self.channels() as u64;
+
+        // preview
+        bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
+
+        bytes
     }
 
     pub fn gpu_usage(&self) -> u64
@@ -344,6 +354,11 @@ impl Texture
         if self.get_data().mipmapping
         {
             bytes += (bytes as f32 * (1.0 / 3.0)).round() as u64;
+        }
+
+        if self.get_data().egui_preview.is_some()
+        {
+            bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
         }
 
         bytes
@@ -379,44 +394,50 @@ impl Texture
         self.data.get_ref().image.as_bytes()
     }
 
-    pub fn ui_info(&self, ui: &mut egui::Ui)
+    pub fn create_egui_preview(&mut self, ctx: &egui::Context)
     {
-        let data = self.get_data();
-        /*
+        if self.get_data().egui_preview.is_some()
+        {
+            return;
+        }
 
-        let preview = data.preview.clone()
-        let preview = data.preview.clone().as_bytes();
+        let name = format!("{}_preview",self.name);
 
-        let egui_image = Image::from_bytes("image", preview);
-        //let egui_image = egui::Texture
-        //let texture = egui::TextureTexture::from_image(data.preview);
-        //ui.image(texture);
-
-        */
-
-        /*
-        let image = self.image.clone();
-        let image = image_to_retained_image(image);
-
-        image.show(ui);
-        */
+        let data = self.get_data_mut();
+        let data = data.get_mut();
 
         let pixels = data.preview.as_flat_samples_u8();
         let pixels = pixels.unwrap();
 
-        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+        let color_image = egui::ColorImage::from_rgba_unmultiplied
+        (
             [data.preview.width() as usize, data.preview.height() as usize],
-            pixels.as_slice());
+            pixels.as_slice()
+        );
 
-        //let image = egui_extras::RetainedImage::from_color_image("image", color_image);
-        //let image = egui::Image::from_bytes("image", pixels.as_slice());
+        let texture = ctx.load_texture(name, color_image, Default::default());
 
-        //ui.add(image.max_width(200.0)
-        //.rounding(10.0));
+        data.egui_preview = Some(texture);
+    }
 
-        //ui.image(image);
-        //image.show(ui);
+    pub fn ui_info(&mut self, ui: &mut egui::Ui)
+    {
+        {
+            self.create_egui_preview(ui.ctx());
+        }
 
+        let data = self.get_data();
+
+        if let Some(preview) = &data.egui_preview
+        {
+            ui.image((preview.id(), preview.size_vec2()));
+        }
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Resolution: ");
+            ui.label(format!("{}x{}", data.width, data.height));
+        });
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)
@@ -440,8 +461,6 @@ impl Texture
             mipmap_sampling_type = data.mipmap_sampling_type;
 
             address_mode_u = data.address_mode_u;
-
-            address_mode_u = data.address_mode_u;
             address_mode_v = data.address_mode_v;
             address_mode_w = data.address_mode_w;
             mag_filter = data.mag_filter;
@@ -456,59 +475,88 @@ impl Texture
         ui.horizontal(|ui|
         {
             ui.label("Mipmap Sample Type:");
-            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Nearest, "Nearest").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Triangle, "Triangle").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Lanczos3, "Lanczos3").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Gaussian, "Gaussian").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::CatmullRom, "CatmullRom").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("mipmap_sampling_type")).selected_text(format!("{mipmap_sampling_type:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Nearest, "Nearest").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Triangle, "Triangle").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Lanczos3, "Lanczos3").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Gaussian, "Gaussian").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::CatmullRom, "CatmullRom").changed() || apply_settings;
+            });
         });
+
 
         ui.horizontal(|ui|
         {
             ui.label("Address Mode U:");
-            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+            });
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Address Mode V:");
-            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+            });
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Address Mode W:");
-            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+            });
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Mag Filter: ");
-            apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+            });
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Min Filter: ");
-            apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+            });
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Mipmap Filter: ");
-            apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+
+            egui::ComboBox::from_id_source(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+            });
         });
 
         if apply_settings

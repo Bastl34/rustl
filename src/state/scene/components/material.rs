@@ -3,6 +3,7 @@ use std::sync::{RwLock, Arc};
 use std::any::Any;
 
 use nalgebra::{Vector3, Vector4};
+use strum_macros::{Display, EnumIter};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
@@ -19,7 +20,7 @@ pub type MaterialItem = ComponentItem;
 //pub type MaterialBoxItem = Box<dyn Any + Send + Sync>;
 //pub type MaterialItem = Arc<RwLock<MaterialBoxItem>>;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter)]
 pub enum TextureType
 {
     AmbientEmissive,
