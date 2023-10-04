@@ -310,7 +310,7 @@ impl MainInterface
             //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
             //scene.load("objects/monkey/monkey.glb").await.unwrap();
             //scene.load("objects/temp/Corset.glb").await.unwrap();
-            //scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
+            scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
             //scene.load("objects/temp/Workbench.glb").await.unwrap();
             //scene.load("objects/temp/Lantern.glb").await.unwrap();
             //scene.load("objects/temp/lotus.glb").await.unwrap();
@@ -327,7 +327,7 @@ impl MainInterface
             //scene.load("objects/temp/apocalyptic_city.glb").await.unwrap();
             //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
             //scene.load("objects/temp/persian_city.glb").await.unwrap();
-            scene.load("objects/temp/cathedral.glb").await.unwrap();
+            //scene.load("objects/temp/cathedral.glb").await.unwrap();
             //scene.load("objects/temp/minecraft_village.glb").await.unwrap();
             //scene.load("objects/temp/plaza_night_time.glb").await.unwrap();
             //scene.load("objects/temp/de_dust.glb").await.unwrap();

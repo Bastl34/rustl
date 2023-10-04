@@ -9,6 +9,9 @@
 <sub>model from: https://sketchfab.com/3d-models/cathedral-faed84a829114e378be255414a7826ca</sub>
 <br>
 
+<img src="history/2023-10-05_2.png" width="720">
+<br>
+
 ## requrements
 
 ```bash
