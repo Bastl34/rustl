@@ -47,9 +47,17 @@ pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut Sta
             }
         }
 
+        ui.horizontal(|ui|
         {
-            ui.checkbox(&mut state.rendering.distance_sorting, "Distance Sorting (for better alpha blending)");
-        }
+            ui.checkbox(&mut state.rendering.create_mipmaps, "create mipmaps");
+            ui.label("ℹ").on_hover_text("applied only for new loaded objects");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.distance_sorting, "Distance Sorting");
+            ui.label("ℹ").on_hover_text("for better alpha blending");
+        });
 
         ui.horizontal(|ui|
         {

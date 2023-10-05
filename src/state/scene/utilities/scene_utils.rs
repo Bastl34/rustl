@@ -8,7 +8,7 @@ pub async fn create_grid(scene: &mut Scene, amount: u32, spacing: f32)
 {
     let amount = amount as i32;
 
-    let loaded_ids = scene.load("objects/grid/grid.gltf").await.unwrap();
+    let loaded_ids = scene.load("objects/grid/grid.gltf", false).await.unwrap();
     if let Some(grid_arc) = scene.find_node_by_name("grid")
     {
         {

@@ -20,7 +20,7 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
+pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 
@@ -224,6 +224,11 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                         let tex_path = get_texture_path(&diffuse_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        {
+                            let mut tex = tex.write().unwrap();
+                            let tex_data = tex.get_data_mut().get_mut();
+                            tex_data.mipmapping = create_mipmaps;
+                        }
                         material.set_texture(tex, TextureType::Base);
                     }
 
@@ -234,6 +239,11 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         let normal_texture = mat.normal_texture.clone().unwrap();
                         let tex_path = get_texture_path(&normal_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        {
+                            let mut tex = tex.write().unwrap();
+                            let tex_data = tex.get_data_mut().get_mut();
+                            tex_data.mipmapping = create_mipmaps;
+                        }
                         material.set_texture(tex, TextureType::Normal);
                     }
 
@@ -244,6 +254,11 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         let ambient_texture = mat.ambient_texture.clone().unwrap();
                         let tex_path = get_texture_path(&ambient_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        {
+                            let mut tex = tex.write().unwrap();
+                            let tex_data = tex.get_data_mut().get_mut();
+                            tex_data.mipmapping = create_mipmaps;
+                        }
                         material.set_texture(tex, TextureType::AmbientEmissive);
                     }
 
@@ -254,6 +269,11 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         let specular_texture = mat.specular_texture.clone().unwrap();
                         let tex_path: String = get_texture_path(&specular_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        {
+                            let mut tex = tex.write().unwrap();
+                            let tex_data = tex.get_data_mut().get_mut();
+                            tex_data.mipmapping = create_mipmaps;
+                        }
                         material.set_texture(tex, TextureType::Specular);
                     }
 
@@ -264,6 +284,11 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                         let tex_path = get_texture_path(&dissolve_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        {
+                            let mut tex = tex.write().unwrap();
+                            let tex_data = tex.get_data_mut().get_mut();
+                            tex_data.mipmapping = create_mipmaps;
+                        }
                         material.set_texture(tex, TextureType::Alpha);
                     }
 
@@ -274,6 +299,11 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
                         let shininess_texture = mat.shininess_texture.clone().unwrap();
                         let tex_path = get_texture_path(&shininess_texture, path);
                         let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        {
+                            let mut tex = tex.write().unwrap();
+                            let tex_data = tex.get_data_mut().get_mut();
+                            tex_data.mipmapping = create_mipmaps;
+                        }
                         material.set_texture(tex, TextureType::Shininess);
                     }
 

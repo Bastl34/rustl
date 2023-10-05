@@ -306,35 +306,35 @@ impl MainInterface
             */
 
 
-            //scene.load("objects/monkey/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/seperate/monkey.gltf").await.unwrap();
-            //scene.load("objects/monkey/monkey.glb").await.unwrap();
-            //scene.load("objects/temp/Corset.glb").await.unwrap();
-            scene.load("objects/temp/DamagedHelmet.glb").await.unwrap();
-            //scene.load("objects/temp/Workbench.glb").await.unwrap();
-            //scene.load("objects/temp/Lantern.glb").await.unwrap();
-            //scene.load("objects/temp/lotus.glb").await.unwrap();
-            //scene.load("objects/temp/Sponza_fixed.glb").await.unwrap();
-            //scene.load("objects/temp/scene.glb").await.unwrap();
-            //scene.load("objects/temp/model0_debug.glb").await.unwrap();
-            //scene.load("objects/temp/scene_2.glb").await.unwrap();
-            //scene.load("objects/temp/Toys_Railway.glb").await.unwrap();
-            //scene.load("objects/temp/Toys_Railway_2.glb").await.unwrap();
-            //scene.load("objects/temp/test.glb").await.unwrap();
-            //scene.load("objects/bastl/bastl.obj").await.unwrap();
-            //scene.load("objects/temp/brick_wall.glb").await.unwrap();
-            //scene.load("objects/temp/textured.glb").await.unwrap();
-            //scene.load("objects/temp/apocalyptic_city.glb").await.unwrap();
-            //scene.load("objects/temp/ccity_building_set_1.glb").await.unwrap();
-            //scene.load("objects/temp/persian_city.glb").await.unwrap();
-            //scene.load("objects/temp/cathedral.glb").await.unwrap();
-            //scene.load("objects/temp/minecraft_village.glb").await.unwrap();
-            //scene.load("objects/temp/plaza_night_time.glb").await.unwrap();
-            //scene.load("objects/temp/de_dust.glb").await.unwrap();
-            //scene.load("objects/temp/de_dust2.glb").await.unwrap();
-            //scene.load("objects/temp/de_dust2_8k.glb").await.unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
-            //scene.load("objects/temp/bistro.glb").await.unwrap();
-            //scene.load("objects/temp/lowpoly__fps__tdm__game__map.glb").await.unwrap();
+            //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
+            scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/Lantern.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/lotus.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/Sponza_fixed.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/scene.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/model0_debug.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/scene_2.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/Toys_Railway.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/Toys_Railway_2.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/test.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/bastl/bastl.obj", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/brick_wall.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/textured.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/apocalyptic_city.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/ccity_building_set_1.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/persian_city.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/cathedral.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/minecraft_village.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/plaza_night_time.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/de_dust.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/de_dust2.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/de_dust2_8k.glb", state.rendering.create_mipmaps).await.unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
+            //scene.load("objects/temp/bistro.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/lowpoly__fps__tdm__game__map.glb", state.rendering.create_mipmaps).await.unwrap();
 
             scene.clear_empty_nodes();
 

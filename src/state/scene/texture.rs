@@ -43,7 +43,6 @@ pub struct TextureData
 {
     pub preview: DynamicImage,
     pub image: DynamicImage,
-    pub egui_preview: Option<egui::TextureHandle>,
 
     pub width: u64,
     pub height: u64,
@@ -70,6 +69,7 @@ pub struct Texture
 
     pub data: ChangeTracker<TextureData>,
 
+    pub egui_preview: Option<egui::TextureHandle>,
     pub render_item: RenderItemOption
 }
 
@@ -81,7 +81,6 @@ impl Texture
         {
             preview: DynamicImage::new_rgba8(0,0),
             image: DynamicImage::new_rgba8(0,0),
-            egui_preview: None,
 
             width: 0,
             height: 0,
@@ -108,6 +107,7 @@ impl Texture
 
             data: ChangeTracker::new(data),
 
+            egui_preview: None,
             render_item: None
         }
     }
@@ -148,7 +148,6 @@ impl Texture
 
             preview: Self::create_preview(&image),
             image: image,
-            egui_preview: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -166,6 +165,7 @@ impl Texture
 
             data: ChangeTracker::new(data),
 
+            egui_preview: None,
             render_item: None
         }
     }
@@ -206,7 +206,6 @@ impl Texture
 
             preview: Self::create_preview(&image),
             image: image,
-            egui_preview: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -224,6 +223,7 @@ impl Texture
 
             data: ChangeTracker::new(data),
 
+            egui_preview: None,
             render_item: None
         }
     }
@@ -356,7 +356,7 @@ impl Texture
             bytes += (bytes as f32 * (1.0 / 3.0)).round() as u64;
         }
 
-        if self.get_data().egui_preview.is_some()
+        if self.egui_preview.is_some()
         {
             bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
         }
@@ -396,15 +396,14 @@ impl Texture
 
     pub fn create_egui_preview(&mut self, ctx: &egui::Context)
     {
-        if self.get_data().egui_preview.is_some()
+        if self.egui_preview.is_some()
         {
             return;
         }
 
         let name = format!("{}_preview",self.name);
 
-        let data = self.get_data_mut();
-        let data = data.get_unmarked_mut();
+        let data = self.get_data();
 
         let pixels = data.preview.as_flat_samples_u8();
         let pixels = pixels.unwrap();
@@ -417,7 +416,7 @@ impl Texture
 
         let texture = ctx.load_texture(name, color_image, Default::default());
 
-        data.egui_preview = Some(texture);
+        self.egui_preview = Some(texture);
     }
 
     pub fn ui_info(&mut self, ui: &mut egui::Ui)
@@ -428,7 +427,7 @@ impl Texture
 
         let data = self.get_data();
 
-        if let Some(preview) = &data.egui_preview
+        if let Some(preview) = &self.egui_preview
         {
             ui.image((preview.id(), preview.size_vec2()));
         }

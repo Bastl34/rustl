@@ -8,7 +8,7 @@ use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rot
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
 
-pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
+pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let gltf_content = load_binary_async(path).await?;
 
@@ -38,6 +38,7 @@ pub async fn load(path: &str, scene: &mut Scene) -> anyhow::Result<Vec<u64>>
         {
             let mut tex = tex.write().unwrap();
             let tex_data = tex.get_data_mut().get_mut();
+            tex_data.mipmapping = create_mipmaps;
 
             match texture.sampler().wrap_s()
             {

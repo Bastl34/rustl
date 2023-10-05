@@ -54,7 +54,7 @@ impl Scene
         }
     }
 
-    pub async fn load(&mut self, path: &str) -> anyhow::Result<Vec<u64>>
+    pub async fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
     {
         let extension = Path::new(path).extension();
 
@@ -67,11 +67,11 @@ impl Scene
 
         if extension == "obj"
         {
-            return wavefront::load(path, self).await;
+            return wavefront::load(path, self, create_mipmaps).await;
         }
         else if extension == "gltf" || extension == "glb"
         {
-            return gltf::load(path, self).await;
+            return gltf::load(path, self, create_mipmaps).await;
         }
 
         Ok(vec![])

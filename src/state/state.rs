@@ -30,7 +30,8 @@ pub struct Rendering
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
 
-    pub distance_sorting: bool
+    pub distance_sorting: bool,
+    pub create_mipmaps: bool,
 }
 
 pub struct State
@@ -115,7 +116,8 @@ impl State
                 fullscreen: ChangeTracker::new(false),
                 msaa: ChangeTracker::new(8),
 
-                distance_sorting: true
+                distance_sorting: true,
+                create_mipmaps: false
             },
 
             input_manager: InputManager::new(),
