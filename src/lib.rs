@@ -125,6 +125,12 @@ mod interface
 
 mod helper
 {
+    pub(crate) mod concurrency
+    {
+        pub(crate) mod thread;
+        pub(crate) mod execution_queue;
+    }
+
     pub(crate) mod generic;
     pub(crate) mod file;
     pub(crate) mod math;
@@ -132,6 +138,7 @@ mod helper
     pub(crate) mod crypto;
     pub(crate) mod consumable;
     pub(crate) mod change_tracker;
+
 }
 
 mod resources

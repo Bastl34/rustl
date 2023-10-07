@@ -566,6 +566,14 @@ impl MainInterface
             state.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
+        // update main thread queue
+        {
+            let state = &mut *(self.state.borrow_mut());
+            let main_queue = state.main_thread_execution_queue.clone();
+            let mut main_queue = main_queue.write().unwrap();
+            main_queue.run_all(state);
+        }
+
         // update scene
         {
             let engine_update_time = Instant::now();

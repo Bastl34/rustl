@@ -33,7 +33,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
     {
         let (bytes, extension) = load_texture(path, &texture, &buffers).await;
 
-        let tex = scene.load_texture_byte_or_reuse(&bytes, texture.name().unwrap_or("unknown"), extension).await?;
+        let tex = scene.load_texture_byte_or_reuse(&bytes, texture.name().unwrap_or("unknown"), extension);
 
         {
             let mut tex = tex.write().unwrap();

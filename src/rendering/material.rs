@@ -22,13 +22,14 @@ use super::{wgpu::WGpu, uniform, texture::Texture};
     7: ambient occlusion
     8: reflectivity
     9: shininess
+    10: environment
 
-    10: custom 0
-    11: custom 1
-    12: custom 2
-    13: custom 3
+    11: custom 0
+    12: custom 1
+    13: custom 2
+    14: custom 3
 
-    14: depth
+    15: depth
 */
 
 //pub const ADDITIONAL_START_INDEX: u32 = 20;
@@ -75,11 +76,12 @@ impl MaterialUniform
         if material.is_texture_enabled(TextureType::AmbientOcclusion)  { textures_used |= 1 << 7; }
         if material.is_texture_enabled(TextureType::Reflectivity)      { textures_used |= 1 << 8; }
         if material.is_texture_enabled(TextureType::Shininess)         { textures_used |= 1 << 9; }
+        if material.is_texture_enabled(TextureType::Environment)       { textures_used |= 1 << 10; }
 
-        if material.is_texture_enabled(TextureType::Custom0)           { textures_used |= 1 << 10; }
-        if material.is_texture_enabled(TextureType::Custom1)           { textures_used |= 1 << 11; }
-        if material.is_texture_enabled(TextureType::Custom2)           { textures_used |= 1 << 12; }
-        if material.is_texture_enabled(TextureType::Custom3)           { textures_used |= 1 << 13; }
+        if material.is_texture_enabled(TextureType::Custom0)           { textures_used |= 1 << 11; }
+        if material.is_texture_enabled(TextureType::Custom1)           { textures_used |= 1 << 12; }
+        if material.is_texture_enabled(TextureType::Custom2)           { textures_used |= 1 << 13; }
+        if material.is_texture_enabled(TextureType::Custom3)           { textures_used |= 1 << 14; }
 
         MaterialUniform
         {

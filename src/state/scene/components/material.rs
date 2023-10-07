@@ -32,6 +32,7 @@ pub enum TextureType
     AmbientOcclusion,
     Reflectivity,
     Shininess,
+    Environment,
 
     Custom0,
     Custom1,
@@ -39,7 +40,7 @@ pub enum TextureType
     Custom3
 }
 
-pub const ALL_TEXTURE_TYPES: [TextureType; 13] =
+pub const ALL_TEXTURE_TYPES: [TextureType; 14] =
 [
     TextureType::AmbientEmissive,
     TextureType::Base,
@@ -50,6 +51,7 @@ pub const ALL_TEXTURE_TYPES: [TextureType; 13] =
     TextureType::AmbientOcclusion,
     TextureType::Reflectivity,
     TextureType::Shininess,
+    TextureType::Environment,
 
     TextureType::Custom0,
     TextureType::Custom1,
@@ -105,6 +107,7 @@ pub struct MaterialData
     pub texture_ambient_occlusion: Option<TextureState>,
     pub texture_reflectivity: Option<TextureState>,
     pub texture_shininess: Option<TextureState>,
+    pub texture_environment: Option<TextureState>,
 
     pub texture_custom0: Option<TextureState>,
     pub texture_custom1: Option<TextureState>,
@@ -162,6 +165,7 @@ impl Material
             texture_ambient_occlusion: None,
             texture_reflectivity: None,
             texture_shininess: None,
+            texture_environment: None,
 
             texture_custom0: None,
             texture_custom1: None,
@@ -316,6 +320,7 @@ impl Material
         compare_and_apply_texture_diff!(data.texture_ambient_occlusion, default_material_data.texture_ambient_occlusion.as_ref(), new_mat_data.texture_ambient_occlusion.clone());
         compare_and_apply_texture_diff!(data.texture_reflectivity, default_material_data.texture_reflectivity.as_ref(), new_mat_data.texture_reflectivity.clone());
         compare_and_apply_texture_diff!(data.texture_shininess, default_material_data.texture_shininess.as_ref(), new_mat_data.texture_shininess.clone());
+        compare_and_apply_texture_diff!(data.texture_environment, default_material_data.texture_environment.as_ref(), new_mat_data.texture_environment.clone());
 
         compare_and_apply_texture_diff!(data.texture_custom0, default_material_data.texture_custom0.as_ref(), new_mat_data.texture_custom0.clone());
         compare_and_apply_texture_diff!(data.texture_custom1, default_material_data.texture_custom1.as_ref(), new_mat_data.texture_custom1.clone());
@@ -339,6 +344,7 @@ impl Material
         println!("texture_ambient_occlusion: {:?}", data.texture_ambient_occlusion.is_some());
         println!("texture_reflectivity: {:?}", data.texture_reflectivity.is_some());
         println!("texture_shininess: {:?}", data.texture_shininess.is_some());
+        println!("texture_environment: {:?}", data.texture_environment.is_some());
 
         println!("texture_custom0: {:?}", data.texture_custom0.is_some());
         println!("texture_custom1: {:?}", data.texture_custom1.is_some());
@@ -383,6 +389,7 @@ impl Material
             TextureType::AmbientOcclusion => { data.texture_ambient_occlusion = None; },
             TextureType::Reflectivity => { data.texture_reflectivity = None; },
             TextureType::Shininess => { data.texture_shininess = None; },
+            TextureType::Environment => { data.texture_environment = None; },
 
             TextureType::Custom0 => { data.texture_custom0 = None; },
             TextureType::Custom1 => { data.texture_custom1 = None; },
@@ -406,6 +413,7 @@ impl Material
             TextureType::AmbientOcclusion => { data.texture_ambient_occlusion = Some(TextureState::new(tex.clone())); },
             TextureType::Reflectivity => { data.texture_reflectivity = Some(TextureState::new(tex.clone())); },
             TextureType::Shininess => { data.texture_shininess = Some(TextureState::new(tex.clone())); },
+            TextureType::Environment => { data.texture_environment = Some(TextureState::new(tex.clone())); },
 
             TextureType::Custom0 => { data.texture_custom0 = Some(TextureState::new(tex.clone())); },
             TextureType::Custom1 => { data.texture_custom1 = Some(TextureState::new(tex.clone())); },
@@ -494,6 +502,7 @@ impl Material
             TextureType::AmbientOcclusion => { tex = data.texture_ambient_occlusion.clone() },
             TextureType::Reflectivity => { tex = data.texture_reflectivity.clone() },
             TextureType::Shininess => { tex = data.texture_shininess.clone() },
+            TextureType::Environment => { tex = data.texture_environment.clone() },
 
             TextureType::Custom0 => { tex = data.texture_custom0.clone() },
             TextureType::Custom1 => { tex = data.texture_custom1.clone() },
@@ -521,6 +530,7 @@ impl Material
             TextureType::AmbientOcclusion => { if let Some(tex_state) = data.texture_ambient_occlusion.as_mut() { tex = Some(tex_state) } else { tex = None; } },
             TextureType::Reflectivity => { if let Some(tex_state) = data.texture_reflectivity.as_mut() { tex = Some(tex_state) } else { tex = None; } },
             TextureType::Shininess => { if let Some(tex_state) = data.texture_shininess.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Environment => { if let Some(tex_state) = data.texture_environment.as_mut() { tex = Some(tex_state) } else { tex = None; } },
 
             TextureType::Custom0 => { if let Some(tex_state) = data.texture_custom0.as_mut() { tex = Some(tex_state) } else { tex = None; } },
             TextureType::Custom1 => { if let Some(tex_state) = data.texture_custom1.as_mut() { tex = Some(tex_state) } else { tex = None; } },

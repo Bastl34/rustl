@@ -223,7 +223,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
                         let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                         let tex_path = get_texture_path(&diffuse_texture, path);
-                        let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -238,7 +238,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading normal texture {}", mat.normal_texture.clone().unwrap());
                         let normal_texture = mat.normal_texture.clone().unwrap();
                         let tex_path = get_texture_path(&normal_texture, path);
-                        let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -253,7 +253,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
                         let ambient_texture = mat.ambient_texture.clone().unwrap();
                         let tex_path = get_texture_path(&ambient_texture, path);
-                        let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -268,7 +268,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading specular texture {}", mat.specular_texture.clone().unwrap());
                         let specular_texture = mat.specular_texture.clone().unwrap();
                         let tex_path: String = get_texture_path(&specular_texture, path);
-                        let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -283,7 +283,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
                         let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                         let tex_path = get_texture_path(&dissolve_texture, path);
-                        let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -298,7 +298,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
                         let shininess_texture = mat.shininess_texture.clone().unwrap();
                         let tex_path = get_texture_path(&shininess_texture, path);
-                        let tex = scene.load_texture_or_reuse(tex_path.as_str(), None).await?;
+                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();

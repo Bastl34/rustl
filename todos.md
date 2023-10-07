@@ -1,10 +1,12 @@
 todo:
  * everything should be dynamic
  * TODOs
- * mipmap off by default? it uses a lot of GPU mempry (+1/3)
  * normal map: rotation/transformation is not applied correctly
+ * screenshot is broken on windows
+ * flickering on windows (amd)
 
 done:
+* mipmap off by default? it uses a lot of GPU mempry (+1/3)
  * something is wrong while showing a preview (8k textures) - load time is way to high
  * consider using ComponentBase for all state structs
  * blender like movement (g +xyz, r +xyz)

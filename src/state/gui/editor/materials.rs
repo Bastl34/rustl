@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::{RwLock, Arc}};
 
 use egui::{Ui, RichText, Color32};
+use rfd::FileDialog;
 
-use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, component_downcast_mut};
+use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, component_downcast_mut, resources::resources::{load_binary_async, load_binary}, helper::concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}, rendering::scene};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -137,7 +138,97 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                         material.remove_texture(texture_type)
                     }
                 }
+                else
+                {
+                    let title = format!("🖼 {}", texture_type.to_string());
+                    let id = format!("texture_{}", texture_type.to_string());
+
+                    generic_items::collapse(ui, id, true, |ui|
+                    {
+                        ui.label(RichText::new(title).heading().strong());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                        {
+                            // "enabled" toggle
+                            let toggle_text = RichText::new("⏺").color(Color32::RED);
+
+                            ui.add_enabled_ui(false, |ui|
+                            {
+                                let mut enabled = false;
+                                ui.toggle_value(&mut enabled, toggle_text)
+                            });
+                        });
+                    },
+                    |ui|
+                    {
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+                        {
+                            if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
+                            {
+                                let main_queue = state.main_thread_execution_queue.clone();
+
+                                spawn_thread(move ||
+                                {
+                                    load_texture(main_queue.clone(), texture_type, scene_id, material_id);
+                                });
+                            }
+                        });
+                    });
+                }
             }
         }
+    }
+}
+
+pub fn load_texture(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: TextureType, scene_id: u64, material_id: u64)
+{
+    if let Some(path) = FileDialog::new().add_filter("Image", &["jpg", "png"]).set_directory("/").pick_file()
+    {
+        let name: Option<&std::ffi::OsStr> = path.file_stem().clone();
+        let extension = path.extension().clone();
+
+        if name.is_none() ||  name.unwrap().to_str().is_none()
+        {
+            return;
+        }
+
+        if extension.is_none() ||  extension.unwrap().to_str().is_none()
+        {
+            return;
+        }
+
+        let name = name.unwrap().to_str().unwrap().to_string().clone();
+        let extension = extension.unwrap().to_str().unwrap().to_string().clone();
+
+        let path = &path.display().to_string();
+        let bytes = load_binary(path).unwrap();
+
+        let mut main_queue = main_queue.write().unwrap();
+        main_queue.add(Box::new(move |state|
+        {
+            if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+            {
+                if let Some(material) = scene.get_material_by_id(material_id)
+                {
+                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+                    component_downcast_mut!(material, Material);
+                    material.set_texture(tex, texture_type);
+
+                    //let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), None);
+
+                    //dbg!("AWWWW YEY");
+
+
+
+                    //Texture
+                    //let tex = Texture::(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
+                }
+            }
+        }));
+
+        //let image_content = load_binary_async(path.as_os_str()).await?;
+
+        //let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
+        //let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
     }
 }

@@ -199,18 +199,20 @@ var<uniform> material: MaterialUniform;
 @group(0) @binding(16) var s_reflectivity: sampler;
 @group(0) @binding(17) var t_shininess: texture_2d<f32>;
 @group(0) @binding(18) var s_shininess: sampler;
+@group(0) @binding(19) var t_environment: texture_2d<f32>;
+@group(0) @binding(20) var s_environment: sampler;
 
-@group(0) @binding(19) var t_custom0: texture_2d<f32>;
-@group(0) @binding(20) var s_custom0: sampler;
-@group(0) @binding(21) var t_custom1: texture_2d<f32>;
-@group(0) @binding(22) var s_custom1: sampler;
-@group(0) @binding(23) var t_custom2: texture_2d<f32>;
-@group(0) @binding(24) var s_custom2: sampler;
-@group(0) @binding(25) var t_custom3: texture_2d<f32>;
-@group(0) @binding(26) var s_custom3: sampler;
+@group(0) @binding(21) var t_custom0: texture_2d<f32>;
+@group(0) @binding(22) var s_custom0: sampler;
+@group(0) @binding(23) var t_custom1: texture_2d<f32>;
+@group(0) @binding(24) var s_custom1: sampler;
+@group(0) @binding(25) var t_custom2: texture_2d<f32>;
+@group(0) @binding(26) var s_custom2: sampler;
+@group(0) @binding(27) var t_custom3: texture_2d<f32>;
+@group(0) @binding(28) var s_custom3: sampler;
 
-@group(0) @binding(27) var t_depth: texture_2d<f32>;
-@group(0) @binding(38) var s_depth: sampler;
+@group(0) @binding(29) var t_depth: texture_2d<f32>;
+@group(0) @binding(30) var s_depth: sampler;
 
 
 fn has_ambient_texture() -> bool            { return (material.textures_used & (1u << 1u)) != 0u; }

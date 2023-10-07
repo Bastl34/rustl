@@ -130,21 +130,21 @@ impl Scene
         self.nodes.clear();
     }
 
-    pub async fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary_async(path).await?;
 
-        self.load_texture_byte_or_reuse(&image_bytes, path, extension).await
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
     }
 
-    pub async fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
     {
         let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
 
         if self.textures.contains_key(&hash)
         {
             println!("reusing texture {}", name);
-            return Ok(self.textures.get_mut(&hash).unwrap().clone());
+            return self.textures.get_mut(&hash).unwrap().clone();
         }
 
         let id = self.id_manager.get_next_texture_id();
@@ -154,7 +154,7 @@ impl Scene
 
         self.textures.insert(hash, arc.clone());
 
-        Ok(arc)
+        arc
     }
 
     pub fn insert_texture_or_reuse(&mut self, texture: Texture, name: &str) -> TextureItem
@@ -244,6 +244,7 @@ impl Scene
         None
     }
 
+    /*
     pub fn get_material_by_id_mut(&mut self, id: u64) -> Option<MaterialItem>
     {
         if self.materials.contains_key(&id)
@@ -254,6 +255,7 @@ impl Scene
 
         None
     }
+    */
 
     pub fn get_material_or_default(&self, node: NodeItem) -> Option<MaterialItem>
     {

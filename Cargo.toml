@@ -66,6 +66,7 @@ web-sys = { version = "0.3", features = [
     "Element",
     "Location",
 ]}
+wasm_thread = { version = "0.2.0", features = ["es_modules"]}
 
 egui-winit = { version = "0.23.0", default-features = false, features = [
 #egui-winit = { git ="https://github.com/emilk/egui", version = "0.22.0", default-features = false, features = [
