@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{RwLock, Arc}};
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, component_downcast_mut, resources::resources::{load_binary_async, load_binary}, helper::concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}, rendering::scene};
+use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast_mut, resources::resources::load_binary, helper::concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -129,7 +129,6 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
                     if changed
                     {
-                        //texture.get_data_mut().get_mut().enabled = enabled;
                         material.set_texture_state(texture_type , enabled);
                     }
 
@@ -213,22 +212,8 @@ pub fn load_texture(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: Textu
 
                     component_downcast_mut!(material, Material);
                     material.set_texture(tex, texture_type);
-
-                    //let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), None);
-
-                    //dbg!("AWWWW YEY");
-
-
-
-                    //Texture
-                    //let tex = Texture::(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
                 }
             }
         }));
-
-        //let image_content = load_binary_async(path.as_os_str()).await?;
-
-        //let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
-        //let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
     }
 }

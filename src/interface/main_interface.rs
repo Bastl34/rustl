@@ -306,11 +306,14 @@ impl MainInterface
             */
 
 
-            //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/sphere/sphere.gltf", state.rendering.create_mipmaps).await.unwrap();
+            scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
-            scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Lantern.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/lotus.glb", state.rendering.create_mipmaps).await.unwrap();

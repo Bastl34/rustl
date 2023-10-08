@@ -224,14 +224,37 @@ fn has_roughness_texture() -> bool          { return (material.textures_used & (
 fn has_ambient_occlusion_texture() -> bool  { return (material.textures_used & (1u << 7u)) != 0u; }
 fn has_reflectivity_texture() -> bool       { return (material.textures_used & (1u << 8u)) != 0u; }
 fn has_shininess_texture() -> bool          { return (material.textures_used & (1u << 9u)) != 0u; }
+fn has_environment_texture() -> bool        { return (material.textures_used & (1u << 10u)) != 0u; }
 
-fn has_custom0_texture() -> bool            { return (material.textures_used & (1u << 10u)) != 0u; }
-fn has_custom1_texture() -> bool            { return (material.textures_used & (1u << 11u)) != 0u; }
-fn has_custom2_texture() -> bool            { return (material.textures_used & (1u << 12u)) != 0u; }
-fn has_custom3_texture() -> bool            { return (material.textures_used & (1u << 13u)) != 0u; }
+fn has_custom0_texture() -> bool            { return (material.textures_used & (1u << 11u)) != 0u; }
+fn has_custom1_texture() -> bool            { return (material.textures_used & (1u << 12u)) != 0u; }
+fn has_custom2_texture() -> bool            { return (material.textures_used & (1u << 13u)) != 0u; }
+fn has_custom3_texture() -> bool            { return (material.textures_used & (1u << 14u)) != 0u; }
 
-fn has_depth_texture() -> bool              { return (material.textures_used & (1u << 14u)) != 0u; }
+fn has_depth_texture() -> bool              { return (material.textures_used & (1u << 15u)) != 0u; }
 
+
+/*
+fn sphericalCoords(direction: vec3<f32>) -> vec2<f32>
+{
+    var phi: f32 = atan2(direction.z, direction.x);
+    var theta: f32 = acos(direction.y / length(direction));
+    var u: f32 = 1.0 - (phi + PI) / (2.0 * PI);
+    var v: f32 = (theta + (PI / 2.0)) / PI;
+    return vec2<f32>(u, v);
+}
+*/
+
+// https://learnopengl.com/PBR/IBL/Diffuse-irradiance
+const inv_atan: vec2<f32> = vec2<f32>(0.1591, 0.3183);
+fn sphericalCoords(direction: vec3<f32>) -> vec2<f32>
+{
+    var uv = vec2<f32>(atan2(direction.z, direction.x), asin(direction.y));
+    uv *= inv_atan;
+    uv += 0.5;
+    uv.y = 1.0 - uv.y;
+    return uv;
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
@@ -372,6 +395,26 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             color.x *= ambient_occlusion.x;
             color.y *= ambient_occlusion.x;
             color.z *= ambient_occlusion.x;
+        }
+
+        // reflection with env map
+        if (has_environment_texture() && material.reflectivity > 0.001)
+        {
+            var reflectivity = material.reflectivity;
+            if (has_reflectivity_texture())
+            {
+                let reflectivity_value = textureSample(t_reflectivity, s_reflectivity, uvs);
+                reflectivity *= reflectivity_value.x;
+            }
+
+            let reflection = reflect(-view_dir, normal);
+            let sphere_coords = sphericalCoords(reflection);
+
+            let reflection_color = textureSample(t_environment, s_environment, sphere_coords);
+
+            color.x += reflection_color.x * reflectivity;
+            color.y += reflection_color.y * reflectivity;
+            color.z += reflection_color.z * reflectivity;
         }
     }
 
