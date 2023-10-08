@@ -14,6 +14,7 @@ use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
+use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::math::{yaw_pitch_from_direction, self, approx_zero_vec2};
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
@@ -21,10 +22,11 @@ use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene};
 use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::{WGpu};
+use crate::state::gui::editor::materials::load_texture;
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::alpha::Alpha;
-use crate::state::scene::components::material::Material;
+use crate::state::scene::components::material::{Material, TextureType};
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::components::transformation_animation::TransformationAnimation;
 use crate::state::scene::instance::Instance;
@@ -307,11 +309,11 @@ impl MainInterface
 
 
             //scene.load("objects/sphere/sphere.gltf", state.rendering.create_mipmaps).await.unwrap();
-            scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).await.unwrap();
@@ -457,8 +459,17 @@ impl MainInterface
             //scene_utils::create_grid(&mut scene, 1, 1.0).await;
 
             // ********** scene add **********
+            let scene_id = scene.id.clone();
+
             scene.update(&mut state.input_manager, state.frame_scale);
             state.scenes.push(Box::new(scene));
+
+            //load default env texture
+            let main_queue = state.main_thread_execution_queue.clone();
+            spawn_thread(move ||
+            {
+                load_texture("textures/environment/footprint_court.jpg", main_queue.clone(), TextureType::Environment, scene_id, None);
+            });
 
             state.print();
         }
@@ -630,6 +641,11 @@ impl MainInterface
 
                 for scene in &mut state.scenes
                 {
+                    if !scene.visible
+                    {
+                        continue;
+                    }
+
                     let mut render_item = scene.render_item.take();
 
                     let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());

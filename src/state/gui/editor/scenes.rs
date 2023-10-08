@@ -1,8 +1,8 @@
-use egui::{Ui, RichText};
+use egui::{Ui, RichText, Color32};
 
-use crate::{state::{state::State, scene::{scene::Scene, components::mesh::Mesh}, gui::helper::generic_items::collapse_with_title}, component_downcast};
+use crate::{state::{state::State, scene::{scene::Scene, components::{mesh::Mesh, material::TextureType}}, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, helper::concurrency::thread::spawn_thread};
 
-use super::editor_state::EditorState;
+use super::{editor_state::EditorState, materials::load_texture_dialog};
 
 pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
@@ -15,7 +15,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     }
 
     let scene_id = scene_id.unwrap();
-    let scene = state.find_scene_by_id(scene_id);
+    let scene = state.find_scene_by_id_mut(scene_id);
 
     if scene.is_none()
     {
@@ -84,6 +84,111 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         ui.label(format!(" ⚫ buffers: TODO"));
     });
 
+    // Settings
+    collapse_with_title(ui, "scene_settings", true, "⛭ Scene Settings", |ui|
+    {
+        scene.ui(ui);
+    });
+
+    // Env Texture
+    if let Some(texture) = scene.get_data().environment_texture.clone()
+    {
+        let mut enabled = texture.enabled;
+        let texture = texture.get();
+        let mut texture = texture.write().unwrap();
+
+        let title = format!("🖼 {} Texture", TextureType::Environment.to_string());
+        let id = format!("texture_{}", TextureType::Environment.to_string());
+
+        let mut remove_texture = false;
+        let mut changed = false;
+
+        generic_items::collapse(ui, id, true, |ui|
+        {
+            ui.label(RichText::new(title).heading().strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    remove_texture = true;
+                }
+
+                // enabled toggle
+                let toggle_text;
+                if enabled
+                {
+                    toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                }
+                else
+                {
+                    toggle_text = RichText::new("⏺").color(Color32::RED);
+                }
+
+
+                if ui.toggle_value(&mut enabled, toggle_text).clicked()
+                {
+                    changed = true;
+                }
+            });
+        },
+        |ui|
+        {
+            texture.ui_info(ui);
+        });
+
+        if changed
+        {
+            let scene_data = scene.get_data_mut();
+            let scene_data = scene_data.get_mut();
+            let env_tex = scene_data.environment_texture.as_mut().unwrap();
+            env_tex.enabled = enabled;
+        }
+
+        if remove_texture
+        {
+            let scene_data = scene.get_data_mut();
+            let scene_data = scene_data.get_mut();
+            scene_data.environment_texture = None;
+        }
+    }
+    else
+    {
+        let title = format!("🖼 {} Texture", TextureType::Environment.to_string());
+        let id = format!("texture_{}", TextureType::Environment.to_string());
+
+        generic_items::collapse(ui, id, true, |ui|
+        {
+            ui.label(RichText::new(title).heading().strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                // "enabled" toggle
+                let toggle_text = RichText::new("⏺").color(Color32::RED);
+
+                ui.add_enabled_ui(false, |ui|
+                {
+                    let mut enabled = false;
+                    ui.toggle_value(&mut enabled, toggle_text)
+                });
+            });
+        },
+        |ui|
+        {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+            {
+                if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
+                {
+                    let main_queue = state.main_thread_execution_queue.clone();
+
+                    spawn_thread(move ||
+                    {
+                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None);
+                    });
+                }
+            });
+        });
+    }
+
+    // Debugging
     collapse_with_title(ui, "scene_debugging", true, "🐛 Debugging Settings", |ui|
     {
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|

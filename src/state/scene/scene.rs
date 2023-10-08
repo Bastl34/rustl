@@ -7,9 +7,16 @@ use parry3d::{query::Ray, transformation};
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType}, mesh::Mesh}, light::{LightItem, Light}};
+use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType, TextureState}, mesh::Mesh}, light::{LightItem, Light}};
 
 pub type SceneItem = Box<Scene>;
+
+
+pub struct SceneData
+{
+    pub max_lights: u32,
+    pub environment_texture: Option<TextureState>
+}
 
 pub struct Scene
 {
@@ -17,8 +24,9 @@ pub struct Scene
 
     pub id: u64,
     pub name: String,
+    pub visible: bool,
 
-    pub max_lights: u32,
+    data: ChangeTracker<SceneData>,
 
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
@@ -40,8 +48,13 @@ impl Scene
 
             id: id,
             name: name.to_string(),
+            visible: true,
 
-            max_lights: 10,
+            data: ChangeTracker::new(SceneData
+            {
+                max_lights: 10,
+                environment_texture: None
+            }),
 
             nodes: vec![],
             cameras: vec![],
@@ -52,6 +65,16 @@ impl Scene
             render_item: None,
             lights_render_item: None,
         }
+    }
+
+    pub fn get_data(&self) -> &SceneData
+    {
+        &self.data.get_ref()
+    }
+
+    pub fn get_data_mut(&mut self) -> &mut ChangeTracker<SceneData>
+    {
+        &mut self.data
     }
 
     pub async fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
@@ -638,5 +661,30 @@ impl Scene
         }
 
         best_hit
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        ui.horizontal(|ui|
+        {
+            ui.label("name: ");
+            ui.text_edit_singleline(&mut self.name);
+        });
+
+        ui.checkbox(&mut self.visible, "visible");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Max lights:");
+
+            let mut max_lights = self.get_data().max_lights;
+            if ui.add(egui::DragValue::new(&mut max_lights).clamp_range(0..=20)).changed()
+            {
+                let data = self.get_data_mut().get_mut();
+
+                data.max_lights = max_lights;
+            }
+        });
+
     }
 }

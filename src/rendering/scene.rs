@@ -96,7 +96,7 @@ impl Scene
         // ********** depth pass **********
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &bind_group_layouts, scene.max_lights, true, true, 1));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, 1));
         }
         else
         {
@@ -109,7 +109,7 @@ impl Scene
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.max_lights, true, true, self.samples));
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, self.samples));
         }
         else
         {
@@ -177,6 +177,8 @@ impl Scene
 
     pub fn update_materials(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
     {
+        let default_env_map = scene.get_data().environment_texture.clone();
+
         for (_material_id, material) in &mut scene.materials
         {
             let mut material = material.write().unwrap();
@@ -187,7 +189,7 @@ impl Scene
             if material_changed || material.get_base().render_item.is_none()
             {
                 dbg!("material render item recreate");
-                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, None);
+                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, default_env_map.clone(), None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
             }
             else if material_changed || force
@@ -196,8 +198,8 @@ impl Scene
 
                 {
                     let render_item = get_render_item_mut::<MaterialBuffer>(render_item.as_mut().unwrap());
-                    render_item.to_buffer(wgpu, material, None);
-                    render_item.create_binding_groups(wgpu, material, None);
+                    render_item.to_buffer(wgpu, material, default_env_map.clone(), None);
+                    render_item.create_binding_groups(wgpu, material, default_env_map.clone(), None);
                 }
 
                 material.get_base_mut().render_item = render_item;
@@ -207,15 +209,16 @@ impl Scene
         }
     }
 
-    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
     {
         // ********** lights: all **********
+        let max_lights = scene.get_data().max_lights;
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
-        if all_lights_changed
+        if all_lights_changed || force
         {
             if scene.lights_render_item.is_none()
             {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, scene.max_lights);
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, max_lights);
                 scene.lights_render_item = Some(Box::new(lights_buffer));
             }
 
@@ -509,12 +512,20 @@ impl Scene
 
         // ********** dynamic items **********
         self.update_textures(wgpu, scene);
-        self.update_materials(wgpu, scene, false);
-        self.update_light_cameras(wgpu, scene);
+
+        let scene_changed = scene.get_data_mut().consume_change();
+
+        self.update_materials(wgpu, scene, scene_changed);
+        self.update_light_cameras(wgpu, scene, scene_changed);
+
+        if scene_changed
+        {
+            dbg!("scene data changed -> recreate materials/lights/pipelines");
+            self.create_pipelines(wgpu, scene, true);
+        }
 
         let mut all_nodes = Scene::list_all_child_nodes(&scene.nodes, false);
         self.update_nodes(wgpu, &mut all_nodes);
-
 
         // ********** screenshot stuff **********
         if state.save_image

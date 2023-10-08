@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{RwLock, Arc}};
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast_mut, resources::resources::load_binary, helper::concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}};
+use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType, TextureState}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast_mut, resources::resources::load_binary, helper::{concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}, file::{get_extension, get_stem}}};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -167,7 +167,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
                                 spawn_thread(move ||
                                 {
-                                    load_texture(main_queue.clone(), texture_type, scene_id, material_id);
+                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id));
                                 });
                             }
                         });
@@ -178,7 +178,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
     }
 }
 
-pub fn load_texture(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: TextureType, scene_id: u64, material_id: u64)
+pub fn load_texture_dialog(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: TextureType, scene_id: u64, material_id: Option<u64>)
 {
     if let Some(path) = FileDialog::new().add_filter("Image", &["jpg", "png"]).set_directory("/").pick_file()
     {
@@ -195,6 +195,10 @@ pub fn load_texture(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: Textu
             return;
         }
 
+        let path = &path.display().to_string();
+        load_texture(path.as_str(), main_queue, texture_type, scene_id, material_id);
+
+        /*
         let name = name.unwrap().to_str().unwrap().to_string().clone();
         let extension = extension.unwrap().to_str().unwrap().to_string().clone();
 
@@ -206,6 +210,51 @@ pub fn load_texture(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: Textu
         {
             if let Some(scene) = state.find_scene_by_id_mut(scene_id)
             {
+                // material specific texture
+                if let Some(material_id) = material_id
+                {
+                    if let Some(material) = scene.get_material_by_id(material_id)
+                    {
+                        let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+                        component_downcast_mut!(material, Material);
+                        material.set_texture(tex, texture_type);
+                    }
+                }
+                // scene specific texture
+                else
+                {
+                    if texture_type == TextureType::Environment
+                    {
+                        let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+                        let scene_data = scene.get_data_mut();
+                        let scene_data = scene_data.get_mut();
+                        scene_data.environment_texture = Some(TextureState::new(tex.clone()));
+
+                    }
+                }
+            }
+        }));
+        */
+    }
+}
+
+pub fn load_texture(path: &str, main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: TextureType, scene_id: u64, material_id: Option<u64>)
+{
+    let extension = get_extension(path);
+    let name = get_stem(path);
+
+    let bytes = load_binary(path).unwrap();
+
+    let mut main_queue = main_queue.write().unwrap();
+    main_queue.add(Box::new(move |state|
+    {
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            // material specific texture
+            if let Some(material_id) = material_id
+            {
                 if let Some(material) = scene.get_material_by_id(material_id)
                 {
                     let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
@@ -214,6 +263,19 @@ pub fn load_texture(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: Textu
                     material.set_texture(tex, texture_type);
                 }
             }
-        }));
-    }
+            // scene specific texture
+            else
+            {
+                if texture_type == TextureType::Environment
+                {
+                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+                    let scene_data = scene.get_data_mut();
+                    let scene_data = scene_data.get_mut();
+                    scene_data.environment_texture = Some(TextureState::new(tex.clone()));
+
+                }
+            }
+        }
+    }));
 }

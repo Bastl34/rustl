@@ -2,7 +2,7 @@ use std::{mem::swap, collections::HashMap};
 
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
-use crate::{state::{helper::render_item::{RenderItem, get_render_item, RenderItemType}, scene::components::{material::{Material, TextureType, ALL_TEXTURE_TYPES}, component::Component}}, render_item_impl_default};
+use crate::{state::{helper::render_item::{RenderItem, get_render_item, RenderItemType}, scene::{components::{material::{Material, TextureType, ALL_TEXTURE_TYPES, TextureState}, component::Component}, texture::TextureItem}}, render_item_impl_default};
 
 use super::{wgpu::WGpu, uniform, texture::Texture};
 
@@ -62,26 +62,26 @@ pub struct MaterialUniform
 
 impl MaterialUniform
 {
-    pub fn new(material: &Material) -> Self
+    pub fn new(material: &Material, has_default_env_map: bool) -> Self
     {
         let material_data = material.get_data();
 
         let mut textures_used: u32 = 0;
-        if material.is_texture_enabled(TextureType::AmbientEmissive)   { textures_used |= 1 << 1; }
-        if material.is_texture_enabled(TextureType::Base)              { textures_used |= 1 << 2; }
-        if material.is_texture_enabled(TextureType::Specular)          { textures_used |= 1 << 3; }
-        if material.is_texture_enabled(TextureType::Normal)            { textures_used |= 1 << 4; }
-        if material.is_texture_enabled(TextureType::Alpha)             { textures_used |= 1 << 5; }
-        if material.is_texture_enabled(TextureType::Roughness)         { textures_used |= 1 << 6; }
-        if material.is_texture_enabled(TextureType::AmbientOcclusion)  { textures_used |= 1 << 7; }
-        if material.is_texture_enabled(TextureType::Reflectivity)      { textures_used |= 1 << 8; }
-        if material.is_texture_enabled(TextureType::Shininess)         { textures_used |= 1 << 9; }
-        if material.is_texture_enabled(TextureType::Environment)       { textures_used |= 1 << 10; }
+        if material.is_texture_enabled(TextureType::AmbientEmissive)                    { textures_used |= 1 << 1; }
+        if material.is_texture_enabled(TextureType::Base)                               { textures_used |= 1 << 2; }
+        if material.is_texture_enabled(TextureType::Specular)                           { textures_used |= 1 << 3; }
+        if material.is_texture_enabled(TextureType::Normal)                             { textures_used |= 1 << 4; }
+        if material.is_texture_enabled(TextureType::Alpha)                              { textures_used |= 1 << 5; }
+        if material.is_texture_enabled(TextureType::Roughness)                          { textures_used |= 1 << 6; }
+        if material.is_texture_enabled(TextureType::AmbientOcclusion)                   { textures_used |= 1 << 7; }
+        if material.is_texture_enabled(TextureType::Reflectivity)                       { textures_used |= 1 << 8; }
+        if material.is_texture_enabled(TextureType::Shininess)                          { textures_used |= 1 << 9; }
+        if material.is_texture_enabled(TextureType::Environment) || has_default_env_map { textures_used |= 1 << 10; }
 
-        if material.is_texture_enabled(TextureType::Custom0)           { textures_used |= 1 << 11; }
-        if material.is_texture_enabled(TextureType::Custom1)           { textures_used |= 1 << 12; }
-        if material.is_texture_enabled(TextureType::Custom2)           { textures_used |= 1 << 13; }
-        if material.is_texture_enabled(TextureType::Custom3)           { textures_used |= 1 << 14; }
+        if material.is_texture_enabled(TextureType::Custom0)                            { textures_used |= 1 << 11; }
+        if material.is_texture_enabled(TextureType::Custom1)                            { textures_used |= 1 << 12; }
+        if material.is_texture_enabled(TextureType::Custom2)                            { textures_used |= 1 << 13; }
+        if material.is_texture_enabled(TextureType::Custom3)                            { textures_used |= 1 << 14; }
 
         MaterialUniform
         {
@@ -147,7 +147,7 @@ impl RenderItem for MaterialBuffer
 
 impl MaterialBuffer
 {
-    pub fn new(wgpu: &mut WGpu, material: &Material, additional_textures: Option<&Vec<(&Texture, u32)>>) -> MaterialBuffer
+    pub fn new(wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>) -> MaterialBuffer
     {
         let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -168,15 +168,15 @@ impl MaterialBuffer
             bind_group: None
         };
 
-        buffer.to_buffer(wgpu, material, additional_textures);
-        buffer.create_binding_groups(wgpu, material, additional_textures);
+        buffer.to_buffer(wgpu, material, default_env_map.clone(), additional_textures);
+        buffer.create_binding_groups(wgpu, material, default_env_map, additional_textures);
 
         buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, material: &Material, additional_textures: Option<&Vec<(&Texture, u32)>>)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
-        let mut material_uniform = MaterialUniform::new(material);
+        let mut material_uniform = MaterialUniform::new(material, default_env_map.is_some());
 
         if let Some(additional_textures) = additional_textures
         {
@@ -198,19 +198,21 @@ impl MaterialBuffer
         );
     }
 
-    pub fn update_buffer(&mut self, wgpu: &mut WGpu, material: &Material)
+    /*
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, material: &Material, has_default_env_tex: bool)
     {
-        let material_uniform = MaterialUniform::new(material);
+        let material_uniform = MaterialUniform::new(material, has_default_env_tex);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[material_uniform]));
     }
+    */
 
     pub fn get_buffer(&self) -> &wgpu::Buffer
     {
         &self.buffer
     }
 
-    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, additional_textures: Option<&Vec<(&Texture, u32)>>)
+    pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let device = wgpu.device();
 
@@ -225,29 +227,37 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
-        let mut texture_render_items: HashMap<u64, RenderItemType> = HashMap::new();
+        let mut texture_render_items: HashMap<u64, (RenderItemType, TextureItem)> = HashMap::new();
         let mut texture_render_items_dir = vec![];
 
         for texture_type in ALL_TEXTURE_TYPES
         {
+            let mut texture = None;
+            if texture_type == TextureType::Environment && default_env_map.is_some()
+            {
+                texture = default_env_map.clone();
+            }
+
             if material.has_texture(texture_type)
             {
-                let texture = material.get_texture_by_type(texture_type);
-                let texture = texture.unwrap().clone();
+                texture = material.get_texture_by_type(texture_type).clone();
+            }
+
+            if let Some(texture) = texture
+            {
                 let enabled = texture.enabled;
 
                 if enabled
                 {
-                    let texture = texture.get();
-                    let mut texture = texture.write().unwrap();
+                    let texture_arc = texture.get();
+                    let mut texture = texture_arc.write().unwrap();
 
                     if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
                     {
                         let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
-
                         swap(&mut texture.render_item, &mut render_item);
 
-                        texture_render_items.insert(texture.id, render_item.unwrap());
+                        texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone()));
                     }
 
                     texture_render_items_dir.push((Some(texture.id), bind_id));
@@ -270,7 +280,7 @@ impl MaterialBuffer
             if let Some(texture_id) = texture_id
             {
                 let render_item = texture_render_items.get(texture_id).unwrap();
-                let render_item = get_render_item::<Texture>(render_item);
+                let render_item = get_render_item::<Texture>(&render_item.0);
 
                 let textures_layout_group = render_item.get_bind_group_layout_entries(*bind_id);
                 let textures_group = render_item.get_bind_group_entries(*bind_id);
@@ -321,21 +331,9 @@ impl MaterialBuffer
         );
 
         // ********* swap back *********
-        for texture_type in ALL_TEXTURE_TYPES
+        for (_tex_id, (render_item, texture)) in texture_render_items
         {
-            if material.has_texture(texture_type)
-            {
-                let texture = material.get_texture_by_type(texture_type);
-                let texture = texture.unwrap().clone();
-                let texture = texture.get();
-                let mut texture = texture.write().unwrap();
-
-                if texture.render_item.is_none() && texture_render_items.contains_key(&texture.id)
-                {
-                    let render_item = texture_render_items.remove(&texture.id);
-                    texture.render_item = render_item;
-                }
-            }
+            texture.write().unwrap().render_item = Some(render_item);
         }
 
         self.bind_group_layout = Some(bind_group_layout);
