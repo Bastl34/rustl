@@ -88,6 +88,7 @@ mod state
             pub(crate) mod editor_state;
             pub(crate) mod main_frame;
             pub(crate) mod modals;
+            pub(crate) mod dialogs;
             pub(crate) mod statistics;
             pub(crate) mod cameras;
             pub(crate) mod objects;

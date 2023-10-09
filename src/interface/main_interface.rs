@@ -22,7 +22,6 @@ use crate::rendering::egui::EGui;
 use crate::rendering::scene::{Scene};
 use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::{WGpu};
-use crate::state::gui::editor::materials::load_texture;
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::alpha::Alpha;
@@ -465,11 +464,7 @@ impl MainInterface
             state.scenes.push(Box::new(scene));
 
             //load default env texture
-            let main_queue = state.main_thread_execution_queue.clone();
-            spawn_thread(move ||
-            {
-                load_texture("textures/environment/footprint_court.jpg", main_queue.clone(), TextureType::Environment, scene_id, None);
-            });
+            state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
             state.print();
         }

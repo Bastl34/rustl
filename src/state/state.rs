@@ -3,9 +3,9 @@ use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 use instant::Instant;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueue}, input::input_manager::InputManager};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::ExecutionQueue, thread::spawn_thread}}, input::input_manager::InputManager};
 
-use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::MaterialItem}};
+use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::{MaterialItem, TextureType}}, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -168,6 +168,18 @@ impl State
 
             exit: false
         }
+    }
+
+    pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
+    {
+        let path = path.to_string().clone();
+
+        //load default env texture
+        let main_queue = self.main_thread_execution_queue.clone();
+        spawn_thread(move ||
+        {
+            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None);
+        });
     }
 
     pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>
