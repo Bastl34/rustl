@@ -104,7 +104,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
     {
-        let material = load_material(&gltf_material, scene, &loaded_textures, &mut clear_textures);
+        let material = load_material(&gltf_material, scene, &loaded_textures, &mut clear_textures, create_mipmaps);
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
 
         let id;
@@ -519,7 +519,7 @@ pub fn get_path(item_path: &String, gltf_path: &str) -> String
     item_path.replace("\\", "/")
 }
 
-pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>) -> Material
+pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool) -> Material
 {
     let component_id = scene.id_manager.get_next_component_id();
     let mut material = Material::new(component_id, gltf_material.name().unwrap_or("unknown"));
@@ -584,7 +584,8 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let tex = texture.read().unwrap();
             let name = format!("{} metallic", tex.name);
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
-            let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+            let tex_arc: Arc<RwLock<Box<Texture>>> = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+            tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
             data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures
@@ -603,6 +604,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let name = format!("{} roughness", tex.name);
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 1);
             let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+            tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
             data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures

@@ -164,10 +164,11 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                             if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
                             {
                                 let main_queue = state.main_thread_execution_queue.clone();
+                                let mipmapping = state.rendering.create_mipmaps;
 
                                 spawn_thread(move ||
                                 {
-                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id));
+                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping);
                                 });
                             }
                         });

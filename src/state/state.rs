@@ -178,7 +178,7 @@ impl State
         let main_queue = self.main_thread_execution_queue.clone();
         spawn_thread(move ||
         {
-            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None);
+            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None, true);
         });
     }
 

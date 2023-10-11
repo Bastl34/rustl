@@ -93,7 +93,7 @@ pub async fn create_grid(scene: &mut Scene, amount: u32, spacing: f32)
     }
 }
 
-pub fn load_texture(path: &str, main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: TextureType, scene_id: u64, material_id: Option<u64>)
+pub fn load_texture(path: &str, main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: TextureType, scene_id: u64, material_id: Option<u64>, mipmapping: bool)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
@@ -111,6 +111,7 @@ pub fn load_texture(path: &str, main_queue: Arc<RwLock<ExecutionQueue>>, texture
                 if let Some(material) = scene.get_material_by_id(material_id)
                 {
                     let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+                    tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
 
                     component_downcast_mut!(material, Material);
                     material.set_texture(tex, texture_type);
@@ -122,6 +123,7 @@ pub fn load_texture(path: &str, main_queue: Arc<RwLock<ExecutionQueue>>, texture
                 if texture_type == TextureType::Environment
                 {
                     let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+                    tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
 
                     let scene_data = scene.get_data_mut();
                     let scene_data = scene_data.get_mut();

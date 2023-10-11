@@ -181,7 +181,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
                     spawn_thread(move ||
                     {
-                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None);
+                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None, true);
                     });
                 }
             });

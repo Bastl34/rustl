@@ -85,7 +85,7 @@ impl Texture
             width: 0,
             height: 0,
 
-            mipmapping: true,
+            mipmapping: false,
 
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
@@ -140,7 +140,7 @@ impl Texture
             width: image.width() as u64,
             height: image.height() as u64,
 
-            mipmapping: true,
+            mipmapping: false,
 
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
@@ -200,7 +200,7 @@ impl Texture
 
             has_transparency: false,
 
-            mipmapping: true,
+            mipmapping: false,
 
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 

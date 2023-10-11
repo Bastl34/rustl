@@ -3,7 +3,7 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, cmp::Ordering};
 use nalgebra::{Vector3, Point3, distance, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh}, node::{Node, NodeItem}, camera::{Camera, CameraData}, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::{Camera, CameraData}, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
@@ -119,6 +119,28 @@ impl Scene
 
     pub fn update_textures(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
+        // check if the scene env texture has changed
+        if let Some(env_tex) = &scene.get_data().environment_texture
+        {
+            if env_tex.enabled && env_tex.item.read().unwrap().get_data_tracker().changed()
+            {
+                dbg!("update all materials");
+                let env_texture_id = env_tex.item.read().unwrap().id;
+
+                for (_, material) in &mut scene.materials
+                {
+                    let mut material = material.write().unwrap();
+                    let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+
+                    if !material.has_texture(TextureType::Environment) || material.has_texture_id(env_texture_id)
+                    {
+                        material.get_data_mut().force_change();
+                    }
+                }
+            }
+        }
+
+        // check all individual textures
         for (_texture_id, texture) in &mut scene.textures
         {
             let mut buffer_recreate_needed = false;
