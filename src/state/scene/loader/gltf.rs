@@ -29,71 +29,14 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
     // ********** textures **********
     let mut loaded_textures = vec![];
 
-    for texture in gltf.textures()
+    for gltf_texture in gltf.textures()
     {
-        let (bytes, extension) = load_texture(path, &texture, &buffers).await;
+        let (bytes, extension) = load_texture(path, &gltf_texture, &buffers).await;
 
-        let tex = scene.load_texture_byte_or_reuse(&bytes, texture.name().unwrap_or("unknown"), extension);
+        let tex = scene.load_texture_byte_or_reuse(&bytes, gltf_texture.name().unwrap_or("unknown"), extension);
+        apply_texture_filtering_settings(tex.clone(), &gltf_texture, create_mipmaps);
 
-        {
-            let mut tex = tex.write().unwrap();
-            let tex_data = tex.get_data_mut().get_mut();
-            tex_data.mipmapping = create_mipmaps;
-
-            match texture.sampler().wrap_s()
-            {
-                texture::WrappingMode::ClampToEdge => tex_data.address_mode_u = TextureAddressMode::ClampToEdge,
-                texture::WrappingMode::MirroredRepeat => tex_data.address_mode_u = TextureAddressMode::MirrorRepeat,
-                texture::WrappingMode::Repeat => tex_data.address_mode_u = TextureAddressMode::Repeat,
-            }
-
-            match texture.sampler().wrap_t()
-            {
-                texture::WrappingMode::ClampToEdge => tex_data.address_mode_v = TextureAddressMode::ClampToEdge,
-                texture::WrappingMode::MirroredRepeat => tex_data.address_mode_v = TextureAddressMode::MirrorRepeat,
-                texture::WrappingMode::Repeat => tex_data.address_mode_v = TextureAddressMode::Repeat,
-            }
-
-            if let Some(mag_filter) = texture.sampler().mag_filter()
-            {
-                match mag_filter
-                {
-                    texture::MagFilter::Nearest => tex_data.mag_filter = TextureFilterMode::Nearest,
-                    texture::MagFilter::Linear => tex_data.mag_filter = TextureFilterMode::Linear,
-                }
-            }
-
-            if let Some(min_filter) = texture.sampler().min_filter()
-            {
-                match min_filter
-                {
-                    texture::MinFilter::Nearest => tex_data.min_filter = TextureFilterMode::Nearest,
-                    texture::MinFilter::Linear => tex_data.min_filter = TextureFilterMode::Linear,
-                    texture::MinFilter::NearestMipmapNearest =>
-                    {
-                        tex_data.min_filter = TextureFilterMode::Nearest;
-                        tex_data.mipmap_filter = TextureFilterMode::Nearest;
-                    },
-                    texture::MinFilter::LinearMipmapNearest =>
-                    {
-                        tex_data.min_filter = TextureFilterMode::Linear;
-                        tex_data.mipmap_filter = TextureFilterMode::Nearest;
-                    },
-                    texture::MinFilter::NearestMipmapLinear =>
-                    {
-                        tex_data.min_filter = TextureFilterMode::Nearest;
-                        tex_data.mipmap_filter = TextureFilterMode::Linear;
-                    },
-                    texture::MinFilter::LinearMipmapLinear =>
-                    {
-                        tex_data.min_filter = TextureFilterMode::Linear;
-                        tex_data.mipmap_filter = TextureFilterMode::Linear;
-                    },
-                }
-            }
-        }
-
-        loaded_textures.push((tex, texture.index()));
+        loaded_textures.push((tex, gltf_texture.index()));
     }
 
     // because metallic and roughness are combined -> and we will use it seperatly -> the initial loaded texture should be removed again
@@ -519,6 +462,65 @@ pub fn get_path(item_path: &String, gltf_path: &str) -> String
     item_path.replace("\\", "/")
 }
 
+fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_texture: &gltf::Texture<'a>, create_mipmaps: bool)
+{
+    let mut tex = tex.write().unwrap();
+    let tex_data = tex.get_data_mut().get_mut();
+    tex_data.mipmapping = create_mipmaps;
+
+    match gltf_texture.sampler().wrap_s()
+    {
+        texture::WrappingMode::ClampToEdge => tex_data.address_mode_u = TextureAddressMode::ClampToEdge,
+        texture::WrappingMode::MirroredRepeat => tex_data.address_mode_u = TextureAddressMode::MirrorRepeat,
+        texture::WrappingMode::Repeat => tex_data.address_mode_u = TextureAddressMode::Repeat,
+    }
+
+    match gltf_texture.sampler().wrap_t()
+    {
+        texture::WrappingMode::ClampToEdge => tex_data.address_mode_v = TextureAddressMode::ClampToEdge,
+        texture::WrappingMode::MirroredRepeat => tex_data.address_mode_v = TextureAddressMode::MirrorRepeat,
+        texture::WrappingMode::Repeat => tex_data.address_mode_v = TextureAddressMode::Repeat,
+    }
+
+    if let Some(mag_filter) = gltf_texture.sampler().mag_filter()
+    {
+        match mag_filter
+        {
+            texture::MagFilter::Nearest => tex_data.mag_filter = TextureFilterMode::Nearest,
+            texture::MagFilter::Linear => tex_data.mag_filter = TextureFilterMode::Linear,
+        }
+    }
+
+    if let Some(min_filter) = gltf_texture.sampler().min_filter()
+    {
+        match min_filter
+        {
+            texture::MinFilter::Nearest => tex_data.min_filter = TextureFilterMode::Nearest,
+            texture::MinFilter::Linear => tex_data.min_filter = TextureFilterMode::Linear,
+            texture::MinFilter::NearestMipmapNearest =>
+            {
+                tex_data.min_filter = TextureFilterMode::Nearest;
+                tex_data.mipmap_filter = TextureFilterMode::Nearest;
+            },
+            texture::MinFilter::LinearMipmapNearest =>
+            {
+                tex_data.min_filter = TextureFilterMode::Linear;
+                tex_data.mipmap_filter = TextureFilterMode::Nearest;
+            },
+            texture::MinFilter::NearestMipmapLinear =>
+            {
+                tex_data.min_filter = TextureFilterMode::Nearest;
+                tex_data.mipmap_filter = TextureFilterMode::Linear;
+            },
+            texture::MinFilter::LinearMipmapLinear =>
+            {
+                tex_data.min_filter = TextureFilterMode::Linear;
+                tex_data.mipmap_filter = TextureFilterMode::Linear;
+            },
+        }
+    }
+}
+
 pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool) -> Material
 {
     let component_id = scene.id_manager.get_next_component_id();
@@ -586,6 +588,9 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let name = format!("{} metallic", tex.name);
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
             let tex_arc: Arc<RwLock<Box<Texture>>> = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+
+            apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
+
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
             data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
@@ -605,6 +610,9 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let name = format!("{} roughness", tex.name);
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 1);
             let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+
+            apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
+
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
             data.texture_roughness = Some(TextureState::new(tex_arc));
 
