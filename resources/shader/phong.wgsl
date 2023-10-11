@@ -411,6 +411,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             let sphere_coords = sphericalCoords(reflection);
 
             let reflection_color = textureSample(t_environment, s_environment, sphere_coords);
+            //let reflection_color = textureSampleLevel(t_environment, s_environment, sphere_coords, 100.0);
 
             color.x += reflection_color.x * reflectivity;
             color.y += reflection_color.y * reflectivity;

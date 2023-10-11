@@ -153,8 +153,8 @@ impl Texture
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
-            min_filter: TextureFilterMode::Nearest,
-            mipmap_filter: TextureFilterMode::Nearest
+            min_filter: TextureFilterMode::Linear,
+            mipmap_filter: TextureFilterMode::Linear
         };
 
         Texture
@@ -211,8 +211,8 @@ impl Texture
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
-            min_filter: TextureFilterMode::Nearest,
-            mipmap_filter: TextureFilterMode::Nearest
+            min_filter: TextureFilterMode::Linear,
+            mipmap_filter: TextureFilterMode::Linear
         };
 
         Texture
@@ -261,6 +261,31 @@ impl Texture
         }
 
         mipmaps
+    }
+
+    pub fn get_mipmap_levels_amount(&self) -> usize
+    {
+        let mut current_width = self.width();
+        let mut current_height = self.height();
+
+        let mut levels = 0;
+
+        loop
+        {
+            current_width = current_width / 2;
+            current_height = current_height / 2;
+
+            if current_width >= 1 && current_height >= 1 && levels < MAX_MIPMAPS
+            {
+                levels += 1;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        levels + 1 // add 1 for level=0 which is the full res
     }
 
     pub fn create_preview(image: &DynamicImage) -> DynamicImage
@@ -432,11 +457,8 @@ impl Texture
             ui.image((preview.id(), preview.size_vec2()));
         }
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Resolution: ");
-            ui.label(format!("{}x{}", data.width, data.height));
-        });
+        ui.label(format!("Resolution: {}x{}", data.width, data.height));
+        ui.label(format!("Mipmap Levels: {}", self.get_mipmap_levels_amount()));
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)
