@@ -153,7 +153,8 @@ impl Editor
         // ***************** DELETE OBJECT *****************
         if !self.editor_state.selected_object.is_empty()
         {
-            if state.input_manager.keyboard.is_pressed(Key::X) || state.input_manager.keyboard.is_pressed(Key::Delete)
+            //if state.input_manager.keyboard.is_pressed(Key::X) || state.input_manager.keyboard.is_pressed(Key::Delete)
+            if state.input_manager.keyboard.is_pressed(Key::Delete)
             {
                 // object
                 if self.editor_state.selected_type == SelectionType::Objects
