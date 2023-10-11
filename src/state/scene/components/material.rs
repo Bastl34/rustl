@@ -438,7 +438,10 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                return texture.get().read().unwrap().id == texture_id;
+                if texture.get().read().unwrap().id == texture_id
+                {
+                    return true;
+                }
             }
         }
 

@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, f32::consts::E};
 
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::state::{state::State, gui::helper::generic_items::collapse_with_title, scene::texture::TextureItem};
+use crate::{state::{state::State, gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{texture::TextureItem, components::{material::Material, component::Component}}}, rendering::material, component_downcast};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -97,20 +97,37 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
             }
         });
 
-        // load
-        /*
-        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        collapse_with_title(ui, "texture_usage", true, "👆 Texture used by Materials", |ui|
         {
-            if ui.button(RichText::new("Load Texture").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
+            let mut used = false;
+            for (material_id, material) in &scene.materials
             {
-                if let Some(path) = FileDialog::new().add_filter("Image", &["jpg", "png"]).set_directory("/").pick_file()
+                component_downcast!(material, Material);
+                if material.has_texture_id(texture_id)
                 {
-                    // TODO load
-                    // TODO: replace hash in scene.textures
+                    ui.horizontal(|ui|
+                    {
+                        ui.label(format!(" ⚫ {}: {}", material_id, material.get_base().name));
+
+                        // link to the material setting
+                        if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to material").clicked()
+                        {
+                            editor_state.selected_object = format!("material_{}", material_id);
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.selected_type = SelectionType::Materials;
+                            editor_state.settings = SettingsPanel::Material;
+                        }
+                    });
+
+                    used = true;
                 }
             }
+
+            if !used
+            {
+                info_box(ui, "This texture is not used by any material. Try removing it to save resources.");
+            }
         });
-        */
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {

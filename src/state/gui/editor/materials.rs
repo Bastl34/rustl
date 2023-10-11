@@ -87,6 +87,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                     let mut enabled = texture.enabled;
                     let texture = texture.get();
                     let mut texture = texture.write().unwrap();
+                    let texture_id = texture.id;
 
                     let title = format!("🖼 {}", texture_type.to_string());
                     let id = format!("texture_{}", texture_type.to_string());
@@ -99,26 +100,27 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                         ui.label(RichText::new(title).heading().strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                         {
-                            if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                            if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("delete").clicked()
                             {
                                 remove_texture = true;
                             }
 
                             // enabled toggle
-                            let toggle_text;
-                            if enabled
-                            {
-                                toggle_text = RichText::new("⏺").color(Color32::GREEN);
-                            }
-                            else
-                            {
-                                toggle_text = RichText::new("⏺").color(Color32::RED);
-                            }
+                            let toggle_color = if enabled { Color32::GREEN } else { Color32::RED };
+                            let toggle_text = RichText::new("⏺").color(toggle_color);
 
-
-                            if ui.toggle_value(&mut enabled, toggle_text).clicked()
+                            if ui.toggle_value(&mut enabled, toggle_text).on_hover_text("enable/disable").clicked()
                             {
                                 changed = true;
+                            }
+
+                            // link to the texture setting
+                            if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to texture").clicked()
+                            {
+                                editor_state.selected_object = format!("texture_{}", texture_id);
+                                editor_state.selected_scene_id = Some(scene_id);
+                                editor_state.selected_type = SelectionType::Textures;
+                                editor_state.settings = SettingsPanel::Texture;
                             }
                         });
                     },

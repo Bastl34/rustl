@@ -6,7 +6,7 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh, transformation::Transformation}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
 
 pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
@@ -523,6 +523,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
 {
     let component_id = scene.id_manager.get_next_component_id();
     let mut material = Material::new(component_id, gltf_material.name().unwrap_or("unknown"));
+    let material_name = material.get_base().name.clone();
     let data = material.get_data_mut().get_mut();
 
     let base_color = gltf_material.pbr_metallic_roughness().base_color_factor();
@@ -605,7 +606,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
             let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 1);
             let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
-            data.texture_reflectivity = Some(TextureState::new(tex_arc));
+            data.texture_roughness = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures
             clear_textures.push(texture.clone());
