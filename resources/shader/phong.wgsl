@@ -407,15 +407,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 reflectivity *= reflectivity_value.x;
             }
 
+            var roughness = material.roughness;
+            if (has_roughness_texture())
+            {
+                let roughness_value = textureSample(t_roughness, s_roughness, uvs);
+                roughness *= roughness_value.x;
+            }
+
             let reflection = reflect(-view_dir, normal);
             let sphere_coords = sphericalCoords(reflection);
 
-            let reflection_color = textureSample(t_environment, s_environment, sphere_coords);
-            //let reflection_color = textureSampleLevel(t_environment, s_environment, sphere_coords, 100.0);
+            let environment_map_levels = textureNumLevels(t_environment) - 1u;
+            let mipmap_level = roughness * f32(environment_map_levels);
+            //let mipmap_level = roughness * 100.0;
 
+            let reflection_color = textureSampleLevel(t_environment, s_environment, sphere_coords, mipmap_level);
             color.x += reflection_color.x * reflectivity;
             color.y += reflection_color.y * reflectivity;
             color.z += reflection_color.z * reflectivity;
+
+            //color.x = roughness;
+            //color.y = roughness;
+            //color.z = roughness;
         }
     }
 

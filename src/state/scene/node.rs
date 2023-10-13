@@ -1,7 +1,7 @@
 use std::{sync::{Arc, RwLock}, cell::RefCell};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Matrix3, Vector3};
+use nalgebra::{Matrix4, Matrix3, Vector3, Point3};
 
 use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
@@ -121,6 +121,86 @@ impl Node
         self.find_components::<Mesh>()
     }
 
+    pub fn get_bounding_info(&self, recursive: bool) -> Option<(Point3<f32>, Point3<f32>)>
+    {
+        let meshes = self.get_meshes();
+
+        let mut min = Point3::<f32>::new(std::f32::MAX, std::f32::MAX, std::f32::MAX);
+        let mut max = Point3::<f32>::new(std::f32::MIN, std::f32::MIN, std::f32::MIN);
+
+        let mut found = false;
+
+        // own meshes
+        for instance in self.instances.get_ref()
+        {
+            let instance = instance.borrow();
+            let transform = instance.calculate_transform();
+
+            for mesh in &meshes
+            {
+                component_downcast!(mesh, Mesh);
+                let bbox = mesh.get_data().b_box;
+
+                let transformed_min = transform * Point3::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z).to_homogeneous();
+                let transformed_max = transform * Point3::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z).to_homogeneous();
+
+                min.x = min.x.min(transformed_min.x);
+                min.y = min.y.min(transformed_min.y);
+                min.z = min.z.min(transformed_min.z);
+
+                max.x = max.x.min(transformed_max.x);
+                max.y = max.y.min(transformed_max.y);
+                max.z = max.z.min(transformed_max.z);
+
+                found = true;
+            }
+        }
+
+        // meshes of child nodes
+        if recursive
+        {
+            for node in &self.nodes
+            {
+                let node = node.read().unwrap();
+                let child_min_max = node.get_bounding_info(recursive);
+
+                if let Some(child_min_max) = child_min_max
+                {
+                    let (child_min, child_max) = child_min_max;
+
+                    min.x = min.x.min(child_min.x);
+                    min.y = min.y.min(child_min.y);
+                    min.z = min.z.min(child_min.z);
+
+                    max.x = max.x.min(child_max.x);
+                    max.y = max.y.min(child_max.y);
+                    max.z = max.z.min(child_max.z);
+                }
+            }
+        }
+
+        if found
+        {
+            return Some((min, max));
+        }
+
+        None
+    }
+
+    pub fn get_center(&self, recursive: bool) -> Option<Point3<f32>>
+    {
+        let bounding_info = self.get_bounding_info(recursive);
+
+        if let Some(bounding_info) = bounding_info
+        {
+            let (min, max) = bounding_info;
+
+            return Some(min + (max - min) / 2.0);
+        }
+
+        None
+    }
+
     pub fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
@@ -145,16 +225,15 @@ impl Node
         )
     }
 
-    pub fn get_full_transform(node: NodeItem) -> Matrix4<f32>
+    pub fn get_full_transform(&self) -> Matrix4<f32>
     {
-        let node = node.read().unwrap();
-
-        let (node_transform, node_parent_inheritance) = node.get_transform();
+        let (node_transform, node_parent_inheritance) = self.get_transform();
         let mut parent_trans = Matrix4::<f32>::identity();
 
-        if let Some(parent_node) = &node.parent
+        if let Some(parent_node) = &self.parent
         {
-            parent_trans = Self::get_full_transform(parent_node.clone());
+            let parent_node = parent_node.read().unwrap();
+            parent_trans = parent_node.get_full_transform();
         }
 
         if node_parent_inheritance

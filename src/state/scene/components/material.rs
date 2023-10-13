@@ -745,7 +745,7 @@ impl Component for Material
         apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
-        apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=PI/2.0).text("roughness")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=1.0).text("roughness")).changed() || apply_settings;
         apply_settings = ui.checkbox(&mut monte_carlo, "monte carlo").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut smooth_shading, "smooth shading").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut reflection_only, "reflection only").changed() || apply_settings;

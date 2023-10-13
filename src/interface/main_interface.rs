@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::f32::consts::PI;
 use std::mem::{swap};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
@@ -7,14 +6,12 @@ use std::time::Instant;
 use std::{vec, cmp};
 
 use nalgebra::{Point3, Vector3, Vector2, Rotation3, Point2};
-use parry3d::transformation::utils::transform;
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
-use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::math::{yaw_pitch_from_direction, self, approx_zero_vec2};
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
@@ -25,10 +22,7 @@ use crate::rendering::wgpu::{WGpu};
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::alpha::Alpha;
-use crate::state::scene::components::material::{Material, TextureType};
-use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::components::transformation_animation::TransformationAnimation;
-use crate::state::scene::instance::Instance;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::utilities::scene_utils;
@@ -312,7 +306,8 @@ impl MainInterface
             //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
-            scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).await.unwrap();
@@ -406,11 +401,12 @@ impl MainInterface
             if scene.cameras.len() == 0
             {
                 let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                cam.update_resolution(state.width, state.height);
                 let cam_data = cam.get_data_mut().get_mut();
                 cam_data.fovy = 45.0f32.to_radians();
                 cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
                 cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                cam_data.clipping_near = 0.1;
+                cam_data.clipping_near = 0.001;
                 cam_data.clipping_far = 1000.0;
                 scene.cameras.push(Box::new(cam));
             }
@@ -419,7 +415,8 @@ impl MainInterface
             if scene.cameras.len() > 0
             {
                 let cam = scene.cameras.get_mut(0).unwrap();
-                cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                cam.add_controller_target_rotation(1.0, Vector2::<f32>::new(0.0015, 0.0015), 0.001);
             }
 
 

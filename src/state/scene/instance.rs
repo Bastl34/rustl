@@ -294,7 +294,11 @@ impl Instance
 
     pub fn calculate_transform(&self) -> Matrix4::<f32>
     {
-        let node_trans = Node::get_full_transform(self.node.clone());
+        let node_trans;
+        {
+            let node = self.node.read().unwrap();
+            node_trans = node.get_full_transform();
+        }
         let transform_component = self.find_component::<Transformation>();
 
         if let Some(transform_component) = transform_component

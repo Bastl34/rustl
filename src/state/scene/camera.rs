@@ -5,7 +5,7 @@ use parry3d::query::Ray;
 
 use crate::{helper::{math::approx_equal, change_tracker::ChangeTracker}, state::helper::render_item::{RenderItemOption}, input::input_manager::InputManager};
 
-use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController}};
+use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}};
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -220,6 +220,11 @@ impl Camera
     pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
     {
         self.controller = Some(Box::new(FlyController::new(collision, mouse_sensitivity, move_speed, move_speed_shift)));
+    }
+
+    pub fn add_controller_target_rotation(&mut self, radius: f32, mouse_sensitivity: Vector2::<f32>, mouse_wheel_sensitivity: f32)
+    {
+        self.controller = Some(Box::new(TargetRotationController::new(radius, 0.0, 0.0, mouse_sensitivity, mouse_wheel_sensitivity)));
     }
 
     pub fn remove_controller(&mut self)

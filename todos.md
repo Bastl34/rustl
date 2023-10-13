@@ -4,6 +4,7 @@ todo:
  * normal map: rotation/transformation is not applied correctly
  * screenshot is broken on windows
  * flickering on windows (amd)
+ * set camera resolution per default (otherwise target rotation controller is not working correctly)
 
 done:
 * mipmap off by default? it uses a lot of GPU mempry (+1/3)
