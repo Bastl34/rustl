@@ -102,7 +102,7 @@ impl Camera
                 viewport_width: 1.0,
                 viewport_height: 1.0,
 
-                resolution_aspect_ratio: 0.0,
+                resolution_aspect_ratio: 1.0,
 
                 resolution_width: 0,
                 resolution_height: 0,

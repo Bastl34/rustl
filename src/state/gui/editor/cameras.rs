@@ -81,12 +81,20 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                     ui.text_edit_singleline(&mut node_name);
                 });
 
-                if ui.button(RichText::new("👆").color(Color32::WHITE)).on_hover_text("pick node").clicked()
+                let mut toggle_value = if editor_state.pick_mode == SelectionType::Camera { true } else { false };
+                if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick mode").changed()
                 {
-                    editor_state.pick_mode = SelectionType::Camera;
+                    if toggle_value
+                    {
+                        editor_state.pick_mode = SelectionType::Camera;
+                    }
+                    else
+                    {
+                        editor_state.pick_mode = SelectionType::None;
+                    }
                 }
 
-                if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("remove target").clicked()
                 {
                     camera.node = None;
                 }

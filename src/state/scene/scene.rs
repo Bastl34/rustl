@@ -522,6 +522,18 @@ impl Scene
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
     {
+        // check camera targets and remove
+        for camera in &mut self.cameras
+        {
+            if let Some(cam_node) = camera.node.clone()
+            {
+                if cam_node.read().unwrap().id == id
+                {
+                    camera.node = None;
+                }
+            }
+        }
+
         let len = self.nodes.len();
         self.nodes.retain(|node|
         {

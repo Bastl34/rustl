@@ -307,7 +307,7 @@ impl MainInterface
             //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
-            scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).await.unwrap();
@@ -319,7 +319,7 @@ impl MainInterface
             //scene.load("objects/temp/scene_2.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Toys_Railway.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Toys_Railway_2.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/test.glb", state.rendering.create_mipmaps).await.unwrap();
+            scene.load("objects/temp/test.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/bastl/bastl.obj", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/brick_wall.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/textured.glb", state.rendering.create_mipmaps).await.unwrap();
@@ -415,8 +415,8 @@ impl MainInterface
             if scene.cameras.len() > 0
             {
                 let cam = scene.cameras.get_mut(0).unwrap();
-                //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-                cam.add_controller_target_rotation(1.0, Vector2::<f32>::new(0.0015, 0.0015), 0.01);
+                cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                //cam.add_controller_target_rotation(1.0, Vector2::<f32>::new(0.0015, 0.0015), 0.01);
             }
 
 

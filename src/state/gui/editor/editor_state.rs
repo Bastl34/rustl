@@ -186,11 +186,19 @@ impl EditorState
                 continue;
             }
 
-            let (node_id, deselect_instance_id) = self.get_object_ids();
+            let (node_id, _deselect_instance_id) = self.get_object_ids();
             if let Some(node_id) = node_id
             {
                 if let Some(node) = scene.find_node_by_id(node_id)
                 {
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.borrow_mut();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
+                    }
+                    /*
                     if let Some(deselect_instance_id) = deselect_instance_id
                     {
                         if let Some(instance) = node.read().unwrap().find_instance_by_id(deselect_instance_id)
@@ -200,6 +208,7 @@ impl EditorState
                             instance_data.highlight = false;
                         }
                     }
+                    */
                 }
             }
         }

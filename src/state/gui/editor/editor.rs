@@ -1,15 +1,12 @@
-use std::{cell::RefCell, fmt::format, borrow::BorrowMut, mem::swap, collections::HashMap, sync::{Arc, RwLock}, f32::consts::PI};
+use std::{sync::{Arc, RwLock}, f32::consts::PI};
 
-use colored::Color;
-use egui::{FullOutput, RichText, Color32, ScrollArea, Ui, RawInput, Visuals, Style, Align2};
-use egui_plot::{Plot, BarChart, Bar, Legend, Corner};
-use nalgebra::{Vector3, Point3, Point2, distance, ComplexField};
+use egui::FullOutput;
 
-use crate::{state::{state::{State, FPS_CHART_VALUES}, scene::{light::{Light, LightItem}, components::{transformation::Transformation, material::{Material, MaterialItem}, mesh::Mesh, component::{Component, ComponentItem}}, node::NodeItem, scene::Scene, camera::{CameraItem, Camera}, instance::Instance}}, rendering::{egui::EGui, instance, camera}, helper::change_tracker::ChangeTracker, component_downcast, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut};
+use nalgebra::{Vector3, Matrix4};
+
+use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem}, node::NodeItem}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut};
 
 use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode}, main_frame};
-
-
 
 
 pub struct Editor
@@ -53,7 +50,7 @@ impl Editor
             state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
         }
 
-        // ***************** select objects *****************
+        // ***************** select/pick objects *****************
         if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none() && state.input_manager.mouse.clicked(MouseButton::Left)
         {
             let width = state.width;
@@ -135,7 +132,16 @@ impl Editor
                     let id_string;
                     {
                         let node = hit_item.read().unwrap();
-                        id_string = format!("objects_{}_{}", node.id, instance_id);
+
+                        // select object itself if there is not instance on it
+                        if node.instances.get_ref().len() == 1
+                        {
+                            id_string = format!("objects_{}", node.id);
+                        }
+                        else
+                        {
+                            id_string = format!("objects_{}_{}", node.id, instance_id);
+                        }
                     }
 
                     let mut already_selected = false;
@@ -343,27 +349,48 @@ impl Editor
 
                 let mouse_pos = state.input_manager.mouse.point.pos.unwrap();
                 let movement = (mouse_pos - start_pos) * factor;
+                let mut movement = Vector3::<f32>::new(movement.x, 0.0, movement.y);
 
-                if let (Some(scene), Some(node), Some(instance_id)) = self.editor_state.get_selected_node(state)
+                if let (Some(scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
                 {
+                    // get camera transform
+                    // TODO: if based on multiple cameras -> pick the correct one (check viewerport and mouse coordinates)
+                    let mut cam_inverse = Matrix4::<f32>::identity();
+                    for camera in &scene.cameras
+                    {
+                        if camera.enabled
+                        {
+                            let cam_data = camera.get_data();
+                            cam_inverse = cam_data.view_inverse.clone();
+                            break;
+                        }
+                    }
+
+                    // transform by inverse camera matrix
+                    movement = (cam_inverse * movement.to_homogeneous()).xyz();
+
                     let edit_transformation: ComponentItem;
                     let node_transform;
-                    let instance_transform;
+                    let mut instance_transform = None;
                     let instances_amount;
 
                     {
                         let node = node.read().unwrap();
                         instances_amount = node.instances.get_ref().len();
+                        node_transform = node.find_component::<Transformation>();
+                    }
+
+                    if let Some(instance_id) = instance_id
+                    {
+                        let node = node.read().unwrap();
                         let instance = node.find_instance_by_id(instance_id).unwrap() ;
 
                         let instance = instance.borrow_mut();
-
-                        node_transform = node.find_component::<Transformation>();
                         instance_transform = instance.find_component::<Transformation>();
                     }
 
                     // if there are multiple instances in the node -> use instance transform
-                    if instances_amount > 1
+                    if instances_amount > 1 && instance_id.is_some()
                     {
                         if let Some(instance_transform) = instance_transform
                         {
@@ -372,7 +399,7 @@ impl Editor
                         else
                         {
                             let node = node.read().unwrap();
-                            let instance = node.find_instance_by_id(instance_id).unwrap() ;
+                            let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
                             let mut instance = instance.borrow_mut();
 
                             instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
@@ -433,16 +460,16 @@ impl Editor
                             {
                                 if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
                                 {
-                                    let sign = movement.y.signum();
-                                    if movement.y.abs() >= step_size
+                                    let sign = movement.z.signum();
+                                    if movement.z.abs() >= step_size
                                     {
-                                        vec.y = step_size * sign;
+                                        vec.y = -step_size * sign;
                                         applied = true;
                                     }
                                 }
                                 else
                                 {
-                                    vec.y = movement.y;
+                                    vec.y = -movement.z;
                                     applied = true;
                                 }
                             }
@@ -451,8 +478,8 @@ impl Editor
                             {
                                 if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
                                 {
-                                    let sign = movement.y.signum();
-                                    if movement.y.abs() >= step_size
+                                    let sign = -movement.z.signum();
+                                    if movement.z.abs() >= step_size
                                     {
                                         vec.z = -step_size * sign;
                                         applied = true;
@@ -460,7 +487,7 @@ impl Editor
                                 }
                                 else
                                 {
-                                    vec.z = -movement.y;
+                                    vec.z = -movement.z;
                                     applied = true;
                                 }
                             }
@@ -484,8 +511,8 @@ impl Editor
                             {
                                 if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
                                 {
-                                    let sign = movement.y.signum();
-                                    if movement.y.abs() >= angle_steps
+                                    let sign = movement.z.signum();
+                                    if movement.z.abs() >= angle_steps
                                     {
                                         vec.x = angle_steps * sign;
                                         applied = true;
@@ -493,7 +520,7 @@ impl Editor
                                 }
                                 else
                                 {
-                                    vec.x = movement.y;
+                                    vec.x = movement.z;
                                     applied = true;
                                 }
                             }

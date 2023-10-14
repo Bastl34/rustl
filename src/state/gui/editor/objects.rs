@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{node::NodeItem, components::mesh::Mesh, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
+use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -438,12 +438,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let component_id;
             let name;
             let component_name;
+            let is_material;
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
                 component_name = format!("{} {}", base.icon, base.component_name);
                 name = base.name.clone();
                 component_id = component.id();
+
+                is_material = component.as_any().downcast_ref::<Material>().is_some();
             }
             generic_items::collapse(ui, component_id.to_string(), true, |ui|
             {
@@ -480,6 +483,17 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     if let Some(info) = &component.read().unwrap().get_base().info
                     {
                         ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
+                    }
+
+                    // link to the texture setting
+                    if is_material && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to material").clicked()
+                    {
+                        editor_state.de_select_current_item(state);
+
+                        editor_state.selected_object = format!("material_{}", component_id);
+                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_type = SelectionType::Material;
+                        editor_state.settings = SettingsPanel::Material;
                     }
                 });
             },

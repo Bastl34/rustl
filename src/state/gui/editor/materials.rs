@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{RwLock, Arc}};
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{state::{scene::components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType, TextureState}, state::State, gui::{helper::generic_items::{collapse_with_title, self}, editor::dialogs::load_texture_dialog}}, component_downcast_mut, resources::resources::load_binary, helper::{concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}, file::{get_extension, get_stem}}};
+use crate::{state::{scene::{components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType, TextureState}, scene::Scene}, state::State, gui::{helper::{generic_items::{collapse_with_title, self}, info_box::info_box}, editor::dialogs::load_texture_dialog}}, component_downcast_mut, resources::resources::load_binary, helper::{concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}, file::{get_extension, get_stem}}};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -50,6 +50,9 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     let (material_id, ..) = editor_state.get_object_ids();
 
+    let main_queue = state.main_thread_execution_queue.clone();
+    let mipmapping = state.rendering.create_mipmaps;
+
     let scene = state.find_scene_by_id_mut(scene_id);
     if scene.is_none() { return; }
 
@@ -66,12 +69,38 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             material.ui(ui);
         });
 
-        // delete material
-        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", |ui|
         {
-            if ui.button(RichText::new("Dispose Material").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            let mut used = false;
+            //Scene::list_all_child_nodes(nodes)
+            let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+
+            for node in all_nodes
             {
-                scene.delete_material_by_id(material_id);
+                let node = node.read().unwrap();
+                if node.find_component_by_id(material_id).is_some()
+                {
+                    ui.horizontal(|ui|
+                    {
+                        ui.label(format!(" ⚫ {}: {}", node.id, node.name));
+
+                        // link to the object setting
+                        if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to node").clicked()
+                        {
+                            editor_state.selected_object = format!("objects_{}", node.id);
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.selected_type = SelectionType::Object;
+                            editor_state.settings = SettingsPanel::Components;
+                        }
+                    });
+
+                    used = true;
+                }
+            }
+
+            if !used
+            {
+                info_box(ui, "This material is not used by any object. Try removing it to save resources.");
             }
         });
 
@@ -165,9 +194,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                         {
                             if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
                             {
-                                let main_queue = state.main_thread_execution_queue.clone();
-                                let mipmapping = state.rendering.create_mipmaps;
-
+                                let main_queue = main_queue.clone();
                                 spawn_thread(move ||
                                 {
                                     load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping);
@@ -178,5 +205,15 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                 }
             }
         }
+
+        // delete material
+        ui.spacing();
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Dispose Material").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_material_by_id(material_id);
+            }
+        });
     }
 }

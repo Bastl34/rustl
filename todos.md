@@ -4,9 +4,10 @@ todo:
  * normal map: rotation/transformation is not applied correctly
  * screenshot is broken on windows
  * flickering on windows (amd)
- * set camera resolution per default (otherwise target rotation controller is not working correctly)
+ * get rid of async stuff -> use exec queue
 
 done:
+ * set camera resolution per default (otherwise target rotation controller is not working correctly)
  * camera target not working correctly (maybe: get_center wrong?)
  * mipmap off by default? it uses a lot of GPU mempry (+1/3)
  * something is wrong while showing a preview (8k textures) - load time is way to high
