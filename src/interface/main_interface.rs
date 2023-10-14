@@ -416,7 +416,7 @@ impl MainInterface
             {
                 let cam = scene.cameras.get_mut(0).unwrap();
                 //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-                cam.add_controller_target_rotation(1.0, Vector2::<f32>::new(0.0015, 0.0015), 0.001);
+                cam.add_controller_target_rotation(1.0, Vector2::<f32>::new(0.0015, 0.0015), 0.01);
             }
 
 

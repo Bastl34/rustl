@@ -7,7 +7,8 @@ todo:
  * set camera resolution per default (otherwise target rotation controller is not working correctly)
 
 done:
-* mipmap off by default? it uses a lot of GPU mempry (+1/3)
+ * camera target not working correctly (maybe: get_center wrong?)
+ * mipmap off by default? it uses a lot of GPU mempry (+1/3)
  * something is wrong while showing a preview (8k textures) - load time is way to high
  * consider using ComponentBase for all state structs
  * blender like movement (g +xyz, r +xyz)

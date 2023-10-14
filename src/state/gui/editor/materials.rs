@@ -20,7 +20,7 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
 
             let heading = RichText::new(headline_name).strong();
 
-            let mut selection; if editor_state.selected_type == SelectionType::Materials && editor_state.selected_object == id { selection = true; } else { selection = false; }
+            let mut selection; if editor_state.selected_type == SelectionType::Material && editor_state.selected_object == id { selection = true; } else { selection = false; }
             if ui.toggle_value(&mut selection, heading).clicked()
             {
                 //if self.selected_material.is_none() || (self.selected_material.is_some() && self.selected_material.unwrap() != *material_id)
@@ -29,7 +29,7 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
 
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Materials;
+                    editor_state.selected_type = SelectionType::Material;
                     editor_state.settings = SettingsPanel::Material;
                 }
                 else
@@ -119,7 +119,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                             {
                                 editor_state.selected_object = format!("texture_{}", texture_id);
                                 editor_state.selected_scene_id = Some(scene_id);
-                                editor_state.selected_type = SelectionType::Textures;
+                                editor_state.selected_type = SelectionType::Texture;
                                 editor_state.settings = SettingsPanel::Texture;
                             }
                         });

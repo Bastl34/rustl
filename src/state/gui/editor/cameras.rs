@@ -20,14 +20,14 @@ pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraIte
                 heading = heading.strikethrough();
             }
 
-            let mut selection; if editor_state.selected_type == SelectionType::Cameras && editor_state.selected_object == id { selection = true; } else { selection = false; }
+            let mut selection; if editor_state.selected_type == SelectionType::Camera && editor_state.selected_object == id { selection = true; } else { selection = false; }
             if ui.toggle_value(&mut selection, heading).clicked()
             {
                 if selection
                 {
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Cameras;
+                    editor_state.selected_type = SelectionType::Camera;
                     editor_state.settings = SettingsPanel::Camera;
                 }
                 else
@@ -60,27 +60,39 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
     {
         collapse_with_title(ui, "camera_general_settings", true, "⛭ General Settings", |ui|
         {
-            let mut changed = false;
-
-            let mut enabled;
-            let mut name;
-            {
-                enabled = camera.enabled;
-                name = camera.name.clone();
-            }
-
             ui.horizontal(|ui|
             {
                 ui.label("name: ");
-                changed = ui.text_edit_singleline(&mut name).changed() || changed;
+                ui.text_edit_singleline(&mut camera.name);
             });
-            changed = ui.checkbox(&mut enabled, "enabled").changed() || changed;
 
-            if changed
+            ui.horizontal(|ui|
             {
-                camera.enabled = enabled;
-                camera.name = name;
-            }
+                let mut node_name = "".to_string();
+                if let Some(node) = camera.node.as_ref()
+                {
+                    let node = node.read().unwrap();
+                    node_name = format!("{} (id: {})", node.name, node.id);
+                }
+
+                ui.label("Target:");
+                ui.add_enabled_ui(false, |ui|
+                {
+                    ui.text_edit_singleline(&mut node_name);
+                });
+
+                if ui.button(RichText::new("👆").color(Color32::WHITE)).on_hover_text("pick node").clicked()
+                {
+                    editor_state.pick_mode = SelectionType::Camera;
+                }
+
+                if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    camera.node = None;
+                }
+            });
+
+            ui.checkbox(&mut camera.enabled, "enabled");
         });
 
         collapse_with_title(ui, "camera_settings", true, "📷 Camera Settings", |ui|

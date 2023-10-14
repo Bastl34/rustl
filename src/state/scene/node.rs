@@ -148,9 +148,9 @@ impl Node
                 min.y = min.y.min(transformed_min.y);
                 min.z = min.z.min(transformed_min.z);
 
-                max.x = max.x.min(transformed_max.x);
-                max.y = max.y.min(transformed_max.y);
-                max.z = max.z.min(transformed_max.z);
+                max.x = max.x.max(transformed_max.x);
+                max.y = max.y.max(transformed_max.y);
+                max.z = max.z.max(transformed_max.z);
 
                 found = true;
             }
@@ -172,9 +172,9 @@ impl Node
                     min.y = min.y.min(child_min.y);
                     min.z = min.z.min(child_min.z);
 
-                    max.x = max.x.min(child_max.x);
-                    max.y = max.y.min(child_max.y);
-                    max.z = max.z.min(child_max.z);
+                    max.x = max.x.max(child_max.x);
+                    max.y = max.y.max(child_max.y);
+                    max.z = max.z.max(child_max.z);
                 }
             }
         }
@@ -195,10 +195,26 @@ impl Node
         {
             let (min, max) = bounding_info;
 
+            //dbg!(bounding_info);
+
             return Some(min + (max - min) / 2.0);
         }
 
         None
+    }
+
+    pub fn has_changed_instance_data(&self) -> bool
+    {
+        for instance in self.instances.get_ref()
+        {
+            let instance = instance.borrow();
+            if instance.get_data_tracker().changed()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn get_transform(&self) -> (Matrix4<f32>, bool)

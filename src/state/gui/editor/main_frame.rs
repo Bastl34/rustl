@@ -165,7 +165,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
 
     ui.horizontal(|ui|
     {
-        if editor_state.selected_type == SelectionType::Objects && !editor_state.selected_object.is_empty()
+        if editor_state.selected_type == SelectionType::Object && !editor_state.selected_object.is_empty()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Components, " Components");
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Object, "◼ Object");
@@ -173,28 +173,28 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             object_settings = true;
         }
 
-        if editor_state.selected_type == SelectionType::Cameras && !editor_state.selected_object.is_empty()
+        if editor_state.selected_type == SelectionType::Camera && !editor_state.selected_object.is_empty()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Camera, "📷 Camera");
 
             camera_settings = true;
         }
 
-        if editor_state.selected_type == SelectionType::Lights && !editor_state.selected_object.is_empty()
+        if editor_state.selected_type == SelectionType::Light && !editor_state.selected_object.is_empty()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Light, "💡 Light");
 
             light_settings = true;
         }
 
-        if editor_state.selected_type == SelectionType::Materials && !editor_state.selected_object.is_empty()
+        if editor_state.selected_type == SelectionType::Material && !editor_state.selected_object.is_empty()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Material, "🎨 Material");
 
             material_settings = true;
         }
 
-        if editor_state.selected_type == SelectionType::Textures && !editor_state.selected_object.is_empty()
+        if editor_state.selected_type == SelectionType::Texture && !editor_state.selected_object.is_empty()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Texture, "🖼 Texture");
 
@@ -289,14 +289,14 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Objects { selection = true; } else { selection = false; }
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong()).clicked()
                 {
                     if selection
                     {
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::Objects;
+                        editor_state.selected_type = SelectionType::Object;
                     }
                     else
                     {
@@ -319,7 +319,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Cameras { selection = true; } else { selection = false; }
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
 
                 let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
                 let toggle = toggle.context_menu(|ui|
@@ -337,7 +337,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
                     {
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::Cameras;
+                        editor_state.selected_type = SelectionType::Camera;
                     }
                     else
                     {
@@ -360,14 +360,14 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Lights { selection = true; } else { selection = false; }
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong()).clicked()
                 {
                     if selection
                     {
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::Lights;
+                        editor_state.selected_type = SelectionType::Light;
                     }
                     else
                     {
@@ -390,14 +390,14 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Materials { selection = true; } else { selection = false; }
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Material { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong()).clicked()
                 {
                     if selection
                     {
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::Materials;
+                        editor_state.selected_type = SelectionType::Material;
                     }
                     else
                     {
@@ -420,14 +420,14 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Textures { selection = true; } else { selection = false; }
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong()).clicked()
                 {
                     if selection
                     {
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::Textures;
+                        editor_state.selected_type = SelectionType::Texture;
                     }
                     else
                     {

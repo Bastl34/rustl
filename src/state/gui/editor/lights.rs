@@ -26,14 +26,14 @@ pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<V
                 heading = heading.strikethrough();
             }
 
-            let mut selection; if editor_state.selected_type == SelectionType::Lights && editor_state.selected_object == id { selection = true; } else { selection = false; }
+            let mut selection; if editor_state.selected_type == SelectionType::Light && editor_state.selected_object == id { selection = true; } else { selection = false; }
             if ui.toggle_value(&mut selection, heading).clicked()
             {
                 if selection
                 {
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Lights;
+                    editor_state.selected_type = SelectionType::Light;
                     editor_state.settings = SettingsPanel::Light;
                 }
                 else

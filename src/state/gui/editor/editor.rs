@@ -53,8 +53,8 @@ impl Editor
             state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
         }
 
-        // select objects
-        if !self.editor_state.try_out && self.editor_state.selectable && self.editor_state.edit_mode.is_none() && state.input_manager.mouse.clicked(MouseButton::Left)
+        // ***************** select objects *****************
+        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none() && state.input_manager.mouse.clicked(MouseButton::Left)
         {
             let width = state.width;
             let height = state.height;
@@ -109,38 +109,63 @@ impl Editor
 
             if let Some((_t, _normal, hit_item, instance_id,_face_id)) = hit
             {
-                let id_string;
+                // pick camera target
+                if self.editor_state.pick_mode == SelectionType::Camera
                 {
-                    let node = hit_item.read().unwrap();
-                    id_string = format!("objects_{}_{}", node.id, instance_id);
-                }
+                    let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
 
-                let mut already_selected = false;
-                if self.editor_state.selected_object == id_string && self.editor_state.selected_scene_id == Some(scene_id)
-                {
-                    already_selected = true;
-                }
+                    let (camera_id, ..) = self.editor_state.get_object_ids();
 
-                // deselect first
-                self.editor_state.de_select_current_item(state);
+                    let scene = state.find_scene_by_id_mut(scene_id);
+                    if scene.is_none() { return; }
 
-                if !already_selected
-                {
-                    let node = hit_item.read().unwrap();
-                    self.editor_state.selected_object = id_string;
-                    self.editor_state.selected_scene_id = Some(scene_id);
-                    self.editor_state.selected_type = SelectionType::Objects;
+                    let scene = scene.unwrap();
 
-                    if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
+                    if camera_id.is_none() { return; }
+                    let camera_id = camera_id.unwrap();
+
+                    if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
                     {
-                        self.editor_state.settings = SettingsPanel::Object;
+                        camera.node = Some(hit_item.clone());
+                    }
+                }
+                // show selection
+                else
+                {
+                    let id_string;
+                    {
+                        let node = hit_item.read().unwrap();
+                        id_string = format!("objects_{}_{}", node.id, instance_id);
                     }
 
-                    if let Some(instance) = node.find_instance_by_id(instance_id)
+                    let mut already_selected = false;
+                    if self.editor_state.selected_object == id_string && self.editor_state.selected_scene_id == Some(scene_id)
                     {
-                        let mut instance = instance.borrow_mut();
-                        let instance_data = instance.get_data_mut().get_mut();
-                        instance_data.highlight = true;
+                        already_selected = true;
+                    }
+
+                    // deselect first
+                    self.editor_state.de_select_current_item(state);
+
+                    // highlight
+                    if !already_selected
+                    {
+                        let node = hit_item.read().unwrap();
+                        self.editor_state.selected_object = id_string;
+                        self.editor_state.selected_scene_id = Some(scene_id);
+                        self.editor_state.selected_type = SelectionType::Object;
+
+                        if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
+                        {
+                            self.editor_state.settings = SettingsPanel::Object;
+                        }
+
+                        if let Some(instance) = node.find_instance_by_id(instance_id)
+                        {
+                            let mut instance = instance.borrow_mut();
+                            let instance_data = instance.get_data_mut().get_mut();
+                            instance_data.highlight = true;
+                        }
                     }
                 }
             }
@@ -148,6 +173,8 @@ impl Editor
             {
                 self.editor_state.de_select_current_item(state);
             }
+
+            self.editor_state.pick_mode = SelectionType::None;
         }
 
         // ***************** DELETE OBJECT *****************
@@ -157,7 +184,7 @@ impl Editor
             if state.input_manager.keyboard.is_pressed(Key::Delete)
             {
                 // object
-                if self.editor_state.selected_type == SelectionType::Objects
+                if self.editor_state.selected_type == SelectionType::Object
                 {
                     if let (Some(scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
                     {
@@ -179,7 +206,7 @@ impl Editor
                 }
 
                 // camera
-                if self.editor_state.selected_type == SelectionType::Cameras
+                if self.editor_state.selected_type == SelectionType::Camera
                 {
                     let (camera_id, _) = self.editor_state.get_object_ids();
                     let scene = self.editor_state.get_selected_scene(state);
@@ -190,7 +217,7 @@ impl Editor
                 }
 
                 // light
-                if self.editor_state.selected_type == SelectionType::Lights
+                if self.editor_state.selected_type == SelectionType::Light
                 {
                     let (light_id, _) = self.editor_state.get_object_ids();
                     let scene = self.editor_state.get_selected_scene(state);
@@ -201,7 +228,7 @@ impl Editor
                 }
 
                 // material
-                if self.editor_state.selected_type == SelectionType::Materials
+                if self.editor_state.selected_type == SelectionType::Material
                 {
                     let (material_id, _) = self.editor_state.get_object_ids();
                     let scene = self.editor_state.get_selected_scene(state);
@@ -212,7 +239,7 @@ impl Editor
                 }
 
                 // texture
-                if self.editor_state.selected_type == SelectionType::Textures
+                if self.editor_state.selected_type == SelectionType::Texture
                 {
                     let (texture_id, _) = self.editor_state.get_object_ids();
                     let scene = self.editor_state.get_selected_scene(state);
@@ -242,7 +269,7 @@ impl Editor
         let angle_steps = PI / 8.0;
         let factor = 0.01;
 
-        if !self.editor_state.selected_object.is_empty() && self.editor_state.selected_type == SelectionType::Objects && state.input_manager.mouse.point.pos.is_some()
+        if !self.editor_state.selected_object.is_empty() && self.editor_state.selected_type == SelectionType::Object && state.input_manager.mouse.point.pos.is_some()
         {
             if state.input_manager.keyboard.is_pressed(Key::G)
             {

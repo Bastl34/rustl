@@ -20,7 +20,7 @@ pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std
 
             let heading = RichText::new(headline_name).strong();
 
-            let mut selection; if editor_state.selected_type == SelectionType::Textures && editor_state.selected_object == id { selection = true; } else { selection = false; }
+            let mut selection; if editor_state.selected_type == SelectionType::Texture && editor_state.selected_object == id { selection = true; } else { selection = false; }
             if ui.toggle_value(&mut selection, heading).clicked()
             {
                 if selection
@@ -28,7 +28,7 @@ pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std
 
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Textures;
+                    editor_state.selected_type = SelectionType::Texture;
                     editor_state.settings = SettingsPanel::Texture;
                 }
                 else
@@ -114,7 +114,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
                         {
                             editor_state.selected_object = format!("material_{}", material_id);
                             editor_state.selected_scene_id = Some(scene_id);
-                            editor_state.selected_type = SelectionType::Materials;
+                            editor_state.selected_type = SelectionType::Material;
                             editor_state.settings = SettingsPanel::Material;
                         }
                     });

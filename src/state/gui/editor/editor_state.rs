@@ -18,11 +18,11 @@ pub enum SettingsPanel
 #[derive(PartialEq, Eq)]
 pub enum SelectionType
 {
-    Objects,
-    Cameras,
-    Lights,
-    Materials,
-    Textures,
+    Object,
+    Camera,
+    Light,
+    Material,
+    Texture,
     None
 }
 
@@ -47,6 +47,8 @@ pub struct EditorState
     pub try_out: bool,
     pub selectable: bool,
     pub fly_camera: bool,
+
+    pub pick_mode: SelectionType,
 
     pub edit_mode: Option<EditMode>,
 
@@ -76,6 +78,8 @@ impl EditorState
             try_out: false,
             selectable: true,
             fly_camera: true,
+
+            pick_mode: SelectionType::None,
 
             edit_mode: None,
 
@@ -125,7 +129,7 @@ impl EditorState
     {
         let (node_id, instance_id) = self.get_object_ids();
 
-        if self.selected_type != SelectionType::Objects || self.selected_scene_id.is_none() || node_id.is_none()
+        if self.selected_type != SelectionType::Object || self.selected_scene_id.is_none() || node_id.is_none()
         {
             return (None, None, None);
         }

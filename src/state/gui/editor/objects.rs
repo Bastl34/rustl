@@ -53,7 +53,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
                     {
                         editor_state.selected_object = id;
                         editor_state.selected_scene_id = Some(scene_id);
-                        editor_state.selected_type = SelectionType::Objects;
+                        editor_state.selected_type = SelectionType::Object;
 
                         if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
                         {
@@ -121,7 +121,7 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                 {
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Objects;
+                    editor_state.selected_type = SelectionType::Object;
 
                     if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
                     {
