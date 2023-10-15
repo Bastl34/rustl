@@ -6,7 +6,7 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}}};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}, file::get_stem}};
 
 pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
@@ -44,10 +44,11 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
 
 
     // ********** materials **********
+    let resource_name = get_stem(path);
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
     {
-        let material = load_material(&gltf_material, scene, &loaded_textures, &mut clear_textures, create_mipmaps);
+        let material = load_material(&gltf_material, scene, &loaded_textures, &mut clear_textures, create_mipmaps, resource_name.clone());
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
 
         let id;
@@ -74,7 +75,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
     // cleanup
     for clear_texture in clear_textures
     {
-        _ = scene.remove_texture(clear_texture);
+        scene.delete_texture_by_id(clear_texture.read().unwrap().id);
     }
 
     Ok(loaded_ids)
@@ -521,7 +522,7 @@ fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_tex
     }
 }
 
-pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool) -> Material
+pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool, resource_name: String) -> Material
 {
     let component_id = scene.id_manager.get_next_component_id();
     let mut material = Material::new(component_id, gltf_material.name().unwrap_or("unknown"));
@@ -537,6 +538,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
+            set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Base);
             data.texture_base = Some(TextureState::new(texture));
         }
     }
@@ -546,6 +548,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_normal_texture_by_index(&tex, &loaded_textures)
         {
+            set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Normal);
             data.texture_normal = Some(TextureState::new(texture));
         }
     }
@@ -564,6 +567,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
         {
             if let Some(texture) = get_texture_by_index(&specular_tex, &loaded_textures)
             {
+                set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Specular);
                 data.texture_specular = Some(TextureState::new(texture));
             }
         }
@@ -574,24 +578,24 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
         data.specular_color = data.base_color * 0.8;
     }
 
-    // reflectivity
 
+
+    // reflectivity (metallic and roughness are combined in the loaded texture)
     // do not use full metallic_factor as reflectivity --> otherwise the object will be just complete mirror if metallic is set to 1.0
-    data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5;
+    data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5; // TODO CHECK ME
 
-    // metallic and roughness are combined in the loaded texture
     if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
     {
         if let Some(texture) = get_texture_by_index(&metallic_roughness_tex, &loaded_textures)
         {
             let tex = texture.read().unwrap();
-            let name = format!("{} metallic", tex.name);
-            let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 2);
-            let tex_arc: Arc<RwLock<Box<Texture>>> = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+            let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), tex.name.as_str(), &tex, 2);
+            let tex_arc: Arc<RwLock<Box<Texture>>> = scene.insert_texture_or_reuse(roughness_tex, tex.name.as_str());
 
             apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
-
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+
+            set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Reflectivity);
             data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures
@@ -599,7 +603,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
         }
     }
 
-    // roughness
+    // roughness (metallic and roughness are combined in the loaded texture)
     data.roughness = gltf_material.pbr_metallic_roughness().roughness_factor();
 
     if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
@@ -607,13 +611,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
         if let Some(texture) = get_texture_by_index(&metallic_roughness_tex, &loaded_textures)
         {
             let tex = texture.read().unwrap();
-            let name = format!("{} roughness", tex.name);
-            let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), name.as_str(), &tex, 1);
-            let tex_arc = scene.insert_texture_or_reuse(roughness_tex, name.as_str());
+            let roughness_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), tex.name.as_str(), &tex, 1);
+            let tex_arc = scene.insert_texture_or_reuse(roughness_tex, tex.name.as_str());
 
             apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
-
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+
+            set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Roughness);
             data.texture_roughness = Some(TextureState::new(tex_arc));
 
             // add texture to clearable textures
@@ -629,16 +633,29 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     {
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
+            set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientEmissive);
             data.texture_ambient = Some(TextureState::new(texture));
         }
     }
 
     // ambient occlusion
-    if let Some(tex) = gltf_material.occlusion_texture()
+    if let Some(ao_gltf_tex) = gltf_material.occlusion_texture()
     {
-        if let Some(texture) = get_ao_texture_by_index(&tex, &loaded_textures)
+        if let Some(texture) = get_ao_texture_by_index(&ao_gltf_tex, &loaded_textures)
         {
-            data.texture_ambient_occlusion = Some(TextureState::new(texture));
+            //data.texture_ambient_occlusion = Some(TextureState::new(texture));
+            let tex = texture.read().unwrap();
+            let ao_tex = Texture::new_from_image_channel(scene.id_manager.get_next_texture_id(), tex.name.as_str(), &tex, 0);
+            let tex_arc: Arc<RwLock<Box<Texture>>> = scene.insert_texture_or_reuse(ao_tex, tex.name.as_str());
+
+            apply_texture_filtering_settings(tex_arc.clone(), &ao_gltf_tex.texture(), create_mipmaps);
+            tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+
+            set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientOcclusion);
+            data.texture_ambient_occlusion = Some(TextureState::new(tex_arc));
+
+            // add texture to clearable textures
+            clear_textures.push(texture.clone());
         }
     }
 
@@ -655,6 +672,25 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
     data.unlit_shading = gltf_material.unlit();
 
     material
+}
+
+fn set_texture_name(texture: Arc<RwLock<Box<Texture>>>, material_name: String, resource_name: String, texture_type: TextureType)
+{
+    let mut texture = texture.write().unwrap();
+
+    if texture.name == "unknown"
+    {
+        if material_name == "unknown"
+        {
+            texture.name = resource_name;
+        }
+        else
+        {
+            texture.name = material_name;
+        }
+
+        texture.name = format!("{} {}", texture.name, texture_type.to_string());
+    }
 }
 
 pub async fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &gltf::Buffer<'_>) -> Vec<u8>

@@ -1,9 +1,8 @@
-use std::{collections::HashMap, sync::{RwLock, Arc}};
+use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
-use rfd::FileDialog;
 
-use crate::{state::{scene::{components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material, TextureType, TextureState}, scene::Scene}, state::State, gui::{helper::{generic_items::{collapse_with_title, self}, info_box::info_box}, editor::dialogs::load_texture_dialog}}, component_downcast_mut, resources::resources::load_binary, helper::{concurrency::{thread::spawn_thread, execution_queue::ExecutionQueue}, file::{get_extension, get_stem}}};
+use crate::{state::{scene::{components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material}, scene::Scene}, state::State, gui::{helper::{generic_items::{collapse_with_title, self}, info_box::info_box}, editor::dialogs::load_texture_dialog}}, component_downcast_mut, helper::concurrency::thread::spawn_thread};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 

@@ -1,4 +1,4 @@
-use crate::state::gui::helper::generic_items::{collapse_with_title, self};
+use crate::state::gui::helper::generic_items::collapse_with_title;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;

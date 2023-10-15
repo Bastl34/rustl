@@ -414,12 +414,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 roughness *= roughness_value.x;
             }
 
+            //reflectivity = min(reflectivity + (1.0 - roughness), 1.0);
+            //reflectivity = 1.0;
+
             let reflection = reflect(-view_dir, normal);
             let sphere_coords = sphericalCoords(reflection);
 
             let environment_map_levels = textureNumLevels(t_environment) - 1u;
             let mipmap_level = roughness * f32(environment_map_levels);
-            //let mipmap_level = roughness * 100.0;
 
             let reflection_color = textureSampleLevel(t_environment, s_environment, sphere_coords, mipmap_level);
             color.x += reflection_color.x * reflectivity;

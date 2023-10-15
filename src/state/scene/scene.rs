@@ -219,16 +219,6 @@ impl Scene
         Self::clear_empty_nodes_recursive(&mut self.nodes);
     }
 
-    pub async fn remove_texture(&mut self, texture: TextureItem) -> bool
-    {
-        let hash;
-        {
-            hash = texture.read().unwrap().hash.clone();
-        }
-
-        self.textures.remove(&hash).is_some()
-    }
-
     pub fn add_material(&mut self, id: u64, material: &MaterialItem)
     {
         self.materials.insert(id, material.clone());

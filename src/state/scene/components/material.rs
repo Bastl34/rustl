@@ -59,13 +59,6 @@ pub const ALL_TEXTURE_TYPES: [TextureType; 14] =
     TextureType::Custom3
 ];
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum TextureFiltering
-{
-    Nearest,
-    Linear
-}
-
 #[derive(Clone)]
 pub struct TextureState
 {
@@ -113,8 +106,6 @@ pub struct MaterialData
     pub texture_custom1: Option<TextureState>,
     pub texture_custom2: Option<TextureState>,
     pub texture_custom3: Option<TextureState>,
-
-    pub filtering_mode: TextureFiltering,
 
     pub alpha: f32,
     pub shininess: f32,
@@ -171,8 +162,6 @@ impl Material
             texture_custom1: None,
             texture_custom2: None,
             texture_custom3: None,
-
-            filtering_mode: TextureFiltering::Linear,
 
             alpha: 1.0,
             shininess: 150.0,
@@ -258,8 +247,6 @@ impl Material
         }
 
         // ********** other attributes **********
-        if default_material_data.filtering_mode != new_mat_data.filtering_mode { data.filtering_mode = new_mat_data.filtering_mode; }
-
         if !helper::math::approx_equal(default_material_data.alpha, new_mat_data.alpha) { data.alpha = new_mat_data.alpha; }
         if !helper::math::approx_equal(default_material_data.shininess, new_mat_data.shininess) { data.shininess = new_mat_data.shininess; }
         if !helper::math::approx_equal(default_material_data.reflectivity, new_mat_data.reflectivity) { data.reflectivity = new_mat_data.reflectivity; }
@@ -350,8 +337,6 @@ impl Material
         println!("texture_custom1: {:?}", data.texture_custom1.is_some());
         println!("texture_custom2: {:?}", data.texture_custom2.is_some());
         println!("texture_custom3: {:?}", data.texture_custom3.is_some());
-
-        println!("filtering_mode: {:?}", data.filtering_mode);
 
         println!("alpha: {:?}", data.alpha);
         println!("shininess: {:?}", data.shininess);

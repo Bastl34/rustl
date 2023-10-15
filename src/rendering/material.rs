@@ -4,7 +4,7 @@ use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
 use crate::{state::{helper::render_item::{RenderItem, get_render_item, RenderItemType}, scene::{components::{material::{Material, TextureType, ALL_TEXTURE_TYPES, TextureState}, component::Component}, texture::TextureItem}}, render_item_impl_default};
 
-use super::{wgpu::WGpu, uniform, texture::Texture};
+use super::{wgpu::WGpu, uniform, texture::{Texture, TextureFormat}};
 
 //TODO: future: compile shaders for each texture combination to prevent branching/if statements
 
@@ -157,7 +157,7 @@ impl MaterialBuffer
             mapped_at_creation: false,
         });
 
-        let empty_texture = Texture::new_empty_texture(wgpu, format!("empty material {} texture", material.get_base().name).as_str(), true);
+        let empty_texture = Texture::new_empty_texture(wgpu, format!("empty material {} texture", material.get_base().name).as_str(), TextureFormat::Srgba);
 
         let mut buffer = MaterialBuffer
         {

@@ -1,17 +1,14 @@
 use std::{sync::{RwLock, Arc}, fmt::format};
 
-use egui::WidgetWithState;
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops, RgbaImage, GrayImage};
 use nalgebra::Vector4;
-
-use egui::Image;
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
 const PREVIEW_SIZE: u32 = 256;
-const MAX_MIPMAPS: usize = 11; // max allowed mipmaps
+const MAX_MIPMAPS: usize = 10; // max allowed mipmaps 10 (+ original texture)
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum TextureAddressMode
@@ -175,23 +172,21 @@ impl Texture
         let width = texture.width();
         let height = texture.height();
 
-        let mut image = ImageBuffer::new(width, height);
+        let mut image = GrayImage::new(width, height);
 
         let data = texture.get_data();
 
-        for x in 0..width
+        let rgba = data.image.to_rgba8();
+
+        for (x, y, px) in rgba.enumerate_pixels()
         {
-            for y in 0..height
-            {
-                let pixel = data.image.get_pixel(x, y);
-                image.put_pixel(x, y, Rgba([pixel[channel], 0 , 0, 255]));
-            }
+            image[(x, y)][0] = px[channel];
         }
 
         let bytes = &image.to_vec();
         let hash = helper::crypto::get_hash_from_byte_vec(&bytes);
 
-        let image = image::DynamicImage::ImageRgba8(image);
+        let image = image::DynamicImage::ImageLuma8(image);
 
         let data: TextureData = TextureData
         {
@@ -230,6 +225,16 @@ impl Texture
 
     pub fn create_mipmap_levels(&self) -> Vec<DynamicImage>
     {
+        let filter_method;
+        match self.get_data().mipmap_sampling_type
+        {
+            MipmapSamplingFilterType::Nearest => filter_method = imageops::FilterType::Nearest,
+            MipmapSamplingFilterType::Triangle => filter_method = imageops::FilterType::Triangle,
+            MipmapSamplingFilterType::CatmullRom => filter_method = imageops::FilterType::CatmullRom,
+            MipmapSamplingFilterType::Gaussian => filter_method = imageops::FilterType::Gaussian,
+            MipmapSamplingFilterType::Lanczos3 => filter_method = imageops::FilterType::Lanczos3,
+        }
+
         let mut mipmaps = Vec::new();
 
         let mut current_level = self.get_data().image.clone();
@@ -238,19 +243,9 @@ impl Texture
             let width = current_level.width() / 2;
             let height = current_level.height() / 2;
 
-            let filter_method;
-            match self.get_data().mipmap_sampling_type
-            {
-                MipmapSamplingFilterType::Nearest => filter_method = imageops::FilterType::Nearest,
-                MipmapSamplingFilterType::Triangle => filter_method = imageops::FilterType::Triangle,
-                MipmapSamplingFilterType::CatmullRom => filter_method = imageops::FilterType::CatmullRom,
-                MipmapSamplingFilterType::Gaussian => filter_method = imageops::FilterType::Gaussian,
-                MipmapSamplingFilterType::Lanczos3 => filter_method = imageops::FilterType::Lanczos3,
-            }
+            current_level = current_level.resize(width, height, filter_method);
 
-            current_level = image::DynamicImage::ImageRgba8(imageops::resize(&current_level, width, height, filter_method));
-
-            if current_level.width() >= 1 && current_level.height() >= 1 && mipmaps.len() < MAX_MIPMAPS
+            if width >= 1 && height >= 1 && mipmaps.len() < MAX_MIPMAPS
             {
                 mipmaps.push(current_level.clone());
             }
@@ -265,6 +260,11 @@ impl Texture
 
     pub fn get_mipmap_levels_amount(&self) -> usize
     {
+        if !self.get_data().mipmapping
+        {
+            return 1;
+        }
+
         let mut current_width = self.width();
         let mut current_height = self.height();
 
@@ -344,14 +344,7 @@ impl Texture
 
     pub fn channels(&self) -> u32
     {
-        let image = &self.data.get_ref().image;
-
-        if image.width() == 0 || image.height() == 0
-        {
-            return 0;
-        }
-
-        image.get_pixel(0, 0).channels().len() as u32
+        self.get_data().image.color().channel_count() as u32
     }
 
     pub fn memory_usage(&self) -> u64
@@ -372,8 +365,7 @@ impl Texture
             return 0;
         }
 
-        // gpu memory: 4 channels
-        let mut bytes = self.get_data().width * self.get_data().height * 4;
+        let mut bytes = self.get_data().width * self.get_data().height * self.channels() as u64;
 
         // mipmaps are using around + 1/3 more gpu memory --> https://en.wikipedia.org/wiki/Mipmap
         if self.get_data().mipmapping
@@ -383,7 +375,7 @@ impl Texture
 
         if self.egui_preview.is_some()
         {
-            bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
+            bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * self.channels() as u64;
         }
 
         bytes
@@ -414,7 +406,7 @@ impl Texture
         )
     }
 
-    pub fn rgba_data(&self) -> &[u8]
+    pub fn raw_data(&self) -> &[u8]
     {
         self.data.get_ref().image.as_bytes()
     }
@@ -433,13 +425,18 @@ impl Texture
         let pixels = data.preview.as_flat_samples_u8();
         let pixels = pixels.unwrap();
 
-        let color_image = egui::ColorImage::from_rgba_unmultiplied
-        (
-            [data.preview.width() as usize, data.preview.height() as usize],
-            pixels.as_slice()
-        );
+        let image;
+        if self.channels() == 1
+        {
+            image = egui::ColorImage::from_gray([data.preview.width() as usize, data.preview.height() as usize], pixels.as_slice());
+        }
+        else
+        {
+            image = egui::ColorImage::from_rgba_unmultiplied([data.preview.width() as usize, data.preview.height() as usize], pixels.as_slice());
+        }
 
-        let texture = ctx.load_texture(name, color_image, Default::default());
+
+        let texture = ctx.load_texture(name, image, Default::default());
 
         self.egui_preview = Some(texture);
     }
@@ -457,8 +454,11 @@ impl Texture
             ui.image((preview.id(), preview.size_vec2()));
         }
 
-        ui.label(format!("Resolution: {}x{}", data.width, data.height));
-        ui.label(format!("Mipmap Levels: {}", self.get_mipmap_levels_amount()));
+        let gpu_size = self.gpu_usage() as f32 / 1024.0 / 1024.0;
+
+        let format = if self.channels() == 1 { "Gray" } else { "RGBA" };
+
+        ui.label(format!("{}x{}, {}, {} mips, {:.2} MB", data.width, data.height, format, self.get_mipmap_levels_amount(), gpu_size));
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)

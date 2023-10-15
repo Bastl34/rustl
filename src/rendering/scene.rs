@@ -5,7 +5,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
 use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::{Camera, CameraData}, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -159,7 +159,13 @@ impl Scene
 
                 if texture.render_item.is_none() || buffer_recreate_needed || texture_changed
                 {
-                    let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, true);
+                    let mut format = TextureFormat::Srgba;
+                    if texture.channels() == 1
+                    {
+                        format = TextureFormat::Gray;
+                    }
+
+                    let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, format);
                     texture.render_item = Some(Box::new(render_item));
                     buffer_recreate_needed = true;
                 }
