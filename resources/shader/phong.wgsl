@@ -414,9 +414,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 roughness *= roughness_value.x;
             }
 
-            //reflectivity = min(reflectivity + (1.0 - roughness), 1.0);
-            //reflectivity = 1.0;
-
             let reflection = reflect(-view_dir, normal);
             let sphere_coords = sphericalCoords(reflection);
 
@@ -427,10 +424,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             color.x += reflection_color.x * reflectivity;
             color.y += reflection_color.y * reflectivity;
             color.z += reflection_color.z * reflectivity;
-
-            //color.x = roughness;
-            //color.y = roughness;
-            //color.z = roughness;
         }
     }
 

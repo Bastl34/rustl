@@ -582,7 +582,8 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene: &mut Scene, load
 
     // reflectivity (metallic and roughness are combined in the loaded texture)
     // do not use full metallic_factor as reflectivity --> otherwise the object will be just complete mirror if metallic is set to 1.0
-    data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5; // TODO CHECK ME
+    //data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5; // TODO CHECK ME
+    data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor();
 
     if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
     {
