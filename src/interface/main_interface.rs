@@ -13,6 +13,7 @@ use winit::window::{Window, Fullscreen, CursorGrabMode};
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::{yaw_pitch_from_direction, self, approx_zero_vec2};
+use crate::helper::platform;
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
@@ -21,6 +22,7 @@ use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::{WGpu};
 use crate::state::helper::render_item::{get_render_item_mut};
 use crate::state::scene::camera::Camera;
+use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
 use crate::state::scene::components::alpha::Alpha;
 use crate::state::scene::components::transformation_animation::TransformationAnimation;
 use crate::state::scene::light::Light;
@@ -306,8 +308,8 @@ impl MainInterface
             //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
-            scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
+            scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/MetalRoughSpheres.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).await.unwrap();
             //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).await.unwrap();
@@ -417,7 +419,11 @@ impl MainInterface
             {
                 let cam = scene.cameras.get_mut(0).unwrap();
                 //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-                cam.add_controller_target_rotation(1.0, Vector2::<f32>::new(0.0015, 0.0015), 0.01);
+
+                let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+                cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
+
+                cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
             }
 
 

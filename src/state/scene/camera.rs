@@ -1,4 +1,4 @@
-use std::mem::swap;
+use std::{mem::swap, f32::consts::PI};
 
 use egui::{RichText, Color32};
 use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3, Vector2, Point2, Vector4};
@@ -225,7 +225,7 @@ impl Camera
 
     pub fn add_controller_target_rotation(&mut self, radius: f32, mouse_sensitivity: Vector2::<f32>, mouse_wheel_sensitivity: f32)
     {
-        self.controller = Some(Box::new(TargetRotationController::new(radius, 0.0, 0.0, mouse_sensitivity, mouse_wheel_sensitivity)));
+        self.controller = Some(Box::new(TargetRotationController::new(radius, 0.0, PI / 8.0, mouse_sensitivity, mouse_wheel_sensitivity)));
     }
 
     pub fn remove_controller(&mut self)

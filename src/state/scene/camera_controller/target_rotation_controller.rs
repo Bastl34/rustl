@@ -2,12 +2,13 @@ use std::f32::consts::PI;
 
 use nalgebra::{Vector2, Vector3, Point3};
 
-use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene::Scene, camera::CameraData}, input::{input_manager::InputManager, mouse::MouseButton}, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec2, self}}};
+use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene::Scene, camera::CameraData}, input::{input_manager::InputManager, mouse::MouseButton}, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec2, self, approx_zero}, generic::get_millis}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
 const DEFAULT_TARGET_POS: Point3::<f32> = Point3::new(0.0, 0.0, 0.0);
 const ANGLE_OFFSET: f32 = 0.01;
+const DEFAULT_AUTO_ROTATE_TIMEOUT: u64 = 2000;
 
 pub struct TargetRotationControllerData
 {
@@ -28,6 +29,11 @@ pub struct TargetRotationController
 
     pub mouse_sensitivity: Vector2::<f32>,
     pub mouse_wheel_sensitivity: f32,
+
+    pub auto_rotate: Option<f32>,
+    pub auto_rotate_timeout: u64,
+
+    last_manual_move: u64, // time in millis after the last movement
 }
 
 impl TargetRotationController
@@ -51,6 +57,11 @@ impl TargetRotationController
 
             mouse_sensitivity,
             mouse_wheel_sensitivity,
+
+            auto_rotate: None,
+            auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
+
+            last_manual_move: 0
         }
     }
 }
@@ -59,7 +70,7 @@ impl CameraController for TargetRotationController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, node: Option<NodeItem>, _scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, _frame_scale: f32) -> bool
+    fn update(&mut self, node: Option<NodeItem>, _scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;
 
@@ -89,6 +100,7 @@ impl CameraController for TargetRotationController
             data.offset.z -= transformed.z;
 
             update_needed = true;
+            self.last_manual_move = get_millis()
         }
 
         // rotation
@@ -111,6 +123,16 @@ impl CameraController for TargetRotationController
             }
 
             update_needed = true;
+            self.last_manual_move = get_millis()
+        }
+
+        // auto rotate
+        if !input_manager.mouse.is_any_button_holding() && self.last_manual_move + self.auto_rotate_timeout < get_millis()
+        {
+            if let Some(auto_rotate) = self.auto_rotate
+            {
+                self.data.get_mut().alpha += auto_rotate * frame_scale;
+            }
         }
 
         // distance
@@ -215,5 +237,30 @@ impl CameraController for TargetRotationController
                 self.data.get_mut().offset = offset;
             }
         });
+
+        let mut auto_rotate = 0.0;
+        if let Some(auto_rotate_value) = self.auto_rotate
+        {
+            auto_rotate = auto_rotate_value;
+        }
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Auto Rotate:");
+
+            if ui.add(egui::DragValue::new(&mut auto_rotate).speed(0.001)).changed()
+            {
+                if approx_zero(auto_rotate)
+                {
+                    self.auto_rotate = None;
+                }
+                else
+                {
+                    self.auto_rotate = Some(auto_rotate);
+                }
+            }
+        });
+
+        ui.add(egui::Slider::new(&mut self.auto_rotate_timeout, 0..=5000).text("auto rotate timeout"));
     }
 }
