@@ -5,6 +5,7 @@ todo:
  * screenshot is broken on windows
  * flickering on windows (amd)
  * get rid of async stuff -> use exec queue
+ * slice.map_async(wgpu::MapMode::Read, |_| ());
 
 done:
  * set camera resolution per default (otherwise target rotation controller is not working correctly)

@@ -1,9 +1,9 @@
-use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, cmp::Ordering};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
-use nalgebra::{Vector3, Point3, distance, distance_squared};
+use nalgebra::{Point3, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::{Camera, CameraData}, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::CameraData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
@@ -45,11 +45,11 @@ impl RenderItem for Scene
 
 impl Scene
 {
-    pub async fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
+    pub fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
         // shader source
-        let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
-        let depth_shader = resources::load_string_async("shader/depth.wgsl").await.unwrap();
+        let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
+        let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
 
         let mut render_scene = Self
         {

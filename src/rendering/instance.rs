@@ -1,5 +1,4 @@
-use std::borrow::Borrow;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::mem;
 
 use colored::Colorize;
@@ -144,7 +143,6 @@ impl InstanceBuffer
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }
         );
-
 
         self.count = instances.len() as u32;
     }

@@ -2,13 +2,13 @@ use std::{sync::{RwLock, Arc}, f32::consts::PI};
 
 use nalgebra::Vector3;
 
-use crate::{state::{scene::{scene::Scene, instance::Instance, components::{transformation::Transformation, material::{Material, TextureType, TextureState}}}, state::State}, component_downcast_mut, helper::{concurrency::{execution_queue::ExecutionQueue, thread::spawn_thread}, file::{get_extension, get_stem}}, resources::resources::load_binary};
+use crate::{state::scene::{scene::Scene, instance::Instance, components::{transformation::Transformation, material::{Material, TextureType, TextureState}}}, component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueue, file::{get_extension, get_stem}}, resources::resources::load_binary};
 
-pub async fn create_grid(scene: &mut Scene, amount: u32, spacing: f32)
+pub fn create_grid(scene: &mut Scene, amount: u32, spacing: f32)
 {
     let amount = amount as i32;
 
-    let loaded_ids = scene.load("objects/grid/grid.gltf", false).await.unwrap();
+    let loaded_ids = scene.load("objects/grid/grid.gltf", false).unwrap();
     if let Some(grid_arc) = scene.find_node_by_name("grid")
     {
         {
@@ -16,7 +16,6 @@ pub async fn create_grid(scene: &mut Scene, amount: u32, spacing: f32)
             grid.clear_instances();
         }
 
-        //grid.
         for i in 0..amount
         {
             let pos = i - (amount / 2);

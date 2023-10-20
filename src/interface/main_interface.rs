@@ -1,26 +1,25 @@
 use std::cell::RefCell;
-use std::mem::{swap};
+use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
-use nalgebra::{Point3, Vector3, Vector2, Rotation3, Point2};
+use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
-use crate::helper::math::{yaw_pitch_from_direction, self, approx_zero_vec2};
 use crate::helper::platform;
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
-use crate::rendering::scene::{Scene};
+use crate::rendering::scene::Scene;
 use crate::state::gui::editor::editor::Editor;
-use crate::rendering::wgpu::{WGpu};
-use crate::state::helper::render_item::{get_render_item_mut};
+use crate::rendering::wgpu::WGpu;
+use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
 use crate::state::scene::components::alpha::Alpha;
@@ -85,13 +84,13 @@ impl MainInterface
             egui,
         };
 
-        interface.app_init().await;
-        interface.init().await;
+        interface.app_init();
+        interface.init();
 
         interface
     }
 
-    pub async fn init(&mut self)
+    pub fn init(&mut self)
     {
         let state = &mut *(self.state.borrow_mut());
         let samlpes = *(state.rendering.msaa.get_ref());
@@ -102,7 +101,7 @@ impl MainInterface
 
         for scene in &mut scenes
         {
-            let render_item = Scene::new(&mut self.wgpu, state, scene, samlpes).await;
+            let render_item = Scene::new(&mut self.wgpu, state, scene, samlpes);
             scene.render_item = Some(Box::new(render_item));
         }
 
@@ -146,7 +145,7 @@ impl MainInterface
         }
     }
 
-    pub async fn app_init(&mut self)
+    pub fn app_init(&mut self)
     {
         //init scene
         {
@@ -262,15 +261,15 @@ impl MainInterface
 
             // ********** models **********
             /*
-            scene.load("objects/bastl/bastl.obj").await.unwrap();
+            scene.load("objects/bastl/bastl.obj").unwrap();
             let n0 = scene.nodes.get(0).unwrap().clone();
             let n1 = scene.nodes.get_mut(1).unwrap().clone();
             n1.write().unwrap().merge_mesh(&n0);
 
             scene.nodes.remove(0);
 
-            scene.load("objects/cube/cube.obj").await.unwrap();
-            scene.load("objects/plane/plane.obj").await.unwrap();
+            scene.load("objects/cube/cube.obj").unwrap();
+            scene.load("objects/plane/plane.obj").unwrap();
 
             {
                 let node_id = 0;
@@ -303,40 +302,40 @@ impl MainInterface
             */
 
 
-            //scene.load("objects/sphere/sphere.gltf", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).await.unwrap();
-            scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/MetalRoughSpheres.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/Lantern.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/lotus.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/Sponza_fixed.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/scene.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/model0_debug.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/scene_2.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/Toys_Railway.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/Toys_Railway_2.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/test.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/bastl/bastl.obj", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/brick_wall.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/textured.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/apocalyptic_city.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/ccity_building_set_1.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/persian_city.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/cathedral.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/minecraft_village.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/plaza_night_time.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/de_dust.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/de_dust2.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/de_dust2_8k.glb", state.rendering.create_mipmaps).await.unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
-            //scene.load("objects/temp/bistro.glb", state.rendering.create_mipmaps).await.unwrap();
-            //scene.load("objects/temp/lowpoly__fps__tdm__game__map.glb", state.rendering.create_mipmaps).await.unwrap();
+            //scene.load("objects/sphere/sphere.gltf", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).unwrap();
+            scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/MetalRoughSpheres.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/Lantern.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/lotus.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/Sponza_fixed.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/scene.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/model0_debug.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/scene_2.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/Toys_Railway.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/Toys_Railway_2.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/test.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/bastl/bastl.obj", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/brick_wall.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/textured.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/apocalyptic_city.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/ccity_building_set_1.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/persian_city.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/cathedral.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/minecraft_village.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/plaza_night_time.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/de_dust.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/de_dust2.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/de_dust2_8k.glb", state.rendering.create_mipmaps).unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
+            //scene.load("objects/temp/bistro.glb", state.rendering.create_mipmaps).unwrap();
+            //scene.load("objects/temp/lowpoly__fps__tdm__game__map.glb", state.rendering.create_mipmaps).unwrap();
 
             scene.clear_empty_nodes();
 
@@ -458,8 +457,8 @@ impl MainInterface
             }
             */
 
-            scene_utils::create_grid(&mut scene, 500, 1.0).await;
-            //scene_utils::create_grid(&mut scene, 1, 1.0).await;
+            scene_utils::create_grid(&mut scene, 500, 1.0);
+            //scene_utils::create_grid(&mut scene, 1, 1.0);
 
             // ********** scene add **********
             let scene_id = scene.id.clone();

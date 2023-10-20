@@ -6,11 +6,11 @@ use gltf::{Gltf, texture};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary_async, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3, approx_zero}, file::get_stem}};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem}};
 
-pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
-    let gltf_content = load_binary_async(path).await?;
+    let gltf_content = load_binary(path)?;
 
     let mut gltf = Gltf::from_slice(gltf_content.as_slice())?;
     let mut blob = gltf.blob.take();
@@ -22,7 +22,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
 
     for buffer in gltf.buffers()
     {
-        let data = load_buffer(path, &mut blob, &buffer).await;
+        let data = load_buffer(path, &mut blob, &buffer);
         buffers.push(gltf::buffer::Data(data));
     }
 
@@ -31,7 +31,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
 
     for gltf_texture in gltf.textures()
     {
-        let (bytes, extension) = load_texture(path, &gltf_texture, &buffers).await;
+        let (bytes, extension) = load_texture(path, &gltf_texture, &buffers);
 
         let tex = scene.load_texture_byte_or_reuse(&bytes, gltf_texture.name().unwrap_or("unknown"), extension);
         apply_texture_filtering_settings(tex.clone(), &gltf_texture, create_mipmaps);
@@ -694,7 +694,7 @@ fn set_texture_name(texture: Arc<RwLock<Box<Texture>>>, material_name: String, r
     }
 }
 
-pub async fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &gltf::Buffer<'_>) -> Vec<u8>
+pub fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &gltf::Buffer<'_>) -> Vec<u8>
 {
     let mut data = match buffer.source()
     {
@@ -712,7 +712,7 @@ pub async fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &g
             else
             {
                 let buffer_path = get_path(&uri.to_string(), gltf_path);
-                load_binary_async(buffer_path.as_str()).await.unwrap()
+                load_binary(buffer_path.as_str()).unwrap()
             }
         },
     };
@@ -727,7 +727,7 @@ pub async fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &g
 }
 
 // inpired from here: https://github.com/flomonster/easy-gltf/blob/master/src/utils/gltf_data.rs
-pub async fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<gltf::buffer::Data>) -> (Vec<u8>, Option<String>)
+pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<gltf::buffer::Data>) -> (Vec<u8>, Option<String>)
 {
     let image = texture.source();
 
@@ -765,7 +765,7 @@ pub async fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers:
             else
             {
                 let item_path = get_path(&uri.to_string(), gltf_path);
-                let bytes = load_binary_async(item_path.as_str()).await.unwrap();
+                let bytes = load_binary(item_path.as_str()).unwrap();
 
                 let extension;
                 if let Some(mime_type) = mime_type

@@ -1,8 +1,8 @@
-use egui::{FullOutput};
-use egui_winit::{winit};
+use egui::FullOutput;
+use egui_winit::winit;
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::{rendering::wgpu::{WGpu}};
+use crate::rendering::wgpu::WGpu;
 
 pub struct EGui
 {

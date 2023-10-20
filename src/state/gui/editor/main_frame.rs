@@ -30,7 +30,6 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     let frame = egui::Frame::side_top_panel(&style);
 
     egui::TopBottomPanel::top("top_panel").frame(frame).show(ctx, |ui|
-    //egui::TopBottomPanel::top("top_panel").show(ctx, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -55,7 +54,10 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        create_left_sidebar(editor_state, state, ui);
+        ui.add_enabled_ui(!editor_state.loading, |ui|
+        {
+            create_left_sidebar(editor_state, state, ui);
+        });
     });
 
     //right
@@ -63,15 +65,21 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        create_right_sidebar(editor_state, state, ui);
+        ui.add_enabled_ui(!editor_state.loading, |ui|
+        {
+            create_right_sidebar(editor_state, state, ui);
+        });
     });
 
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
     {
-        ui.horizontal(|ui|
+        ui.add_enabled_ui(!editor_state.loading, |ui|
         {
-            create_tool_menu(editor_state, state, ui);
+            ui.horizontal(|ui|
+            {
+                create_tool_menu(editor_state, state, ui);
+            });
         });
     });
 

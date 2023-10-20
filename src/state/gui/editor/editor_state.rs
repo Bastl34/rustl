@@ -44,6 +44,8 @@ pub enum EditMode
 pub struct EditorState
 {
     pub visible: bool,
+    pub loading: bool,
+
     pub try_out: bool,
     pub selectable: bool,
     pub fly_camera: bool,
@@ -75,6 +77,8 @@ impl EditorState
         EditorState
         {
             visible: true,
+            loading: false,
+
             try_out: false,
             selectable: true,
             fly_camera: true,

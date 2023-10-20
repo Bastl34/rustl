@@ -77,7 +77,7 @@ impl Scene
         &mut self.data
     }
 
-    pub async fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+    pub fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
     {
         let extension = Path::new(path).extension();
 
@@ -90,11 +90,11 @@ impl Scene
 
         if extension == "obj"
         {
-            return wavefront::load(path, self, create_mipmaps).await;
+            return wavefront::load(path, self, create_mipmaps);
         }
         else if extension == "gltf" || extension == "glb"
         {
-            return gltf::load(path, self, create_mipmaps).await;
+            return gltf::load(path, self, create_mipmaps);
         }
 
         Ok(vec![])
@@ -156,6 +156,13 @@ impl Scene
     pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary_async(path).await?;
+
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
+    }
+
+    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    {
+        let image_bytes = resources::load_binary(path)?;
 
         Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
     }

@@ -94,6 +94,17 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                     }
                 }
 
+                // link to the material setting
+                if camera.node.is_some() && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to object").clicked()
+                {
+                    let node = camera.node.as_ref().unwrap();
+
+                    editor_state.selected_object = format!("objects_{}", node.read().unwrap().id);
+                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_type = SelectionType::Object;
+                    editor_state.settings = SettingsPanel::Object;
+                }
+
                 if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("remove target").clicked()
                 {
                     camera.node = None;
