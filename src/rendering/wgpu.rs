@@ -1,10 +1,7 @@
-use std::thread;
-
 use image::{DynamicImage, ImageBuffer, Rgba};
-use instant::Duration;
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{helper::image::brga_to_rgba, state::state::State};
+use crate::{helper::{image::brga_to_rgba, platform::is_windows}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -27,8 +24,13 @@ impl WGpu
     {
         let dimensions = window.inner_size();
 
-        let instance_desc = wgpu::InstanceDescriptor::default();
-        //instance_desc.backends = wgpu::Backends::VULKAN;
+        let mut instance_desc = wgpu::InstanceDescriptor::default();
+
+        if is_windows()
+        {
+            //instance_desc.backends = wgpu::Backends::VULKAN;
+            instance_desc.backends = wgpu::Backends::DX12;
+        }
 
         let instance = wgpu::Instance::new(instance_desc);
         let surface = unsafe { instance.create_surface(window) }.unwrap();

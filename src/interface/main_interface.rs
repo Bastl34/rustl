@@ -302,6 +302,7 @@ impl MainInterface
             */
 
 
+            //scene.load("objects/grid/grid.gltf", state.rendering.create_mipmaps).unwrap();
             //scene.load("objects/sphere/sphere.gltf", state.rendering.create_mipmaps).unwrap();
             //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).unwrap();
             //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).unwrap();

@@ -495,7 +495,7 @@ impl Node
         for mesh in meshes
         {
             component_downcast_mut!(mesh, Mesh);
-            mesh.merge_instances_by_transformation(&transformations);
+            mesh.merge_by_transformations(&transformations);
         }
 
         // clear and create new single instance
