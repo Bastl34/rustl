@@ -1,3 +1,5 @@
+use std::sync::{RwLock, Arc};
+
 use nalgebra::Point2;
 
 use crate::state::{scene::{scene::Scene, node::NodeItem}, state::State};
@@ -44,7 +46,7 @@ pub enum EditMode
 pub struct EditorState
 {
     pub visible: bool,
-    pub loading: bool,
+    pub loading: Arc<RwLock<bool>>,
 
     pub try_out: bool,
     pub selectable: bool,
@@ -77,7 +79,7 @@ impl EditorState
         EditorState
         {
             visible: true,
-            loading: false,
+            loading: Arc::new(RwLock::new(false)),
 
             try_out: false,
             selectable: true,
@@ -198,7 +200,7 @@ impl EditorState
                     let node = node.read().unwrap();
                     for instance in node.instances.get_ref()
                     {
-                        let mut instance = instance.borrow_mut();
+                        let mut instance = instance.write().unwrap();
                         let instance_data = instance.get_data_mut().get_mut();
                         instance_data.highlight = false;
                     }

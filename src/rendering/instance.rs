@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::mem;
+use std::sync::{Arc, RwLock};
 
 use colored::Colorize;
 use nalgebra::Matrix4;
@@ -96,7 +97,7 @@ impl RenderItem for InstanceBuffer
 
 impl InstanceBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, instances: &Vec<RefCell<InstanceItem>>) -> InstanceBuffer
+    pub fn new(wgpu: &mut WGpu, name: &str, instances: &Vec<Arc<RwLock<InstanceItem>>>) -> InstanceBuffer
     {
         let mut instance_buffer = InstanceBuffer
         {
@@ -111,7 +112,7 @@ impl InstanceBuffer
         instance_buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<RefCell<InstanceItem>>)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
     {
         dbg!("update all instances");
 
@@ -119,7 +120,8 @@ impl InstanceBuffer
 
         let buffer_data = instances.iter().map(|instance|
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
+            //let instance = instance.read().unwrap();
             let transform = instance.get_transform();
             let alpha = instance.get_alpha();
             let instance_data = instance.get_data();

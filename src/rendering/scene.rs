@@ -384,7 +384,8 @@ impl Scene
                     let instance_buffer;
                     {
                         let node = node_arc.read().unwrap();
-                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node.instances.get_ref());
+                        let instances = node.instances.get_ref();
+                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -423,7 +424,7 @@ impl Scene
 
                     for (i, instance) in instances_ref.iter().enumerate()
                     {
-                        let mut instance = instance.borrow_mut();
+                        let mut instance = instance.write().unwrap();
                         //let (instance_data, mut instance_changed) = instance.get_data_mut().consume_borrow();
                         let instance_changed = instance.get_data_mut().consume_change();
 
@@ -765,21 +766,24 @@ impl Scene
                 mesh_middle.y /= len_f32;
                 mesh_middle.z /= len_f32;
 
-                let instance_render_item = node.instance_render_item.as_ref().unwrap();
-                let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                for transform in &instance_buffer.transformations
+                if let Some(instance_render_item) = node.instance_render_item.as_ref()
                 {
-                    let p = transform.transform_point(&mesh_middle);
-                    item_middle.x += p.x;
-                    item_middle.y += p.y;
-                    item_middle.z += p.z;
-                }
+                    let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                let len_f32 = instance_buffer.transformations.len() as f32;
-                item_middle.x /= len_f32;
-                item_middle.y /= len_f32;
-                item_middle.z /= len_f32;
+                    for transform in &instance_buffer.transformations
+                    {
+                        let p = transform.transform_point(&mesh_middle);
+                        item_middle.x += p.x;
+                        item_middle.y += p.y;
+                        item_middle.z += p.z;
+                    }
+
+                    let len_f32 = instance_buffer.transformations.len() as f32;
+                    item_middle.x /= len_f32;
+                    item_middle.y /= len_f32;
+                    item_middle.z /= len_f32;
+                }
             }
 
             let has_transparency;

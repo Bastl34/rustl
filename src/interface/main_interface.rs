@@ -12,6 +12,8 @@ use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
+use crate::helper::concurrency::execution_queue::ExecutionQueue;
+use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::platform;
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
@@ -26,7 +28,7 @@ use crate::state::scene::components::alpha::Alpha;
 use crate::state::scene::components::transformation_animation::TransformationAnimation;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
-use crate::state::scene::utilities::scene_utils;
+use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
 
 use super::winit::winit_map_key;
@@ -301,43 +303,7 @@ impl MainInterface
             Node::add_node(node1, node2);
             */
 
-
-            //scene.load("objects/grid/grid.gltf", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/sphere/sphere.gltf", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/monkey/monkey.gltf", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/monkey/seperate/monkey.gltf", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/monkey/monkey.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/Corset.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/DamagedHelmet.glb", state.rendering.create_mipmaps).unwrap();
-            scene.load("objects/temp/WaterBottle.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/MetalRoughSpheres.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/mando_helmet.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/mando_helmet_4k.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/Workbench.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/Lantern.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/lotus.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/Sponza_fixed.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/scene.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/model0_debug.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/scene_2.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/Toys_Railway.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/Toys_Railway_2.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/test.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/bastl/bastl.obj", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/brick_wall.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/textured.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/apocalyptic_city.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/ccity_building_set_1.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/persian_city.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/cathedral.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/minecraft_village.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/plaza_night_time.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/de_dust.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/de_dust2.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/de_dust2_8k.glb", state.rendering.create_mipmaps).unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
-            //scene.load("objects/temp/bistro.glb", state.rendering.create_mipmaps).unwrap();
-            //scene.load("objects/temp/lowpoly__fps__tdm__game__map.glb", state.rendering.create_mipmaps).unwrap();
-
+            /*
             scene.clear_empty_nodes();
 
             let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
@@ -353,6 +319,7 @@ impl MainInterface
 
             scene.clear_nodes();
             scene.add_node(root_node.clone());
+            */
 
             /*
             if let Some(suzanne) = scene.find_node_by_name("Suzanne")
@@ -372,6 +339,7 @@ impl MainInterface
             }
              */
 
+            /*
             if let Some(train) = scene.find_node_by_name("Train")
             {
                 let mut node = train.write().unwrap();
@@ -391,7 +359,9 @@ impl MainInterface
                     component.keyboard_key = Some(Key::Right as usize);
                 }
             }
+            */
 
+            /*
             // add light
             //if scene.lights.get_ref().len() == 0
             {
@@ -399,7 +369,9 @@ impl MainInterface
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
+             */
 
+            /*
             // add camera
             if scene.cameras.len() == 0
             {
@@ -413,7 +385,9 @@ impl MainInterface
                 cam_data.clipping_far = 1000.0;
                 scene.cameras.push(Box::new(cam));
             }
+             */
 
+             /*
             // camera movement controller
             if scene.cameras.len() > 0
             {
@@ -425,6 +399,8 @@ impl MainInterface
 
                 cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
             }
+
+            */
 
 
             // lantern
@@ -458,19 +434,144 @@ impl MainInterface
             }
             */
 
-            scene_utils::create_grid(&mut scene, 500, 1.0);
-            //scene_utils::create_grid(&mut scene, 1, 1.0);
-
             // ********** scene add **********
             let scene_id = scene.id.clone();
+            let main_queue = state.main_thread_execution_queue.clone();
 
-            scene.update(&mut state.input_manager, state.frame_scale);
+            //scene.update(&mut state.input_manager, state.frame_scale);
             state.scenes.push(Box::new(scene));
+
+            let main_queue_clone = main_queue.clone();
+            spawn_thread(move ||
+            {
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), 500, 1.0);
+            });
+            //scene_utils::create_grid(&mut scene, 1, 1.0);
 
             //load default env texture
             state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
-            state.print();
+            //state.print();
+
+            let create_mipmaps = state.rendering.create_mipmaps;
+            let editor_state = self.editor_gui.editor_state.loading.clone();
+            spawn_thread(move ||
+            {
+                dbg!("loading ...");
+                *editor_state.write().unwrap() = true;
+
+                //load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/sphere/sphere.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/monkey/monkey.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/monkey/seperate/monkey.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/monkey/monkey.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/Corset.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/DamagedHelmet.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/WaterBottle.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/MetalRoughSpheres.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/mando_helmet.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                load_object("objects/temp/mando_helmet_4k.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/Workbench.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/Lantern.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/lotus.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/Sponza_fixed.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/scene.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/model0_debug.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/scene_2.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/Toys_Railway.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/Toys_Railway_2.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/test.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/bastl/bastl.obj", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/brick_wall.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/textured.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/apocalyptic_city.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/ccity_building_set_1.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/persian_city.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/cathedral.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/minecraft_village.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/plaza_night_time.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/de_dust.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/de_dust2.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/de_dust2_8k.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
+                //load_object("objects/temp/bistro.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+                //load_object("objects/temp/lowpoly__fps__tdm__game__map.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+
+                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
+                {
+                    scene.clear_empty_nodes();
+
+                    let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
+                    {
+                        let mut root_node = root_node.write().unwrap();
+                        root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
+                    }
+
+                    for node in &scene.nodes
+                    {
+                        Node::add_node(root_node.clone(), node.clone());
+                    }
+
+                    scene.clear_nodes();
+                    scene.add_node(root_node.clone());
+
+                    if let Some(train) = scene.find_node_by_name("Train")
+                    {
+                        let mut node = train.write().unwrap();
+                        node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                        node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+
+                        let components_len = node.components.len();
+                        {
+                            let component = node.components.get_mut(components_len - 2).unwrap();
+                            component_downcast_mut!(component, TransformationAnimation);
+                            component.keyboard_key = Some(Key::Left as usize);
+                        }
+
+                        {
+                            let component = node.components.get_mut(components_len - 1).unwrap();
+                            component_downcast_mut!(component, TransformationAnimation);
+                            component.keyboard_key = Some(Key::Right as usize);
+                        }
+                    }
+
+                    // add light
+                    //if scene.lights.get_ref().len() == 0
+                    {
+                        let light_id = scene.id_manager.get_next_light_id();
+                        let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                        scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                    }
+
+                    // add camera
+                    if scene.cameras.len() == 0
+                    {
+                        let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                        let cam_data = cam.get_data_mut().get_mut();
+                        cam_data.fovy = 45.0f32.to_radians();
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                        cam_data.clipping_near = 0.001;
+                        cam_data.clipping_far = 1000.0;
+                        scene.cameras.push(Box::new(cam));
+                    }
+
+                    // camera movement controller
+                    if scene.cameras.len() > 0
+                    {
+                        let cam = scene.cameras.get_mut(0).unwrap();
+                        //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+
+                        let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+                        cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
+
+                        cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
+                    }
+                }));
+
+                *editor_state.write().unwrap() = false;
+
+                dbg!("loading DONE");
+            });
         }
     }
 
@@ -583,8 +684,7 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
             let main_queue = state.main_thread_execution_queue.clone();
-            let mut main_queue = main_queue.write().unwrap();
-            main_queue.run_all(state);
+            ExecutionQueue::run_all(main_queue, state);
         }
 
         // update scene

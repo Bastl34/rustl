@@ -1,7 +1,7 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{helper::{image::brga_to_rgba, platform::is_windows}, state::state::State};
+use crate::{helper::{image::brga_to_rgba, platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -28,8 +28,8 @@ impl WGpu
 
         if is_windows()
         {
-            //instance_desc.backends = wgpu::Backends::VULKAN;
-            instance_desc.backends = wgpu::Backends::DX12;
+            instance_desc.backends = wgpu::Backends::VULKAN;
+            //instance_desc.backends = wgpu::Backends::DX12;
         }
 
         let instance = wgpu::Instance::new(instance_desc);
@@ -221,26 +221,25 @@ impl WGpu
     {
         // TODO: this can timeout
         // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
-        let output = self.surface.get_current_texture().unwrap();
-        /*
-        let mut output: Result<wgpu::SurfaceTexture, wgpu::SurfaceError> = Err(wgpu::SurfaceError::Outdated);
+        //let output = self.surface.get_current_texture().unwrap();
+
+        let mut output: Result<wgpu::SurfaceTexture, wgpu::SurfaceError>;
         loop
         {
-            println!("getting surface texture...");
             output = self.surface.get_current_texture();
 
-            if output.is_err()
-            {
-                thread::sleep(Duration::from_millis(100));
-                println!("retry get surface texture");
-            }
-            else
+            if output.is_ok()
             {
                 break;
             }
+
+            dbg!(output.err());
+
+            // wait on error and retry
+            sleep_millis(100);
+            println!("retry get surface texture");
         }
         let output = output.unwrap();
-        */
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 

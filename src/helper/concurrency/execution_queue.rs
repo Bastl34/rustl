@@ -2,7 +2,9 @@ use std::{sync::{Arc, RwLock}, collections::VecDeque};
 
 use crate::state::state::State;
 
-#[derive(Debug, PartialEq)]
+use super::thread::sleep_millis;
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ExecutionQueueStatus
 {
     Waiting,
@@ -10,8 +12,37 @@ pub enum ExecutionQueueStatus
     Done
 }
 
-pub type ExecutionQueueResult = Arc<RwLock<ExecutionQueueStatus>>;
+//pub type ExecutionQueueResult = Arc<RwLock<ExecutionQueueStatus>>;
 pub type ExecutionQueueItem = Arc<RwLock<ExecutionQueue>>;
+
+pub struct ExecutionQueueResult
+{
+    status: Arc<RwLock<ExecutionQueueStatus>>
+}
+
+impl ExecutionQueueResult
+{
+    pub fn new(status: Arc<RwLock<ExecutionQueueStatus>>) -> ExecutionQueueResult
+    {
+        ExecutionQueueResult
+        {
+            status
+        }
+    }
+
+    pub fn state(&self) -> ExecutionQueueStatus
+    {
+        *self.status.read().unwrap()
+    }
+
+    pub fn join(&self)
+    {
+        while *self.status.read().unwrap() != ExecutionQueueStatus::Done
+        {
+            sleep_millis(1);
+        }
+    }
+}
 
 pub struct ExecutionItem
 {
@@ -53,20 +84,23 @@ impl ExecutionQueue
 
         self.queue.push_back(item);
 
-        result
+        ExecutionQueueResult::new(result)
     }
 
-    pub fn run_first(&mut self, state: &mut State)
+    pub fn run_first(queue: Arc<RwLock<ExecutionQueue>>, state: &mut State)
     {
-        if let Some(item) = self.queue.pop_front()
+        let mut front = None;
+        {
+            front = queue.write().unwrap().queue.pop_front();
+        }
+
+        if let Some(item) = front
         {
             {
                 *item.status.write().unwrap() = ExecutionQueueStatus::Running;
             }
 
-            {
-                (item.func)(state);
-            }
+            (item.func)(state);
 
             {
                 *item.status.write().unwrap() = ExecutionQueueStatus::Done;
@@ -74,11 +108,11 @@ impl ExecutionQueue
         }
     }
 
-    pub fn run_all(&mut self, state: &mut State)
+    pub fn run_all(queue: Arc<RwLock<ExecutionQueue>>, state: &mut State)
     {
-        while self.queue.len() > 0
+        while queue.read().unwrap().queue.len() > 0
         {
-            self.run_first(state);
+            Self::run_first(queue.clone(), state);
         }
     }
 }

@@ -168,7 +168,7 @@ impl Editor
 
                         if let Some(instance) = node.find_instance_by_id(instance_id)
                         {
-                            let mut instance = instance.borrow_mut();
+                            let mut instance = instance.write().unwrap();
                             let instance_data = instance.get_data_mut().get_mut();
                             instance_data.highlight = true;
                         }
@@ -385,7 +385,7 @@ impl Editor
                         let node = node.read().unwrap();
                         let instance = node.find_instance_by_id(instance_id).unwrap() ;
 
-                        let instance = instance.borrow_mut();
+                        let instance = instance.write().unwrap();
                         instance_transform = instance.find_component::<Transformation>();
                     }
 
@@ -400,7 +400,7 @@ impl Editor
                         {
                             let node = node.read().unwrap();
                             let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
-                            let mut instance = instance.borrow_mut();
+                            let mut instance = instance.write().unwrap();
 
                             instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
 

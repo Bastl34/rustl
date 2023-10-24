@@ -27,6 +27,8 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         ..Style::default()
     };
 
+    let loading = *editor_state.loading.read().unwrap();
+
     let frame = egui::Frame::side_top_panel(&style);
 
     egui::TopBottomPanel::top("top_panel").frame(frame).show(ctx, |ui|
@@ -45,8 +47,15 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Assets, "📦 Assets");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, "📝 Console");
+
+            if loading
+            {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                {
+                    ui.spinner();
+                });
+            }
         });
-        ui.separator();
     });
 
     //left
@@ -54,7 +63,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        ui.add_enabled_ui(!editor_state.loading, |ui|
+        ui.add_enabled_ui(!loading, |ui|
         {
             create_left_sidebar(editor_state, state, ui);
         });
@@ -65,7 +74,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        ui.add_enabled_ui(!editor_state.loading, |ui|
+        ui.add_enabled_ui(!loading, |ui|
         {
             create_right_sidebar(editor_state, state, ui);
         });
@@ -74,7 +83,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
     {
-        ui.add_enabled_ui(!editor_state.loading, |ui|
+        ui.add_enabled_ui(!loading, |ui|
         {
             ui.horizontal(|ui|
             {
@@ -261,7 +270,17 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong());
+                let toggle = toggle.context_menu(|ui|
+                {
+                    if ui.button("Clear").clicked()
+                    {
+                        ui.close_menu();
+                        scene.clear();
+                    }
+                });
+
+                if toggle.clicked()
                 {
                     if selection
                     {

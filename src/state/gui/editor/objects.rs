@@ -91,7 +91,7 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
     {
         for instance in node.instances.get_ref()
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             let instance_id = instance.id;
             let instance_data = instance.get_data();
 
@@ -331,7 +331,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
     // General
     collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", |ui|
     {
-        let instance = instance.borrow();
+        let instance = instance.read().unwrap();
 
         ui.label(format!("name: {}", instance.name));
         ui.label(format!("id: {}", instance.id));
@@ -349,7 +349,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
         let mut name;
         let mut pickable;
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             let instance_data = instance.get_data();
             visible = instance_data.visible;
             collision = instance_data.collision;
@@ -370,7 +370,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
         if changed
         {
-            let mut instance = instance.borrow_mut();
+            let mut instance = instance.write().unwrap();
             let instance_data = instance.get_data_mut().get_mut();
             instance_data.visible = visible;
             instance_data.collision = collision;
@@ -525,7 +525,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         if let Some(instance) = instance
         {
             {
-                let instance = instance.borrow();
+                let instance = instance.read().unwrap();
 
                 for component in &instance.components
                 {
@@ -590,7 +590,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             if let Some(delete_component_id) = delete_component_id
             {
-                let mut instance = instance.borrow_mut();
+                let mut instance = instance.write().unwrap();
                 instance.remove_component_by_id(delete_component_id);
             }
         }
