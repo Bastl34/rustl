@@ -1,9 +1,11 @@
+
 use crate::state::gui::helper::generic_items::collapse_with_title;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 
+use super::assets::create_asset_list;
 use super::cameras::{build_camera_list, create_camera_settings};
 use super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
@@ -56,6 +58,12 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                 });
             }
         });
+        ui.separator();
+
+        if editor_state.bottom == BottomPanel::Assets
+        {
+            create_asset_list(editor_state, state, ui);
+        }
     });
 
     //left
@@ -94,7 +102,6 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
 
     // create component
     create_component_add_modal(editor_state, state, ctx);
-
 }
 
 fn create_file_menu(state: &mut State, ui: &mut Ui)

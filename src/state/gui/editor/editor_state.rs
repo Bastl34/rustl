@@ -67,6 +67,8 @@ pub struct EditorState
     pub selected_type: SelectionType,
     pub selected_object: String,
 
+    pub drag_id: Option<String>,
+
     pub dialog_add_component: bool,
     pub add_component_id: usize,
     pub add_component_name: String,
@@ -99,6 +101,8 @@ impl EditorState
             selected_scene_id: None,
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
+
+            drag_id: None,
 
             dialog_add_component: false,
             add_component_id: 0,

@@ -98,6 +98,7 @@ mod state
             pub(crate) mod scenes;
             pub(crate) mod rendering;
             pub(crate) mod textures;
+            pub(crate) mod assets;
         }
     }
 }

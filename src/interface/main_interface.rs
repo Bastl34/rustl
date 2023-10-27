@@ -457,90 +457,11 @@ impl MainInterface
             let editor_state = self.editor_gui.editor_state.loading.clone();
             spawn_thread(move ||
             {
-                dbg!("loading ...");
                 *editor_state.write().unwrap() = true;
-
-                //load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/sphere/sphere.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/monkey/monkey.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/monkey/seperate/monkey.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/monkey/monkey.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/Corset.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/DamagedHelmet.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/WaterBottle.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/MetalRoughSpheres.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/mando_helmet.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                load_object("objects/temp/mando_helmet_4k.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/Workbench.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/Lantern.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/lotus.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/Sponza_fixed.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/scene.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/model0_debug.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/scene_2.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/Toys_Railway.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/Toys_Railway_2.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/test.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/bastl/bastl.obj", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/brick_wall.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/textured.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/apocalyptic_city.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/ccity_building_set_1.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/persian_city.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/cathedral.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/minecraft_village.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/plaza_night_time.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/de_dust.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/de_dust2.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/de_dust2_8k.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap(); // https://sketchfab.com/3d-models/de-dust-2-with-real-light-4ce74cd95c584ce9b12b5ed9dc418db5
-                //load_object("objects/temp/bistro.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-                //load_object("objects/temp/lowpoly__fps__tdm__game__map.glb", scene_id, main_queue.clone(), create_mipmaps).unwrap();
 
                 execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
                 {
                     scene.clear_empty_nodes();
-
-                    let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
-                    {
-                        let mut root_node = root_node.write().unwrap();
-                        root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
-                    }
-
-                    for node in &scene.nodes
-                    {
-                        Node::add_node(root_node.clone(), node.clone());
-                    }
-
-                    scene.clear_nodes();
-                    scene.add_node(root_node.clone());
-
-                    if let Some(train) = scene.find_node_by_name("Train")
-                    {
-                        let mut node = train.write().unwrap();
-                        node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                        node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-
-                        let components_len = node.components.len();
-                        {
-                            let component = node.components.get_mut(components_len - 2).unwrap();
-                            component_downcast_mut!(component, TransformationAnimation);
-                            component.keyboard_key = Some(Key::Left as usize);
-                        }
-
-                        {
-                            let component = node.components.get_mut(components_len - 1).unwrap();
-                            component_downcast_mut!(component, TransformationAnimation);
-                            component.keyboard_key = Some(Key::Right as usize);
-                        }
-                    }
-
-                    // add light
-                    //if scene.lights.get_ref().len() == 0
-                    {
-                        let light_id = scene.id_manager.get_next_light_id();
-                        let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                        scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-                    }
 
                     // add camera
                     if scene.cameras.len() == 0
@@ -569,8 +490,6 @@ impl MainInterface
                 }));
 
                 *editor_state.write().unwrap() = false;
-
-                dbg!("loading DONE");
             });
         }
     }
