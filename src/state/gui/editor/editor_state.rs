@@ -34,6 +34,7 @@ pub enum BottomPanel
     Assets,
     Debug,
     Console,
+    None
 }
 
 #[derive(Clone, Copy)]

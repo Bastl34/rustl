@@ -636,7 +636,14 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            load_object(path.as_str(), scene_id, main_queue.clone(), create_mipmaps).unwrap();
+            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_mipmaps);
+
+            if loaded.is_err()
+            {
+                dbg!("loading failed");
+                *editor_state.write().unwrap() = false;
+                return;
+            }
 
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {

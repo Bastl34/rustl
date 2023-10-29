@@ -66,28 +66,35 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                     editor_state.drag_id = Some(path.to_string());
                 }
 
-                ui.allocate_ui(egui::Vec2::new(100.0, 120.0), |ui|
+                ui.allocate_ui(egui::Vec2::new(100.0, 130.0), |ui|
                 {
                     drag_item(ui, item_id, |ui|
                     {
                         ui.set_min_width(100.0);
                         ui.set_max_width(100.0);
-                        ui.set_min_height(120.0);
-                        ui.set_max_height(120.0);
+                        ui.set_min_height(130.0);
+                        ui.set_max_height(130.0);
 
                         let bg_color = Color32::from_white_alpha(3);
                         let mut frame = egui::Frame::group(ui.style()).fill(bg_color);
                         frame.inner_margin = egui::Margin::same(2.0);
 
-                        frame.show(ui, |ui|
+                        let frame = frame.show(ui, |ui|
                         {
                             ui.vertical_centered(|ui|
                             {
-                                ui.label(name);
-                                ui.label(RichText::new("📦").size(60.0));
+                                ui.vertical_centered(|ui|
+                                {
+                                    ui.set_min_height(50.0);
+                                    ui.label(name);
+                                });
+
+                                ui.label(RichText::new("📦").size(50.0));
                                 ui.label("");
                             });
                         });
+
+                        frame.response.on_hover_text_at_pointer("drag into the scene to load");
                     });
                 });
             }

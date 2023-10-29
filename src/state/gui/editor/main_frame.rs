@@ -46,6 +46,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.horizontal(|ui|
         {
+            ui.selectable_value(&mut editor_state.bottom, BottomPanel::None, "⏷");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Assets, "📦 Assets");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, "📝 Console");

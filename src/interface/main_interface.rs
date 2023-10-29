@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
-use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
@@ -11,7 +10,6 @@ use winit::event::ElementState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
-use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::platform;
@@ -24,10 +22,6 @@ use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
-use crate::state::scene::components::alpha::Alpha;
-use crate::state::scene::components::transformation_animation::TransformationAnimation;
-use crate::state::scene::light::Light;
-use crate::state::scene::node::Node;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
 
