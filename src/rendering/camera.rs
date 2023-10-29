@@ -1,9 +1,9 @@
 use nalgebra::{Point3, Matrix4};
-use wgpu::{util::DeviceExt};
+use wgpu::util::DeviceExt;
 
 use crate::{state::{helper::render_item::RenderItem, scene::camera::Camera}, render_item_impl_default};
 
-use super::{wgpu::WGpu};
+use super::wgpu::WGpu;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

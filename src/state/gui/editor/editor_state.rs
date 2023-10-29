@@ -1,3 +1,5 @@
+use std::sync::{RwLock, Arc};
+
 use nalgebra::Point2;
 
 use crate::state::{scene::{scene::Scene, node::NodeItem}, state::State};
@@ -44,6 +46,8 @@ pub enum EditMode
 pub struct EditorState
 {
     pub visible: bool,
+    pub loading: Arc<RwLock<bool>>,
+
     pub try_out: bool,
     pub selectable: bool,
     pub fly_camera: bool,
@@ -63,6 +67,8 @@ pub struct EditorState
     pub selected_type: SelectionType,
     pub selected_object: String,
 
+    pub drag_id: Option<String>,
+
     pub dialog_add_component: bool,
     pub add_component_id: usize,
     pub add_component_name: String,
@@ -75,6 +81,8 @@ impl EditorState
         EditorState
         {
             visible: true,
+            loading: Arc::new(RwLock::new(false)),
+
             try_out: false,
             selectable: true,
             fly_camera: true,
@@ -93,6 +101,8 @@ impl EditorState
             selected_scene_id: None,
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
+
+            drag_id: None,
 
             dialog_add_component: false,
             add_component_id: 0,
@@ -194,7 +204,7 @@ impl EditorState
                     let node = node.read().unwrap();
                     for instance in node.instances.get_ref()
                     {
-                        let mut instance = instance.borrow_mut();
+                        let mut instance = instance.write().unwrap();
                         let instance_data = instance.get_data_mut().get_mut();
                         instance_data.highlight = false;
                     }

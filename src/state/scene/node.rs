@@ -1,14 +1,14 @@
 use std::{sync::{Arc, RwLock}, cell::RefCell};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Matrix3, Vector3, Point3};
+use nalgebra::{Matrix4, Point3};
 
 use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
 use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
-pub type InstanceItemRefCell = RefCell<InstanceItem>;
+pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
@@ -25,7 +25,8 @@ pub struct Node
 
     pub nodes: Vec<NodeItem>,
     //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
-    pub instances: ChangeTracker<Vec<RefCell<InstanceItem>>>,
+    //pub instances: ChangeTracker<Vec<RefCell<InstanceItem>>>,
+    pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
 
     pub components: Vec<ComponentItem>,
 
@@ -133,7 +134,7 @@ impl Node
         // own meshes
         for instance in self.instances.get_ref()
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             let transform = instance.calculate_transform();
 
             for mesh in &meshes
@@ -207,7 +208,7 @@ impl Node
     {
         for instance in self.instances.get_ref()
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             if instance.get_data_tracker().changed()
             {
                 return true;
@@ -342,7 +343,7 @@ impl Node
 
     pub fn add_instance(&mut self, instance: InstanceItem)
     {
-        self.instances.get_mut().push(RefCell::new(instance));
+        self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
     }
 
     pub fn update(node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
@@ -473,7 +474,7 @@ impl Node
         let instances = self.instances.get_ref();
         for instance in instances
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
 
             let mut matrix = Matrix4::<f32>::identity();
 
@@ -495,7 +496,7 @@ impl Node
         for mesh in meshes
         {
             component_downcast_mut!(mesh, Mesh);
-            mesh.merge_instances_by_transformation(&transformations);
+            mesh.merge_by_transformations(&transformations);
         }
 
         // clear and create new single instance
@@ -503,7 +504,7 @@ impl Node
         let node;
         {
             let first_instance = self.instances.get_ref().first().unwrap();
-            let first_instance = first_instance.borrow();
+            let first_instance = first_instance.read().unwrap();
 
             instance_id = first_instance.id;
             node = first_instance.node.clone();
@@ -519,16 +520,16 @@ impl Node
     {
         for instance in self.instances.get_ref()
         {
-            let mut instance = instance.borrow_mut();
+            let mut instance = instance.write().unwrap();
             instance.set_force_update();
         }
     }
 
-    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemRefCell>
+    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemArc>
     {
         for instance in self.instances.get_ref()
         {
-            if instance.borrow().id == id
+            if instance.read().unwrap().id == id
             {
                 return Some(instance);
             }
@@ -542,7 +543,7 @@ impl Node
         let len = self.instances.get_ref().len();
         self.instances.get_mut().retain(|instance|
         {
-            instance.borrow().id != id
+            instance.read().unwrap().id != id
         });
 
         self.instances.get_ref().len() != len

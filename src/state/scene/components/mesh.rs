@@ -253,7 +253,7 @@ impl Mesh
         self.calc_bbox();
     }
 
-    pub fn merge_instances_by_transformation(&mut self, transformations: &Vec::<Matrix4<f32>>)
+    pub fn merge_by_transformations(&mut self, transformations: &Vec::<Matrix4<f32>>)
     {
         let cloned_vertices;
         let cloned_indices;

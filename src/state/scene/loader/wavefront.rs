@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string_async, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node}, helper, new_component};
+use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{get_new_component_id, load_texture_or_reuse, get_new_instance_id, get_new_node_id, execute_on_scene_mut_and_wait}}, helper::{self, concurrency::execution_queue::ExecutionQueueItem}, new_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -20,15 +20,15 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 
-    let obj_text = load_string_async(path).await?;
+    let obj_text = load_string(path)?;
     let obj_cursor = Cursor::new(obj_text);
     let mut obj_reader = BufReader::new(obj_cursor);
 
-    let (models, materials) = tobj::load_obj_buf_async
+    let (models, materials) = tobj::load_obj_buf
     (
         &mut obj_reader,
         &tobj::LoadOptions
@@ -37,24 +37,23 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
             single_index: true,
             ..Default::default()
         },
-        |p| async move
+        move |p|
         {
-            let mut file_path = p;
+            let mut file_path = p.to_str().unwrap().to_string();
             if !helper::file::is_absolute(file_path.as_str())
             {
                 file_path = helper::file::get_dirname(path) + "/" + &file_path;
             }
 
-            let mat_text = load_string_async(&file_path).await.unwrap();
+            let mat_text = load_string(&file_path).unwrap();
             tobj::load_mtl_buf(&mut BufReader::new(Cursor::new(mat_text)))
         },
-    )
-    .await?;
-
+    )?;
 
     let wavefront_materials = materials.unwrap();
+    let mut scene_nodes = vec![];
 
-    let mut double_check_materials: Vec<(usize, u64)> = vec![];
+    let mut double_check_materials: Vec<(usize, MaterialItem)> = vec![];
 
     for (_i, m) in models.iter().enumerate()
     {
@@ -142,23 +141,24 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
             //apply material
             if let Some(wavefront_mat_id) = mesh.material_id
             {
-                let mut reusing_material_object_id = 0;
+                let mut reusing_material = None;
                 for mat in &double_check_materials
                 {
                     if mat.0 == wavefront_mat_id
                     {
-                        reusing_material_object_id = mat.1;
+                        reusing_material = Some(mat.1.clone());
                         break;
                     }
                 }
 
-                if reusing_material_object_id != 0
+                if let Some(reusing_material) = reusing_material
                 {
-                    material_arc = scene.get_material_by_id(reusing_material_object_id).unwrap();
+                    material_arc = reusing_material.clone();
                 }
                 else
                 {
-                    let component_id = scene.id_manager.get_next_component_id();
+                    //let component_id = scene.id_manager.get_next_component_id();
+                    let component_id = get_new_component_id(main_queue.clone(), scene_id);
                     material_arc = new_component!(Material::new(component_id, ""));
 
                     let mut material_guard = material_arc.write().unwrap();
@@ -223,7 +223,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
                         let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                         let tex_path = get_texture_path(&diffuse_texture, path);
-                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
+                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -238,7 +238,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading normal texture {}", mat.normal_texture.clone().unwrap());
                         let normal_texture = mat.normal_texture.clone().unwrap();
                         let tex_path = get_texture_path(&normal_texture, path);
-                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
+                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -253,7 +253,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
                         let ambient_texture = mat.ambient_texture.clone().unwrap();
                         let tex_path = get_texture_path(&ambient_texture, path);
-                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
+                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -268,7 +268,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading specular texture {}", mat.specular_texture.clone().unwrap());
                         let specular_texture = mat.specular_texture.clone().unwrap();
                         let tex_path: String = get_texture_path(&specular_texture, path);
-                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
+                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -283,7 +283,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
                         let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                         let tex_path = get_texture_path(&dissolve_texture, path);
-                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
+                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -298,7 +298,7 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         println!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
                         let shininess_texture = mat.shininess_texture.clone().unwrap();
                         let tex_path = get_texture_path(&shininess_texture, path);
-                        let tex = scene.load_texture_or_reuse_async(tex_path.as_str(), None).await?;
+                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
                             let tex_data = tex.get_data_mut().get_mut();
@@ -307,13 +307,17 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                         material.set_texture(tex, TextureType::Shininess);
                     }
 
-                    scene.add_material(component_id, &material_arc);
-                    double_check_materials.push((wavefront_mat_id, component_id));
+                    let material_arc_clone = material_arc.clone();
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                    {
+                        scene.add_material(component_id, &material_arc_clone);
+                    }));
+                    double_check_materials.push((wavefront_mat_id, material_arc.clone()));
                 }
             }
             else
             {
-                let material_id = scene.id_manager.get_next_component_id();
+                let material_id = get_new_component_id(main_queue.clone(), scene_id);
                 material_arc = Arc::new(RwLock::new(Box::new(Material::new(material_id, ""))));
             }
 
@@ -327,9 +331,10 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
                 normals_indices = indices.clone();
             }
 
-            let item = Mesh::new_with_data(scene.id_manager.get_next_component_id(), "mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
+            let component_id = get_new_component_id(main_queue.clone(), scene_id);
+            let item = Mesh::new_with_data(component_id, "mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
-            let id = scene.id_manager.get_next_node_id();
+            let id = get_new_node_id(main_queue.clone(), scene_id);
             loaded_ids.push(id);
 
             let node_arc = Node::new(id, m.name.as_str());
@@ -342,12 +347,22 @@ pub async fn load(path: &str, scene: &mut Scene, create_mipmaps: bool) -> anyhow
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
-                node.create_default_instance(node_arc.clone(), scene.id_manager.get_next_instance_id());
+                let instance_id = get_new_instance_id(main_queue.clone(), scene_id);
+                node.create_default_instance(node_arc.clone(), instance_id);
             }
 
-            scene.add_node(node_arc);
+            scene_nodes.push(node_arc)
         }
-
     }
+
+    // ********** add to scene **********
+    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+    {
+        for scene_node in &scene_nodes
+        {
+            scene.add_node(scene_node.clone());
+        }
+    }));
+
     Ok(loaded_ids)
 }

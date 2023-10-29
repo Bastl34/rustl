@@ -3,9 +3,9 @@ use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 use instant::Instant;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::ExecutionQueue, thread::spawn_thread}}, input::input_manager::InputManager};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager};
 
-use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::{MaterialItem, TextureType}}, utilities::scene_utils::load_texture};
+use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::TextureType}, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -40,7 +40,7 @@ pub struct State
     pub rendering: Rendering,
     pub input_manager: InputManager,
 
-    pub main_thread_execution_queue: Arc<RwLock<ExecutionQueue>>,
+    pub main_thread_execution_queue: ExecutionQueueItem,
 
     pub running: bool,
     pub scenes: Vec<SceneItem>,

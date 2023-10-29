@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Matrix4, Vector3};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
-use super::{node::{NodeItem, Node, InstanceItemRefCell}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}}};
+use super::{node::{NodeItem, Node, InstanceItemArc}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -159,18 +159,18 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemRefCell, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32) -> bool
     {
         let node;
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             node = instance.node.clone();
         }
 
         // ***** copy all components *****
         let all_components;
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             all_components = instance.components.clone();
         }
 
@@ -185,7 +185,7 @@ impl Instance
 
             // remove the component itself  for the component update
             {
-                let mut instance = instance.borrow_mut();
+                let mut instance = instance.write().unwrap();
                 instance.components = all_components.clone();
                 instance.components.remove(component_id);
             }
@@ -196,20 +196,20 @@ impl Instance
 
         // ***** reassign components *****
         {
-            let mut instance = instance.borrow_mut();
+            let mut instance = instance.write().unwrap();
             instance.components = all_components;
         }
 
         // ***** update computed data *****
         let has_changed_data;
         {
-            let instance = instance.borrow();
+            let instance = instance.read().unwrap();
             has_changed_data = instance.find_changed_data() || instance.force_update;
         }
 
         if has_changed_data
         {
-            let mut instance = instance.borrow_mut();
+            let mut instance = instance.write().unwrap();
 
             let world_matrix = instance.calculate_transform();
             let alpha = instance.calculate_alpha();
@@ -220,7 +220,7 @@ impl Instance
         }
 
         {
-            let mut instance = instance.borrow_mut();
+            let mut instance = instance.write().unwrap();
             instance.force_update = false;
         }
 

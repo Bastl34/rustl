@@ -113,6 +113,8 @@ impl CameraController for TargetRotationController
             data.alpha -= delta_x;
             data.beta -= delta_y;
 
+            data.alpha = data.alpha % (PI * 2.0);
+
             if data.beta > PI / 2.0 - ANGLE_OFFSET
             {
                 data.beta = (PI / 2.0) - ANGLE_OFFSET;
@@ -131,7 +133,10 @@ impl CameraController for TargetRotationController
         {
             if let Some(auto_rotate) = self.auto_rotate
             {
-                self.data.get_mut().alpha += auto_rotate * frame_scale;
+                let mut alpha = self.data.get_ref().alpha + (auto_rotate * frame_scale);
+                alpha = alpha % (PI * 2.0);
+
+                self.data.get_mut().alpha = alpha;
             }
         }
 

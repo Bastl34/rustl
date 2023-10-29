@@ -3,8 +3,7 @@ use std::any::Any;
 
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
-use crate::state::scene::instance::InstanceItem;
-use crate::state::scene::node::{NodeItem, InstanceItemRefCell};
+use crate::state::scene::node::{NodeItem, InstanceItemArc};
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -19,7 +18,7 @@ pub trait Component: Any
     fn ui(&mut self, ui: &mut egui::Ui);
 
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32);
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemRefCell, input_manager: &mut InputManager, frame_scale: f32);
+    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32);
 
     fn set_enabled(&mut self, state: bool);
 
@@ -109,7 +108,7 @@ macro_rules! component_impl_no_update
         {
         }
 
-        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemRefCell, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
+        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
         {
         }
     };

@@ -10,7 +10,6 @@ use std::{mem, cell::RefCell};
 
 use colored::Colorize;
 use nalgebra::{Vector3, Point3};
-use wgpu::util::DeviceExt;
 
 use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, LightItem, LightType}}, render_item_impl_default, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}};
 

@@ -4,9 +4,13 @@ todo:
  * normal map: rotation/transformation is not applied correctly
  * screenshot is broken on windows
  * flickering on windows (amd)
- * get rid of async stuff -> use exec queue
+ * slice.map_async(wgpu::MapMode::Read, |_| ());
+ * cleanup is not working (clear scene)
+ * better scene statistics graph
+ * winit update
 
 done:
+ * get rid of async stuff -> use exec queue
  * set camera resolution per default (otherwise target rotation controller is not working correctly)
  * camera target not working correctly (maybe: get_center wrong?)
  * mipmap off by default? it uses a lot of GPU mempry (+1/3)

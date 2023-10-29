@@ -1,9 +1,9 @@
-use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, cmp::Ordering};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
-use nalgebra::{Vector3, Point3, distance, distance_squared};
+use nalgebra::{Point3, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::{Camera, CameraData}, instance::Instance}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::CameraData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
 
@@ -45,11 +45,11 @@ impl RenderItem for Scene
 
 impl Scene
 {
-    pub async fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
+    pub fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
         // shader source
-        let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
-        let depth_shader = resources::load_string_async("shader/depth.wgsl").await.unwrap();
+        let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
+        let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
 
         let mut render_scene = Self
         {
@@ -384,7 +384,8 @@ impl Scene
                     let instance_buffer;
                     {
                         let node = node_arc.read().unwrap();
-                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node.instances.get_ref());
+                        let instances = node.instances.get_ref();
+                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -423,7 +424,7 @@ impl Scene
 
                     for (i, instance) in instances_ref.iter().enumerate()
                     {
-                        let mut instance = instance.borrow_mut();
+                        let mut instance = instance.write().unwrap();
                         //let (instance_data, mut instance_changed) = instance.get_data_mut().consume_borrow();
                         let instance_changed = instance.get_data_mut().consume_change();
 
@@ -765,21 +766,24 @@ impl Scene
                 mesh_middle.y /= len_f32;
                 mesh_middle.z /= len_f32;
 
-                let instance_render_item = node.instance_render_item.as_ref().unwrap();
-                let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                for transform in &instance_buffer.transformations
+                if let Some(instance_render_item) = node.instance_render_item.as_ref()
                 {
-                    let p = transform.transform_point(&mesh_middle);
-                    item_middle.x += p.x;
-                    item_middle.y += p.y;
-                    item_middle.z += p.z;
-                }
+                    let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                let len_f32 = instance_buffer.transformations.len() as f32;
-                item_middle.x /= len_f32;
-                item_middle.y /= len_f32;
-                item_middle.z /= len_f32;
+                    for transform in &instance_buffer.transformations
+                    {
+                        let p = transform.transform_point(&mesh_middle);
+                        item_middle.x += p.x;
+                        item_middle.y += p.y;
+                        item_middle.z += p.z;
+                    }
+
+                    let len_f32 = instance_buffer.transformations.len() as f32;
+                    item_middle.x /= len_f32;
+                    item_middle.y /= len_f32;
+                    item_middle.z /= len_f32;
+                }
             }
 
             let has_transparency;

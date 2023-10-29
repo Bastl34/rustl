@@ -1,10 +1,10 @@
-use std::{sync::{Arc, RwLock}, f32::consts::PI};
+use std::{sync::{Arc, RwLock}, f32::consts::PI, cell::RefCell};
 
 use egui::FullOutput;
 
-use nalgebra::{Vector3, Matrix4};
+use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
-use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem}, node::NodeItem}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform}};
 
 use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode}, main_frame};
 
@@ -168,7 +168,7 @@ impl Editor
 
                         if let Some(instance) = node.find_instance_by_id(instance_id)
                         {
-                            let mut instance = instance.borrow_mut();
+                            let mut instance = instance.write().unwrap();
                             let instance_data = instance.get_data_mut().get_mut();
                             instance_data.highlight = true;
                         }
@@ -385,7 +385,7 @@ impl Editor
                         let node = node.read().unwrap();
                         let instance = node.find_instance_by_id(instance_id).unwrap() ;
 
-                        let instance = instance.borrow_mut();
+                        let instance = instance.write().unwrap();
                         instance_transform = instance.find_component::<Transformation>();
                     }
 
@@ -400,7 +400,7 @@ impl Editor
                         {
                             let node = node.read().unwrap();
                             let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
-                            let mut instance = instance.borrow_mut();
+                            let mut instance = instance.write().unwrap();
 
                             instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
 
@@ -578,6 +578,144 @@ impl Editor
 
     }
 
+    pub fn apply_drag(&mut self, state: &mut State, ctx: &egui::Context)
+    {
+        if let Some(drag_id) = &self.editor_state.drag_id
+        {
+            let is_being_dragged = ctx.memory(|mem| { mem.is_anything_being_dragged() });
+
+            if !is_being_dragged
+            {
+                if !ctx.wants_pointer_input()
+                {
+                    let pos = ctx.input(|i| i.pointer.latest_pos());
+
+                    if let Some(pos) = pos
+                    {
+                        if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
+                        {
+                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, pos.y));
+                        }
+                    }
+                }
+
+                self.editor_state.drag_id = None;
+            }
+        }
+    }
+
+    pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>)
+    {
+        let main_queue = state.main_thread_execution_queue.clone();
+
+        let mut scene_id = None;
+        for scene in &mut state.scenes
+        {
+            scene_id = Some(scene.id);
+            scene.clear();
+            break;
+        }
+
+        if scene_id.is_none()
+        {
+            return;
+        }
+
+        let scene_id = scene_id.unwrap();
+
+        let main_queue_clone = main_queue.clone();
+        spawn_thread(move ||
+        {
+            scene_utils::create_grid(scene_id, main_queue_clone.clone(), 500, 1.0);
+        });
+
+        let create_mipmaps = state.rendering.create_mipmaps;
+        let editor_state = self.editor_state.loading.clone();
+        spawn_thread(move ||
+        {
+            dbg!("loading ...");
+            *editor_state.write().unwrap() = true;
+
+            load_object(path.as_str(), scene_id, main_queue.clone(), create_mipmaps).unwrap();
+
+            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
+            {
+                scene.clear_empty_nodes();
+
+                let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
+                {
+                    let mut root_node = root_node.write().unwrap();
+                    root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
+                }
+
+                for node in &scene.nodes
+                {
+                    Node::add_node(root_node.clone(), node.clone());
+                }
+
+                scene.clear_nodes();
+                scene.add_node(root_node.clone());
+
+                if let Some(train) = scene.find_node_by_name("Train")
+                {
+                    let mut node = train.write().unwrap();
+                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+
+                    let components_len = node.components.len();
+                    {
+                        let component = node.components.get_mut(components_len - 2).unwrap();
+                        component_downcast_mut!(component, TransformationAnimation);
+                        component.keyboard_key = Some(Key::Left as usize);
+                    }
+
+                    {
+                        let component = node.components.get_mut(components_len - 1).unwrap();
+                        component_downcast_mut!(component, TransformationAnimation);
+                        component.keyboard_key = Some(Key::Right as usize);
+                    }
+                }
+
+                // add light
+                //if scene.lights.get_ref().len() == 0
+                {
+                    let light_id = scene.id_manager.get_next_light_id();
+                    let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                }
+
+                // add camera
+                if scene.cameras.len() == 0
+                {
+                    let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                    let cam_data = cam.get_data_mut().get_mut();
+                    cam_data.fovy = 45.0f32.to_radians();
+                    cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                    cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                    cam_data.clipping_near = 0.001;
+                    cam_data.clipping_far = 1000.0;
+                    scene.cameras.push(Box::new(cam));
+                }
+
+                // camera movement controller
+                if scene.cameras.len() > 0
+                {
+                    let cam = scene.cameras.get_mut(0).unwrap();
+                    //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+
+                    let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+                    cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
+
+                    cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
+                }
+            }));
+
+            *editor_state.write().unwrap() = false;
+
+            dbg!("loading DONE");
+        });
+    }
+
     pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
     {
         let raw_input = egui.ui_state.take_egui_input(window);
@@ -586,6 +724,8 @@ impl Editor
         {
             main_frame::create_frame(ctx, &mut self.editor_state, state);
         });
+
+        self.apply_drag(state, &egui.ctx);
 
         let platform_output = full_output.platform_output.clone();
 

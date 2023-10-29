@@ -41,3 +41,7 @@ set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resource
 RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```
+
+
+## Hints
+* prevent large scale values for objects -> this can cause flickering (because of float precision)

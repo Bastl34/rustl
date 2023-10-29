@@ -1,9 +1,11 @@
+
 use crate::state::gui::helper::generic_items::collapse_with_title;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 
+use super::assets::create_asset_list;
 use super::cameras::{build_camera_list, create_camera_settings};
 use super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
@@ -27,10 +29,11 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         ..Style::default()
     };
 
+    let loading = *editor_state.loading.read().unwrap();
+
     let frame = egui::Frame::side_top_panel(&style);
 
     egui::TopBottomPanel::top("top_panel").frame(frame).show(ctx, |ui|
-    //egui::TopBottomPanel::top("top_panel").show(ctx, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -46,8 +49,21 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Assets, "📦 Assets");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, "📝 Console");
+
+            if loading
+            {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                {
+                    ui.spinner();
+                });
+            }
         });
         ui.separator();
+
+        if editor_state.bottom == BottomPanel::Assets
+        {
+            create_asset_list(editor_state, state, ui);
+        }
     });
 
     //left
@@ -55,7 +71,10 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        create_left_sidebar(editor_state, state, ui);
+        ui.add_enabled_ui(!loading, |ui|
+        {
+            create_left_sidebar(editor_state, state, ui);
+        });
     });
 
     //right
@@ -63,21 +82,26 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        create_right_sidebar(editor_state, state, ui);
+        ui.add_enabled_ui(!loading, |ui|
+        {
+            create_right_sidebar(editor_state, state, ui);
+        });
     });
 
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
     {
-        ui.horizontal(|ui|
+        ui.add_enabled_ui(!loading, |ui|
         {
-            create_tool_menu(editor_state, state, ui);
+            ui.horizontal(|ui|
+            {
+                create_tool_menu(editor_state, state, ui);
+            });
         });
     });
 
     // create component
     create_component_add_modal(editor_state, state, ctx);
-
 }
 
 fn create_file_menu(state: &mut State, ui: &mut Ui)
@@ -253,7 +277,17 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong());
+                let toggle = toggle.context_menu(|ui|
+                {
+                    if ui.button("Clear").clicked()
+                    {
+                        ui.close_menu();
+                        scene.clear();
+                    }
+                });
+
+                if toggle.clicked()
                 {
                     if selection
                     {

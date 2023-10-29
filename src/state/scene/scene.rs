@@ -77,7 +77,8 @@ impl Scene
         &mut self.data
     }
 
-    pub async fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+    /*
+    pub fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
     {
         let extension = Path::new(path).extension();
 
@@ -88,17 +89,29 @@ impl Scene
         }
         let extension = extension.unwrap();
 
+        let main_queue = state.main_thread_execution_queue.clone();
+        let create_mipmaps = state.rendering.create_mipmaps;
+
+        let path = path.to_string();
+        let scene_id = self.id;
+
+        spawn_thread(move ||
+        {
+            load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
+        });
+
         if extension == "obj"
         {
-            return wavefront::load(path, self, create_mipmaps).await;
+            //return wavefront::load(path, self, create_mipmaps);
         }
         else if extension == "gltf" || extension == "glb"
         {
-            return gltf::load(path, self, create_mipmaps).await;
+            //return gltf::load(path, self, create_mipmaps);
         }
 
         Ok(vec![])
     }
+     */
 
     pub fn update(&mut self, input_manager: &mut InputManager, frame_scale: f32)
     {
@@ -160,6 +173,13 @@ impl Scene
         Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
     }
 
+    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    {
+        let image_bytes = resources::load_binary(path)?;
+
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
+    }
+
     pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
     {
         let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
@@ -211,6 +231,25 @@ impl Scene
         {
             let mut node = node.write().unwrap();
             Self::clear_empty_nodes_recursive(&mut node.nodes);
+        }
+    }
+
+    pub fn clear(&mut self)
+    {
+        self.nodes.clear();
+        self.lights.get_mut().clear();
+        self.cameras.clear();
+
+        self.textures.clear();
+        self.materials.clear();
+
+        // re-add defaults
+        self.add_default_material();
+
+        if let Some(env_texture) = &self.get_data().environment_texture
+        {
+            let hash = env_texture.item.read().unwrap().hash.clone();
+            self.textures.insert(hash, env_texture.item.clone());
         }
     }
 
@@ -295,9 +334,9 @@ impl Scene
 
             for instance in node.instances.get_ref()
             {
-                if instance.borrow().find_component_by_id(id).is_some()
+                if instance.read().unwrap().find_component_by_id(id).is_some()
                 {
-                    instance.borrow_mut().remove_component_by_id(id);
+                    instance.write().unwrap().remove_component_by_id(id);
                 }
             }
         }
@@ -584,7 +623,7 @@ impl Scene
 
             for instance in node.instances.get_ref()
             {
-                let instance = instance.borrow();
+                let instance = instance.read().unwrap();
 
                 if !instance.pickable
                 {
