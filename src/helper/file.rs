@@ -49,3 +49,42 @@ pub fn is_absolute(path: &str) -> bool
 {
     Path::new(path).is_absolute()
 }
+
+/*
+pub fn read_files(path: &str) -> Vec<String>
+{
+    let paths = fs::read_dir(path).unwrap();
+
+    let mut string_paths = vec![];
+
+    for path in paths
+    {
+        string_paths.push(path.unwrap().path().display().to_string());
+    }
+
+    string_paths
+}
+
+pub fn read_files_recursive(path: &str) -> Vec<String>
+{
+    let paths = fs::read_dir(path).unwrap();
+
+    let mut string_paths = vec![];
+
+    for entry in paths
+    {
+        if let Ok(entry) = entry
+        {
+            // Here, `entry` is a `DirEntry`.
+            if let Ok(metadata) = entry.metadata()
+            {
+                // Now let's show our entry's permissions!
+                //println!("{:?}: {:?}", entry.path(), metadata.permissions());
+                println!("{:?}: {:?}", entry.path(), metadata.is_dir());
+            }
+        }
+    }
+
+    string_paths
+}
+ */

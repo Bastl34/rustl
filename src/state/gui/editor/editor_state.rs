@@ -2,7 +2,8 @@ use std::sync::{RwLock, Arc};
 
 use nalgebra::Point2;
 
-use crate::state::{scene::{scene::Scene, node::NodeItem}, state::State};
+use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resources::resources::read_files_recursive, helper::file::get_extension};
+
 
 #[derive(PartialEq, Eq)]
 pub enum SettingsPanel
@@ -73,6 +74,8 @@ pub struct EditorState
     pub dialog_add_component: bool,
     pub add_component_id: usize,
     pub add_component_name: String,
+
+    pub assets: Vec<String>,
 }
 
 impl EditorState
@@ -107,7 +110,9 @@ impl EditorState
 
             dialog_add_component: false,
             add_component_id: 0,
-            add_component_name: "Component".to_string()
+            add_component_name: "Component".to_string(),
+
+            assets: vec![]
         }
     }
     pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
@@ -240,5 +245,21 @@ impl EditorState
         {
             self.de_select_current_item(state);
         }
+    }
+
+    pub fn load_asset_entries(&mut self, path: &str, state: &State)
+    {
+        let files = read_files_recursive(path);
+
+        // filter supported file types
+        let files: Vec<String> = files.iter().filter(|item|
+        {
+            let extension = get_extension(item.as_str());
+            state.supported_file_types.objects.contains(&extension)
+        }).map(|s| s.to_string()).collect();
+
+        dbg!(&files);
+
+        self.assets = files;
     }
 }

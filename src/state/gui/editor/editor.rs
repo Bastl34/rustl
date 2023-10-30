@@ -8,6 +8,7 @@ use crate::{state::{state::State, scene::{components::{transformation::Transform
 
 use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode}, main_frame};
 
+const ASSET_DIR: &str = "objects/";
 
 pub struct Editor
 {
@@ -22,6 +23,11 @@ impl Editor
         {
             editor_state: EditorState::new()
         }
+    }
+
+    pub fn init(&mut self, state: &State)
+    {
+        self.editor_state.load_asset_entries(ASSET_DIR, state);
     }
 
     pub fn update(&mut self, state: &mut State)

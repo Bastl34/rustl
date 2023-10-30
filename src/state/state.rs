@@ -34,6 +34,12 @@ pub struct Rendering
     pub create_mipmaps: bool,
 }
 
+pub struct SupportedFileTypes
+{
+    pub objects: Vec<String>,
+    pub textures: Vec<String>
+}
+
 pub struct State
 {
     pub adapter: AdapterFeatures,
@@ -46,6 +52,7 @@ pub struct State
     pub scenes: Vec<SceneItem>,
 
     pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
+    pub supported_file_types: SupportedFileTypes,
 
     pub in_focus: bool,
 
@@ -130,6 +137,12 @@ impl State
             scenes: vec![],
 
             registered_components: components,
+
+            supported_file_types: SupportedFileTypes
+            {
+                objects: vec![String::from("obj"), String::from("gltf"), String::from("glb")],
+                textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png")],
+            },
 
             in_focus: true,
 

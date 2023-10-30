@@ -66,6 +66,12 @@ impl MainInterface
 
         let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
 
+        let mut editor_gui = Editor::new();
+        {
+            let state = & *(state.borrow());
+            editor_gui.init(state);
+        }
+
         let mut interface = Self
         {
             state,
@@ -73,7 +79,7 @@ impl MainInterface
 
             window_title: window.title().clone(),
 
-            editor_gui: Editor::new(),
+            editor_gui,
 
             wgpu,
             window,
