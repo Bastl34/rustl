@@ -242,6 +242,7 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
         }
 
         // merge together
+        /*
         for id in &loaded_ids
         {
             if let Some(node) = scene.find_node_by_id(*id)
@@ -253,6 +254,7 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
                 instance.unwrap().write().unwrap().pickable = false;
             }
         }
+         */
     }));
 }
 

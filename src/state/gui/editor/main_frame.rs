@@ -5,7 +5,7 @@ use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 
-use super::assets::create_asset_list;
+use super::assets::create_asset_section;
 use super::cameras::{build_camera_list, create_camera_settings};
 use super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
@@ -63,7 +63,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
 
         if editor_state.bottom == BottomPanel::Assets
         {
-            create_asset_list(editor_state, state, ui);
+            create_asset_section(editor_state, state, ui);
         }
     });
 
@@ -72,10 +72,10 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        ui.add_enabled_ui(!loading, |ui|
-        {
+        //ui.add_enabled_ui(!loading, |ui|
+        //{
             create_left_sidebar(editor_state, state, ui);
-        });
+        //});
     });
 
     //right
@@ -83,22 +83,22 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.set_min_width(300.0);
 
-        ui.add_enabled_ui(!loading, |ui|
-        {
+        //ui.add_enabled_ui(!loading, |ui|
+        //{
             create_right_sidebar(editor_state, state, ui);
-        });
+        //});
     });
 
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
     {
-        ui.add_enabled_ui(!loading, |ui|
-        {
+        //ui.add_enabled_ui(!loading, |ui|
+        //{
             ui.horizontal(|ui|
             {
                 create_tool_menu(editor_state, state, ui);
             });
-        });
+        //});
     });
 
     // create component

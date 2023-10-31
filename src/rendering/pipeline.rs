@@ -140,8 +140,8 @@ impl Pipeline
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back), // backface culling
-                //cull_mode: None,
+                //cull_mode: Some(wgpu::Face::Back), // backface culling
+                cull_mode: None,
                 // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
                 // or Features::POLYGON_MODE_POINT
                 polygon_mode: wgpu::PolygonMode::Fill,

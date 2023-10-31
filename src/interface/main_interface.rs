@@ -477,16 +477,17 @@ impl MainInterface
                     }
 
                     // camera movement controller
+                    /*
                     if scene.cameras.len() > 0
                     {
                         let cam = scene.cameras.get_mut(0).unwrap();
-                        //cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
-                        let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+                        let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.1 };
                         cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
-
                         cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
                     }
+                     */
                 }));
 
                 *editor_state.write().unwrap() = false;

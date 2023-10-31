@@ -38,6 +38,15 @@ pub enum BottomPanel
     None
 }
 
+#[derive(PartialEq, Eq)]
+pub enum AssetType
+{
+    Scene,
+    Object,
+    Texture,
+    Material
+}
+
 #[derive(Clone, Copy)]
 pub enum EditMode
 {
@@ -59,6 +68,7 @@ pub struct EditorState
     pub edit_mode: Option<EditMode>,
 
     pub bottom: BottomPanel,
+    pub asset_type: AssetType,
 
     pub settings: SettingsPanel,
 
@@ -96,6 +106,7 @@ impl EditorState
             edit_mode: None,
 
             bottom: BottomPanel::Assets,
+            asset_type: AssetType::Scene,
 
             settings: SettingsPanel::Rendering,
 

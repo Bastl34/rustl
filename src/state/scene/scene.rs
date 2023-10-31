@@ -588,7 +588,7 @@ impl Scene
         false
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool) -> Option<(f32, Vector3<f32>, NodeItem, u64, u32)>
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
@@ -660,7 +660,20 @@ impl Scene
         // sort bbox dist (to get the nearest)
         hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-        let mut best_hit: Option<(f32, Vector3<f32>, NodeItem, u64, u32)> = None;
+        if bounding_box_only && hits.len() > 0
+        {
+            let first = hits.first().unwrap();
+            let node = first.0;
+            let instance = first.1;
+            let dist = first.2;
+
+            let pos = ray.origin + (ray.dir * dist);
+
+            return Some((dist, pos, None, node.clone(), instance, None));
+        }
+
+        // mesh based intersection
+        let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
 
         for (node_arc, instance_id, _dist, transform, transform_inverse, ray_inverse) in hits
         {
@@ -683,13 +696,15 @@ impl Scene
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
                 if best_hit.is_none()
                 {
-                    best_hit = Some((intersection.0, intersection.1, node_arc.clone(), instance_id, intersection.2));
+                    let pos = ray.origin + (ray.dir * intersection.0);
+                    best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                 }
                 else if let Some(current_best_hit) = &best_hit
                 {
                     if intersection.0 < current_best_hit.0
                     {
-                        best_hit = Some((intersection.0, intersection.1, node_arc.clone(), instance_id, intersection.2));
+                        let pos = ray.origin + (ray.dir * intersection.0);
+                        best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                     }
                 }
             }

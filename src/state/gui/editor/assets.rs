@@ -2,12 +2,38 @@ use egui::{Ui, ScrollArea, Id, Color32, RichText};
 
 use crate::{state::{state::State, gui::helper::generic_items::drag_item}, helper::file};
 
-use super::editor_state::EditorState;
+use super::editor_state::{EditorState, AssetType};
 
-pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_asset_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     ui.set_min_height(200.0);
 
+    ui.horizontal_top(|ui|
+    {
+        create_asset_tree(editor_state, state, ui);
+        create_asset_list(editor_state, state, ui);
+    });
+}
+
+pub fn create_asset_tree(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    ui.scope(|ui|
+    {
+        ui.set_min_width(100.0);
+        //ui.set_max_width(100.0);
+
+        ui.vertical(|ui|
+        {
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Scene, "🎬 Scene");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Object, "📦 Object");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Texture");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Material, "🎨 Material");
+        });
+    });
+}
+
+pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
     ScrollArea::vertical().show(ui, |ui|
     {
         ui.set_min_width(ui.available_width());
