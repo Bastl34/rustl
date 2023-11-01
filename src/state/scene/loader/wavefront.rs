@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{get_new_component_id, load_texture_or_reuse, get_new_instance_id, get_new_node_id, execute_on_scene_mut_and_wait}}, helper::{self, concurrency::execution_queue::ExecutionQueueItem}, new_component};
+use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{get_new_component_id, load_texture_or_reuse, get_new_instance_id, get_new_node_id, execute_on_scene_mut_and_wait}}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -20,9 +20,11 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
+
+    let resource_name = get_stem(path);
 
     let obj_text = load_string(path)?;
     let obj_cursor = Cursor::new(obj_text);
@@ -356,13 +358,35 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mi
     }
 
     // ********** add to scene **********
-    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+    if create_root_node
     {
+        let node_id = get_new_node_id(main_queue.clone(), scene_id);
+        loaded_ids.push(node_id);
+
+        let root_node = Node::new(node_id, resource_name.as_str());
+        root_node.write().unwrap().root_node = true;
+
+        let root_node_clone = root_node.clone();
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+        {
+            scene.add_node(root_node_clone.clone());
+        }));
+
         for scene_node in &scene_nodes
         {
-            scene.add_node(scene_node.clone());
+            Node::add_node(root_node.clone(), scene_node.clone());
         }
-    }));
+    }
+    else
+    {
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+        {
+            for scene_node in &scene_nodes
+            {
+                scene.add_node(scene_node.clone());
+            }
+        }));
+    }
 
     Ok(loaded_ids)
 }

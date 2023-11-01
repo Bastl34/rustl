@@ -467,6 +467,9 @@ impl MainInterface
                     if scene.cameras.len() == 0
                     {
                         let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+
+                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.fovy = 45.0f32.to_radians();
                         cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
@@ -475,19 +478,6 @@ impl MainInterface
                         cam_data.clipping_far = 1000.0;
                         scene.cameras.push(Box::new(cam));
                     }
-
-                    // camera movement controller
-                    /*
-                    if scene.cameras.len() > 0
-                    {
-                        let cam = scene.cameras.get_mut(0).unwrap();
-                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-
-                        let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.1 };
-                        cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
-                        cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
-                    }
-                     */
                 }));
 
                 *editor_state.write().unwrap() = false;

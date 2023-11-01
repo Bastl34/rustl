@@ -259,12 +259,14 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut changed = false;
 
         let mut visible;
+        let mut root_node;
         let mut render_children_first;
         let mut alpha_index;
         let mut name;
         {
             let node = node.read().unwrap();
             visible = node.visible;
+            root_node = node.root_node;
             render_children_first = node.render_children_first;
             alpha_index = node.alpha_index;
             name = node.name.clone();
@@ -276,7 +278,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
-        changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
+        changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
+        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
         ui.horizontal(|ui|
         {
             ui.label("alpha index: ");
@@ -287,6 +290,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let mut node = node.write().unwrap();
             node.visible = visible;
+            node.root_node = root_node;
             node.render_children_first = render_children_first;
             node.alpha_index = alpha_index;
             node.name = name;

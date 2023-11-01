@@ -5,7 +5,7 @@ use nalgebra::Vector3;
 use crate::{state::scene::{scene::Scene, instance::Instance, components::{transformation::Transformation, material::{Material, TextureType, TextureState}}, texture::{TextureItem, Texture}, loader::wavefront}, component_downcast_mut, helper::{concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem, ExecutionQueueResult}}, file::{get_extension, get_stem, self}, self}, resources::{resources::{self, load_binary}}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
@@ -18,11 +18,11 @@ pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, cr
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, main_queue, create_mipmaps);
+        return wavefront::load(path, scene_id, main_queue, create_root_node, create_mipmaps);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, main_queue, create_mipmaps);
+        return gltf::load(path, scene_id, main_queue, create_root_node, create_mipmaps);
     }
 
     Ok(vec![])
@@ -168,7 +168,7 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
 {
     let amount = amount as i32;
 
-    let loaded_ids = load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), false).unwrap();
+    let loaded_ids = load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), false, false).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
@@ -193,8 +193,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
                     );
 
                     let mut transformation = Transformation::identity(scene.id_manager.get_next_component_id(), "Transform");
-                    transformation.apply_translation(Vector3::<f32>::new(pos as f32 * spacing, 0.0, 0.0));
-                    transformation.apply_scale(Vector3::<f32>::new(1.0, amount as f32 * spacing, 1.0), true);
+                    transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, pos as f32 * spacing));
+                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, 1.0, 1.0), true);
 
                     instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
 
@@ -212,37 +212,36 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
                     );
 
                     let mut transformation = Transformation::identity(scene.id_manager.get_next_component_id(), "Transform");
-                    transformation.apply_translation(Vector3::<f32>::new(0.0, pos as f32 * spacing, 0.0));
-                    transformation.apply_rotation(Vector3::<f32>::new(0.0, 0.0, PI / 2.0));
-                    transformation.apply_scale(Vector3::<f32>::new(1.0, amount as f32 * spacing, 1.0), true);
+                    transformation.apply_translation(Vector3::<f32>::new(pos as f32 * spacing, 0.0, 0.0));
+                    transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
+                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, 1.0, 1.0), true);
 
                     instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
 
                     let mut grid = grid_arc.write().unwrap();
                     grid.add_instance(Box::new(instance));
                 }
+            }
 
+            {
+                let grid = grid_arc.read().unwrap();
+
+                if let Some(transformation) = grid.find_component::<Transformation>()
                 {
-                    let grid = grid_arc.read().unwrap();
+                    component_downcast_mut!(transformation, Transformation);
+                    transformation.get_data_mut().get_mut().rotation = Vector3::<f32>::new(PI / 2.0, 0.0, 0.0);
+                    transformation.calc_transform();
+                }
 
-                    if let Some(transformation) = grid.find_component::<Transformation>()
-                    {
-                        component_downcast_mut!(transformation, Transformation);
-                        transformation.get_data_mut().get_mut().rotation = Vector3::<f32>::new(PI / 2.0, 0.0, 0.0);
-                        transformation.calc_transform();
-                    }
-
-                    if let Some(material) = grid.find_component::<Material>()
-                    {
-                        component_downcast_mut!(material, Material);
-                        material.get_data_mut().get_mut().unlit_shading = true;
-                    }
+                if let Some(material) = grid.find_component::<Material>()
+                {
+                    component_downcast_mut!(material, Material);
+                    material.get_data_mut().get_mut().unlit_shading = true;
                 }
             }
         }
 
         // merge together
-        /*
         for id in &loaded_ids
         {
             if let Some(node) = scene.find_node_by_id(*id)
@@ -254,7 +253,6 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
                 instance.unwrap().write().unwrap().pickable = false;
             }
         }
-         */
     }));
 }
 

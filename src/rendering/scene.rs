@@ -692,8 +692,8 @@ impl Scene
             return 0;
         }
 
-        let default_material = default_material.unwrap();
-        let default_material = &default_material.read().unwrap();
+        let default_material_arc = default_material.unwrap();
+        let default_material = &default_material_arc.read().unwrap();
 
         for node in &all_nodes
         {
@@ -701,12 +701,18 @@ impl Scene
             let mat = read_node.find_component::<MaterialComponent>();
             let node_meshes = read_node.get_meshes();
 
-            if let Some(mat) = mat
+            if node_meshes.len() > 0
             {
-                if node_meshes.len() > 0
+                if let Some(mat) = mat
                 {
                     nodes_read.push(read_node);
                     materials.push(mat);
+                    meshes.push(node_meshes);
+                }
+                else
+                {
+                    nodes_read.push(read_node);
+                    materials.push(default_material_arc.clone());
                     meshes.push(node_meshes);
                 }
             }

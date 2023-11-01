@@ -667,7 +667,12 @@ impl Scene
             let instance = first.1;
             let dist = first.2;
 
-            let pos = ray.origin + (ray.dir * dist);
+            let dir = first.3 * (ray.dir.normalize() * dist).to_homogeneous();
+            let pos = ray.origin + dir.xyz();
+
+            //let pos = ray.origin + (ray.dir * dist);
+
+            dbg!(" intersection 1");
 
             return Some((dist, pos, None, node.clone(), instance, None));
         }
@@ -696,14 +701,26 @@ impl Scene
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
                 if best_hit.is_none()
                 {
-                    let pos = ray.origin + (ray.dir * intersection.0);
+                    //let pos = ray.origin + (ray.dir * intersection.0);
+
+                    dbg!(" intersection 2");
+
+                    let dir = transform* (ray.dir.normalize() * intersection.0).to_homogeneous();
+                    let pos = ray.origin + dir.xyz();
+
                     best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                 }
                 else if let Some(current_best_hit) = &best_hit
                 {
                     if intersection.0 < current_best_hit.0
                     {
-                        let pos = ray.origin + (ray.dir * intersection.0);
+                        //let pos = ray.origin + (ray.dir * intersection.0);
+
+                        dbg!(" intersection 3");
+
+                        let dir = transform* (ray.dir.normalize() * intersection.0).to_homogeneous();
+                        let pos = ray.origin + dir.xyz();
+
                         best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                     }
                 }

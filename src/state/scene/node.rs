@@ -17,6 +17,7 @@ pub struct Node
     pub id: u64,
     pub name: String,
     pub visible: bool,
+    pub root_node: bool,
 
     pub render_children_first: bool,
     pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
@@ -45,6 +46,7 @@ impl Node
             id: id,
             name: name.to_string(),
             visible: true,
+            root_node: false,
 
             render_children_first: false,
             alpha_index: 0,

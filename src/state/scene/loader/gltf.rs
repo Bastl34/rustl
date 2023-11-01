@@ -8,7 +8,7 @@ use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rot
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse, get_new_tex_id, get_new_component_id, get_new_light_id, get_new_camera_id, get_new_node_id, get_new_instance_id}}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}};
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let gltf_content = load_binary(path)?;
 
@@ -48,7 +48,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mi
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
     {
-        let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, resource_name.clone());
+        let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, resource_name.clone().clone());
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
 
         let id;
@@ -67,11 +67,27 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_mi
     }
 
     // ********** scene items **********
+    let mut root_node = None;
+    if create_root_node
+    {
+        let node_id = get_new_node_id(main_queue.clone(), scene_id);
+        loaded_ids.push(node_id);
+
+        let node = Node::new(node_id, resource_name.as_str());
+        node.write().unwrap().root_node = true;
+        root_node = Some(node.clone());
+
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+        {
+            scene.add_node(node.clone());
+        }));
+    }
+
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
         {
-            let ids = read_node(&node, &buffers, &loaded_materials, scene_id, main_queue.clone(), None, &Matrix4::<f32>::identity(), 1);
+            let ids = read_node(&node, &buffers, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
             loaded_ids.extend(ids);
         }
     }
@@ -377,7 +393,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
             if !approx_zero_vec3(translate) || !approx_zero_vec3(rotation) || !approx_one_vec3(scale)
             {
                 let component_id = get_new_component_id(main_queue.clone(), scene_id);
-                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform Test", translate, rotation, scale)))));
+                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
             }
 
             if parent_node.is_none()

@@ -692,19 +692,22 @@ impl Editor
         // pick
         let pick_res = self.pick(state, pos, true);
 
+        let mut pos = None;
         if let Some(pick_res) = pick_res
         {
-            dbg!(pick_res.1.1);
+            pos = Some(pick_res.1.1);
         }
 
         let create_mipmaps = state.rendering.create_mipmaps;
+        let create_root_node = if self.editor_state.asset_type == AssetType::Object { true } else { false };
+
         let editor_state = self.editor_state.loading.clone();
         spawn_thread(move ||
         {
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_mipmaps);
+            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_root_node, create_mipmaps);
 
             if loaded.is_err()
             {
@@ -713,25 +716,40 @@ impl Editor
                 return;
             }
 
-            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
+            let loaded_ids = loaded.unwrap();
+
+            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
             {
                 scene.clear_empty_nodes();
 
-                /*
-                let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
+                if let Some(pos) = pos
                 {
-                    let mut root_node = root_node.write().unwrap();
-                    root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
-                }
+                    if create_root_node
+                    {
+                        let mut root_node = None;
+                        for id in &loaded_ids
+                        {
+                            if let Some(node) = scene.find_node_by_id(*id)
+                            {
+                                if node.read().unwrap().root_node
+                                {
+                                    root_node = Some(node.clone());
+                                    break;
+                                }
+                            }
+                        }
 
-                for node in &scene.nodes
-                {
-                    Node::add_node(root_node.clone(), node.clone());
-                }
+                        if let Some(root_node) = root_node
+                        {
+                            let component_id = scene.id_manager.get_next_component_id();
 
-                scene.clear_nodes();
-                scene.add_node(root_node.clone());
-                */
+                            let mut transform = Transformation::identity(component_id, "Transform");
+                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+
+                            root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+                        }
+                    }
+                }
 
                 if let Some(train) = scene.find_node_by_name("Train")
                 {
