@@ -106,7 +106,7 @@ impl EditorState
             edit_mode: None,
 
             bottom: BottomPanel::Assets,
-            asset_type: AssetType::Scene,
+            asset_type: AssetType::Object,
 
             settings: SettingsPanel::Rendering,
 
@@ -218,24 +218,20 @@ impl EditorState
             {
                 if let Some(node) = scene.find_node_by_id(node_id)
                 {
-                    let node = node.read().unwrap();
-                    for instance in node.instances.get_ref()
+                    let mut all_nodes = vec![];
+                    all_nodes.push(node.clone());
+                    all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                    for node in all_nodes
                     {
-                        let mut instance = instance.write().unwrap();
-                        let instance_data = instance.get_data_mut().get_mut();
-                        instance_data.highlight = false;
-                    }
-                    /*
-                    if let Some(deselect_instance_id) = deselect_instance_id
-                    {
-                        if let Some(instance) = node.read().unwrap().find_instance_by_id(deselect_instance_id)
+                        let node = node.read().unwrap();
+                        for instance in node.instances.get_ref()
                         {
-                            let mut instance = instance.borrow_mut();
+                            let mut instance = instance.write().unwrap();
                             let instance_data = instance.get_data_mut().get_mut();
                             instance_data.highlight = false;
                         }
                     }
-                    */
                 }
             }
         }

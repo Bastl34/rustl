@@ -4,10 +4,10 @@ todo:
  * normal map: rotation/transformation is not applied correctly
  * screenshot is broken on windows
  * flickering on windows (amd)
- * slice.map_async(wgpu::MapMode::Read, |_| ());
  * cleanup is not working (clear scene)
  * better scene statistics graph
- * winit update
+ * winit + wgpu update
+ * deadlock while asset loading
 
 done:
  * get rid of async stuff -> use exec queue

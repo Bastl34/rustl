@@ -259,7 +259,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut changed = false;
 
         let mut visible;
-        let mut root_node;
+        let mut root_node: bool;
         let mut render_children_first;
         let mut alpha_index;
         let mut name;
@@ -279,7 +279,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
-        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
         ui.horizontal(|ui|
         {
             ui.label("alpha index: ");

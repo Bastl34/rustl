@@ -147,9 +147,20 @@ impl Node
                 let transformed_min = transform * Point3::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z).to_homogeneous();
                 let transformed_max = transform * Point3::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z).to_homogeneous();
 
+                // sometimes coordinates are flipped because of the transformation -> check for min and max points
+
                 min.x = min.x.min(transformed_min.x);
                 min.y = min.y.min(transformed_min.y);
                 min.z = min.z.min(transformed_min.z);
+
+                min.x = min.x.min(transformed_max.x);
+                min.y = min.y.min(transformed_max.y);
+                min.z = min.z.min(transformed_max.z);
+
+
+                max.x = max.x.max(transformed_min.x);
+                max.y = max.y.max(transformed_min.y);
+                max.z = max.z.max(transformed_min.z);
 
                 max.x = max.x.max(transformed_max.x);
                 max.y = max.y.max(transformed_max.y);
@@ -178,6 +189,8 @@ impl Node
                     max.x = max.x.max(child_max.x);
                     max.y = max.y.max(child_max.y);
                     max.z = max.z.max(child_max.z);
+
+                    found = true;
                 }
             }
         }
@@ -197,8 +210,6 @@ impl Node
         if let Some(bounding_info) = bounding_info
         {
             let (min, max) = bounding_info;
-
-            //dbg!(bounding_info);
 
             return Some(min + (max - min) / 2.0);
         }
@@ -581,6 +592,21 @@ impl Node
         }
 
         false
+    }
+
+    pub fn find_root_node(node: NodeItem) -> Option<NodeItem>
+    {
+        if node.read().unwrap().root_node
+        {
+            return Some(node);
+        }
+
+        if let Some(parent) = &node.read().unwrap().parent
+        {
+            return Self::find_root_node(parent.clone());
+        }
+
+        None
     }
 
     pub fn print(&self, level: usize)

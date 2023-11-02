@@ -57,101 +57,142 @@ impl Editor
         }
 
         // ***************** select/pick objects *****************
-        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none() && state.input_manager.mouse.clicked(MouseButton::Left)
+
+        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none()
         {
-            let pos = state.input_manager.mouse.point.pos;
+            let left_mouse_button = state.input_manager.mouse.clicked(MouseButton::Left);
+            let right_mouse_button = state.input_manager.mouse.clicked(MouseButton::Right);
 
-            let mut hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
-            let mut scene_id: u64 = 0;
-
-            if let Some(pos) = pos
+            if left_mouse_button || right_mouse_button
             {
-                let pick_res = self.pick(state, pos, false);
+                let pos = state.input_manager.mouse.point.pos;
 
-                if let Some(pick_res) = pick_res
+                let mut hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+                let mut scene_id: u64 = 0;
+
+                if let Some(pos) = pos
                 {
-                    scene_id = pick_res.0;
-                    hit = Some(pick_res.1);
-                }
-            }
+                    let pick_res = self.pick(state, pos, false);
 
-            if let Some((_t, _point, _normal, hit_item, instance_id,_face_id)) = hit
-            {
-                // pick camera target
-                if self.editor_state.pick_mode == SelectionType::Camera
-                {
-                    let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
-
-                    let (camera_id, ..) = self.editor_state.get_object_ids();
-
-                    let scene = state.find_scene_by_id_mut(scene_id);
-                    if scene.is_none() { return; }
-
-                    let scene = scene.unwrap();
-
-                    if camera_id.is_none() { return; }
-                    let camera_id = camera_id.unwrap();
-
-                    if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
+                    if let Some(pick_res) = pick_res
                     {
-                        camera.node = Some(hit_item.clone());
+                        scene_id = pick_res.0;
+                        hit = Some(pick_res.1);
                     }
                 }
-                // show selection
+
+                if let Some((_t, _point, _normal, hit_item, instance_id,_face_id)) = hit
+                {
+                    // pick camera target
+                    if self.editor_state.pick_mode == SelectionType::Camera
+                    {
+                        let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
+
+                        let (camera_id, ..) = self.editor_state.get_object_ids();
+
+                        let scene = state.find_scene_by_id_mut(scene_id);
+                        if scene.is_none() { return; }
+
+                        let scene = scene.unwrap();
+
+                        if camera_id.is_none() { return; }
+                        let camera_id = camera_id.unwrap();
+
+                        if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
+                        {
+                            camera.node = Some(hit_item.clone());
+                        }
+                    }
+                    // show selection
+                    else
+                    {
+                        let mut node_arc = hit_item;
+                        let mut use_root_node = false;
+
+                        if left_mouse_button
+                        {
+                            if let Some(root_node) = Node::find_root_node(node_arc.clone())
+                            {
+                                node_arc = root_node;
+                                use_root_node = true;
+                            }
+                        }
+
+                        let id_string;
+                        {
+                            let node = node_arc.read().unwrap();
+
+                            // select object itself if there is not instance on it
+                            if node.instances.get_ref().len() == 1 || use_root_node
+                            {
+                                id_string = format!("objects_{}", node.id);
+                            }
+                            else
+                            {
+                                id_string = format!("objects_{}_{}", node.id, instance_id);
+                            }
+                        }
+
+                        let mut already_selected = false;
+                        if self.editor_state.selected_object == id_string && self.editor_state.selected_scene_id == Some(scene_id)
+                        {
+                            already_selected = true;
+                        }
+
+                        // de-select first
+                        self.editor_state.de_select_current_item(state);
+
+                        // highlight
+                        if !already_selected
+                        {
+                            self.editor_state.selected_object = id_string;
+                            self.editor_state.selected_scene_id = Some(scene_id);
+                            self.editor_state.selected_type = SelectionType::Object;
+
+                            if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
+                            {
+                                self.editor_state.settings = SettingsPanel::Object;
+                            }
+
+                            if right_mouse_button
+                            {
+                                let node = node_arc.read().unwrap();
+
+                                if let Some(instance) = node.find_instance_by_id(instance_id)
+                                {
+                                    let mut instance = instance.write().unwrap();
+                                    let instance_data = instance.get_data_mut().get_mut();
+                                    instance_data.highlight = true;
+                                }
+                            }
+                            else if left_mouse_button
+                            {
+                                let mut all_nodes = vec![];
+                                all_nodes.push(node_arc.clone());
+                                all_nodes.extend(Scene::list_all_child_nodes(&node_arc.read().unwrap().nodes));
+
+                                for node in all_nodes
+                                {
+                                    let node = node.read().unwrap();
+
+                                    for instance in node.instances.get_ref()
+                                    {
+                                        let mut instance = instance.write().unwrap();
+                                        let instance_data = instance.get_data_mut().get_mut();
+                                        instance_data.highlight = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 else
                 {
-                    let id_string;
-                    {
-                        let node = hit_item.read().unwrap();
-
-                        // select object itself if there is not instance on it
-                        if node.instances.get_ref().len() == 1
-                        {
-                            id_string = format!("objects_{}", node.id);
-                        }
-                        else
-                        {
-                            id_string = format!("objects_{}_{}", node.id, instance_id);
-                        }
-                    }
-
-                    let mut already_selected = false;
-                    if self.editor_state.selected_object == id_string && self.editor_state.selected_scene_id == Some(scene_id)
-                    {
-                        already_selected = true;
-                    }
-
-                    // deselect first
                     self.editor_state.de_select_current_item(state);
-
-                    // highlight
-                    if !already_selected
-                    {
-                        let node = hit_item.read().unwrap();
-                        self.editor_state.selected_object = id_string;
-                        self.editor_state.selected_scene_id = Some(scene_id);
-                        self.editor_state.selected_type = SelectionType::Object;
-
-                        if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
-                        {
-                            self.editor_state.settings = SettingsPanel::Object;
-                        }
-
-                        if let Some(instance) = node.find_instance_by_id(instance_id)
-                        {
-                            let mut instance = instance.write().unwrap();
-                            let instance_data = instance.get_data_mut().get_mut();
-                            instance_data.highlight = true;
-                        }
-                    }
                 }
-            }
-            else
-            {
-                self.editor_state.de_select_current_item(state);
-            }
 
-            self.editor_state.pick_mode = SelectionType::None;
+                self.editor_state.pick_mode = SelectionType::None;
+            }
         }
 
         // ***************** DELETE OBJECT *****************
@@ -700,6 +741,7 @@ impl Editor
 
         let create_mipmaps = state.rendering.create_mipmaps;
         let create_root_node = if self.editor_state.asset_type == AssetType::Object { true } else { false };
+        let object_only = if self.editor_state.asset_type == AssetType::Object { true } else { false };
 
         let editor_state = self.editor_state.loading.clone();
         spawn_thread(move ||
@@ -707,7 +749,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_root_node, create_mipmaps);
+            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_root_node, object_only, create_mipmaps);
 
             if loaded.is_err()
             {
@@ -741,10 +783,22 @@ impl Editor
 
                         if let Some(root_node) = root_node
                         {
+                            // find offset based on bounding box
+                            let mut offset = 0.0;
+                            {
+                                let root_node = root_node.read().unwrap();
+                                let bounding_info = root_node.get_bounding_info(true);
+
+                                if let Some(bounding_info) = bounding_info
+                                {
+                                    offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
+                                }
+                            }
+
                             let component_id = scene.id_manager.get_next_component_id();
 
                             let mut transform = Transformation::identity(component_id, "Transform");
-                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
 
                             root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
                         }

@@ -8,7 +8,7 @@ use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rot
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse, get_new_tex_id, get_new_component_id, get_new_light_id, get_new_camera_id, get_new_node_id, get_new_instance_id}}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}};
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, object_only: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let gltf_content = load_binary(path)?;
 
@@ -87,7 +87,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
     {
         for node in gltf_scene.nodes()
         {
-            let ids = read_node(&node, &buffers, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
+            let ids = read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
             loaded_ids.extend(ids);
         }
     }
@@ -104,7 +104,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
     Ok(loaded_ids)
 }
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>, level: usize) -> Vec<u64>
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>, level: usize) -> Vec<u64>
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
@@ -119,98 +119,104 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
     let mut parent_node = parent;
 
     // ********** lights **********
-    if let Some(light) = node.light()
+    if !object_only
     {
-        let light_id = get_new_light_id(main_queue.clone(), scene_id);
-        let intensity = light.intensity();
-        let color = light.color();
-        let color = Vector3::<f32>::new(color[0], color[1], color[2]);
-
-        // reference: https://github.com/flomonster/easy-gltf/blob/master/src/scene/light.rs
-        let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
-        let dir = -1.0 * Vector3::<f32>::new(world_transform[(2,0)], world_transform[(2,1)], world_transform[(2,2)]).normalize();
-
-        // let range = light.range(); TODO
-
-        match light.kind()
+        if let Some(light) = node.light()
         {
-            gltf::khr_lights_punctual::Kind::Directional =>
-            {
-                let name = light.name().unwrap_or("Directional").to_string();
-                let name = Arc::new(name);
+            let light_id = get_new_light_id(main_queue.clone(), scene_id);
+            let intensity = light.intensity();
+            let color = light.color();
+            let color = Vector3::<f32>::new(color[0], color[1], color[2]);
 
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
-                {
-                    let light = Light::new_directional(light_id, (*name).clone(), pos, dir, color, intensity);
-                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-                }));
-            },
-            gltf::khr_lights_punctual::Kind::Point =>
-            {
-                let name = light.name().unwrap_or("Point").to_string();
-                let name = Arc::new(RwLock::new(name)); // TODOO
+            // reference: https://github.com/flomonster/easy-gltf/blob/master/src/scene/light.rs
+            let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
+            let dir = -1.0 * Vector3::<f32>::new(world_transform[(2,0)], world_transform[(2,1)], world_transform[(2,2)]).normalize();
 
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
-                {
-                    let light = Light::new_point(light_id, name.read().unwrap().clone(), pos, color, intensity);
-                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-                }));
-            },
-            gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle: _, outer_cone_angle } =>
-            {
-                let name = light.name().unwrap_or("Point").to_string();
-                let name = Arc::new(RwLock::new(name)); // TODOO
+            // let range = light.range(); TODO
 
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+            match light.kind()
+            {
+                gltf::khr_lights_punctual::Kind::Directional =>
                 {
-                    let light = Light::new_spot(light_id, name.read().unwrap().clone(), pos, dir, color, outer_cone_angle, intensity);
-                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-                }));
-            },
-        };
+                    let name = light.name().unwrap_or("Directional").to_string();
+                    let name = Arc::new(name);
+
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                    {
+                        let light = Light::new_directional(light_id, (*name).clone(), pos, dir, color, intensity);
+                        scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                    }));
+                },
+                gltf::khr_lights_punctual::Kind::Point =>
+                {
+                    let name = light.name().unwrap_or("Point").to_string();
+                    let name = Arc::new(RwLock::new(name)); // TODOO
+
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                    {
+                        let light = Light::new_point(light_id, name.read().unwrap().clone(), pos, color, intensity);
+                        scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                    }));
+                },
+                gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle: _, outer_cone_angle } =>
+                {
+                    let name = light.name().unwrap_or("Point").to_string();
+                    let name = Arc::new(RwLock::new(name)); // TODOO
+
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                    {
+                        let light = Light::new_spot(light_id, name.read().unwrap().clone(), pos, dir, color, outer_cone_angle, intensity);
+                        scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                    }));
+                },
+            };
+        }
     }
 
     // ********** cameras **********
-    if let Some(camera) = node.camera()
+    if !object_only
     {
-        let cam_id = get_new_camera_id(main_queue.clone(), scene_id);
-        let name = camera.name().unwrap_or("Unnamed Camera").to_string();
-        let name = Arc::new(name);
-
-        //https://github.com/flomonster/easy-gltf/blob/master/src/scene/camera.rs
-        let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
-        let up = Vector3::<f32>::new(world_transform[(1, 0)], world_transform[(1, 1)], world_transform[(1, 2)]);
-        let forward = Vector3::<f32>::new(world_transform[(2, 0)], world_transform[(2, 1)], world_transform[(2, 2)]);
-        //let right = Vector3::<f32>::new(transform[(0, 0)], transform[(0, 1)], transform[(0, 2)]);
-
-        match camera.projection()
+        if let Some(camera) = node.camera()
         {
-            gltf::camera::Projection::Orthographic(ortho) =>
-            {
-                //TODO
-            },
-            gltf::camera::Projection::Perspective(pers) =>
-            {
-                let yfov = pers.yfov();
-                let znear = pers.znear();
-                let zfar = pers.zfar();
+            let cam_id = get_new_camera_id(main_queue.clone(), scene_id);
+            let name = camera.name().unwrap_or("Unnamed Camera").to_string();
+            let name = Arc::new(name);
 
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+            //https://github.com/flomonster/easy-gltf/blob/master/src/scene/camera.rs
+            let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
+            let up = Vector3::<f32>::new(world_transform[(1, 0)], world_transform[(1, 1)], world_transform[(1, 2)]);
+            let forward = Vector3::<f32>::new(world_transform[(2, 0)], world_transform[(2, 1)], world_transform[(2, 2)]);
+            //let right = Vector3::<f32>::new(transform[(0, 0)], transform[(0, 1)], transform[(0, 2)]);
+
+            match camera.projection()
+            {
+                gltf::camera::Projection::Orthographic(ortho) =>
                 {
-                    let mut cam = Camera::new(cam_id, (*name).clone());
-                    let cam_data = cam.get_data_mut().get_mut();
-                    //cam.fovy = yfov.to_radians();
-                    cam_data.fovy = yfov;
-                    cam_data.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
-                    cam_data.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
-                    cam_data.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
-                    cam_data.clipping_near = znear;
-                    cam_data.clipping_far = zfar.unwrap_or(1000.0);
+                    //TODO
+                },
+                gltf::camera::Projection::Perspective(pers) =>
+                {
+                    let yfov = pers.yfov();
+                    let znear = pers.znear();
+                    let zfar = pers.zfar();
 
-                    scene.cameras.push(Box::new(cam));
-                }));
-            },
-        };
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                    {
+                        let mut cam = Camera::new(cam_id, (*name).clone());
+                        let cam_data = cam.get_data_mut().get_mut();
+                        //cam.fovy = yfov.to_radians();
+                        cam_data.fovy = yfov;
+                        cam_data.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
+                        cam_data.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
+                        cam_data.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
+                        cam_data.clipping_near = znear;
+                        cam_data.clipping_far = zfar.unwrap_or(1000.0);
+
+                        scene.cameras.push(Box::new(cam));
+                    }));
+                },
+            };
+        }
     }
 
     // ********** mesh **********
@@ -412,7 +418,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, loaded_materi
     // ********** children **********
     for child in node.children()
     {
-        let ids = read_node(&child, &buffers, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
+        let ids = read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
         loaded_ids.extend(ids);
     }
 
