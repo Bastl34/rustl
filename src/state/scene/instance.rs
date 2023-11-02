@@ -373,7 +373,7 @@ impl Instance
         }
         else
         {
-            panic!("trnasform component nout found");
+            panic!("trnasform component not found");
         }
     }
 
@@ -388,7 +388,7 @@ impl Instance
         }
         else
         {
-            panic!("trnasform component nout found");
+            panic!("trnasform component not found");
         }
     }
 
@@ -403,7 +403,7 @@ impl Instance
         }
         else
         {
-            panic!("trnasform component nout found");
+            panic!("trnasform component not found");
         }
     }
 
@@ -418,7 +418,7 @@ impl Instance
         }
         else
         {
-            panic!("trnasform component nout found");
+            panic!("trnasform component not found");
         }
     }
 }

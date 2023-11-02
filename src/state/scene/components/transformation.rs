@@ -249,6 +249,21 @@ impl Transformation
         self.calc_transform();
     }
 
+    pub fn set_translation(&mut self, translation: Vector3<f32>)
+    {
+        let data = self.data.get_mut();
+
+        data.position = translation;
+
+        if !data.transform_vectors
+        {
+            let translation = nalgebra::Isometry3::translation(translation.x, translation.y, translation.z).to_homogeneous();
+            data.trans = translation;
+        }
+
+        self.calc_transform();
+    }
+
     pub fn apply_scale(&mut self, scale: Vector3<f32>, multiply: bool)
     {
         let data = self.data.get_mut();

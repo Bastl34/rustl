@@ -415,6 +415,19 @@ impl Scene
         self.cameras.last().unwrap()
     }
 
+    //pub fn get_active_camera() -> Option<&'static CameraItem>
+    pub fn get_active_camera(&self) -> Option<&CameraItem>
+    {
+        for camera in &self.cameras
+        {
+            if camera.enabled
+            {
+                return Some(camera);
+            }
+        }
+        None
+    }
+
     pub fn get_light_by_id(&self, id: u64) -> Option<&RefCell<ChangeTracker<Box<Light>>>>
     {
         let lights = self.lights.get_ref();

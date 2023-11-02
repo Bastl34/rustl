@@ -223,6 +223,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         }
     }
 
+    let bounding_box_info = node.read().unwrap().get_bounding_info(true);
+
     // General
     collapse_with_title(ui, "object_data", true, "ℹ Object Data", |ui|
     {
@@ -231,6 +233,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
             ui.label(format!("name: {}", node.name));
             ui.label(format!("id: {}", node.id));
+
+            if let Some(bounding_box_info) = bounding_box_info
+            {
+                ui.label(format!("bbox min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
+                ui.label(format!("bbox max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
+            }
         }
     });
 

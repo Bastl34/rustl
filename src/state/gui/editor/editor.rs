@@ -56,6 +56,41 @@ impl Editor
             state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
         }
 
+        // ***************** update grid based on camera pos *****************
+        /*
+        for scene in &mut state.scenes
+        {
+            let grid = scene.find_node_by_name("grid");
+            if let Some(grid) = grid
+            {
+                let mut grid = grid.write().unwrap();
+
+                let mut transformation = grid.find_component::<Transformation>();
+                if transformation.is_none()
+                {
+                    grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transform")))));
+                    transformation = grid.find_component::<Transformation>();
+                }
+
+                let camera = scene.get_active_camera();
+                if let Some(camera) = camera
+                {
+                    let camera_data = camera.get_data();
+
+                    let mut pos = camera_data.eye_pos.clone();
+
+                    pos.x = pos.x.round();
+                    pos.y = 0.0;
+                    pos.z = pos.z.round();
+
+                    //let transformation = transformation.unwrap();
+                    //component_downcast_mut!(transformation, Transformation);
+                    //transformation.set_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+                }
+            }
+        }
+         */
+
         // ***************** select/pick objects *****************
 
         if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none()
@@ -791,7 +826,8 @@ impl Editor
 
                                 if let Some(bounding_info) = bounding_info
                                 {
-                                    offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
+                                    //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
+                                    offset = -bounding_info.0.y;
                                 }
                             }
 

@@ -27,6 +27,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
     }
 
     // ********** textures **********
+    dbg!("loading textures...");
     let mut loaded_textures = vec![];
 
     for gltf_texture in gltf.textures()
@@ -44,6 +45,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
 
 
     // ********** materials **********
+    dbg!("loading materials...");
     let resource_name = get_stem(path);
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
@@ -67,6 +69,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
     }
 
     // ********** scene items **********
+    dbg!("loading scene items...");
     let mut root_node = None;
     if create_root_node
     {
@@ -76,13 +79,9 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
         let node = Node::new(node_id, resource_name.as_str());
         node.write().unwrap().root_node = true;
         root_node = Some(node.clone());
-
-        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
-        {
-            scene.add_node(node.clone());
-        }));
     }
 
+    dbg!("applying scene items...");
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
@@ -92,7 +91,16 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
         }
     }
 
+    if let Some(root_node) = root_node
+    {
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+        {
+            scene.add_node(root_node.clone());
+        }));
+    }
+
     // cleanup
+    dbg!("cleanup...");
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
         for clear_texture in &clear_textures
