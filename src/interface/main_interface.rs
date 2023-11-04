@@ -451,9 +451,6 @@ impl MainInterface
             //load default env texture
             state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
-            //state.print();
-
-            let create_mipmaps = state.rendering.create_mipmaps;
             let editor_state = self.editor_gui.editor_state.loading.clone();
             spawn_thread(move ||
             {

@@ -15,7 +15,9 @@ pub type SceneItem = Box<Scene>;
 pub struct SceneData
 {
     pub max_lights: u32,
-    pub environment_texture: Option<TextureState>
+    pub environment_texture: Option<TextureState>,
+    pub gamma: Option<f32>,
+    pub exposure: Option<f32>
 }
 
 pub struct Scene
@@ -53,7 +55,9 @@ impl Scene
             data: ChangeTracker::new(SceneData
             {
                 max_lights: 10,
-                environment_texture: None
+                environment_texture: None,
+                gamma: None,
+                exposure: None,
             }),
 
             nodes: vec![],
@@ -759,11 +763,14 @@ impl Scene
 
         ui.checkbox(&mut self.visible, "visible");
 
+        let mut max_lights = self.get_data().max_lights;
+        let mut gamma = if let Some(gamma_val) = self.get_data().gamma { gamma_val } else { 0.0 };
+        let mut exposure = if let Some(exposure_val) = self.get_data().exposure { exposure_val } else { 0.0 };
+
         ui.horizontal(|ui|
         {
             ui.label("Max lights:");
 
-            let mut max_lights = self.get_data().max_lights;
             if ui.add(egui::DragValue::new(&mut max_lights).clamp_range(0..=20)).changed()
             {
                 let data = self.get_data_mut().get_mut();
@@ -772,5 +779,44 @@ impl Scene
             }
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("Gamma:");
+
+            if ui.add(egui::DragValue::new(&mut gamma).clamp_range(0.0..=10.0).speed(0.1)).changed()
+            {
+                let data = self.get_data_mut().get_mut();
+
+                if approx_zero(gamma)
+                {
+                    data.gamma = None;
+                }
+                else
+                {
+                    data.gamma = Some(gamma);
+                }
+            }
+
+            ui.label(" (sRGB: 2.2)");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Exposure:");
+
+            if ui.add(egui::DragValue::new(&mut exposure).clamp_range(0.0..=10.0).speed(0.1)).changed()
+            {
+                let data = self.get_data_mut().get_mut();
+
+                if approx_zero(exposure)
+                {
+                    data.exposure = None;
+                }
+                else
+                {
+                    data.exposure = Some(exposure);
+                }
+            }
+        });
     }
 }

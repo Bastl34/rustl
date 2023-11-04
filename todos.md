@@ -8,6 +8,7 @@ todo:
  * better scene statistics graph
  * winit + wgpu update
  * deadlock while asset loading
+ * update of gamma and exposure somehow encapsulate of "complete" scene settings
 
 done:
  * get rid of async stuff -> use exec queue

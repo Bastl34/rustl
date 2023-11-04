@@ -14,7 +14,7 @@ mod rendering
 
     pub(crate) mod bind_groups
     {
-        pub(crate) mod light_cam;
+        pub(crate) mod light_cam_scene;
     }
 
     pub(crate) mod helper

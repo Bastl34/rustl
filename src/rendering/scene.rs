@@ -1,11 +1,11 @@
 use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
 use nalgebra::{Point3, distance_squared};
-use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
+use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::CameraData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -21,6 +21,29 @@ pub struct RenderData<'a>
     middle: Point3::<f32>
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SceneUniform
+{
+    pub gamma: f32,
+    pub exposure: f32,
+}
+
+impl SceneUniform
+{
+    pub fn new(scene_data: &SceneData) -> Self
+    {
+        let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
+        let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
+
+        Self
+        {
+            gamma: gamma,
+            exposure: exposure,
+        }
+    }
+}
+
 pub struct Scene
 {
     clear_color: wgpu::Color,
@@ -33,6 +56,8 @@ pub struct Scene
 
     depth_pipe: Option<Pipeline>,
     color_pipe: Option<Pipeline>,
+
+    buffer: wgpu::Buffer,
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
@@ -51,6 +76,7 @@ impl Scene
         let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
 
+
         let mut render_scene = Self
         {
             clear_color: wgpu::Color::BLACK,
@@ -64,9 +90,13 @@ impl Scene
             color_pipe: None,
             depth_pipe: None,
 
+            buffer: create_empty_buffer(wgpu),
+
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
             depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
         };
+
+        render_scene.to_buffer(wgpu, scene);
 
         render_scene.update(wgpu, state, scene);
         render_scene.create_pipelines(wgpu, scene, false);
@@ -74,9 +104,42 @@ impl Scene
         render_scene
     }
 
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, scene: &crate::state::scene::scene::Scene)
+    {
+        let data = scene.get_data();
+
+        let scene_uniform = SceneUniform::new(data);
+
+        dbg!(scene_uniform);
+
+        self.buffer = wgpu.device().create_buffer_init
+        (
+            &wgpu::util::BufferInitDescriptor
+            {
+                label: Some(&scene.name),
+                contents: bytemuck::cast_slice(&[scene_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+    }
+
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene: &crate::state::scene::scene::Scene)
+    {
+        let data = scene.get_data();
+
+        let scene_uniform = SceneUniform::new(data);
+
+        wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
+    }
+
+    pub fn get_buffer(&self) -> &wgpu::Buffer
+    {
+        &self.buffer
+    }
+
     pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
-        let light_cam_bind_layout = LightCamBindGroup::bind_layout(wgpu);
+        let light_cam_scene_bind_layout = LightCamSceneBindGroup::bind_layout(wgpu);
 
         // material and textures
         let mat = scene.get_default_material().unwrap();
@@ -90,7 +153,7 @@ impl Scene
         let bind_group_layouts =
         [
             material_bind_layout,
-            &light_cam_bind_layout
+            &light_cam_scene_bind_layout
         ];
 
         // ********** depth pass **********
@@ -299,15 +362,15 @@ impl Scene
                 cam.render_item = render_item;
             }
 
-            // create cam/light bind group
+            // create cam/light/scene bind group
             if cam.bind_group_render_item.is_none() || all_lights_changed
             {
                 let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
                 let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
 
-                let light_cam_bind_group = LightCamBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer);
+                let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
 
-                cam.bind_group_render_item = Some(Box::new(light_cam_bind_group));
+                cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
             }
         }
     }
@@ -550,6 +613,11 @@ impl Scene
         if scene_changed
         {
             dbg!("scene data changed -> recreate materials/lights/pipelines");
+
+            // update scene buffer
+            self.update_buffer(wgpu, scene);
+
+            // update pipelines
             self.create_pipelines(wgpu, scene, true);
         }
 
@@ -860,7 +928,7 @@ impl Scene
 
             // get bind groups
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
-            let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
+            let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
 
             draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);

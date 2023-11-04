@@ -14,8 +14,6 @@ struct CameraUniform
     view: mat4x4<f32>,
     view_proj: mat4x4<f32>,
 };
-@group(1) @binding(0)
-var<uniform> camera: CameraUniform;
 
 struct LightUniform
 {
@@ -27,10 +25,23 @@ struct LightUniform
     max_angle: f32,
     distance_based_intensity: u32,
 };
+
+struct SceneUniform
+{
+    gamma: f32,
+    exposure: f32
+};
+
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
+
 @group(1) @binding(1)
-var<uniform> light_amount: i32;
+var<uniform> scene: SceneUniform;
 
 @group(1) @binding(2)
+var<uniform> light_amount: i32;
+
+@group(1) @binding(3)
 var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
 
 struct VertexInput
@@ -431,6 +442,26 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     color.x += ambient_color.x;
     color.y += ambient_color.y;
     color.z += ambient_color.z;
+
+    // TODO: tone mapping and gamma can be done in post
+
+    // tone mapping (HDR -> LDR)
+    if (scene.exposure > 0.0001)
+    {
+        let mapped = vec3<f32>(1.0) - exp(-color * scene.exposure);
+        color.x = mapped.x;
+        color.y = mapped.y;
+        color.z = mapped.z;
+    }
+
+    // gamma correction
+    if (scene.gamma > 0.0001)
+    {
+        let mapped = pow(color, vec3<f32>(1.0 / scene.gamma));
+        color.x = mapped.x;
+        color.y = mapped.y;
+        color.z = mapped.z;
+    }
 
     // highlight color
     if (in.highlight > 0.0001)

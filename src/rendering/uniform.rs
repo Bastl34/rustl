@@ -4,7 +4,7 @@ use wgpu::{BindGroupLayoutEntry, BindGroupEntry, Buffer};
  Bind Group layout:
 
  - Materials + Textures (node)
- - Lights, Camera (scene)
+ - Lights, Camera, Scene Properties (Tonemapping/HDR/Gamma) (scene)
  - Dynamics (Like timestamp) (node)
  - Custom (node)
  */
