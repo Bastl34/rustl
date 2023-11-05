@@ -42,6 +42,11 @@ RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```
 
+Linux (Ubuntu) Requirements:
+```bash
+sudo apt-get install pkg-config cmake libglib2.0-dev build-essential librust-atk-dev libgtk-3-dev
+```
+
 
 ## Hints
 * prevent large scale values for objects -> this can cause flickering (because of float precision)
