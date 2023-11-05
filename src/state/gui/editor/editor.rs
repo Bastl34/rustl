@@ -8,7 +8,8 @@ use crate::{state::{state::State, scene::{components::{transformation::Transform
 
 use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode, AssetType}, main_frame};
 
-const ASSET_DIR: &str = "objects/";
+const OBJECTS_DIR: &str = "objects/";
+const SCENES_DIR: &str = "scenes/";
 
 pub struct Editor
 {
@@ -25,9 +26,10 @@ impl Editor
         }
     }
 
-    pub fn init(&mut self, state: &State)
+    pub fn init(&mut self, state: &State, egui: &EGui)
     {
-        self.editor_state.load_asset_entries(ASSET_DIR, state);
+        self.editor_state.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui);
+        self.editor_state.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui);
     }
 
     pub fn update(&mut self, state: &mut State)

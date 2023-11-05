@@ -158,3 +158,21 @@ pub fn read_files_recursive(path: &str) -> Vec<String>
 
     string_paths
 }
+
+pub fn exists(path: &str) -> bool
+{
+    cfg_if!
+    {
+        if #[cfg(target_arch = "wasm32")]
+        {
+            let url = format_url(path);
+            let response = reqwest::blocking::head(url).send();
+            response.status().is_success()
+        }
+        else
+        {
+            let path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(path);
+            path.exists()
+        }
+    }
+}

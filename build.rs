@@ -20,11 +20,15 @@ fn main() -> Result<()>
         out_dir = env::var("OUT_DIR")?;
     }
 
+    dbg!(" START ...");
+
     let mut copy_options = CopyOptions::new();
     copy_options.overwrite = true;
     let mut paths_to_copy = Vec::new();
     paths_to_copy.push("resources/");
     copy_items(&paths_to_copy, out_dir, &copy_options)?;
+
+    dbg!(" END ...");
 
     Ok(())
 }

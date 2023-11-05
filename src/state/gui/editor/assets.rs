@@ -34,6 +34,16 @@ pub fn create_asset_tree(editor_state: &mut EditorState, state: &mut State, ui: 
 
 pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
+    let items = match editor_state.asset_type
+    {
+        AssetType::Scene => Some(&editor_state.scenes),
+        AssetType::Object => Some(&editor_state.objects),
+        _ => None
+    };
+
+    if items.is_none() { return; }
+    let items = items.unwrap();
+
     ScrollArea::vertical().show(ui, |ui|
     {
         ui.set_min_width(ui.available_width());
@@ -41,17 +51,17 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
 
         ui.horizontal_wrapped(|ui|
         {
-            for path in &editor_state.assets
+            for asset in items
             {
-                let str_id = format!("{} asset", path);
+                let str_id = format!("{} asset", asset.path);
                 let item_id = Id::new(str_id.clone());
-                let name = file::get_stem(path);
+                let name = asset.name.clone();
 
                 let is_being_dragged = ui.memory(|mem| mem.is_being_dragged(item_id));
 
                 if is_being_dragged
                 {
-                    editor_state.drag_id = Some(path.to_string());
+                    editor_state.drag_id = Some(asset.path.clone());
                 }
 
                 ui.allocate_ui(egui::Vec2::new(100.0, 130.0), |ui|
@@ -77,7 +87,15 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                                     ui.label(name);
                                 });
 
-                                ui.label(RichText::new("📦").size(50.0));
+                                if let Some(egui_preview) = &asset.egui_preview
+                                {
+                                    ui.image((egui_preview.id(), egui::Vec2::new(50.0, 50.0)));
+                                }
+                                else
+                                {
+                                    ui.label(RichText::new("📦").size(50.0));
+                                }
+
                                 ui.label("");
                             });
                         });

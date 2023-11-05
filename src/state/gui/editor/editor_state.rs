@@ -1,9 +1,12 @@
-use std::sync::{RwLock, Arc};
+use std::{sync::{RwLock, Arc}, fmt::format};
 
+use image::{ImageFormat, EncodableLayout};
 use nalgebra::Point2;
 
-use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resources::resources::read_files_recursive, helper::file::get_extension};
+use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resources::resources::{read_files_recursive, exists, load_binary}, helper::file::{get_extension, get_stem}, rendering::egui::EGui};
 
+const THUMB_EXTENSION: &str = "png";
+const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
 #[derive(PartialEq, Eq)]
 pub enum SettingsPanel
@@ -54,6 +57,14 @@ pub enum EditMode
     Rotate(Point2::<f32>, bool, bool, bool)
 }
 
+pub struct Asset
+{
+    pub name: String,
+    pub path: String,
+    pub preview: Option<String>,
+    pub egui_preview: Option<egui::TextureHandle>,
+}
+
 pub struct EditorState
 {
     pub visible: bool,
@@ -85,7 +96,8 @@ pub struct EditorState
     pub add_component_id: usize,
     pub add_component_name: String,
 
-    pub assets: Vec<String>,
+    pub objects: Vec<Asset>,
+    pub scenes: Vec<Asset>,
 }
 
 impl EditorState
@@ -123,7 +135,8 @@ impl EditorState
             add_component_id: 0,
             add_component_name: "Component".to_string(),
 
-            assets: vec![]
+            objects: vec![],
+            scenes: vec![],
         }
     }
     pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
@@ -254,7 +267,7 @@ impl EditorState
         }
     }
 
-    pub fn load_asset_entries(&mut self, path: &str, state: &State)
+    pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui: &EGui)
     {
         let files = read_files_recursive(path);
 
@@ -265,8 +278,53 @@ impl EditorState
             state.supported_file_types.objects.contains(&extension)
         }).map(|s| s.to_string()).collect();
 
-        dbg!(&files);
 
-        self.assets = files;
+        let mut assets = vec![];
+
+        for file in &files
+        {
+            let extension = get_extension(file);
+            let extension = format!(".{}", extension);
+
+            let thumb_path = file.replace(extension.as_str(), THUMB_SUFFIX_NAME);
+
+            let mut thumb = None;
+            let mut egui_preview = None;
+
+            if exists(thumb_path.as_str())
+            {
+                let image_bytes = load_binary(thumb_path.as_str()).unwrap();
+
+                let format = ImageFormat::from_extension(THUMB_EXTENSION).unwrap();
+                let image: image::DynamicImage = image::load_from_memory_with_format(image_bytes.as_slice(), format).unwrap();
+                let image = image.to_rgba8();
+
+                let image = egui::ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize],image.as_bytes());
+
+                let handle = egui.ctx.load_texture(thumb_path.clone(), image, Default::default());
+
+                thumb = Some(thumb_path);
+                egui_preview = Some(handle);
+            }
+
+            let asset = Asset
+            {
+                name: get_stem(file),
+                path: file.to_string(),
+                preview: thumb,
+                egui_preview: egui_preview,
+            };
+
+            assets.push(asset);
+        }
+
+        if asset_type == AssetType::Scene
+        {
+            self.scenes = assets;
+        }
+        else if asset_type == AssetType::Object
+        {
+            self.objects = assets;
+        }
     }
 }

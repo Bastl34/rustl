@@ -69,7 +69,7 @@ impl MainInterface
         let mut editor_gui = Editor::new();
         {
             let state = & *(state.borrow());
-            editor_gui.init(state);
+            editor_gui.init(state, &egui);
         }
 
         let mut interface = Self

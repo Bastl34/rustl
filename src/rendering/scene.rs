@@ -110,8 +110,6 @@ impl Scene
 
         let scene_uniform = SceneUniform::new(data);
 
-        dbg!(scene_uniform);
-
         self.buffer = wgpu.device().create_buffer_init
         (
             &wgpu::util::BufferInitDescriptor
