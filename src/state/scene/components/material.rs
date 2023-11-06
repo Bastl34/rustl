@@ -631,10 +631,10 @@ impl Material
         let p2 = tex.get_pixel_as_float_vec(x0, y1);
         let p3 = tex.get_pixel_as_float_vec(x1, y1);
 
-        let p_res_1 = helper::math::interpolate_vec4(p0, p1, x_f);
-        let p_res_2 = helper::math::interpolate_vec4(p2, p3, x_f);
+        let p_res_1 = helper::math::interpolate_vec4(&p0, &p1, x_f);
+        let p_res_2 = helper::math::interpolate_vec4(&p2, &p3, x_f);
 
-        let res = helper::math::interpolate_vec4(p_res_1, p_res_2, y_f);
+        let res = helper::math::interpolate_vec4(&p_res_1, &p_res_2, y_f);
 
         res
     }

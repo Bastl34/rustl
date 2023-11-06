@@ -44,7 +44,7 @@ impl LightUniform
         let dist_based_intensity; if distance_based_intensity { dist_based_intensity = 1; } else { dist_based_intensity = 0; }
 
         let dir_normalized;
-        if approx_zero_vec3(dir)
+        if approx_zero_vec3(&dir)
         {
             dir_normalized = Vector3::new(0.0, -1.0, 0.0);
         }

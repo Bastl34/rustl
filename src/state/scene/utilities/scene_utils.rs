@@ -226,13 +226,6 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
             {
                 let grid = grid_arc.read().unwrap();
 
-                if let Some(transformation) = grid.find_component::<Transformation>()
-                {
-                    component_downcast_mut!(transformation, Transformation);
-                    transformation.get_data_mut().get_mut().rotation = Vector3::<f32>::new(PI / 2.0, 0.0, 0.0);
-                    transformation.calc_transform();
-                }
-
                 if let Some(material) = grid.find_component::<Material>()
                 {
                     component_downcast_mut!(material, Material);

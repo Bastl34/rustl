@@ -61,7 +61,7 @@ impl CameraController for FlyController
             !*input_manager.mouse.visible.get_ref()
         {
             let velocity = input_manager.mouse.point.velocity;
-            if approx_zero_vec2(velocity) == false
+            if approx_zero_vec2(&velocity) == false
             {
                 let cam_data = cam_data.get_mut();
 
