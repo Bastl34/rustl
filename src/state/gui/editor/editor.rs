@@ -4,7 +4,7 @@ use egui::FullOutput;
 
 use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
-use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, scene::Scene}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform}};
+use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, scene::Scene}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform, math::{approx_equal, approx_equal_vec}}};
 
 use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode, AssetType}, main_frame};
 
@@ -50,14 +50,41 @@ impl Editor
             self.editor_state.visible = !self.editor_state.visible;
         }
 
-        // fullscreen
+        // full screen
         if state.input_manager.keyboard.is_pressed(Key::F)
         {
             state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
         }
 
-        // ***************** update grid based on camera pos *****************
-        /*
+        // escape
+        if state.input_manager.keyboard.is_pressed(Key::Escape)
+        {
+            if self.editor_state.edit_mode.is_some()
+            {
+                self.editor_state.edit_mode = None;
+            }
+            else
+            {
+                self.editor_state.de_select_current_item(state);
+            }
+        }
+
+        // update grid based on camera pos
+        self.update_grid(state);
+
+        // select/pick objects
+        self.select_object(state);
+
+        // delete objects
+        self.delete_objct(state);
+
+        // edit mode
+        self.move_object(state);
+
+    }
+
+    pub fn update_grid(&self, state: &mut State)
+    {
         for scene in &mut state.scenes
         {
             let grid = scene.find_node_by_name("grid");
@@ -77,22 +104,23 @@ impl Editor
                 {
                     let camera_data = camera.get_data();
 
-                    let mut pos = camera_data.eye_pos.clone();
+                    let pos = &camera_data.eye_pos;
+                    let pos = Vector3::<f32>::new(pos.x.round(), 0.0, pos.z.round());
 
-                    pos.x = pos.x.round();
-                    pos.y = 0.0;
-                    pos.z = pos.z.round();
+                    let transformation = transformation.unwrap();
+                    component_downcast_mut!(transformation, Transformation);
 
-                    //let transformation = transformation.unwrap();
-                    //component_downcast_mut!(transformation, Transformation);
-                    //transformation.set_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+                    if !approx_equal_vec(&pos, &transformation.get_data().position)
+                    {
+                        transformation.set_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+                    }
                 }
             }
         }
-         */
+    }
 
-        // ***************** select/pick objects *****************
-
+    pub fn select_object(&mut self, state: &mut State)
+    {
         if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none()
         {
             let left_mouse_button = state.input_manager.mouse.clicked(MouseButton::Left);
@@ -229,8 +257,10 @@ impl Editor
                 self.editor_state.pick_mode = SelectionType::None;
             }
         }
+    }
 
-        // ***************** DELETE OBJECT *****************
+    pub fn delete_objct(&mut self, state: &mut State)
+    {
         if !self.editor_state.selected_object.is_empty()
         {
             //if state.input_manager.keyboard.is_pressed(Key::X) || state.input_manager.keyboard.is_pressed(Key::Delete)
@@ -303,21 +333,117 @@ impl Editor
                 }
             }
         }
+    }
 
-        // ***************** ESCAPE *****************
-        if state.input_manager.keyboard.is_pressed(Key::Escape)
+    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool) -> Option<(u64, (f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>))>
+    {
+        let scenes = &state.scenes;
+        let width = state.width;
+        let height = state.height;
+
+        let mut hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+        let mut scene_id: u64 = 0;
+
+        for scene in scenes
         {
-            if self.editor_state.edit_mode.is_some()
+            let set_grid_picking = |scene: &Box<Scene>, state: bool|
             {
-                self.editor_state.edit_mode = None;
+                // find grid
+                let grid = scene.find_node_by_name("grid");
+
+                if let Some(grid) = grid
+                {
+                    let mut grid = grid.write().unwrap();
+                    let grid_instance = grid.instances.get_mut().first();
+                    if let Some(grid_instance) = grid_instance
+                    {
+                        grid_instance.write().unwrap().pickable = state;
+                    }
+                }
+            };
+
+            if allow_grid_picking
+            {
+                set_grid_picking(scene, true);
             }
-            else
+
+            for camera in &scene.cameras
             {
-                self.editor_state.de_select_current_item(state);
+                // check if click is insight
+                if camera.is_point_in_viewport(&pos)
+                {
+                    let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
+
+                    let new_hit = scene.pick(&ray, false, allow_grid_picking);
+
+                    let mut save_hit = false;
+
+                    if let Some(new_hit) = new_hit.as_ref()
+                    {
+                        if let Some(hit) = hit.as_ref()
+                        {
+                            // check if the new hit is near
+                            if new_hit.0 < hit.0
+                            {
+                                save_hit = true;
+                            }
+                        }
+                        else
+                        {
+                            save_hit = true;
+                        }
+                    }
+
+                    if save_hit
+                    {
+                        hit = new_hit;
+                        scene_id = scene_id;
+                    }
+                }
+            }
+
+            if allow_grid_picking
+            {
+                set_grid_picking(scene, false);
             }
         }
 
-        // ***************** EDIT MODE *****************
+        if let Some(hit) = hit
+        {
+            return Some((scene_id, hit));
+        }
+
+        None
+    }
+
+    pub fn apply_drag(&mut self, state: &mut State, ctx: &egui::Context)
+    {
+        if let Some(drag_id) = &self.editor_state.drag_id
+        {
+            let is_being_dragged = ctx.memory(|mem| { mem.is_anything_being_dragged() });
+
+            if !is_being_dragged
+            {
+                if !ctx.wants_pointer_input()
+                {
+                    let pos = ctx.input(|i| i.pointer.latest_pos());
+
+                    if let Some(pos) = pos
+                    {
+                        if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
+                        {
+                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y));
+                        }
+                    }
+                }
+
+                self.editor_state.drag_id = None;
+            }
+        }
+    }
+
+    pub fn move_object(&mut self, state: &mut State)
+    {
         let step_size = 1.0;
         let angle_steps = PI / 8.0;
         let factor = 0.01;
@@ -620,114 +746,6 @@ impl Editor
                         },
                     }
                 }
-            }
-        }
-
-    }
-
-    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool) -> Option<(u64, (f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>))>
-    {
-        let scenes = &state.scenes;
-        let width = state.width;
-        let height = state.height;
-
-        let mut hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
-        let mut scene_id: u64 = 0;
-
-        for scene in scenes
-        {
-            let set_grid_picking = |scene: &Box<Scene>, state: bool|
-            {
-                // find grid
-                let grid = scene.find_node_by_name("grid");
-
-                if let Some(grid) = grid
-                {
-                    let mut grid = grid.write().unwrap();
-                    let grid_instance = grid.instances.get_mut().first();
-                    if let Some(grid_instance) = grid_instance
-                    {
-                        grid_instance.write().unwrap().pickable = state;
-                    }
-                }
-            };
-
-            if allow_grid_picking
-            {
-                set_grid_picking(scene, true);
-            }
-
-            for camera in &scene.cameras
-            {
-                // check if click is insight
-                if camera.is_point_in_viewport(&pos)
-                {
-                    let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
-
-                    let new_hit = scene.pick(&ray, false, allow_grid_picking);
-
-                    let mut save_hit = false;
-
-                    if let Some(new_hit) = new_hit.as_ref()
-                    {
-                        if let Some(hit) = hit.as_ref()
-                        {
-                            // check if the new hit is near
-                            if new_hit.0 < hit.0
-                            {
-                                save_hit = true;
-                            }
-                        }
-                        else
-                        {
-                            save_hit = true;
-                        }
-                    }
-
-                    if save_hit
-                    {
-                        hit = new_hit;
-                        scene_id = scene_id;
-                    }
-                }
-            }
-
-            if allow_grid_picking
-            {
-                set_grid_picking(scene, false);
-            }
-        }
-
-        if let Some(hit) = hit
-        {
-            return Some((scene_id, hit));
-        }
-
-        None
-    }
-
-    pub fn apply_drag(&mut self, state: &mut State, ctx: &egui::Context)
-    {
-        if let Some(drag_id) = &self.editor_state.drag_id
-        {
-            let is_being_dragged = ctx.memory(|mem| { mem.is_anything_being_dragged() });
-
-            if !is_being_dragged
-            {
-                if !ctx.wants_pointer_input()
-                {
-                    let pos = ctx.input(|i| i.pointer.latest_pos());
-
-                    if let Some(pos) = pos
-                    {
-                        if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
-                        {
-                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y));
-                        }
-                    }
-                }
-
-                self.editor_state.drag_id = None;
             }
         }
     }

@@ -220,6 +220,6 @@ impl Mouse
 
     pub fn has_input(&self) -> bool
     {
-        math::approx_zero_vec2(self.point.velocity) || self.is_any_button_holding()
+        math::approx_zero_vec2(&self.point.velocity) || self.is_any_button_holding()
     }
 }

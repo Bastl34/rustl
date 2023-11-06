@@ -361,7 +361,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 */
 
                 // transformation
-                if !approx_zero_vec3(translate) || !approx_zero_vec3(rotation) || !approx_one_vec3(scale)
+                if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
                 {
                     let component_id = get_new_component_id(main_queue.clone(), scene_id);
                     node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
@@ -404,7 +404,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let scene_node = Node::new(node_id, name);
 
             // add transformation
-            if !approx_zero_vec3(translate) || !approx_zero_vec3(rotation) || !approx_one_vec3(scale)
+            if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
             {
                 let component_id = get_new_component_id(main_queue.clone(), scene_id);
                 scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
