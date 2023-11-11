@@ -17,7 +17,7 @@ pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(-0.5, 0.5, 1.0);
 
 pub const DEFAULT_FOVY: f32 = 90.0f32;
 
-const DEFAULT_CLIPPING_NEAR: f32 = 0.001;
+const DEFAULT_CLIPPING_NEAR: f32 = 0.1;
 const DEFAULT_CLIPPING_FAR: f32 = 1000.0;
 
 /*

@@ -898,7 +898,7 @@ impl Editor
                     cam_data.fovy = 45.0f32.to_radians();
                     cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
                     cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                    cam_data.clipping_near = 0.001;
+                    cam_data.clipping_near = 0.1;
                     cam_data.clipping_far = 1000.0;
                     scene.cameras.push(Box::new(cam));
                 }
