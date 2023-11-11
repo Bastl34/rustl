@@ -300,18 +300,19 @@ impl Scene
         None
     }
 
-    /*
-    pub fn get_material_by_id_mut(&mut self, id: u64) -> Option<MaterialItem>
+    pub fn get_material_by_name(&self, name: &str) -> Option<MaterialItem>
     {
-        if self.materials.contains_key(&id)
+        for material in &self.materials
         {
-            let item = self.materials.get_mut(&id).unwrap();
-            return Some(item.clone());
+            let material = material.1;
+            if material.read().unwrap().get_base().name == name
+            {
+                return Some(material.clone());
+            };
         }
 
         None
     }
-    */
 
     pub fn get_material_or_default(&self, node: NodeItem) -> Option<MaterialItem>
     {

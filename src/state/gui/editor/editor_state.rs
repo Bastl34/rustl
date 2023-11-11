@@ -96,6 +96,7 @@ pub struct EditorState
     pub add_component_id: usize,
     pub add_component_name: String,
 
+    pub reuse_materials_by_name: bool,
     pub objects: Vec<Asset>,
     pub scenes: Vec<Asset>,
 }
@@ -135,6 +136,7 @@ impl EditorState
             add_component_id: 0,
             add_component_name: "Component".to_string(),
 
+            reuse_materials_by_name: false,
             objects: vec![],
             scenes: vec![],
         }

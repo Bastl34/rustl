@@ -797,6 +797,7 @@ impl Editor
         let create_mipmaps = state.rendering.create_mipmaps;
         let create_root_node = if self.editor_state.asset_type == AssetType::Object { true } else { false };
         let object_only = if self.editor_state.asset_type == AssetType::Object { true } else { false };
+        let reuse_materials = if self.editor_state.asset_type == AssetType::Object && self.editor_state.reuse_materials_by_name  { true } else { false };
 
         let editor_state = self.editor_state.loading.clone();
         spawn_thread(move ||
@@ -804,7 +805,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_root_node, object_only, create_mipmaps);
+            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_root_node, reuse_materials, object_only, create_mipmaps);
 
             if loaded.is_err()
             {

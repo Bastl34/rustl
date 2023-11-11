@@ -20,7 +20,7 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, _object_only: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool,reuse_materials: bool, _object_only: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 

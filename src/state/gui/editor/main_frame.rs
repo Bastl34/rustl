@@ -42,7 +42,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     //bottom
-    egui::TopBottomPanel::bottom("bottom_panel").frame(frame).show(ctx, |ui|
+    egui::TopBottomPanel::bottom("bottom_panel").resizable(true).frame(frame).show(ctx, |ui|
     {
         ui.horizontal(|ui|
         {

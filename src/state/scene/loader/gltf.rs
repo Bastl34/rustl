@@ -8,7 +8,7 @@ use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rot
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, transformation::Transformation, component::Component}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse, get_new_tex_id, get_new_component_id, get_new_light_id, get_new_camera_id, get_new_node_id, get_new_instance_id}}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}};
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, object_only: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
 {
     let gltf_content = load_binary(path)?;
 
@@ -50,22 +50,46 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
     {
-        let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, resource_name.clone().clone());
-        let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        let gltf_material_index = gltf_material.index().unwrap();
 
-        let id;
+        let material: Arc<RwLock<Option<MaterialItem>>> = Arc::new(RwLock::new(None));
+        let material_clone = material.clone();
+
+        if reuse_materials
         {
-            id = material_arc.read().unwrap().id();
+            if let Some(name) = gltf_material.name()
+            {
+                let name = name.to_string();
+                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                {
+                    *material_clone.write().unwrap() = scene.get_material_by_name(name.as_str());
+                }));
+            }
         }
 
-        let material_arc_clone = material_arc.clone();
-        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+        let material = material.read().unwrap().clone();
+        if let Some(material) = material
         {
-            scene.add_material(id, &material_arc_clone);
-        }));
+            loaded_materials.insert(gltf_material_index, material.clone());
+        }
+        else
+        {
+            let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, resource_name.clone().clone());
+            let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
 
-        let gltf_material_index = gltf_material.index().unwrap();
-        loaded_materials.insert(gltf_material_index, material_arc);
+            let id;
+            {
+                id = material_arc.read().unwrap().id();
+            }
+
+            let material_arc_clone = material_arc.clone();
+            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+            {
+                scene.add_material(id, &material_arc_clone);
+            }));
+
+            loaded_materials.insert(gltf_material_index, material_arc);
+        }
     }
 
     // ********** scene items **********

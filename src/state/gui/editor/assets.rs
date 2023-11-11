@@ -6,7 +6,7 @@ use super::editor_state::{EditorState, AssetType};
 
 pub fn create_asset_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    ui.set_min_height(200.0);
+    ui.set_min_height(220.0);
 
     ui.horizontal_top(|ui|
     {
@@ -44,66 +44,74 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
     if items.is_none() { return; }
     let items = items.unwrap();
 
-    ScrollArea::vertical().show(ui, |ui|
+    ui.vertical(|ui|
     {
-        ui.set_min_width(ui.available_width());
-        ui.set_max_width(ui.available_width());
-
-        ui.horizontal_wrapped(|ui|
+        if editor_state.asset_type == AssetType::Object
         {
-            for asset in items
+            ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
+        }
+
+        ScrollArea::vertical().show(ui, |ui|
+        {
+            ui.set_min_width(ui.available_width());
+            ui.set_max_width(ui.available_width());
+
+            ui.horizontal_wrapped(|ui|
             {
-                let str_id = format!("{} asset", asset.path);
-                let item_id = Id::new(str_id.clone());
-                let name = asset.name.clone();
-
-                let is_being_dragged = ui.memory(|mem| mem.is_being_dragged(item_id));
-
-                if is_being_dragged
+                for asset in items
                 {
-                    editor_state.drag_id = Some(asset.path.clone());
-                }
+                    let str_id = format!("{} asset", asset.path);
+                    let item_id = Id::new(str_id.clone());
+                    let name = asset.name.clone();
 
-                ui.allocate_ui(egui::Vec2::new(100.0, 130.0), |ui|
-                {
-                    drag_item(ui, item_id, |ui|
+                    let is_being_dragged = ui.memory(|mem| mem.is_being_dragged(item_id));
+
+                    if is_being_dragged
                     {
-                        ui.set_min_width(100.0);
-                        ui.set_max_width(100.0);
-                        ui.set_min_height(130.0);
-                        ui.set_max_height(130.0);
+                        editor_state.drag_id = Some(asset.path.clone());
+                    }
 
-                        let bg_color = Color32::from_white_alpha(3);
-                        let mut frame = egui::Frame::group(ui.style()).fill(bg_color);
-                        frame.inner_margin = egui::Margin::same(2.0);
-
-                        let frame = frame.show(ui, |ui|
+                    ui.allocate_ui(egui::Vec2::new(100.0, 130.0), |ui|
+                    {
+                        drag_item(ui, item_id, |ui|
                         {
-                            ui.vertical_centered(|ui|
+                            ui.set_min_width(100.0);
+                            ui.set_max_width(100.0);
+                            ui.set_min_height(130.0);
+                            ui.set_max_height(130.0);
+
+                            let bg_color = Color32::from_white_alpha(3);
+                            let mut frame = egui::Frame::group(ui.style()).fill(bg_color);
+                            frame.inner_margin = egui::Margin::same(2.0);
+
+                            let frame = frame.show(ui, |ui|
                             {
                                 ui.vertical_centered(|ui|
                                 {
-                                    ui.set_min_height(50.0);
-                                    ui.label(name);
+                                    ui.vertical_centered(|ui|
+                                    {
+                                        ui.set_min_height(50.0);
+                                        ui.label(name);
+                                    });
+
+                                    if let Some(egui_preview) = &asset.egui_preview
+                                    {
+                                        ui.image((egui_preview.id(), egui::Vec2::new(50.0, 50.0)));
+                                    }
+                                    else
+                                    {
+                                        ui.label(RichText::new("📦").size(50.0));
+                                    }
+
+                                    ui.label("");
                                 });
-
-                                if let Some(egui_preview) = &asset.egui_preview
-                                {
-                                    ui.image((egui_preview.id(), egui::Vec2::new(50.0, 50.0)));
-                                }
-                                else
-                                {
-                                    ui.label(RichText::new("📦").size(50.0));
-                                }
-
-                                ui.label("");
                             });
-                        });
 
-                        frame.response.on_hover_text_at_pointer("drag into the scene to load");
+                            frame.response.on_hover_text_at_pointer("drag into the scene to load");
+                        });
                     });
-                });
-            }
+                }
+            });
         });
     });
 }
