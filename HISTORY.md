@@ -1,7 +1,8 @@
 # History
 Here are some screenshots which are showing the development progress.
 
-# 2023-10-05
+
+# 2023-11-12
 * Gamma/Exposure
 * Environment Mapping
 * Drag and drop scene object placing
@@ -13,6 +14,7 @@ Here are some screenshots which are showing the development progress.
 <img src="history/2023-11-12-2.png" width="720">
 <sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
 <br><br>
+
 
 # 2023-10-05
 * Editor GUI
@@ -27,11 +29,13 @@ Here are some screenshots which are showing the development progress.
 <sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
 <br><br>
 
+
 # 2023-08-09
 * first GLTF/GLB loader implementation
 
 <img src="history/2023-08-09.png" width="720">
 <br>
+
 
 # 2023-05-20
 * Multi camera setup
@@ -41,18 +45,20 @@ Here are some screenshots which are showing the development progress.
 <img src="history/2023-07-30.png" width="720">
 <br>
 
+
 # 2023-05-20
 * Started with phong shading
 
 <img src="history/2023-05-21.png" width="720">
 <br>
 
+
 # 2023-05-20
 * OBJ Loader (Wavefront) with my own model and unlit shading
 
-
 <img src="history/2023-05-20.png" width="720">
 <br>
+
 
 # 2023-04-25
 * First triangle with simple egui user interface
