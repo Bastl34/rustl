@@ -28,8 +28,8 @@ impl WGpu
 
         if is_windows()
         {
-            //instance_desc.backends = wgpu::Backends::VULKAN;
-            instance_desc.backends = wgpu::Backends::DX12;
+            instance_desc.backends = wgpu::Backends::VULKAN;
+            //instance_desc.backends = wgpu::Backends::DX12;
         }
 
         let instance = wgpu::Instance::new(instance_desc);
