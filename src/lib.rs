@@ -14,7 +14,7 @@ mod rendering
 
     pub(crate) mod bind_groups
     {
-        pub(crate) mod light_cam;
+        pub(crate) mod light_cam_scene;
     }
 
     pub(crate) mod helper
@@ -42,6 +42,7 @@ mod state
         pub(crate) mod loader
         {
             pub(crate) mod wavefront;
+            pub(crate) mod gltf;
         }
 
         pub(crate) mod components
@@ -50,6 +51,20 @@ mod state
             pub(crate) mod transformation;
             pub(crate) mod mesh;
             pub(crate) mod material;
+            pub(crate) mod alpha;
+            pub(crate) mod transformation_animation;
+        }
+
+        pub(crate) mod camera_controller
+        {
+            pub(crate) mod camera_controller;
+            pub(crate) mod fly_controller;
+            pub(crate) mod target_rotation_controller;
+        }
+
+        pub(crate) mod utilities
+        {
+            pub(crate) mod scene_utils;
         }
 
         pub(crate) mod texture;
@@ -62,8 +77,42 @@ mod state
 
     pub(crate) mod gui
     {
-        pub(crate) mod gui;
+        pub(crate) mod helper
+        {
+            pub(crate) mod info_box;
+            pub(crate) mod generic_items;
+        }
+
+        pub(crate) mod editor
+        {
+            pub(crate) mod editor;
+            pub(crate) mod editor_state;
+            pub(crate) mod main_frame;
+            pub(crate) mod modals;
+            pub(crate) mod dialogs;
+            pub(crate) mod statistics;
+            pub(crate) mod cameras;
+            pub(crate) mod objects;
+            pub(crate) mod materials;
+            pub(crate) mod lights;
+            pub(crate) mod scenes;
+            pub(crate) mod rendering;
+            pub(crate) mod textures;
+            pub(crate) mod assets;
+        }
     }
+}
+
+pub(crate) mod input
+{
+    pub(crate) mod input_manager;
+
+    pub(crate) mod press_state;
+    pub(crate) mod input_point;
+
+    pub(crate) mod keyboard;
+    pub(crate) mod mouse;
+
 }
 
 mod window
@@ -74,10 +123,17 @@ mod window
 mod interface
 {
     pub(crate) mod main_interface;
+    pub(crate) mod winit;
 }
 
 mod helper
 {
+    pub(crate) mod concurrency
+    {
+        pub(crate) mod thread;
+        pub(crate) mod execution_queue;
+    }
+
     pub(crate) mod generic;
     pub(crate) mod file;
     pub(crate) mod math;
@@ -85,6 +141,8 @@ mod helper
     pub(crate) mod crypto;
     pub(crate) mod consumable;
     pub(crate) mod change_tracker;
+    pub(crate) mod platform;
+
 }
 
 mod resources

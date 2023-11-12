@@ -10,9 +10,8 @@ use std::{mem, cell::RefCell};
 
 use colored::Colorize;
 use nalgebra::{Vector3, Point3};
-use wgpu::util::DeviceExt;
 
-use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, LightItem}}, render_item_impl_default, helper::change_tracker::ChangeTracker};
+use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, LightItem, LightType}}, render_item_impl_default, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}};
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
@@ -21,21 +20,49 @@ use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 pub struct LightUniform
 {
     pub position: [f32; 4],
+    pub dir: [f32; 4],
     pub color: [f32; 4],
     pub intensity: f32,
-    _padding: [f32; 3],
+    pub light_type: u32,
+    pub max_angle: f32,
+    pub distance_based_intensity: u32,
+    _padding: [f32; 0],
 }
 
 impl LightUniform
 {
-    pub fn new(position: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Self
+    pub fn new(light_type: LightType, position: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32, max_angle: f32, distance_based_intensity: bool) -> Self
     {
+        let l_type;
+        match light_type
+        {
+            LightType::Directional => l_type = 0,
+            LightType::Point => l_type = 1,
+            LightType::Spot => l_type = 2,
+        };
+
+        let dist_based_intensity; if distance_based_intensity { dist_based_intensity = 1; } else { dist_based_intensity = 0; }
+
+        let dir_normalized;
+        if approx_zero_vec3(&dir)
+        {
+            dir_normalized = Vector3::new(0.0, -1.0, 0.0);
+        }
+        else
+        {
+            dir_normalized = dir.normalize();
+        }
+
         Self
         {
             position: [position.x, position.y, position.z, 1.0],
+            dir: [dir_normalized.x, dir_normalized.y, dir_normalized.z, 1.0],
             color: [color.x, color.y, color.z, 1.0],
             intensity,
-            _padding: [0.0, 0.0, 0.0]
+            light_type: l_type,
+            max_angle,
+            distance_based_intensity: dist_based_intensity,
+            _padding: []
         }
     }
 }
@@ -120,7 +147,7 @@ impl LightBuffer
 
             let light = light.borrow();
             let light = light.get_ref();
-            let data = LightUniform::new(light.pos, light.color, light.intensity);
+            let data = LightUniform::new(light.light_type, light.pos, light.dir, light.color, light.intensity, light.max_angle, light.distance_based_intensity);
 
             wgpu.queue_mut().write_buffer
             (
@@ -140,7 +167,7 @@ impl LightBuffer
             return;
         }
 
-        let data = LightUniform::new(light.pos, light.color, light.intensity);
+        let data = LightUniform::new(light.light_type, light.pos, light.dir, light.color, light.intensity, light.max_angle, light.distance_based_intensity);
 
         wgpu.queue_mut().write_buffer
         (

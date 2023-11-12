@@ -19,13 +19,14 @@ fn setup_window() -> (winit::event_loop::EventLoop<()>, winit::window::Window)
 
     */
 
-    let width = 1024;
-    let height = 786;
+    let width = 1600;
+    let height = 900;
 
     let event_loop = winit::event_loop::EventLoop::new();
     let window = winit::window::WindowBuilder::new()
         .with_title("Rustl")
-        .with_inner_size(winit::dpi::PhysicalSize::new(width, height))
+        //.with_inner_size(winit::dpi::PhysicalSize::new(width, height))
+        .with_inner_size(winit::dpi::LogicalSize::new(width, height))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
@@ -68,8 +69,20 @@ fn run(event_loop: winit::event_loop::EventLoop<()>, mut interface: MainInterfac
                 _ => interface.input(event),
             }
         },
-        Event::RedrawRequested(_) => interface.update(),
-        Event::MainEventsCleared => interface.window().request_redraw(),
+        Event::RedrawRequested(_) =>
+        {
+            interface.update();
+
+            if interface.check_exit()
+            {
+                *control_flow = ControlFlow::Exit
+            }
+        },
+        Event::MainEventsCleared =>
+        {
+            interface.window().request_redraw();
+            interface.update_done();
+        },
         _ => (),
     });
 }

@@ -25,6 +25,26 @@ pub fn get_dirname(path: &str) -> String
     }
 }
 
+pub fn get_stem(path: &str) -> String
+{
+    if let Some(stem) = Path::new(&path).file_stem()
+    {
+        return String::from(stem.to_string_lossy());
+    }
+
+    "".to_string()
+}
+
+pub fn get_extension(path: &str) -> String
+{
+    if let Some(extension) = Path::new(&path).extension()
+    {
+        return String::from(extension.to_string_lossy());
+    }
+
+    "".to_string()
+}
+
 pub fn is_absolute(path: &str) -> bool
 {
     Path::new(path).is_absolute()

@@ -1,13 +1,48 @@
-use std::{sync::RwLockReadGuard, mem::swap};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 
-use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup};
+use nalgebra::{Point3, distance_squared};
+use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentItem}, transformation::Transformation}, node::{Node, NodeItem}, camera::Camera}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam::LightCamBindGroup, material::MaterialBuffer};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
+
+pub struct RenderData<'a>
+{
+    node: &'a RwLockReadGuard<'a, Box<Node>>,
+    material: &'a RwLockReadGuard<'a, ComponentBox>,
+    meshes: &'a Vec<RwLockReadGuard<'a, ComponentBox>>,
+
+    has_transparency: bool,
+    alpha_index: u64,
+    middle: Point3::<f32>
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SceneUniform
+{
+    pub gamma: f32,
+    pub exposure: f32,
+}
+
+impl SceneUniform
+{
+    pub fn new(scene_data: &SceneData) -> Self
+    {
+        let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
+        let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
+
+        Self
+        {
+            gamma: gamma,
+            exposure: exposure,
+        }
+    }
+}
 
 pub struct Scene
 {
@@ -17,9 +52,12 @@ pub struct Scene
     depth_shader: String,
 
     samples: u32,
+    pub distance_sorting: bool,
 
     depth_pipe: Option<Pipeline>,
     color_pipe: Option<Pipeline>,
+
+    buffer: wgpu::Buffer,
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
@@ -32,11 +70,12 @@ impl RenderItem for Scene
 
 impl Scene
 {
-    pub async fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
+    pub fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
         // shader source
-        let color_shader = resources::load_string_async("shader/phong.wgsl").await.unwrap();
-        let depth_shader = resources::load_string_async("shader/depth.wgsl").await.unwrap();
+        let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
+        let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
+
 
         let mut render_scene = Self
         {
@@ -46,13 +85,18 @@ impl Scene
             depth_shader,
 
             samples,
+            distance_sorting: true,
 
             color_pipe: None,
             depth_pipe: None,
 
+            buffer: create_empty_buffer(wgpu),
+
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
             depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
         };
+
+        render_scene.to_buffer(wgpu, scene);
 
         render_scene.update(wgpu, state, scene);
         render_scene.create_pipelines(wgpu, scene, false);
@@ -60,16 +104,43 @@ impl Scene
         render_scene
     }
 
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, scene: &crate::state::scene::scene::Scene)
+    {
+        let data = scene.get_data();
+
+        let scene_uniform = SceneUniform::new(data);
+
+        self.buffer = wgpu.device().create_buffer_init
+        (
+            &wgpu::util::BufferInitDescriptor
+            {
+                label: Some(&scene.name),
+                contents: bytemuck::cast_slice(&[scene_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+    }
+
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene: &crate::state::scene::scene::Scene)
+    {
+        let data = scene.get_data();
+
+        let scene_uniform = SceneUniform::new(data);
+
+        wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
+    }
+
+    pub fn get_buffer(&self) -> &wgpu::Buffer
+    {
+        &self.buffer
+    }
+
     pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
-        let light_cam_bind_layout = LightCamBindGroup::bind_layout(wgpu);
-
-        let node_id = 0;
-
-        let node = scene.nodes.get_mut(node_id).unwrap();
+        let light_cam_scene_bind_layout = LightCamSceneBindGroup::bind_layout(wgpu);
 
         // material and textures
-        let mat = node.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
+        let mat = scene.get_default_material().unwrap();
         let mat = mat.read().unwrap();
         let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
 
@@ -80,13 +151,13 @@ impl Scene
         let bind_group_layouts =
         [
             material_bind_layout,
-            &light_cam_bind_layout
+            &light_cam_scene_bind_layout
         ];
 
         // ********** depth pass **********
         if !re_create
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &bind_group_layouts, scene.max_lights, true, true, 1));
+            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, 1));
         }
         else
         {
@@ -99,7 +170,7 @@ impl Scene
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.max_lights, true, true, self.samples));
+            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, self.samples));
         }
         else
         {
@@ -109,19 +180,94 @@ impl Scene
 
     pub fn update_textures(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
+        // check if the scene env texture has changed
+        if let Some(env_tex) = &scene.get_data().environment_texture
+        {
+            if env_tex.enabled && env_tex.item.read().unwrap().get_data_tracker().changed()
+            {
+                dbg!("update all materials");
+                let env_texture_id = env_tex.item.read().unwrap().id;
+
+                for (_, material) in &mut scene.materials
+                {
+                    let mut material = material.write().unwrap();
+                    let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+
+                    if !material.has_texture(TextureType::Environment) || material.has_texture_id(env_texture_id)
+                    {
+                        material.get_data_mut().force_change();
+                    }
+                }
+            }
+        }
+
+        // check all individual textures
         for (_texture_id, texture) in &mut scene.textures
         {
-            let mut texture = texture.write().unwrap();
-            if texture.render_item.is_none()
+            let mut buffer_recreate_needed = false;
+
             {
-                let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, true);
-                texture.render_item = Some(Box::new(render_item));
+                let mut texture = texture.write().unwrap();
+                let texture_changed = texture.get_data_mut().consume_change();
+
+                // check if buffer recreation is needed
+                // TODO: check if this even needed anymore (because of the changetracker data from texture)
+                if let Some(render_item) = &texture.render_item
+                {
+                    let render_item = get_render_item::<Texture>(render_item);
+                    buffer_recreate_needed = render_item.width != texture.width() || render_item.height != texture.height();
+                }
+
+                if texture.render_item.is_none() || buffer_recreate_needed || texture_changed
+                {
+                    let mut format = TextureFormat::Srgba;
+                    if texture.channels() == 1
+                    {
+                        format = TextureFormat::Gray;
+                    }
+
+                    let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, format);
+                    texture.render_item = Some(Box::new(render_item));
+                    buffer_recreate_needed = true;
+                }
+                /*
+                else if texture_changed
+                {
+                    let mut render_item = texture.render_item.take();
+
+                    {
+                        let render_item = get_render_item_mut::<Texture>(render_item.as_mut().unwrap());
+                        render_item.update_buffer(wgpu, &texture);
+                    }
+
+                    texture.render_item = render_item;
+                }
+                 */
+            }
+
+            // mark material as "dirty" if the buffer needs a recreate
+            if buffer_recreate_needed
+            {
+                let texture = texture.read().unwrap();
+
+                for (_, material) in &mut scene.materials
+                {
+                    let mut material = material.write().unwrap();
+                    let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+
+                    if material.has_texture_id(texture.id)
+                    {
+                        material.get_data_mut().force_change();
+                    }
+                }
             }
         }
     }
 
     pub fn update_materials(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
     {
+        let default_env_map = scene.get_data().environment_texture.clone();
+
         for (_material_id, material) in &mut scene.materials
         {
             let mut material = material.write().unwrap();
@@ -129,10 +275,10 @@ impl Scene
 
             let material_changed = material.get_data_mut().consume_change();
 
-            if material_changed && material.get_base().render_item.is_none()
+            if material_changed || material.get_base().render_item.is_none()
             {
                 dbg!("material render item recreate");
-                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, None);
+                let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, default_env_map.clone(), None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
             }
             else if material_changed || force
@@ -141,8 +287,8 @@ impl Scene
 
                 {
                     let render_item = get_render_item_mut::<MaterialBuffer>(render_item.as_mut().unwrap());
-                    render_item.to_buffer(wgpu, material, None);
-                    render_item.create_binding_groups(wgpu, material, None);
+                    render_item.to_buffer(wgpu, material, default_env_map.clone(), None);
+                    render_item.create_binding_groups(wgpu, material, default_env_map.clone(), None);
                 }
 
                 material.get_base_mut().render_item = render_item;
@@ -152,15 +298,16 @@ impl Scene
         }
     }
 
-    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
     {
         // ********** lights: all **********
+        let max_lights = scene.get_data().max_lights;
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
-        if all_lights_changed
+        if all_lights_changed || force
         {
             if scene.lights_render_item.is_none()
             {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, scene.max_lights);
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, max_lights);
                 scene.lights_render_item = Some(Box::new(lights_buffer));
             }
 
@@ -190,12 +337,14 @@ impl Scene
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
         {
-            let mut cam = cam.borrow_mut();
-            let (cam, cam_changed) = cam.consume_borrow_mut();
+            let cam_changed = cam.get_data_mut().consume_change();
 
             // create cam render item
             if cam.render_item.is_none()
             {
+                cam.update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
+                cam.init_matrices();
+
                 let camera_buffer = CameraBuffer::new(wgpu, &cam);
                 cam.render_item = Some(Box::new(camera_buffer));
             }
@@ -211,33 +360,37 @@ impl Scene
                 cam.render_item = render_item;
             }
 
-            // create cam/light bind group
+            // create cam/light/scene bind group
             if cam.bind_group_render_item.is_none() || all_lights_changed
             {
                 let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
                 let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
 
-                let light_cam_bind_group = LightCamBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer);
+                let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
 
-                cam.bind_group_render_item = Some(Box::new(light_cam_bind_group));
+                cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
             }
         }
     }
 
-    pub fn update_nodes(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>)
     {
         //for node in scene.nodes.iter_mut()
-        for node_id in 0..scene.nodes.len()
+
+        // go in reverse to find parent transformations for child nodes
+        for node_id in (0..nodes.len()).rev()
         {
             // ********** vertex buffer **********
             {
-                let node = scene.nodes.get_mut(node_id).unwrap();
+                let node = nodes.get_mut(node_id).unwrap();
 
-                let mut node = node.write().unwrap();
-                let mesh = node.find_component_mut::<crate::state::scene::components::mesh::Mesh>();
+                let node = node.write().unwrap();
+                let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
 
                 if let Some(mesh) = mesh
                 {
+                    component_downcast_mut!(mesh, crate::state::scene::components::mesh::Mesh);
+
                     let (mesh_data, mesh_data_changed) = mesh.get_data_mut().consume_borrow_mut();
 
                     if mesh_data_changed
@@ -251,21 +404,40 @@ impl Scene
             // ********** instances all **********
             let mut all_instances_changed;
             {
-                let node_arc = scene.nodes.get_mut(node_id).unwrap();
+                let node_arc = nodes.get_mut(node_id).unwrap();
 
                 {
                     let mut write = node_arc.write().unwrap();
-                    (_, all_instances_changed) = write.instances.consume_borrow();
+                    all_instances_changed = write.instances.consume_change();
                 }
 
                 {
-                    let mut node = node_arc.write().unwrap();
-                    let trans_component = node.find_component_mut::<Transformation>();
+                    let node = node_arc.write().unwrap();
+                    let trans_component = node.find_component::<Transformation>();
                     if let Some(trans_component) = trans_component
                     {
+                        component_downcast_mut!(trans_component, Transformation);
                         all_instances_changed = trans_component.get_data_mut().consume_change() || all_instances_changed;
                     }
+
+                    if !all_instances_changed
+                    {
+                        let alpha_component = node.find_component::<Alpha>();
+                        if let Some(alpha_component) = alpha_component
+                        {
+                            component_downcast_mut!(alpha_component, Alpha);
+                            all_instances_changed = alpha_component.get_data_mut().consume_change() || all_instances_changed;
+                        }
+                    }
                 }
+
+                // check parents for changed transforms
+                /*
+                if !all_instances_changed
+                {
+                    all_instances_changed = Scene::find_changed_parent_data(node_arc.clone());
+                }
+                */
 
                 if all_instances_changed
                 {
@@ -273,7 +445,8 @@ impl Scene
                     let instance_buffer;
                     {
                         let node = node_arc.read().unwrap();
-                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", node.instances.get_ref());
+                        let instances = node.instances.get_ref();
+                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -299,25 +472,29 @@ impl Scene
             {
                 let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
                 {
-                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id).unwrap();
                     let mut node = node.write().unwrap();
 
                     swap(&mut node.instance_render_item, &mut render_item);
                 }
 
                 {
-                    let node = scene.nodes.get(node_id).unwrap();
+                    let node = nodes.get(node_id).unwrap();
                     let node = node.read().unwrap();
-                    let node_ref = node.instances.get_ref();
+                    let instances_ref = node.instances.get_ref();
 
-                    for (i, instance) in node_ref.iter().enumerate()
+                    for (i, instance) in instances_ref.iter().enumerate()
                     {
-                        let mut instance = instance.borrow_mut();
-                        let (instance, instance_changed) = instance.consume_borrow();
+                        let mut instance = instance.write().unwrap();
+                        //let (instance_data, mut instance_changed) = instance.get_data_mut().consume_borrow();
+                        let instance_changed = instance.get_data_mut().consume_change();
+
+                        //instance_changed = Self::find_changed_instance_data(instance) || instance_changed;
+
                         if instance_changed
                         {
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
-                            render_item.update_buffer(wgpu, instance, i);
+                            render_item.update_buffer(wgpu, &instance, i);
 
                             //dbg!(" ============ ONE instance updated");
                         }
@@ -325,7 +502,7 @@ impl Scene
                 }
 
                 {
-                    let node = scene.nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id).unwrap();
                     let mut node = node.write().unwrap();
 
                     swap(&mut render_item, &mut node.instance_render_item);
@@ -333,6 +510,79 @@ impl Scene
             }
         }
     }
+
+    /*
+    pub fn find_changed_parent_data(node: Arc<RwLock<Box<Node>>>) -> bool
+    {
+        let node_read = node.read().unwrap();
+        let parent_arc = node_read.parent.clone();
+
+        let mut has_changed_data = false;
+        if let Some(parent_arc) = parent_arc
+        {
+            let parent = parent_arc.read().unwrap();
+            let trans_component = parent.find_component::<Transformation>();
+            let alpha_component = parent.find_component::<Alpha>();
+
+            if let Some(trans_component) = trans_component
+            {
+                component_downcast!(trans_component, Transformation);
+
+                has_changed_data = has_changed_data || trans_component.get_data_tracker().changed();
+                if has_changed_data
+                {
+                    return true;
+                }
+            }
+
+            if let Some(alpha_component) = alpha_component
+            {
+                component_downcast!(alpha_component, Alpha);
+
+                has_changed_data = has_changed_data || alpha_component.get_data_tracker().changed();
+                if has_changed_data
+                {
+                    return true;
+                }
+            }
+
+            if parent.parent.is_some()
+            {
+                has_changed_data = has_changed_data || Scene::find_changed_parent_data(parent_arc.clone())
+            }
+        }
+
+        has_changed_data
+    }
+
+    pub fn find_changed_instance_data(instance: &Box<Instance>) -> bool
+    {
+        // transformation check
+        let trans_component = instance.find_component::<Transformation>();
+        if let Some(trans_component) = trans_component
+        {
+            component_downcast_mut!(trans_component, Transformation);
+            if trans_component.get_data_mut().consume_change()
+            {
+                return true;
+            }
+        }
+
+        // alpha check
+        let alpha_component = instance.find_component::<Alpha>();
+        if let Some(alpha_component) = alpha_component
+        {
+            component_downcast_mut!(alpha_component, Alpha);
+
+            if alpha_component.get_data_mut().consume_change()
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+    */
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {
@@ -352,42 +602,59 @@ impl Scene
 
         // ********** dynamic items **********
         self.update_textures(wgpu, scene);
-        self.update_materials(wgpu, scene, false);
-        self.update_light_cameras(wgpu, scene);
-        self.update_nodes(wgpu, scene);
 
+        let scene_changed = scene.get_data_mut().consume_change();
+
+        self.update_materials(wgpu, scene, scene_changed);
+        self.update_light_cameras(wgpu, scene, scene_changed);
+
+        if scene_changed
+        {
+            dbg!("scene data changed -> recreate materials/lights/pipelines");
+
+            // update scene buffer
+            self.update_buffer(wgpu, scene);
+
+            // update pipelines
+            self.create_pipelines(wgpu, scene, true);
+        }
+
+        let mut all_nodes = Scene::list_all_child_nodes(&scene.nodes, false);
+        self.update_nodes(wgpu, &mut all_nodes);
 
         // ********** screenshot stuff **********
         if state.save_image
         {
             let node_id = 0;
             let node_arc = scene.nodes.get(node_id).unwrap();
-            //let node = node_arc.read().unwrap();
 
-            let mat = node_arc.read().unwrap().find_shared_component::<MaterialComponent>().unwrap();
-            let mat = mat.read().unwrap();
-            let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+            let mat = node_arc.read().unwrap().find_component::<MaterialComponent>();
 
-            let data = mat.get_data();
-
+            if let Some(mat) = mat
             {
-                let base_tex = data.texture_base.clone().unwrap();
-                let base_tex = base_tex.read().unwrap();
-                let render_item = base_tex.render_item.as_ref().unwrap();
-                let render_item = get_render_item::<Texture>(&render_item);
+                component_downcast!(mat, MaterialComponent);
 
-                let img_data = render_item.to_image(wgpu);
-                img_data.save("data/base_texture.png").unwrap();
-            }
+                let data = mat.get_data();
 
-            {
-                let base_tex = data.texture_normal.clone().unwrap();
-                let base_tex = base_tex.read().unwrap();
-                let render_item = base_tex.render_item.as_ref().unwrap();
-                let render_item = get_render_item::<Texture>(&render_item);
+                {
+                    let base_tex = data.texture_base.clone().unwrap();
+                    let base_tex = base_tex.get().read().unwrap();
+                    let render_item = base_tex.render_item.as_ref().unwrap();
+                    let render_item = get_render_item::<Texture>(&render_item);
 
-                let img_data = render_item.to_image(wgpu);
-                img_data.save("data/normal_texture.png").unwrap();
+                    let img_data = render_item.to_image(wgpu);
+                    img_data.save("data/base_texture.png").unwrap();
+                }
+
+                {
+                    let base_tex = data.texture_normal.clone().unwrap();
+                    let base_tex = base_tex.get().read().unwrap();
+                    let render_item = base_tex.render_item.as_ref().unwrap();
+                    let render_item = get_render_item::<Texture>(&render_item);
+
+                    let img_data = render_item.to_image(wgpu);
+                    img_data.save("data/normal_texture.png").unwrap();
+                }
             }
 
             state.save_image = false;
@@ -431,21 +698,32 @@ impl Scene
         dbg!("resize");
         for cam in &mut scene.cameras
         {
-            cam.borrow_mut().get_mut().update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
-            cam.borrow_mut().get_mut().init_matrices();
+            cam.update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
+            cam.init_matrices();
         }
 
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
     }
 
-    fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
+    pub fn list_all_child_nodes(nodes: &Vec<NodeItem>, check_visibility: bool) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];
 
         for node in nodes
         {
-            let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
+            if check_visibility
+            {
+                let node = node.read().unwrap();
+                let visible = node.visible;
+
+                if !visible
+                {
+                    continue;
+                }
+            }
+
+            let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes, check_visibility);
 
             if node.read().unwrap().render_children_first
             {
@@ -464,21 +742,45 @@ impl Scene
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
     {
-        let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+        let all_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
 
         let mut nodes_read = vec![];
         let mut materials = vec![];
         let mut materials_read = vec![];
+        let mut meshes = vec![];
+        let mut meshes_read = vec![];
+
+        let default_material = scene.get_default_material();
+
+        if scene.get_default_material().is_none()
+        {
+            dbg!("default material not found -> please do not delete it");
+            return 0;
+        }
+
+        let default_material_arc = default_material.unwrap();
+        let default_material = &default_material_arc.read().unwrap();
 
         for node in &all_nodes
         {
             let read_node = node.read().unwrap();
-            let mat = read_node.find_shared_component::<MaterialComponent>();
+            let mat = read_node.find_component::<MaterialComponent>();
+            let node_meshes = read_node.get_meshes();
 
-            if let Some(mat) = mat
+            if node_meshes.len() > 0
             {
-                nodes_read.push(read_node);
-                materials.push(mat);
+                if let Some(mat) = mat
+                {
+                    nodes_read.push(read_node);
+                    materials.push(mat);
+                    meshes.push(node_meshes);
+                }
+                else
+                {
+                    nodes_read.push(read_node);
+                    materials.push(default_material_arc.clone());
+                    meshes.push(node_meshes);
+                }
             }
         }
 
@@ -488,10 +790,93 @@ impl Scene
             materials_read.push(material_read);
         }
 
-        let mut nodes = vec![];
+        for mesh in &meshes
+        {
+            let mesh_read: Vec<_> = mesh.iter().map(|mesh_item| mesh_item.read().unwrap()).collect();
+            meshes_read.push(mesh_read);
+        }
+
+        let mut render_data = Vec::with_capacity(materials_read.len());
         for (i, material) in materials_read.iter().enumerate()
         {
-            nodes.push((nodes_read.get(i).unwrap(), material));
+            let mat;
+            if !material.is_enabled()
+            {
+                mat = default_material;
+            }
+            else
+            {
+                mat = material;
+            }
+
+            let node = nodes_read.get(i).unwrap();
+            let meshes = meshes_read.get(i).unwrap();
+
+            let mut item_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
+
+            // ***** get center for depth sorting (alpha blending)
+            if self.distance_sorting
+            {
+                if meshes.len() == 0 || node.instances.get_ref().len() == 0
+                {
+                    continue;
+                }
+
+
+                let mut mesh_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
+                for mesh in meshes
+                {
+                    let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
+                    let center = mesh.get_data().b_box.center();
+                    mesh_middle.x += center.x;
+                    mesh_middle.y += center.y;
+                    mesh_middle.z += center.z;
+                }
+
+                let len_f32 = meshes.len() as f32;
+                mesh_middle.x /= len_f32;
+                mesh_middle.y /= len_f32;
+                mesh_middle.z /= len_f32;
+
+
+                if let Some(instance_render_item) = node.instance_render_item.as_ref()
+                {
+                    let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
+
+                    for transform in &instance_buffer.transformations
+                    {
+                        let p = transform.transform_point(&mesh_middle);
+                        item_middle.x += p.x;
+                        item_middle.y += p.y;
+                        item_middle.z += p.z;
+                    }
+
+                    let len_f32 = instance_buffer.transformations.len() as f32;
+                    item_middle.x /= len_f32;
+                    item_middle.y /= len_f32;
+                    item_middle.z /= len_f32;
+                }
+            }
+
+            let has_transparency;
+            {
+                let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
+                has_transparency = mat.has_transparency();
+            }
+
+            render_data.push
+            (
+                RenderData
+                {
+                    node: nodes_read.get(i).unwrap(),
+                    material: mat,
+                    meshes: meshes,
+
+                    has_transparency: has_transparency,
+                    alpha_index: node.alpha_index,
+                    middle: item_middle
+                }
+            );
         }
 
         let mut draw_calls: u32 = 0;
@@ -499,19 +884,52 @@ impl Scene
         let mut i = 0;
         for cam in &scene.cameras
         {
-            let cam = cam.borrow();
-            let cam = cam.get_ref();
             if !cam.enabled { continue; }
+
+            let cam_data = cam.get_data();
+
+            // sort
+            if self.distance_sorting
+            {
+
+                let cam_pos = cam_data.eye_pos;
+                render_data.sort_by(|a, b|
+                {
+                    if a.has_transparency != b.has_transparency
+                    {
+                        b.has_transparency.cmp(&a.has_transparency)
+                    }
+                    else if a.alpha_index != b.alpha_index
+                    {
+                        a.alpha_index.cmp(&b.alpha_index)
+                    }
+                    else
+                    {
+                        // we do not need the exact distance here - squared is fine
+                        let a_dist = distance_squared(&a.middle, &cam_pos);
+                        let b_dist = distance_squared(&b.middle, &cam_pos);
+
+                        b_dist.partial_cmp(&a_dist).unwrap()
+                    }
+
+                    /*
+                    a.alpha_index.cmp(&b.alpha_index)
+                    .then_with(|| b_dist.partial_cmp(&a_dist).unwrap())
+                    */
+
+                    //b.partial_cmp(&a).unwrap()
+                });
+            }
 
             let clear;
             if i == 0 { clear = true; } else { clear = false; }
 
             // get bind groups
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
-            let bind_group_render_item = get_render_item::<LightCamBindGroup>(bind_group_render_item);
+            let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
 
-            draw_calls += self.render_depth(wgpu, view, encoder, &nodes, cam, &bind_group_render_item.bind_group, clear);
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &nodes, cam, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
+            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
 
             i += 1;
         }
@@ -519,7 +937,7 @@ impl Scene
         draw_calls
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<(&RwLockReadGuard<Box<Node>>, &RwLockReadGuard<ComponentItem>)>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
         let mut clear_depth = wgpu::LoadOp::Clear(1.0);
@@ -568,18 +986,18 @@ impl Scene
             })
         });
 
-        let x = cam.viewport_x * cam.resolution_width as f32;
-        let y = cam.viewport_y * cam.resolution_height as f32;
+        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
+        let y = cam_data.viewport_y * cam_data.resolution_height as f32;
 
-        let width = cam.viewport_width * cam.resolution_width as f32;
-        let height = cam.viewport_height * cam.resolution_height as f32;
+        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<(&RwLockReadGuard<Box<Node>>, &RwLockReadGuard<ComponentItem>)>, cam: &Box<Camera>, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -626,26 +1044,33 @@ impl Scene
             })
         });
 
-        let x = cam.viewport_x * cam.resolution_width as f32;
-        let y = cam.viewport_y * cam.resolution_height as f32;
+        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
+        let y = cam_data.viewport_y * cam_data.resolution_height as f32;
 
-        let width = cam.viewport_width * cam.resolution_width as f32;
-        let height = cam.viewport_height * cam.resolution_height as f32;
+        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<(&RwLockReadGuard<Box<Node>>, &RwLockReadGuard<ComponentItem>)>, light_cam_bind_group: &'a BindGroup) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RenderData>, light_cam_bind_group: &'a BindGroup) -> u32
     {
         let mut draw_calls: u32 = 0;
 
-        for (node, mat) in nodes
+        for data in nodes
         {
-            let meshes = node.get_meshes();
+            let node = data.node;
+            let meshes = data.meshes;
+            let mat = data.material;
 
-            if meshes.is_none()
+            if !node.visible
+            {
+                continue;
+            }
+
+            if meshes.len() == 0
             {
                 continue;
             }
@@ -654,10 +1079,15 @@ impl Scene
             let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
             let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
 
-            let meshes = meshes.unwrap();
-
             for mesh in meshes
             {
+                let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
+
+                if !mesh.get_base().is_enabled
+                {
+                    continue;
+                }
+
                 if let Some(render_item) = mesh.get_base().render_item.as_ref()
                 {
                     let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);

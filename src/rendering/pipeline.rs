@@ -83,10 +83,28 @@ impl Pipeline
         let fragment_targets = &[Some(wgpu::ColorTargetState
         {
             format: config.format,
+            /*
             blend: Some(wgpu::BlendState
             {
                 color: wgpu::BlendComponent::REPLACE,
                 alpha: wgpu::BlendComponent::REPLACE,
+            }),
+            */
+            blend: Some(wgpu::BlendState
+            {
+                color: wgpu::BlendComponent
+                {
+                    operation: wgpu::BlendOperation::Add,
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                },
+                alpha: wgpu::BlendComponent
+                {
+                    operation: wgpu::BlendOperation::Add,
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                },
+                //alpha: wgpu::BlendComponent::REPLACE,
             }),
             write_mask: wgpu::ColorWrites::ALL,
         })];

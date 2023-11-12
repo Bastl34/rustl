@@ -5,8 +5,17 @@
 
 
 ## current state
-<img src="history/2023-05-21.png" width="720">
-<br>
+<img src="history/2023-11-12-2.png" width="720">
+<sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
+<br><br>
+
+<img src="history/2023-10-05.png" width="720">
+<sub>model from: https://sketchfab.com/3d-models/cathedral-faed84a829114e378be255414a7826ca</sub>
+<br><br>
+
+<img src="history/2023-11-12.png" width="720">
+<sub>model from: https://sketchfab.com/3d-models/apocalyptic-city-a0c8f318ed6f4075a97c2e55b1272495</sub>
+<br><br>
 
 ## requrements
 
@@ -37,3 +46,12 @@ set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resource
 RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```
+
+Linux (Ubuntu) Requirements:
+```bash
+sudo apt-get install pkg-config cmake libglib2.0-dev build-essential librust-atk-dev libgtk-3-dev
+```
+
+
+## Hints
+* prevent large scale values for objects -> this can cause flickering (because of float precision)

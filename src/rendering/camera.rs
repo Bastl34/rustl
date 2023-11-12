@@ -1,15 +1,16 @@
 use nalgebra::{Point3, Matrix4};
-use wgpu::{util::DeviceExt};
+use wgpu::util::DeviceExt;
 
 use crate::{state::{helper::render_item::RenderItem, scene::camera::Camera}, render_item_impl_default};
 
-use super::{wgpu::WGpu};
+use super::wgpu::WGpu;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform
 {
     pub view_position: [f32; 4],
+    pub view: [[f32; 4]; 4],
     pub view_proj: [[f32; 4]; 4],
 }
 
@@ -20,6 +21,7 @@ impl CameraUniform
         Self
         {
             view_position: [0.0; 4],
+            view: nalgebra::Matrix4::<f32>::identity().into(),
             view_proj: nalgebra::Matrix4::<f32>::identity().into()
         }
     }
@@ -27,6 +29,7 @@ impl CameraUniform
     pub fn update_view_proj(&mut self, pos:Point3::<f32>, projection: Matrix4<f32>, view: Matrix4<f32>)
     {
         self.view_position = pos.to_homogeneous().into();
+        self.view = view.into();
         self.view_proj = (projection * view).into();
     }
 }
@@ -67,8 +70,10 @@ impl CameraBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
     {
+        let data = cam.get_data();
+
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(cam.eye_pos, cam.webgpu_projection(), cam.view);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -83,8 +88,10 @@ impl CameraBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
     {
+        let data = cam.get_data();
+
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(cam.eye_pos, cam.webgpu_projection(), cam.view);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
     }

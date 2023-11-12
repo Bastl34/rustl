@@ -1,8 +1,8 @@
-use egui::{FullOutput};
-use egui_winit::{winit};
+use egui::FullOutput;
+use egui_winit::winit;
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::{rendering::wgpu::{WGpu}};
+use crate::rendering::wgpu::WGpu;
 
 pub struct EGui
 {
@@ -23,9 +23,11 @@ impl EGui
         let mut ui_state = egui_winit::State::new(event_loop);
         ui_state.set_pixels_per_point(window.scale_factor() as f32);
 
+        let ctx = egui::Context::default();
+
         Self
         {
-            ctx: egui::Context::default(),
+            ctx: ctx,
             renderer: egui_wgpu::renderer::Renderer::new(&device, surface_cfg.format, None, 1),
             ui_state: ui_state,
             screen_descriptor: egui_wgpu::renderer::ScreenDescriptor

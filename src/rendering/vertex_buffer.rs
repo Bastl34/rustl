@@ -1,7 +1,7 @@
 use crate::{state::{scene::components::mesh::{Mesh, MeshData}, helper::render_item::RenderItem}, render_item_impl_default};
 
 use super::wgpu::WGpu;
-use nalgebra::{Vector3, Vector2};
+use nalgebra::{Point2, Vector3, Vector2};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -58,78 +58,36 @@ impl VertexBuffer
         {
             let v = mesh_data.vertices[i];
             let n = mesh_data.normals[i];
-            let uv = mesh_data.uvs[i];
+
+            // no uvs found -> use empty uv
+            let uv;
+            if mesh_data.uvs_1.len() == 0
+            {
+                uv = Point2::<f32>::new(0.0, 0.0);
+            }
+            else
+            {
+                uv = mesh_data.uvs_1[i];
+            }
+
+            let mut tangent = n.cross(&Vector3::<f32>::new(0.0, 1.0, 0.0));
+
+            if tangent.magnitude()  <= 0.0001
+            {
+                tangent = n.cross(&Vector3::<f32>::new(0.0, 0.0, 1.0));
+            }
+
+            tangent = tangent.normalize();
+            let bitangent = n.cross(&tangent).normalize();
 
             vertices.push(Vertex
             {
                 position: [v.x, v.y, v.z],
                 tex_coords: [uv.x, 1.0 - uv.y], // flip y because in wgpu y-axis is pointing up (not down as in images)
                 normal: [n.x, n.y, n.z],
-                tangent: [0.0; 3],
-                bitangent: [0.0; 3],
+                tangent: [tangent.x, tangent.y, tangent.z],
+                bitangent: [bitangent.x, bitangent.y, bitangent.z],
             });
-        }
-
-        // calculate tangent and bitangent
-        let mut triangles_included = vec![0; vertices.len()];
-
-        //for c in mesh.indices.chunks(3)
-        for c in &mesh_data.indices
-        {
-            let v0 = vertices[c[0] as usize];
-            let v1 = vertices[c[1] as usize];
-            let v2 = vertices[c[2] as usize];
-
-            let pos0: Vector3<_> = v0.position.into();
-            let pos1: Vector3<_> = v1.position.into();
-            let pos2: Vector3<_> = v2.position.into();
-
-            let uv0: Vector2<_> = v0.tex_coords.into();
-            let uv1: Vector2<_> = v1.tex_coords.into();
-            let uv2: Vector2<_> = v2.tex_coords.into();
-
-            // Calculate the edges of the triangle
-            let delta_pos1 = pos1 - pos0;
-            let delta_pos2 = pos2 - pos0;
-
-            // This will give us a direction to calculate the
-            // tangent and bitangent
-            let delta_uv1 = uv1 - uv0;
-            let delta_uv2 = uv2 - uv0;
-
-            // Solving the following system of equations will
-            // give us the tangent and bitangent.
-            //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
-            //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
-            // Luckily, the place I found this equation provided
-            // the solution!
-            let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-            let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-            // We flip the bitangent to enable right-handed normal
-            // maps with wgpu texture coordinate system
-            let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * -r;
-
-            // We'll use the same tangent/bitangent for each vertex in the triangle
-            vertices[c[0] as usize].tangent = (tangent + Vector3::from(vertices[c[0] as usize].tangent)).into();
-            vertices[c[1] as usize].tangent = (tangent + Vector3::from(vertices[c[1] as usize].tangent)).into();
-            vertices[c[2] as usize].tangent = (tangent + Vector3::from(vertices[c[2] as usize].tangent)).into();
-            vertices[c[0] as usize].bitangent = (bitangent + Vector3::from(vertices[c[0] as usize].bitangent)).into();
-            vertices[c[1] as usize].bitangent = (bitangent + Vector3::from(vertices[c[1] as usize].bitangent)).into();
-            vertices[c[2] as usize].bitangent = (bitangent + Vector3::from(vertices[c[2] as usize].bitangent)).into();
-
-            // Used to average the tangents/bitangents
-            triangles_included[c[0] as usize] += 1;
-            triangles_included[c[1] as usize] += 1;
-            triangles_included[c[2] as usize] += 1;
-        }
-
-        // Average the tangents/bitangents
-        for (i, n) in triangles_included.into_iter().enumerate()
-        {
-            let denom = 1.0 / n as f32;
-            let mut v = &mut vertices[i];
-            v.tangent = (Vector3::from(v.tangent) * denom).into();
-            v.bitangent = (Vector3::from(v.bitangent) * denom).into();
         }
 
         let vertex_buffer_name = format!("{} Vertex Buffer", name);

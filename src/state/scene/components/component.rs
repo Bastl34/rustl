@@ -1,10 +1,12 @@
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
+use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::scene::node::{NodeItem, InstanceItemArc};
 
-pub type ComponentItem = Box<dyn Component + Send + Sync>;
-pub type SharedComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
+pub type ComponentBox = Box<dyn Component + Send + Sync>;
+pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
 
 pub trait Component: Any
 {
@@ -13,7 +15,14 @@ pub trait Component: Any
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn update(&mut self, frame_scale: f32);
+    fn ui(&mut self, ui: &mut egui::Ui);
+
+    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32);
+    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32);
+
+    fn set_enabled(&mut self, state: bool);
+
+    fn instantiable(&self) -> bool;
 
     fn id(&self) -> u64
     {
@@ -37,25 +46,30 @@ pub struct ComponentBase
     pub is_enabled: bool,
     pub name: String,
     pub component_name: String,
+    pub icon: String,
+    pub info: Option<String>,
 
     pub render_item: RenderItemOption
 }
 
 impl ComponentBase
 {
-    pub fn new(id: u64, name: String, component_name: String) -> ComponentBase
+    pub fn new(id: u64, name: String, component_name: String, icon: String) -> ComponentBase
     {
         ComponentBase
         {
             id,
             name,
             component_name,
+            icon,
             is_enabled: true,
-            render_item: None
+            render_item: None,
+            info: None
         }
     }
 }
 
+// ******************** default implementations ********************
 
 //https://stackoverflow.com/questions/65380698/trait-with-default-implementation-and-required-struct-member
 #[macro_export]
@@ -63,12 +77,12 @@ macro_rules! component_impl_default
 {
     () =>
     {
-        fn as_any(&self) -> &dyn Any
+        fn as_any(&self) -> &dyn std::any::Any
         {
             self
         }
 
-        fn as_any_mut(&mut self) -> &mut dyn Any
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any
         {
             self
         }
@@ -85,86 +99,154 @@ macro_rules! component_impl_default
     };
 }
 
-
-/*
 #[macro_export]
-macro_rules! find_shared_component
+macro_rules! component_impl_no_update
 {
-    ($vec:expr, $type:ty) =>
+    () =>
     {
+        fn update(&mut self, _node: NodeItem, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
         {
-            let mut res: Option<&SharedComponentItem> = None;
-            let value = $vec.iter().find
-            (
-                |c|
-                {
-                    let component_item = c.read().unwrap();
-                    component_item.is::<$type>()
-                }
-            );
-            if !value.is_some()
-            {
-                return;
-            }
+        }
 
-            res = Some(value.unwrap());
-            res
+        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
+        {
         }
     };
 }
 
 #[macro_export]
-macro_rules! find_shared_component_mut
+macro_rules! component_impl_set_enabled
 {
-    ($vec:expr, $type:ty) =>
+    () =>
     {
+        fn set_enabled(&mut self, state: bool)
         {
-            let mut res: Option<&SharedComponentItem> = None;
-            let value = $vec.iter_mut().find
-            (
-                |c|
-                {
-                    let component_item = c.read().unwrap();
-                    component_item.is::<$type>()
-                }
-            );
-            if !value.is_some()
-            {
-                return;
-            }
-
-            res = Some(value.unwrap());
-            res
+            self.get_base_mut().is_enabled = state;
         }
     };
 }
 
-#[macro_export]
-macro_rules! shared_component_downcast
+// ******************** helper ********************
+
+pub fn find_component<T>(components: &Vec<ComponentItem>) -> Option<ComponentItem> where T: 'static
 {
-    ($component:expr, $type:ty) =>
+    if components.len() == 0
     {
+        return None;
+    }
+
+    let value = components.iter().find
+    (
+        |c|
         {
-            $component.downcast_ref::<$type>().unwrap()
+            let component = c.read().unwrap();
+            let component_item = component.as_any();
+            component_item.is::<T>()
         }
-    };
+    );
+
+    if !value.is_some()
+    {
+        return None;
+    }
+
+    Some(value.unwrap().clone())
 }
 
-#[macro_export]
-macro_rules! shared_component_downcast_mut
+pub fn find_component_by_id(components: &Vec<ComponentItem>, id: u64) -> Option<ComponentItem>
 {
-    ($component:expr, $type:ty) =>
+    if components.len() == 0
     {
+        return None;
+    }
+
+    let value = components.iter().find
+    (
+        |c|
         {
-            $component.downcast_mut::<$type>().unwrap()
+            let component = c.read().unwrap();
+            component.id() == id
         }
-    };
+    );
+
+    if !value.is_some()
+    {
+        return None;
+    }
+
+    Some(value.unwrap().clone())
 }
 
- */
+pub fn find_components<T: Component>(components: &Vec<ComponentItem>) -> Vec<ComponentItem> where T: 'static
+{
+    if components.len() == 0
+    {
+        return vec![];
+    }
+
+    let values: Vec<_> = components.iter().filter
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            let component_item = component.as_any();
+            component_item.is::<T>()
+        }
+    ).collect();
+
+    if values.len() == 0
+    {
+        return vec![];
+    }
+
+    values.iter().map(|component| Arc::clone(component)).collect()
+}
+
+pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) -> bool where T: 'static
+{
+    let index = components.iter().position
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            let component_item = component.as_any();
+            component_item.is::<T>()
+        }
+    );
+
+    if let Some(index) = index
+    {
+        components.remove(index);
+        return true;
+    }
+
+    false
+}
+
+pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> bool
+{
+    let index = components.iter().position
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            component.id() == id
+        }
+    );
+
+    if let Some(index) = index
+    {
+        components.remove(index);
+        return true;
+    }
+
+    false
+}
+
+// ******************** macros ********************
 
 #[macro_export]
-macro_rules! new_shared_component
+macro_rules! new_component
 {
     ($component:expr) =>
     {
@@ -174,11 +256,22 @@ macro_rules! new_shared_component
     };
 }
 
-/*
-let component = find_shared_component!(vec, Test).unwrap().read().unwrap();
-let bla = shared_component_downcast!(component, Test);
+#[macro_export]
+macro_rules! component_downcast
+{
+    ($component:ident, $type:ty) =>
+    {
+        let read = $component.read().unwrap();
+        let $component = read.as_any().downcast_ref::<$type>().unwrap();
+    };
+}
 
-//mut
-let mut component = find_shared_component_mut!(vec, Test).unwrap().write().unwrap();
-let bla = shared_component_downcast_mut!(component, Test);
- */
+#[macro_export]
+macro_rules! component_downcast_mut
+{
+    ($component:ident, $type:ty) =>
+    {
+        let mut write = $component.write().unwrap();
+        let $component = write.as_any_mut().downcast_mut::<$type>().unwrap();
+    };
+}

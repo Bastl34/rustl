@@ -1,13 +1,15 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 
 use instant::Instant;
-use nalgebra::{Vector3};
+use nalgebra::Vector3;
 
-use crate::helper::{change_tracker::ChangeTracker};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager};
 
-use super::scene::scene::SceneItem;
+use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::TextureType}, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
+
+pub const FPS_CHART_VALUES: usize = 100;
 
 pub struct AdapterFeatures
 {
@@ -27,18 +29,35 @@ pub struct Rendering
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
+
+    pub distance_sorting: bool,
+    pub create_mipmaps: bool,
+}
+
+pub struct SupportedFileTypes
+{
+    pub objects: Vec<String>,
+    pub textures: Vec<String>
 }
 
 pub struct State
 {
     pub adapter: AdapterFeatures,
     pub rendering: Rendering,
+    pub input_manager: InputManager,
+
+    pub main_thread_execution_queue: ExecutionQueueItem,
 
     pub running: bool,
     pub scenes: Vec<SceneItem>,
 
-    pub instances: u32,
-    pub rotation_speed: f32,
+    pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
+    pub supported_file_types: SupportedFileTypes,
+
+    pub in_focus: bool,
+
+    pub width: u32,
+    pub height: u32,
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -52,19 +71,40 @@ pub struct State
     pub fps: u32,
     pub last_fps: u32,
     pub fps_absolute: u32,
+    pub fps_chart: Vec<u32>,
 
     pub frame_update_time: u128,
     pub frame_scale: f32,
 
     pub frame_time: f32,
-    pub update_time: f32,
-    pub render_time: f32,
+
+    pub engine_update_time: f32,
+    pub engine_render_time: f32,
+
+    pub app_update_time: f32,
+
+    pub editor_update_time: f32,
+
+    pub egui_update_time: f32,
+    pub egui_render_time: f32,
+
+    pub frame: u64,
+
+    pub exit: bool,
 }
 
 impl State
 {
     pub fn new() -> State
     {
+        let mut components: Vec<(String, fn(u64, &str) -> ComponentItem)> = vec![];
+
+        components.push(("Alpha".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
+        components.push(("Material".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
+        //components.push(("Mesh".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
+        components.push(("Transform".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
+        components.push(("Transform Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
+
         Self
         {
             adapter: AdapterFeatures
@@ -83,14 +123,31 @@ impl State
                 v_sync: ChangeTracker::new(true),
 
                 fullscreen: ChangeTracker::new(false),
-                msaa: ChangeTracker::new(8)
+                msaa: ChangeTracker::new(8),
+
+                distance_sorting: true,
+                create_mipmaps: false
             },
+
+            input_manager: InputManager::new(),
+
+            main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
             running: false,
             scenes: vec![],
 
-            instances: 3,
-            rotation_speed: 0.01,
+            registered_components: components,
+
+            supported_file_types: SupportedFileTypes
+            {
+                objects: vec![String::from("obj"), String::from("gltf"), String::from("glb")],
+                textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png")],
+            },
+
+            in_focus: true,
+
+            width: 0,
+            height: 0,
 
             save_image: false,
             save_depth_pass_image: false,
@@ -103,14 +160,65 @@ impl State
             fps: 0,
             last_fps: 0,
             fps_absolute: 0,
+            fps_chart: vec![0; 100],
 
             frame_update_time: 0,
             frame_scale: 0.0,
 
             frame_time: 0.0,
-            update_time: 0.0,
-            render_time: 0.0,
+
+            engine_update_time: 0.0,
+            engine_render_time: 0.0,
+
+            app_update_time: 0.0,
+
+            editor_update_time: 0.0,
+
+            egui_update_time: 0.0,
+            egui_render_time: 0.0,
+
+            frame: 0,
+
+            exit: false
         }
+    }
+
+    pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
+    {
+        let path = path.to_string().clone();
+
+        //load default env texture
+        let main_queue = self.main_thread_execution_queue.clone();
+        spawn_thread(move ||
+        {
+            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None, true);
+        });
+    }
+
+    pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>
+    {
+        for scene in &self.scenes
+        {
+            if scene.id == id
+            {
+                return Some(&scene);
+            }
+        }
+
+        None
+    }
+
+    pub fn find_scene_by_id_mut(&mut self, id: u64) -> Option<&mut SceneItem>
+    {
+        for scene in &mut self.scenes
+        {
+            if scene.id == id
+            {
+                return Some(scene);
+            }
+        }
+
+        None
     }
 
     pub fn update(&mut self, time_delta: f32)
@@ -118,7 +226,7 @@ impl State
         // update scenes
         for scene in &mut self.scenes
         {
-            scene.update(time_delta);
+            scene.update(&mut self.input_manager, time_delta);
         }
     }
 
