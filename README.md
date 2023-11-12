@@ -6,17 +6,14 @@
 
 ## current state
 <img src="history/2023-11-12-2.png" width="720">
-<br>
 <sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
 <br><br>
 
 <img src="history/2023-10-05.png" width="720">
-<br>
 <sub>model from: https://sketchfab.com/3d-models/cathedral-faed84a829114e378be255414a7826ca</sub>
 <br><br>
 
 <img src="history/2023-11-12.png" width="720">
-<br>
 <sub>model from: https://sketchfab.com/3d-models/apocalyptic-city-a0c8f318ed6f4075a97c2e55b1272495</sub>
 <br><br>
 
