@@ -58,6 +58,7 @@ pub struct State
 
     pub width: u32,
     pub height: u32,
+    pub scale_factor: f32,
 
     pub save_image: bool,
     pub save_depth_pass_image: bool,
@@ -148,6 +149,7 @@ impl State
 
             width: 0,
             height: 0,
+            scale_factor: 1.0,
 
             save_image: false,
             save_depth_pass_image: false,

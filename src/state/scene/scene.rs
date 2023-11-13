@@ -1,9 +1,9 @@
-use std::{path::Path, collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
+use std::{collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
 
 use anyhow::Ok;
 use nalgebra::Vector3;
 use nalgebra::Point3;
-use parry3d::{query::Ray, transformation};
+use parry3d::query::Ray;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 

@@ -471,6 +471,8 @@ impl Editor
 
                     if let Some(pos) = pos
                     {
+                        let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
+
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
                             self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y));
