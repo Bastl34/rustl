@@ -453,6 +453,22 @@ impl Scene
                 }
             }
 
+            // ********** mark instances as updated **********
+            if all_instances_changed
+            {
+                {
+                    let node = nodes.get(node_id).unwrap();
+                    let node = node.read().unwrap();
+                    let instances = node.instances.get_ref();
+
+                    for instance in instances
+                    {
+                        let mut instance = instance.write().unwrap();
+                        instance.get_data_mut().consume_change();
+                    }
+                }
+            }
+
             {
                 /*
                 let node_arc = scene.nodes.get_mut(node_id).unwrap();

@@ -606,14 +606,36 @@ impl Scene
         false
     }
 
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    {
+        let mut nodes = vec![];
+
+        // check node itself
+        if node.read().unwrap().find_component::<Mesh>().is_some()
+        {
+            nodes.push(node.clone());
+        }
+
+        // check child meshes/nodes
+        let child_nodes_with_meshes = Scene::list_all_child_nodes_with_mesh(&node.read().unwrap().nodes);
+        nodes.extend(child_nodes_with_meshes);
+
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only)
+    }
+
     pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only)
+    }
+
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    {
         // find hits (bbox based)
         let mut hits = vec![];
 
-        for node_arc in &nodes
+        for node_arc in nodes
         {
             let node = node_arc.read().unwrap();
 
@@ -676,7 +698,7 @@ impl Scene
         }
 
         // sort bbox dist (to get the nearest)
-        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        hits.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
         if bounding_box_only && hits.len() > 0
         {
@@ -685,12 +707,13 @@ impl Scene
             let instance = first.1;
             let dist = first.2;
 
-            let dir = first.3 * (ray.dir.normalize() * dist).to_homogeneous();
-            let pos = ray.origin + dir.xyz();
+            //let dir = first.3 * (ray.dir.normalize() * dist).to_homogeneous();
+            //let pos = ray.origin + dir.xyz();
 
-            //let pos = ray.origin + (ray.dir * dist);
+            let pos = ray.origin + (ray.dir * dist);
 
             dbg!(" intersection 1");
+            dbg!(node.read().unwrap().name.clone());
 
             return Some((dist, pos, None, node.clone(), instance, None));
         }
@@ -719,12 +742,12 @@ impl Scene
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
                 if best_hit.is_none()
                 {
-                    //let pos = ray.origin + (ray.dir * intersection.0);
+                    let pos = ray.origin + (ray.dir * intersection.0);
 
                     dbg!(" intersection 2");
 
-                    let dir = transform* (ray.dir.normalize() * intersection.0).to_homogeneous();
-                    let pos = ray.origin + dir.xyz();
+                    //let dir = transform* (ray.dir.normalize() * intersection.0).to_homogeneous();
+                    //let pos = ray.origin + dir.xyz();
 
                     best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                 }
@@ -732,12 +755,12 @@ impl Scene
                 {
                     if intersection.0 < current_best_hit.0
                     {
-                        //let pos = ray.origin + (ray.dir * intersection.0);
+                        let pos = ray.origin + (ray.dir * intersection.0);
 
                         dbg!(" intersection 3");
 
-                        let dir = transform* (ray.dir.normalize() * intersection.0).to_homogeneous();
-                        let pos = ray.origin + dir.xyz();
+                        //let dir = transform* (ray.dir.normalize() * intersection.0).to_homogeneous();
+                        //let pos = ray.origin + dir.xyz();
 
                         best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                     }
