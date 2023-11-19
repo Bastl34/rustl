@@ -1,5 +1,5 @@
-use egui::{Ui, Color32, RichText};
-use egui_plot::{BarChart, Bar, Corner, Legend, Plot};
+use egui::{Ui, Color32, RichText, Stroke};
+use egui_plot::{BarChart, Bar, Corner, Legend, Plot, Line, PlotPoints, LineStyle, PlotPoint, Text};
 
 use crate::state::state::State;
 use super::editor_state::EditorState;
@@ -8,28 +8,50 @@ pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 {
     // https://github.com/emilk/egui/blob/master/crates/egui_demo_lib/src/demo/plot_demo.rs#L888
 
-    let chart = BarChart::new
-    (
-        state.fps_chart.iter().enumerate().map(|(i, value)|
-        {
-            //Bar::new((i - FPS_CHART_VALUES) as f64, *value as f64).width(0.05)
-            Bar::new(i as f64, *value as f64).width(0.05)
-        }).collect(),
-    )
-    .color(Color32::WHITE)
-    .name("FPS");
+    let fps_points: PlotPoints = state.fps_chart.iter().enumerate().map(|(i, value)|
+    {
+        [
+            i as f64,
+            *value as f64
+        ]
+    }).collect();
+
+    let mut color = Color32::GREEN;
+    if state.last_fps < 29
+    {
+        color = Color32::RED;
+    }
+    else if state.last_fps < 59
+    {
+        color = Color32::YELLOW;
+    }
+
+    let fps = Line::new(fps_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Solid).name("FPS");
 
     let legend = Legend::default().position(Corner::LeftTop);
 
-    Plot::new("FPS")
+    let plot = Plot::new("FPS")
         .legend(legend)
-        .clamp_grid(true)
         .y_axis_width(4)
-        .y_axis_position(egui_plot::HPlacement::Right)
-        .allow_zoom(false)
-        .height(120.0)
+        .show_axes(false)
+        .show_grid(true)
+        .auto_bounds_x()
+        .auto_bounds_y()
         .allow_drag(false)
-        .show(ui, |plot_ui| plot_ui.bar_chart(chart));
+        .allow_zoom(false)
+        .y_axis_position(egui_plot::HPlacement::Right)
+        .height(120.0);
+
+    plot.show(ui, |plot_ui|
+    {
+        plot_ui.line(fps);
+
+        // last FPS entry
+        let fps = format!("{:.1}", state.last_fps);
+        let pos = (state.fps_chart.len() + 5) as f32;
+        let text = RichText::new(fps).strong().size(12.0);
+        plot_ui.text(Text::new(PlotPoint::new(pos, state.last_fps), text).name("FPS"));
+    });
 }
 
 pub fn create_statistic(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)

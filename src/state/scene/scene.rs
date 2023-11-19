@@ -828,7 +828,7 @@ impl Scene
         {
             ui.label("Exposure:");
 
-            if ui.add(egui::DragValue::new(&mut exposure).clamp_range(0.0..=10.0).speed(0.1)).changed()
+            if ui.add(egui::DragValue::new(&mut exposure).clamp_range(0.0..=100.0).speed(0.1)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 

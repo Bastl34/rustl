@@ -46,10 +46,16 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
 
     ui.vertical(|ui|
     {
-        if editor_state.asset_type == AssetType::Object
+        ui.horizontal(|ui|
         {
-            ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
-        }
+            if editor_state.asset_type == AssetType::Object
+            {
+                ui.label("🔍");
+                ui.add(egui::TextEdit::singleline(&mut editor_state.asset_filter).desired_width(100.0));
+
+                ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
+            }
+        });
 
         ScrollArea::vertical().show(ui, |ui|
         {
@@ -60,6 +66,13 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
             {
                 for asset in items
                 {
+                    let filter = editor_state.asset_filter.to_lowercase();
+
+                    if !filter.is_empty() && asset.name.to_lowercase().find(filter.as_str()).is_none()
+                    {
+                        continue;
+                    }
+
                     let str_id = format!("{} asset", asset.path);
                     let item_id = Id::new(str_id.clone());
                     let name = asset.name.clone();
