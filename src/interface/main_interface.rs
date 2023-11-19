@@ -131,6 +131,7 @@ impl MainInterface
 
             state.width = width;
             state.height = height;
+            state.scale_factor = self.window.scale_factor() as f32;
 
             for scene in &mut state.scenes
             {

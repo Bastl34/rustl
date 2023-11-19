@@ -110,7 +110,14 @@ pub fn read_files_recursive(path: &str) -> Vec<String>
 
     let full_path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(path);
 
-    let paths = fs::read_dir(full_path.clone()).unwrap();
+    let paths = fs::read_dir(full_path.clone());
+
+    if paths.is_err()
+    {
+        return vec![];
+    }
+
+    let paths = paths.unwrap();
 
     let mut string_paths: Vec<String> = vec![];
 

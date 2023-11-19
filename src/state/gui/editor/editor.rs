@@ -266,7 +266,7 @@ impl Editor
         if !self.editor_state.selected_object.is_empty()
         {
             //if state.input_manager.keyboard.is_pressed(Key::X) || state.input_manager.keyboard.is_pressed(Key::Delete)
-            if state.input_manager.keyboard.is_pressed(Key::Delete)
+            if state.input_manager.keyboard.is_pressed(Key::Delete) || state.input_manager.keyboard.is_pressed(Key::Backspace)
             {
                 // object
                 if self.editor_state.selected_type == SelectionType::Object
@@ -364,19 +364,56 @@ impl Editor
                 }
             };
 
+            /*
             if allow_grid_picking
             {
                 set_grid_picking(scene, true);
             }
+            */
 
             for camera in &scene.cameras
             {
                 // check if click is insight
                 if camera.is_point_in_viewport(&pos)
                 {
+                    dbg!(allow_grid_picking);
                     let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
 
-                    let new_hit = scene.pick(&ray, false, allow_grid_picking);
+                    let mut grid_hit = None;
+                    if allow_grid_picking
+                    {
+                        let grid = scene.find_node_by_name("grid");
+                        if let Some(grid) = grid
+                        {
+                            set_grid_picking(scene, true);
+                            grid_hit = scene.pick_node(grid, &ray, false, true);
+                            set_grid_picking(scene, false);
+                        }
+                    }
+
+                    let scene_hit = scene.pick(&ray, false, false);
+
+                    dbg!(scene_hit.is_some());
+                    dbg!(grid_hit.is_some());
+
+                    // check if grid hit is closer or scene hit
+                    let mut new_hit = grid_hit;
+                    if let Some(scene_hit_ref) = scene_hit.as_ref()
+                    {
+                        if let Some(new_hit_ref) = new_hit.as_ref()
+                        {
+                            if scene_hit_ref.0 < new_hit_ref.0
+                            {
+                                new_hit = scene_hit;
+                            }
+                        }
+                        else
+                        {
+                            new_hit = scene_hit;
+                        }
+                    }
+
+                    dbg!(new_hit.is_some());
 
                     let mut save_hit = false;
 
@@ -404,10 +441,12 @@ impl Editor
                 }
             }
 
+            /*
             if allow_grid_picking
             {
                 set_grid_picking(scene, false);
             }
+            */
         }
 
         if let Some(hit) = hit
@@ -432,6 +471,8 @@ impl Editor
 
                     if let Some(pos) = pos
                     {
+                        let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
+
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
                             self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y));
