@@ -9,6 +9,9 @@ todo:
  * winit + wgpu update
  * deadlock while asset loading
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
+ * memory leak
+ * dead lock while loading an object/scene (just sometimes)
+ * rework id manager to use arc rwlock (to prevent the need of execute_on_scene_mut_and_wait)
 
 done:
  * get rid of async stuff -> use exec queue

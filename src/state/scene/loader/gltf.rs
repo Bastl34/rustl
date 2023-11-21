@@ -105,21 +105,47 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
         root_node = Some(node.clone());
     }
 
-    dbg!("applying scene items...");
+    dbg!("------");
+    dbg!(path);
+    dbg!(create_root_node);
+
+    dbg!("reading nodes...");
+    let mut scene_nodes = vec![];
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
         {
-            let ids = read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
-            loaded_ids.extend(ids);
+            let nodes = read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
+            scene_nodes.extend(nodes.clone());
+
+            let all_nodes = Scene::list_all_child_nodes(&nodes);
+
+            for node in all_nodes
+            {
+                loaded_ids.push(node.read().unwrap().id);
+            }
+
         }
     }
 
+    // ********** add to scene **********
+    dbg!("adding nodes to scene...");
     if let Some(root_node) = root_node
     {
         execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
         {
             scene.add_node(root_node.clone());
+        }));
+    }
+
+    if scene_nodes.len() > 0
+    {
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+        {
+            for scene_node in &scene_nodes
+            {
+                scene.add_node(scene_node.clone());
+            }
         }));
     }
 
@@ -136,11 +162,11 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_ro
     Ok(loaded_ids)
 }
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>, level: usize) -> Vec<u64>
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: Option<NodeItem>, parent_transform: &Matrix4<f32>, level: usize) -> Vec<Arc<RwLock<Box<Node>>>>
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
-    let mut loaded_ids: Vec<u64> = vec![];
+    //let mut loaded_ids: Vec<u64> = vec![];
     let mut scene_nodes = vec![];
 
     let local_transform = transform_to_matrix(node.transform());
@@ -171,6 +197,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 gltf::khr_lights_punctual::Kind::Directional =>
                 {
                     let name = light.name().unwrap_or("Directional").to_string();
+                    println!("load light {}", name.as_str());
                     let name = Arc::new(name);
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
@@ -182,22 +209,24 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 gltf::khr_lights_punctual::Kind::Point =>
                 {
                     let name = light.name().unwrap_or("Point").to_string();
-                    let name = Arc::new(RwLock::new(name)); // TODOO
+                    println!("load light {}", name.as_str());
+                    let name = Arc::new(name);
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_point(light_id, name.read().unwrap().clone(), pos, color, intensity);
+                        let light = Light::new_point(light_id, (*name).clone(), pos, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
                 gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle: _, outer_cone_angle } =>
                 {
                     let name = light.name().unwrap_or("Point").to_string();
-                    let name = Arc::new(RwLock::new(name)); // TODOO
+                    println!("load light {}", name.as_str());
+                    let name = Arc::new(name);
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_spot(light_id, name.read().unwrap().clone(), pos, dir, color, outer_cone_angle, intensity);
+                        let light = Light::new_spot(light_id, (*name).clone(), pos, dir, color, outer_cone_angle, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -213,6 +242,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let cam_id = get_new_camera_id(main_queue.clone(), scene_id);
             let name = camera.name().unwrap_or("Unnamed Camera").to_string();
             let name = Arc::new(name);
+
+            println!("load camera {}", name.as_str());
 
             //https://github.com/flomonster/easy-gltf/blob/master/src/scene/camera.rs
             let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
@@ -259,6 +290,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
         for (primitive_id, primitive) in mesh.primitives().enumerate()
         {
             let mut name = mesh.name().unwrap_or("unknown mesh").to_string();
+
+            println!("load mesh {}", name.as_str());
 
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
@@ -355,7 +388,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             item.get_data_mut().get_mut().uvs_3 = uvs3;
 
             let id = get_new_node_id(main_queue.clone(), scene_id);
-            loaded_ids.push(id);
+            //loaded_ids.push(id);
 
             if primitives_amount > 1
             {
@@ -424,6 +457,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
         if node.children().len() > 0
         {
             let name = node.name().unwrap_or("transform node");
+            println!("load empty {}", name);
+
             let node_id = get_new_node_id(main_queue.clone(), scene_id);
             let scene_node = Node::new(node_id, name);
 
@@ -450,20 +485,11 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     // ********** children **********
     for child in node.children()
     {
-        let ids = read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
-        loaded_ids.extend(ids);
+        let loaded_nodes = read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
+        scene_nodes.extend(loaded_nodes);
     }
 
-    // ********** add to scene **********
-    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
-    {
-        for scene_node in &scene_nodes
-        {
-            scene.add_node(scene_node.clone());
-        }
-    }));
-
-    loaded_ids
+    scene_nodes
 }
 
 pub fn transform_to_matrix(transform: gltf::scene::Transform) -> Matrix4<f32>
