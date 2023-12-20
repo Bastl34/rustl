@@ -7,28 +7,28 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-simple_logger = "4.1.0"
+simple_logger = "4.3.0"
 log = "0.4"
 cfg-if = "1"
-wgpu = "0.17.1"
-bytemuck = { version = "1.13.1", features = [ "derive" ] }
+wgpu = "0.18.0"
+bytemuck = { version = "1.14.0", features = [ "derive" ] }
 instant = "0.1"
 winit = "0.28.7"
 anyhow = "1.0"
 nalgebra = "0.32.3"
 sha256 = "1.4.0"
-colored = "2.0.4"
+colored = "2.1.0"
 base64 = "0.21"
 strum = "0.25"
 strum_macros = "0.25"
-rfd = "0.12.0"
+rfd = "0.12.1"
 
 parry3d = "0.13"
 bvh = "0.7"
 
 tobj = { version = "4.0", features = ["async"]}
 
-gltf = { version = "1.3.0", features = [
+gltf = { version = "1.4.0", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
@@ -41,15 +41,15 @@ gltf = { version = "1.3.0", features = [
 image = { version = "0.24.7", default-features = false, features = [ "png", "jpeg"] }
 # image = "0.24.5"
 
-egui = "0.23.0"
-egui-wgpu = "0.23.0"
-egui_plot = "0.23.0"
+egui = "0.24.1"
+egui-wgpu = "0.24.1"
+egui_plot = "0.24.1"
 #egui = { git = "https://github.com/emilk/egui" }
 #egui-wgpu = { git = "https://github.com/emilk/egui" }
 #egui_plot = { git = "https://github.com/emilk/egui" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.23.0"
+egui-winit = "0.24.1"
 #egui-winit = { git ="https://github.com/emilk/egui" }
 pollster = "0.3.0"
 
@@ -57,7 +57,7 @@ pollster = "0.3.0"
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.11"
-wgpu = { version = "0.17", features = ["webgl"]}
+wgpu = { version = "0.18", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
@@ -68,7 +68,7 @@ web-sys = { version = "0.3", features = [
 ]}
 wasm_thread = { version = "0.2.0", features = ["es_modules"]}
 
-egui-winit = { version = "0.23.0", default-features = false, features = [
+egui-winit = { version = "0.24.1", default-features = false, features = [
 #egui-winit = { git ="https://github.com/emilk/egui", version = "0.22.0", default-features = false, features = [
   "links",
 ] }
