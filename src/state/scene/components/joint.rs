@@ -1,10 +1,11 @@
-use std::any::Any;
-
 use nalgebra::Matrix4;
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemArc}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast};
+use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::NodeItem, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast};
 
-use super::{component::{ComponentBase, Component}, transformation::Transformation};
+use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
+
+
+pub type JointItem = ComponentItem;
 
 pub struct JointData
 {
@@ -13,6 +14,7 @@ pub struct JointData
     pub inverse_bind_trans: Matrix4<f32>,
     pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
+    pub animation_weight: f32,
     pub animation_update_frame: Option<u64>,
     pub animation_trans: Option<Matrix4<f32>>
 }
@@ -34,6 +36,7 @@ impl Joint
             inverse_bind_trans: Matrix4::<f32>::identity(),
             inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
 
+            animation_weight: 0.0,
             animation_update_frame: None,
             animation_trans: None,
         };
@@ -68,12 +71,20 @@ impl Joint
 
         if let Some(animation_trans) = joint_data.animation_trans
         {
-            //joint_data.local_trans * animation_trans
-            animation_trans
+            if joint_data.animation_weight < 1.0
+            {
+                // animation blending - blend the animation with the initial pose if weight is smaller as 1.0
+                (joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
+            }
+            else
+            {
+                animation_trans
+            }
         }
         else
         {
             joint_data.local_trans
+            //Matrix4::<f32>::identity()
         }
     }
 }

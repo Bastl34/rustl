@@ -422,20 +422,18 @@ impl Scene
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            dbg!("---------------------------------- OK");
-                            dbg!(&node.name);
+                            //dbg!("---------------------------------- OK");
 
                             // consume changes
-                            Self::consume_changed_joints(skin_root_node.clone());
+                            //Self::consume_changed_joints(skin_root_node.clone());
 
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &joint_matrices);
                             node.skeleton_render_item = Some(Box::new(skeleton_buffer));
                         }
                     }
-                    else if Self::consume_changed_joints(skin_root_node.clone())
+                    else if Self::has_changed_joints(skin_root_node.clone())
                     {
-                        dbg!("---------------------------------- OK 2");
-                        dbg!(&node.name);
+                        //dbg!("---------------------------------- OK 2");
 
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
                         if let Some(joint_matrices) = joint_matrices
@@ -573,7 +571,7 @@ impl Scene
         }
     }
 
-    pub fn consume_changed_joints(root_node: Arc<RwLock<Box<Node>>>) -> bool
+    pub fn has_changed_joints(root_node: Arc<RwLock<Box<Node>>>) -> bool
     {
         let root_node_clone = root_node.clone();
 
@@ -594,8 +592,6 @@ impl Scene
 
         all_nodes.extend(child_nodes);
 
-        let mut changed = false;
-
         for node in &all_nodes
         {
             let node = node.read().unwrap();
@@ -611,88 +607,36 @@ impl Scene
             {
                 component_downcast_mut!(joint_component, Joint);
 
-                if joint_component.get_data_mut().consume_change()
-                {
-                    changed = true;
-                }
-            }
-        }
-
-        changed
-    }
-
-    /*
-    pub fn find_changed_parent_data(node: Arc<RwLock<Box<Node>>>) -> bool
-    {
-        let node_read = node.read().unwrap();
-        let parent_arc = node_read.parent.clone();
-
-        let mut has_changed_data = false;
-        if let Some(parent_arc) = parent_arc
-        {
-            let parent = parent_arc.read().unwrap();
-            let trans_component = parent.find_component::<Transformation>();
-            let alpha_component = parent.find_component::<Alpha>();
-
-            if let Some(trans_component) = trans_component
-            {
-                component_downcast!(trans_component, Transformation);
-
-                has_changed_data = has_changed_data || trans_component.get_data_tracker().changed();
-                if has_changed_data
+                if joint_component.get_data_mut().changed()
                 {
                     return true;
                 }
-            }
-
-            if let Some(alpha_component) = alpha_component
-            {
-                component_downcast!(alpha_component, Alpha);
-
-                has_changed_data = has_changed_data || alpha_component.get_data_tracker().changed();
-                if has_changed_data
-                {
-                    return true;
-                }
-            }
-
-            if parent.parent.is_some()
-            {
-                has_changed_data = has_changed_data || Scene::find_changed_parent_data(parent_arc.clone())
-            }
-        }
-
-        has_changed_data
-    }
-
-    pub fn find_changed_instance_data(instance: &Box<Instance>) -> bool
-    {
-        // transformation check
-        let trans_component = instance.find_component::<Transformation>();
-        if let Some(trans_component) = trans_component
-        {
-            component_downcast_mut!(trans_component, Transformation);
-            if trans_component.get_data_mut().consume_change()
-            {
-                return true;
-            }
-        }
-
-        // alpha check
-        let alpha_component = instance.find_component::<Alpha>();
-        if let Some(alpha_component) = alpha_component
-        {
-            component_downcast_mut!(alpha_component, Alpha);
-
-            if alpha_component.get_data_mut().consume_change()
-            {
-                return true;
             }
         }
 
         false
     }
-    */
+
+    pub fn consume_changed_joints(nodes: &Vec<Arc<RwLock<Box<Node>>>>)
+    {
+        for node in nodes
+        {
+            let node = node.read().unwrap();
+            let joint_component = node.find_component::<Joint>();
+
+            if joint_component.is_none()
+            {
+                continue;
+            }
+
+            if let Some(joint_component) = joint_component
+            {
+                component_downcast_mut!(joint_component, Joint);
+
+                joint_component.get_data_mut().consume_change();
+            }
+        }
+    }
 
     pub fn update(&mut self, wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene)
     {
@@ -731,6 +675,7 @@ impl Scene
 
         let mut all_nodes = Scene::list_all_child_nodes(&scene.nodes, false);
         self.update_nodes(wgpu, &mut all_nodes);
+        Self::consume_changed_joints(&all_nodes);
 
         // ********** screenshot stuff **********
         if state.save_image

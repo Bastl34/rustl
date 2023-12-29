@@ -1,10 +1,10 @@
-use std::{any::Any, os::windows::process, ops::Mul};
+use std::collections::HashMap;
 
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::interpolate_vec3}, component_impl_default, state::scene::{node::{NodeItem, InstanceItemArc}, components::joint::Joint}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast, component_downcast_mut};
+use crate::{helper::math::{interpolate_vec3, approx_zero}, component_impl_default, state::scene::{node::NodeItem, components::joint::Joint}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
 
-use super::{component::{ComponentBase, Component}, transformation::Transformation};
+use super::{component::{ComponentBase, Component}, joint::JointItem};
 
 pub enum Interpolation
 {
@@ -120,10 +120,9 @@ impl Animation
             {
                 component_downcast_mut!(joint, Joint);
 
-                let data = joint.get_data_mut().get_mut();
-
                 joint.get_data_mut().get_mut().animation_trans = None;
                 joint.get_data_mut().get_mut().animation_update_frame = None;
+                joint.get_data_mut().get_mut().animation_weight = 0.0;
             }
         }
     }
@@ -147,7 +146,7 @@ impl Component for Animation
         }
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, frame: u64)
     {
         if self.reset
         {
@@ -184,26 +183,41 @@ impl Component for Animation
             let local_timestamp = (((time - start_time) as f64) / 1000.0 / 1000.0) as f32;
             self.current_time = local_timestamp;
 
+            let mut joint_map: HashMap<u64, (JointItem, Matrix4::<f32>)> = HashMap::new();
+
+            // ********** reset joints (if needed) **********
             for channel in &self.channels
             {
-                let mut joint;
+                let target = channel.target.write().unwrap();
+                let joint = target.find_component::<Joint>();
+
+                if let Some(joint) = joint
+                {
+                    let joint_clone = joint.clone();
+
+                    component_downcast_mut!(joint, Joint);
+
+                    let data = joint.get_data_mut().get_mut();
+
+                    if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                    {
+                        joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
+                        joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
+                        joint.get_data_mut().get_mut().animation_weight = 0.0;
+                    }
+
+                    joint_map.insert(joint.id(), (joint_clone, Matrix4::<f32>::identity()));
+                }
+            }
+
+            // ********** calculate animation matrix **********
+            for channel in &self.channels
+            {
+                let joint;
                 {
                     let target = channel.target.write().unwrap();
 
                     joint = target.find_component::<Joint>();
-
-                    if let Some(joint) = joint.as_mut()
-                    {
-                        component_downcast_mut!(joint, Joint);
-
-                        let data = joint.get_data_mut().get_mut();
-
-                        if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
-                        {
-                            joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
-                            joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
-                        }
-                    }
                 }
 
                 if joint.is_none()
@@ -214,8 +228,7 @@ impl Component for Animation
                 }
 
                 let joint = joint.unwrap();
-                component_downcast_mut!(joint, Joint);
-                let joint_data = joint.get_data_mut().get_mut();
+                let joint_id = joint.read().unwrap().id();
 
                 // ********** only one item per channel **********
                 if channel.timestamps.len() == 0
@@ -240,8 +253,8 @@ impl Component for Animation
                         },
                     };
 
-                    let joint_trans: &mut nalgebra::Matrix<f32, nalgebra::Const<4>, nalgebra::Const<4>, nalgebra::ArrayStorage<f32, 4, 4>> = joint_data.animation_trans.as_mut().unwrap();
-                    *joint_trans = *joint_trans * transform;
+                    let joint_item = joint_map.get_mut(&joint_id).unwrap();
+                    joint_item.1 = joint_item.1 * transform;
                 }
                 // ********** some items per channel **********
                 else
@@ -325,8 +338,8 @@ impl Component for Animation
                                 },
                             };
 
-                            let joint_trans: &mut nalgebra::Matrix<f32, nalgebra::Const<4>, nalgebra::Const<4>, nalgebra::ArrayStorage<f32, 4, 4>> = joint_data.animation_trans.as_mut().unwrap();
-                            *joint_trans = *joint_trans * transform;
+                            let joint_item = joint_map.get_mut(&joint_id).unwrap();
+                            joint_item.1 = joint_item.1 * transform;
                         }
                         (TransformationProperty::Rotation(rot0), TransformationProperty::Rotation(rot1)) =>
                         {
@@ -364,8 +377,8 @@ impl Component for Animation
                                 },
                             };
 
-                            let joint_trans: &mut nalgebra::Matrix<f32, nalgebra::Const<4>, nalgebra::Const<4>, nalgebra::ArrayStorage<f32, 4, 4>> = joint_data.animation_trans.as_mut().unwrap();
-                            *joint_trans = *joint_trans * transform;
+                            let joint_item = joint_map.get_mut(&joint_id).unwrap();
+                            joint_item.1 = joint_item.1 * transform;
                         }
                         (TransformationProperty::Scale(scale0), TransformationProperty::Scale(scale1)) =>
                         {
@@ -397,15 +410,38 @@ impl Component for Animation
                                 },
                             };
 
-                            let joint_trans: &mut nalgebra::Matrix<f32, nalgebra::Const<4>, nalgebra::Const<4>, nalgebra::ArrayStorage<f32, 4, 4>> = joint_data.animation_trans.as_mut().unwrap();
-                            *joint_trans = *joint_trans * transform;
+                            let joint_item = joint_map.get_mut(&joint_id).unwrap();
+                            joint_item.1 = joint_item.1 * transform;
                         }
-                        _ =>
-                        {
-                            // not possible
-                        }
+                        _ =>{} // not possible
                     }
                 }
+            }
+
+            // ********** apply animation matrix with weight **********
+            for (_, joint_item) in joint_map
+            {
+                let joint = joint_item.0;
+                component_downcast_mut!(joint, Joint);
+                let joint_data = joint.get_data_mut().get_mut();
+
+                let animation_trans = joint_data.animation_trans.as_mut().unwrap();
+
+                // apply if its the first one
+                if approx_zero(joint_data.animation_weight)
+                {
+                    *animation_trans = joint_item.1 * self.weight;
+                }
+                // add if its not the first one
+                else
+                {
+                    // animation blending - blend this animation with the prev one
+                    *animation_trans = *animation_trans + (joint_item.1 * self.weight);
+                }
+
+                joint_data.animation_weight += self.weight;
+
+
             }
         }
     }
@@ -415,6 +451,8 @@ impl Component for Animation
         ui.label(format!("Channels: {}", self.channels.len()));
 
         ui.checkbox(&mut self.looped, "Loop");
+
+        ui.add(egui::Slider::new(&mut self.weight, 0.0..=1.0).fixed_decimals(2).text("Weight"));
 
         ui.vertical(|ui|
         {
