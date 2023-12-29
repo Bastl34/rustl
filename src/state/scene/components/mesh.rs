@@ -1,9 +1,11 @@
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::{TriMesh, FeatureId}, bounding_volume::Aabb, query::{Ray, RayCast}};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem, component_impl_no_update, component_impl_set_enabled};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::scene::{node::NodeItem, components::mesh}, component_impl_no_update, component_impl_set_enabled};
 
 use super::component::{Component, ComponentBase};
+
+pub const JOINTS_LIMIT: usize = 4;
 
 pub struct MeshData
 {
@@ -19,6 +21,9 @@ pub struct MeshData
 
     pub normals: Vec<Vector3<f32>>,
     pub normals_indices: Vec<[u32; 3]>,
+
+    pub joints: Vec<[u32; JOINTS_LIMIT]>,
+    pub weights: Vec<[f32; JOINTS_LIMIT]>,
 
     pub flip_normals: bool,
     pub b_box: Aabb,
@@ -38,6 +43,9 @@ impl MeshData
 
         self.normals.clear();
         self.normals_indices.clear();
+
+        self.joints.clear();
+        self.weights.clear();
 
         // "empty" triangle
         let triangle = [ Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0) ];
@@ -59,19 +67,23 @@ impl Mesh
 {
     pub fn new_with_data(id: u64, name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Vector3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
-        let mesh_data = MeshData
+        let mut mesh_data = MeshData
         {
             mesh: TriMesh::new(vertices.clone(), indices.clone()),
 
             vertices: vertices,
             indices: indices,
-            normals: normals,
-            normals_indices: normals_indices,
 
             uvs_1: uvs,
             uvs_2: vec![],
             uvs_3: vec![],
             uv_indices: uv_indices,
+
+            normals: normals,
+            normals_indices: normals_indices,
+
+            joints: vec![],
+            weights: vec![],
 
             flip_normals: false,
             b_box: Aabb::new_invalid(),
@@ -84,6 +96,12 @@ impl Mesh
         };
 
         mesh.calc_bbox();
+
+        // create normals if needed
+        if mesh.get_data().vertices.len() > 0 && mesh.get_data().normals.len() == 0 && mesh.get_data().indices.len() > 0
+        {
+            mesh.create_normals();
+        }
 
         mesh
     }
@@ -107,6 +125,12 @@ impl Mesh
 
         mesh.calc_bbox();
 
+        // create normals if needed
+        if mesh.get_data().vertices.len() > 0 && mesh.get_data().normals.len() == 0 && mesh.get_data().indices.len() > 0
+        {
+            mesh.create_normals();
+        }
+
         mesh
     }
 
@@ -127,6 +151,32 @@ impl Mesh
     pub fn get_data_mut(&mut self) -> &mut ChangeTracker<MeshData>
     {
         &mut self.data
+    }
+
+    pub fn create_normals(&mut self)
+    {
+        let mut mesh_data = self.get_data_mut().get_mut();
+        mesh_data.normals.clear();
+        mesh_data.normals_indices.clear();
+
+        //for i in (0..mesh_data.vertices.len()).step_by(3)
+        for face in &mesh_data.indices
+        {
+            let i0 = face[0];
+            let i1 = face[1];
+            let i2 = face[2];
+
+            let v0 = mesh_data.vertices.get(i0 as usize).unwrap();
+            let v1 = mesh_data.vertices.get(i1 as usize).unwrap();
+            let v2 = mesh_data.vertices.get(i2 as usize).unwrap();
+
+            let normal = calculate_normal(v0, v1, v2);
+            mesh_data.normals.push(normal);
+            mesh_data.normals.push(normal);
+            mesh_data.normals.push(normal);
+
+            mesh_data.normals_indices.push([i0, i1, i2]);
+        }
     }
 
     fn calc_bbox(&mut self)
@@ -420,6 +470,21 @@ impl Component for Mesh
 
     fn ui(&mut self, ui: &mut egui::Ui)
     {
+        let data = self.get_data();
+        ui.label(format!(" ⚫ vertices: {}", data.vertices.len()));
+        ui.label(format!(" ⚫ indices: {}", data.indices.len()));
 
+        ui.label(format!(" ⚫ uvs_1: {}", data.uvs_1.len()));
+        ui.label(format!(" ⚫ uvs_2: {}", data.uvs_2.len()));
+        ui.label(format!(" ⚫ uvs_3: {}", data.uvs_3.len()));
+        ui.label(format!(" ⚫ uv_indices: {}", data.uv_indices.len()));
+
+        ui.label(format!(" ⚫ normals: {}", data.normals.len()));
+        ui.label(format!(" ⚫ normals_indices: {}", data.normals_indices.len()));
+
+        ui.label(format!(" ⚫ joints: {}", data.joints.len()));
+        ui.label(format!(" ⚫ weights: {}", data.weights.len()));
+
+        ui.label(format!(" ⚫ flip_normals: {}", data.flip_normals));
     }
 }

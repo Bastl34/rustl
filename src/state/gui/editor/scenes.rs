@@ -15,6 +15,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     }
 
     let scene_id = scene_id.unwrap();
+    let max_tex_res = state.max_texture_resolution();
     let scene = state.find_scene_by_id_mut(scene_id);
 
     if scene.is_none()
@@ -181,7 +182,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
                     spawn_thread(move ||
                     {
-                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None, true);
+                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None, true, max_tex_res);
                     });
                 }
             });

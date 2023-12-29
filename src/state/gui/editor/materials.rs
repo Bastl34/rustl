@@ -51,6 +51,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     let main_queue = state.main_thread_execution_queue.clone();
     let mipmapping = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
 
     let scene = state.find_scene_by_id_mut(scene_id);
     if scene.is_none() { return; }
@@ -196,7 +197,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                                 let main_queue = main_queue.clone();
                                 spawn_thread(move ||
                                 {
-                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping);
+                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping, max_tex_res);
                                 });
                             }
                         });

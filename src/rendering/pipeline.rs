@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use wgpu::{ShaderModule, Device, BindGroupLayout};
 
-use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance};
+use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance, skeleton::MAX_JOINTS};
 
 pub struct Pipeline
 {
@@ -50,6 +50,7 @@ impl Pipeline
         let mut shader = shader_source.clone();
 
         shader = shader.replace("[MAX_LIGHTS]", format!("{}", max_lights).as_str());
+        shader = shader.replace("[MAX_JOINTS]", format!("{}", MAX_JOINTS).as_str());
 
         shader
     }

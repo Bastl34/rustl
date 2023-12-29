@@ -3,12 +3,13 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
 use nalgebra::{Point3, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType, joint::Joint}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::{self, SkeletonBuffer}};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
+type StateScene = crate::state::scene::scene::Scene;
 
 pub struct RenderData<'a>
 {
@@ -61,6 +62,8 @@ pub struct Scene
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
+
+    empty_skeleton: SkeletonBuffer
 }
 
 impl RenderItem for Scene
@@ -94,6 +97,8 @@ impl Scene
 
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
             depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
+
+            empty_skeleton: SkeletonBuffer::empty(wgpu)
         };
 
         render_scene.to_buffer(wgpu, scene);
@@ -148,10 +153,13 @@ impl Scene
         let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
         let material_bind_layout = material_render_item.bind_group_layout.as_ref().unwrap();
 
+        let skeleton_bind_layout = SkeletonBuffer::bind_layout(wgpu);
+
         let bind_group_layouts =
         [
             material_bind_layout,
-            &light_cam_scene_bind_layout
+            &light_cam_scene_bind_layout,
+            &skeleton_bind_layout
         ];
 
         // ********** depth pass **********
@@ -401,6 +409,44 @@ impl Scene
                 }
             }
 
+            // ********** skeleton **********
+            {
+                let node = nodes.get_mut(node_id).unwrap();
+
+                let mut node = node.write().unwrap();
+
+                if let Some(skin_root_node) = &node.skin_root_node
+                {
+                    if node.skeleton_render_item.is_none()
+                    {
+                        let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
+                        if let Some(joint_matrices) = joint_matrices
+                        {
+                            dbg!("---------------------------------- OK");
+                            dbg!(&node.name);
+
+                            // consume changes
+                            Self::consume_changed_joints(skin_root_node.clone());
+
+                            let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &joint_matrices);
+                            node.skeleton_render_item = Some(Box::new(skeleton_buffer));
+                        }
+                    }
+                    else if Self::consume_changed_joints(skin_root_node.clone())
+                    {
+                        dbg!("---------------------------------- OK 2");
+                        dbg!(&node.name);
+
+                        let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
+                        if let Some(joint_matrices) = joint_matrices
+                        {
+                            let render_item = get_render_item_mut::<SkeletonBuffer>(node.skeleton_render_item.as_mut().unwrap());
+                            render_item.update_buffer(wgpu, &joint_matrices);
+                        }
+                    }
+                }
+            }
+
             // ********** instances all **********
             let mut all_instances_changed;
             {
@@ -525,6 +571,54 @@ impl Scene
                 }
             }
         }
+    }
+
+    pub fn consume_changed_joints(root_node: Arc<RwLock<Box<Node>>>) -> bool
+    {
+        let root_node_clone = root_node.clone();
+
+        // check if node has a joint -> otherwise its not relevant
+        let root_node = root_node.read().unwrap();
+        {
+            let joint_component = root_node.find_component::<Joint>();
+
+            if joint_component.is_none()
+            {
+                return false;
+            }
+        }
+
+        // check root and all child elements
+        let mut all_nodes = [root_node_clone].to_vec();
+        let child_nodes = StateScene::list_all_child_nodes(&root_node.nodes);
+
+        all_nodes.extend(child_nodes);
+
+        let mut changed = false;
+
+        for node in &all_nodes
+        {
+            let node = node.read().unwrap();
+            let joint_component = node.find_component::<Joint>();
+
+            if joint_component.is_none()
+            {
+                continue;
+            }
+
+            // check root node
+            if let Some(joint_component) = joint_component
+            {
+                component_downcast_mut!(joint_component, Joint);
+
+                if joint_component.get_data_mut().consume_change()
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        changed
     }
 
     /*
@@ -1114,6 +1208,18 @@ impl Scene
                     pass.set_pipeline(&pipeline.get());
                     pass.set_bind_group(0, material_bind_group, &[]);
                     pass.set_bind_group(1, light_cam_bind_group, &[]);
+
+                    // skeleton
+                    let skeleton_render_item = node.skeleton_render_item.as_ref();
+                    if let Some(skeleton_render_item) = skeleton_render_item
+                    {
+                        let skeleton_buffer = get_render_item::<SkeletonBuffer>(skeleton_render_item);
+                        pass.set_bind_group(2, skeleton_buffer.bind_group.as_ref().unwrap(), &[]);
+                    }
+                    else
+                    {
+                        pass.set_bind_group(2, self.empty_skeleton.bind_group.as_ref().unwrap(), &[]);
+                    }
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
 

@@ -1,6 +1,7 @@
 use crate::{state::{scene::components::mesh::{Mesh, MeshData}, helper::render_item::RenderItem}, render_item_impl_default};
 
 use super::wgpu::WGpu;
+use gltf::mesh::util::joints;
 use nalgebra::{Point2, Vector3, Vector2};
 use wgpu::util::DeviceExt;
 
@@ -10,14 +11,31 @@ pub struct Vertex
 {
     position: [f32; 3],
     tex_coords: [f32; 2],
+
     normal: [f32; 3],
     tangent: [f32; 3],
     bitangent: [f32; 3],
+
+    joints: [u32; 4],
+    weights: [f32; 4],
 }
+
+pub const VERTEX_ATTRIBUTES_AMOUNT: usize = 7;
 
 impl Vertex
 {
-    const ATTRIBS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x3, 3 => Float32x3, 4 => Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; VERTEX_ATTRIBUTES_AMOUNT] = wgpu::vertex_attr_array!
+    [
+        0 => Float32x3,
+        1 => Float32x2,
+
+        2 => Float32x3,
+        3 => Float32x3,
+        4 => Float32x3,
+
+        5 => Uint32x4,
+        6 => Float32x4
+    ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
@@ -80,6 +98,27 @@ impl VertexBuffer
             tangent = tangent.normalize();
             let bitangent = n.cross(&tangent).normalize();
 
+            let mut joints = [0, 0, 0, 0];
+            let mut weights = [0.0, 0.0, 0.0, 0.0];
+
+            let joints_data = mesh_data.joints.get(i);
+            if let Some(joints_data) = joints_data
+            {
+                joints[0] = joints_data[0];
+                joints[1] = joints_data[1];
+                joints[2] = joints_data[2];
+                joints[3] = joints_data[3];
+            }
+
+            let weights_data = mesh_data.weights.get(i);
+            if let Some(weights_data) = weights_data
+            {
+                weights[0] = weights_data[0];
+                weights[1] = weights_data[1];
+                weights[2] = weights_data[2];
+                weights[3] = weights_data[3];
+            }
+
             vertices.push(Vertex
             {
                 position: [v.x, v.y, v.z],
@@ -87,6 +126,8 @@ impl VertexBuffer
                 normal: [n.x, n.y, n.z],
                 tangent: [tangent.x, tangent.y, tangent.z],
                 bitangent: [bitangent.x, bitangent.y, bitangent.z],
+                joints,
+                weights
             });
         }
 

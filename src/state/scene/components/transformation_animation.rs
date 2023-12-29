@@ -1,5 +1,5 @@
 use egui::Color32;
-use nalgebra::Vector3;
+use nalgebra::{Vector3, Vector4};
 
 use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemArc}, instance::InstanceItem}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
 
@@ -11,6 +11,7 @@ pub struct TransformationAnimationData
 {
     pub translation: Vector3<f32>,
     pub rotation: Vector3<f32>,
+    pub rotation_quat: Option<Vector4<f32>>,
     pub scale: Vector3<f32>,
 }
 
@@ -30,6 +31,7 @@ impl TransformationAnimation
         {
             translation,
             rotation,
+            rotation_quat: None,
             scale
         };
 
@@ -51,6 +53,7 @@ impl TransformationAnimation
         {
             translation: Vector3::<f32>::zeros(),
             rotation: Vector3::<f32>::zeros(),
+            rotation_quat: None,
             scale: Vector3::<f32>::zeros()
         };
 
@@ -81,7 +84,7 @@ impl TransformationAnimation
         &mut self.data
     }
 
-    fn _update(&mut self, transform_component: Option<ComponentItem>, input_manager: &mut InputManager, frame_scale: f32)
+    fn _update(&mut self, transform_component: Option<ComponentItem>, input_manager: &mut InputManager, _time: u128, frame_scale: f32, _frame: u64)
     {
         if let Some(keyboard_key) = self.keyboard_key
         {
@@ -121,6 +124,14 @@ impl TransformationAnimation
             {
                 transform_component.apply_scale(scale, false);
             }
+
+            if let Some(rotation_quat) = data.rotation_quat
+            {
+                if !helper::math::approx_zero_vec4(&rotation_quat)
+                {
+                    transform_component.apply_rotation_quaternion(rotation_quat);
+                }
+            }
         }
     }
 }
@@ -145,16 +156,16 @@ impl Component for TransformationAnimation
         }
     }
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
+    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         let node = node.write().unwrap();
-        self._update(node.find_component::<Transformation>(), input_manager, frame_scale);
+        self._update(node.find_component::<Transformation>(), input_manager, time, frame_scale, frame);
     }
 
-    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32)
+    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         let instance = instance.read().unwrap();
-        self._update(instance.find_component::<Transformation>(), input_manager, frame_scale);
+        self._update(instance.find_component::<Transformation>(), input_manager, time, frame_scale, frame);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui)
@@ -163,12 +174,14 @@ impl Component for TransformationAnimation
 
         let mut trans;
         let mut rot;
+        let mut rot_quat;
         let mut scale;
         {
             let data = self.get_data();
 
             trans = data.translation;
             rot = data.rotation;
+            rot_quat = data.rotation_quat;
             scale = data.scale;
 
             //info_box(ui, "The changes are applies on the Transform Component (multiplied by frame_scale for each frame). If there is no Transform Component. Nothing is happening.");
@@ -182,13 +195,27 @@ impl Component for TransformationAnimation
                     changed = ui.add(egui::DragValue::new(&mut trans.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut trans.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
+
                 ui.horizontal(|ui|
                 {
-                    ui.label("Rotation: ");
+                    ui.label("Rotation\n(Euler): ");
                     changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
+
+                if let Some(rot_quat) = rot_quat.as_mut()
+                {
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Rotation\n(Quaternion): ");
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: ")).changed() || changed;
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: ")).changed() || changed;
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: ")).changed() || changed;
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: ")).changed() || changed;
+                    });
+                }
+
                 ui.horizontal(|ui|
                 {
                     ui.label("Scale: ");
@@ -196,6 +223,15 @@ impl Component for TransformationAnimation
                     changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
+
+                if rot_quat.is_none()
+                {
+                    if ui.button("add Quaternion Rotation").clicked()
+                    {
+                        rot_quat = Some(Vector4::<f32>::new(0.0, 0.0, 0.0, 0.0));
+                        changed = true;
+                    }
+                }
             });
         }
 
@@ -251,6 +287,7 @@ impl Component for TransformationAnimation
             let data = data.get_mut();
             data.translation = trans;
             data.rotation = rot;
+            data.rotation_quat = rot_quat;
             data.scale = scale;
         }
     }

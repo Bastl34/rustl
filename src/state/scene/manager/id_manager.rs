@@ -8,6 +8,8 @@ pub struct IdManager
     component_id: u64,
 }
 
+pub type IdManagerItem = std::sync::Arc<std::sync::RwLock<IdManager>>;
+
 impl IdManager
 {
     pub fn new() -> IdManager

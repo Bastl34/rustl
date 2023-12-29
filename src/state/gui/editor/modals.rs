@@ -50,11 +50,13 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
                     let node = node.read().unwrap();
                     let instance = node.find_instance_by_id(instance_id).unwrap();
                     let mut instance = instance.write().unwrap();
-                    instance.add_component(component.1(scene.id_manager.get_next_instance_id(), editor_state.add_component_name.as_str()));
+                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    instance.add_component(component.1(id, editor_state.add_component_name.as_str()));
                 }
                 else
                 {
-                    node.write().unwrap().add_component(component.1(scene.id_manager.get_next_instance_id(), editor_state.add_component_name.as_str()));
+                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    node.write().unwrap().add_component(component.1(id, editor_state.add_component_name.as_str()));
                 }
             }
 

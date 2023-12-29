@@ -4,6 +4,8 @@ use egui_plot::{BarChart, Bar, Corner, Legend, Plot, Line, PlotPoints, LineStyle
 use crate::state::state::State;
 use super::editor_state::EditorState;
 
+const CHART_PADDING_FACTOR: f32 = 1.1;
+
 pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // https://github.com/emilk/egui/blob/master/crates/egui_demo_lib/src/demo/plot_demo.rs#L888
@@ -30,6 +32,14 @@ pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     let legend = Legend::default().position(Corner::LeftTop);
 
+    let mut max_fps = 0;
+    for fps in &state.fps_chart
+    {
+        max_fps = max_fps.max(*fps);
+    }
+
+    let fps_upper: f32 = max_fps as f32 * CHART_PADDING_FACTOR;
+
     let plot = Plot::new("FPS")
         .legend(legend)
         .y_axis_width(4)
@@ -37,6 +47,7 @@ pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         .show_grid(true)
         .auto_bounds_x()
         .auto_bounds_y()
+        .include_y(fps_upper)
         .allow_drag(false)
         .allow_zoom(false)
         .y_axis_position(egui_plot::HPlacement::Right)

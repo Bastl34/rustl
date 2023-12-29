@@ -11,6 +11,7 @@ mod rendering
     pub(crate) mod uniform;
     pub(crate) mod light;
     pub(crate) mod material;
+    pub(crate) mod skeleton;
 
     pub(crate) mod bind_groups
     {
@@ -53,6 +54,8 @@ mod state
             pub(crate) mod material;
             pub(crate) mod alpha;
             pub(crate) mod transformation_animation;
+            pub(crate) mod joint;
+            pub(crate) mod animation;
         }
 
         pub(crate) mod camera_controller

@@ -10,6 +10,7 @@ use winit::event::ElementState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
+use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::platform;
@@ -22,12 +23,15 @@ use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
+use crate::state::scene::light::Light;
+use crate::state::scene::manager::id_manager;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
 
 use super::winit::winit_map_key;
 
 const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
+const FPS_CHART_FACTOR: f32 = 25.0;
 
 pub struct MainInterface
 {
@@ -437,6 +441,8 @@ impl MainInterface
 
             // ********** scene add **********
             let scene_id = scene.id.clone();
+            let id_manager = scene.id_manager.clone();
+            let id_manager_clone = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
             //scene.update(&mut state.input_manager, state.frame_scale);
@@ -445,9 +451,34 @@ impl MainInterface
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), 500, 1.0);
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager.clone(), 500, 1.0);
             });
             //scene_utils::create_grid(&mut scene, 1, 1.0);
+
+            let main_queue_clone = main_queue.clone();
+            spawn_thread(move ||
+            {
+                //let _ = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let _ = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                }));
+            });
 
             //load default env texture
             state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
@@ -459,12 +490,13 @@ impl MainInterface
 
                 execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
                 {
-                    scene.clear_empty_nodes();
+                    //scene.clear_empty_nodes();
 
                     // add camera
                     if scene.cameras.len() == 0
                     {
-                        let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                        let id = scene.id_manager.write().unwrap().get_next_camera_id();
+                        let mut cam = Camera::new(id, "Cam".to_string());
 
                         cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
@@ -525,6 +557,7 @@ impl MainInterface
 
             // fps
             let current_time = state.fps_timer.elapsed().as_millis();
+            state.fps += 1;
 
             if current_time / 1000 > state.last_time / 1000
             {
@@ -539,10 +572,6 @@ impl MainInterface
 
                 self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.last_fps).as_str());
                 state.fps = 0;
-            }
-            else
-            {
-                state.fps += 1;
             }
 
             // frame scale
@@ -609,7 +638,7 @@ impl MainInterface
                 self.wgpu.create_msaa_texture(msaa_samples);
             }
 
-            state.update(state.frame_scale);
+            state.update(state.frame_update_time, state.frame_scale, state.frame);
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];

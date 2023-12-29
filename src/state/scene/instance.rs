@@ -159,7 +159,7 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> bool
     {
         let node;
         {
@@ -191,7 +191,7 @@ impl Instance
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.clone(), instance, input_manager, frame_scale);
+            component_write.update_instance(node.clone(), instance, input_manager, time, frame_scale, frame);
         }
 
         // ***** reassign components *****

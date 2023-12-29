@@ -1,8 +1,8 @@
 use std::any::Any;
 
-use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
+use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math}, state::{scene::node::NodeItem}, component_impl_no_update};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem}, component_impl_no_update};
 
 use super::component::{Component, ComponentBase};
 
@@ -13,6 +13,7 @@ pub struct TransformationData
 
     pub position: Vector3<f32>,
     pub rotation: Vector3<f32>,
+    pub rotation_quat: Option<Vector4<f32>>,
     pub scale: Vector3<f32>,
 
     trans: Matrix4<f32>,
@@ -36,6 +37,7 @@ impl Transformation
 
             position,
             rotation,
+            rotation_quat: None,
             scale,
 
             trans: Matrix4::<f32>::identity(),
@@ -61,6 +63,7 @@ impl Transformation
 
             position: Vector3::<f32>::zeros(),
             rotation: Vector3::<f32>::zeros(),
+            rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             trans: trans,
@@ -86,6 +89,7 @@ impl Transformation
 
             position: Vector3::<f32>::new(0.0, 0.0, 0.0),
             rotation: Vector3::<f32>::new(0.0, 0.0, 0.0),
+            rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
             trans: Matrix4::<f32>::identity(),
@@ -140,9 +144,35 @@ impl Transformation
             rotation = rotation * rotation_y;
             rotation = rotation * rotation_x;
 
+            let mut rotation_quat: Option<Matrix4<f32>> = None;
+            if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+            {
+                let quaternion = UnitQuaternion::new_normalize
+                (
+                    Quaternion::new
+                    (
+                        data_rotation_quat.w,
+                        data_rotation_quat.x,
+                        data_rotation_quat.y,
+                        data_rotation_quat.z,
+                    )
+                );
+
+                let rotation: Rotation3<f32> = quaternion.into();
+                let rotation = rotation.to_homogeneous();
+
+                rotation_quat = Some(rotation);
+            }
+
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
             trans = trans * rotation;
+
+            if let Some(rotation_quat) = rotation_quat
+            {
+                trans = trans * rotation_quat;
+            }
+
             trans = trans * scale;
 
             data.trans = trans;
@@ -330,6 +360,54 @@ impl Transformation
 
         self.calc_transform();
     }
+
+    pub fn apply_rotation_quaternion(&mut self, rotation: Vector4<f32>)
+    {
+        let data = self.data.get_mut();
+
+        if data.rotation_quat.is_none()
+        {
+            data.rotation_quat = Some(rotation)
+        }
+        else
+        {
+            let data_rot_quat = data.rotation_quat.as_mut().unwrap();
+            data_rot_quat.x += rotation.x;
+            data_rot_quat.y += rotation.y;
+            data_rot_quat.z += rotation.z;
+            data_rot_quat.w += rotation.w;
+        }
+
+        if approx_zero_vec4(data.rotation_quat.as_ref().unwrap())
+        {
+            // quaterion = 0 is not supported / working -> otherwise a inverse transform can not be created
+            data.rotation_quat.as_mut().unwrap().w = 0.00000001;
+        }
+
+        if !data.transform_vectors
+        {
+            if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+            {
+                let quaternion = UnitQuaternion::new_normalize
+                (
+                    Quaternion::new
+                    (
+                        data_rotation_quat.w,
+                        data_rotation_quat.x,
+                        data_rotation_quat.y,
+                        data_rotation_quat.z,
+                    )
+                );
+
+                let rotation: Rotation3<f32> = quaternion.into();
+                let rotation = rotation.to_homogeneous();
+
+                data.trans = data.trans * rotation;
+            }
+        }
+
+        self.calc_transform();
+    }
 }
 
 impl Component for Transformation
@@ -359,6 +437,7 @@ impl Component for Transformation
 
         let mut pos;
         let mut rot;
+        let mut rot_quat;
         let mut scale;
         let mut inheritance;
 
@@ -367,6 +446,7 @@ impl Component for Transformation
 
             pos = data.position;
             rot = data.rotation;
+            rot_quat = data.rotation_quat;
             scale = data.scale;
             inheritance = data.parent_inheritance;
 
@@ -383,11 +463,30 @@ impl Component for Transformation
                 });
                 ui.horizontal(|ui|
                 {
-                    ui.label("Rotation: ");
+                    ui.label("Rotation\n(Euler): ");
                     changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
                     changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
                 });
+
+                if let Some(rot_quat) = rot_quat.as_mut()
+                {
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Rotation\n(Quaternion): ");
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: ")).changed() || changed;
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: ")).changed() || changed;
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: ")).changed() || changed;
+                        changed = ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: ")).changed() || changed;
+
+                        if changed && approx_zero_vec4(rot_quat)
+                        {
+                            // quaterion = 0 is not supported / working -> otherwise a inverse transform can not be created
+                            rot_quat.w = 0.00000001;
+                        }
+                    });
+                }
+
                 ui.horizontal(|ui|
                 {
                     ui.label("Scale: ");
@@ -400,6 +499,15 @@ impl Component for Transformation
                     if scale.y == 0.0 { scale.y = 0.00000001; }
                     if scale.z == 0.0 { scale.z = 0.00000001; }
                 });
+
+                if rot_quat.is_none()
+                {
+                    if ui.button("add Quaternion Rotation").clicked()
+                    {
+                        rot_quat = Some(Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0));
+                        changed = true;
+                    }
+                }
             });
         }
 
@@ -408,6 +516,7 @@ impl Component for Transformation
             let data = self.get_data_mut();
             data.get_mut().position = pos;
             data.get_mut().rotation = rot;
+            data.get_mut().rotation_quat = rot_quat;
             data.get_mut().scale = scale;
             data.get_mut().parent_inheritance = inheritance;
             self.calc_transform();

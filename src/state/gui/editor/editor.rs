@@ -4,7 +4,7 @@ use egui::FullOutput;
 
 use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
-use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, scene::Scene}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform, math::{approx_equal, approx_equal_vec}}};
+use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, scene::Scene, manager::id_manager}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform, math::{approx_equal, approx_equal_vec}}};
 
 use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode, AssetType}, main_frame};
 
@@ -97,7 +97,8 @@ impl Editor
                 let mut transformation = grid.find_component::<Transformation>();
                 if transformation.is_none()
                 {
-                    grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transform")))));
+                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transform")))));
                     transformation = grid.find_component::<Transformation>();
                 }
 
@@ -351,7 +352,7 @@ impl Editor
             let set_grid_picking = |scene: &Box<Scene>, state: bool|
             {
                 // find grid
-                let grid = scene.find_node_by_name("grid");
+                let grid = scene.find_mesh_node_by_name("grid");
 
                 if let Some(grid) = grid
                 {
@@ -376,13 +377,12 @@ impl Editor
                 // check if click is insight
                 if camera.is_point_in_viewport(&pos)
                 {
-                    dbg!(allow_grid_picking);
                     let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
 
                     let mut grid_hit = None;
                     if allow_grid_picking
                     {
-                        let grid = scene.find_node_by_name("grid");
+                        let grid = scene.find_mesh_node_by_name("grid");
                         if let Some(grid) = grid
                         {
                             set_grid_picking(scene, true);
@@ -617,8 +617,9 @@ impl Editor
                             let node = node.read().unwrap();
                             let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
                             let mut instance = instance.write().unwrap();
+                            let id = scene.id_manager.write().unwrap().get_next_component_id();
 
-                            instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
+                            instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
 
                             let transformation = node.find_component::<Transformation>().unwrap();
                             edit_transformation = transformation.clone();
@@ -628,7 +629,8 @@ impl Editor
                     else if instance_transform.is_none() && node_transform.is_none()
                     {
                         let mut node = node.write().unwrap();
-                        node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transformation")))));
+                        let id = scene.id_manager.write().unwrap().get_next_component_id();
+                        node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
 
                         let transformation = node.find_component::<Transformation>().unwrap();
                         edit_transformation = transformation.clone();
@@ -798,9 +800,11 @@ impl Editor
         let main_queue = state.main_thread_execution_queue.clone();
 
         let mut scene_id = None;
+        let mut id_manager = None;
         for scene in &mut state.scenes
         {
             scene_id = Some(scene.id);
+            id_manager = Some(scene.id_manager.clone());
 
             if self.editor_state.asset_type == AssetType::Scene
             {
@@ -816,13 +820,15 @@ impl Editor
         }
 
         let scene_id = scene_id.unwrap();
+        let id_manager = id_manager.unwrap();
 
         let main_queue_clone = main_queue.clone();
+        let id_manager_clone = id_manager.clone();
         if self.editor_state.asset_type == AssetType::Scene
         {
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), 500, 1.0);
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager_clone.clone(), 500, 1.0);
             });
         };
 
@@ -836,7 +842,7 @@ impl Editor
         }
 
         let create_mipmaps = state.rendering.create_mipmaps;
-        let create_root_node = if self.editor_state.asset_type == AssetType::Object { true } else { false };
+        let max_tex_res = state.max_texture_resolution();
         let object_only = if self.editor_state.asset_type == AssetType::Object { true } else { false };
         let reuse_materials = if self.editor_state.asset_type == AssetType::Object && self.editor_state.reuse_materials_by_name  { true } else { false };
 
@@ -846,7 +852,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), create_root_node, reuse_materials, object_only, create_mipmaps);
+            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), id_manager.clone(), reuse_materials, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
@@ -859,55 +865,55 @@ impl Editor
 
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
             {
-                scene.clear_empty_nodes();
+                //scene.clear_empty_nodes();
 
                 if let Some(pos) = pos
                 {
-                    if create_root_node
+                    let mut root_node = None;
+                    for id in &loaded_ids
                     {
-                        let mut root_node = None;
-                        for id in &loaded_ids
+                        if let Some(node) = scene.find_node_by_id(*id)
                         {
-                            if let Some(node) = scene.find_node_by_id(*id)
+                            if node.read().unwrap().root_node
                             {
-                                if node.read().unwrap().root_node
-                                {
-                                    root_node = Some(node.clone());
-                                    break;
-                                }
+                                root_node = Some(node.clone());
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(root_node) = root_node
+                    {
+                        // find offset based on bounding box
+                        let mut offset = 0.0;
+                        {
+                            let root_node = root_node.read().unwrap();
+                            let bounding_info = root_node.get_bounding_info(true);
+
+                            if let Some(bounding_info) = bounding_info
+                            {
+                                //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
+                                offset = -bounding_info.0.y;
                             }
                         }
 
-                        if let Some(root_node) = root_node
-                        {
-                            // find offset based on bounding box
-                            let mut offset = 0.0;
-                            {
-                                let root_node = root_node.read().unwrap();
-                                let bounding_info = root_node.get_bounding_info(true);
+                        let component_id = scene.id_manager.write().unwrap().get_next_component_id();
 
-                                if let Some(bounding_info) = bounding_info
-                                {
-                                    //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
-                                    offset = -bounding_info.0.y;
-                                }
-                            }
+                        let mut transform = Transformation::identity(component_id, "Transform");
+                        transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
 
-                            let component_id = scene.id_manager.get_next_component_id();
-
-                            let mut transform = Transformation::identity(component_id, "Transform");
-                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
-
-                            root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
-                        }
+                        root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
                     }
                 }
 
                 if let Some(train) = scene.find_node_by_name("Train")
                 {
                     let mut node = train.write().unwrap();
-                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                    let id_1 = scene.id_manager.write().unwrap().get_next_component_id();
+                    let id_2 = scene.id_manager.write().unwrap().get_next_component_id();
+
+                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_1, "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_2, "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
 
                     let components_len = node.components.len();
                     {
@@ -926,7 +932,7 @@ impl Editor
                 // add light
                 if scene.lights.get_ref().len() == 0
                 {
-                    let light_id = scene.id_manager.get_next_light_id();
+                    let light_id = scene.id_manager.write().unwrap().get_next_light_id();
                     let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                 }
@@ -934,7 +940,8 @@ impl Editor
                 // add camera
                 if scene.cameras.len() == 0
                 {
-                    let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                    let id = scene.id_manager.write().unwrap().get_next_camera_id();
+                    let mut cam = Camera::new(id, "Cam".to_string());
                     let cam_data = cam.get_data_mut().get_mut();
                     cam_data.fovy = 45.0f32.to_radians();
                     cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);

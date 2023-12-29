@@ -1,11 +1,12 @@
-use std::{sync::{Arc, RwLock}, cell::RefCell};
+use std::{sync::{Arc, RwLock}, cell::RefCell, collections::{HashMap, HashSet}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Point3};
+use gltf::mesh::util::joints;
+use nalgebra::{Matrix4, Point3, Matrix, Matrix4x1};
 
-use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
+use crate::{state::{helper::render_item::RenderItemOption, scene::{scene::Scene, components::joint}}, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
-use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha, joint::Joint}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -24,6 +25,10 @@ pub struct Node
 
     pub parent: Option<NodeItem>,
 
+    pub skin_root_node: Option<NodeItem>,
+
+    pub extras: HashMap<String, String>,
+
     pub nodes: Vec<NodeItem>,
     //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
     //pub instances: ChangeTracker<Vec<RefCell<InstanceItem>>>,
@@ -32,6 +37,7 @@ pub struct Node
     pub components: Vec<ComponentItem>,
 
     pub instance_render_item: RenderItemOption,
+    pub skeleton_render_item: RenderItemOption,
 
     // bounding box
     b_box_node_index: usize,
@@ -54,10 +60,15 @@ impl Node
             components: vec![],
 
             parent: None,
+            skin_root_node: None,
+
+            extras: HashMap::new(),
+
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
 
             instance_render_item: None,
+            skeleton_render_item: None,
 
             b_box_node_index: 0
         };
@@ -276,6 +287,101 @@ impl Node
         }
     }
 
+    pub fn get_full_joint_transform(&self) -> Matrix4<f32>
+    {
+        let (node_transform, _) = self.get_transform();
+        let mut parent_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = &self.parent
+        {
+            if parent_node.read().unwrap().find_component::<Joint>().is_some()
+            {
+                let parent_node = parent_node.read().unwrap();
+                parent_trans = parent_node.get_full_joint_transform();
+            }
+        }
+
+        parent_trans * node_transform
+    }
+
+    fn get_joint_transforms(nodes: &Vec<Arc<RwLock<Box<Node>>>>, parent_transform: &Matrix4<f32>) -> Vec::<(u32, Matrix4<f32>)>
+    {
+        let mut joints: Vec::<(u32, Matrix4<f32>)> = vec![];
+
+        for node in nodes
+        {
+            let joint_component = node.read().unwrap().find_component::<Joint>();
+
+            if let Some(joint_component) = joint_component
+            {
+                component_downcast!(joint_component, Joint);
+
+                let local_animation_transform = joint_component.get_animation_transform();
+                let joint_data = joint_component.get_data();
+
+                let current_transform = parent_transform * local_animation_transform;
+                let animation_transform = current_transform * joint_data.inverse_bind_trans;
+
+                joints.push((joint_data.joint_id, animation_transform));
+
+                let childs = Self::get_joint_transforms(&node.read().unwrap().nodes, &current_transform);
+                joints.extend(childs);
+            }
+        }
+
+        joints
+    }
+
+    pub fn get_joint_transform_vec(&self) -> Option<Vec<Matrix4<f32>>>
+    {
+        let joint_component = self.find_component::<Joint>();
+
+        if joint_component.is_none()
+        {
+            return None;
+        }
+
+        let mut joints: Vec::<(u32, Matrix4<f32>)> = vec![];
+
+        let joint_component = joint_component.unwrap();
+        component_downcast!(joint_component, Joint);
+
+        let root_joint_transform;
+        {
+            let local_animation_transform = joint_component.get_animation_transform();
+            let joint_data = joint_component.get_data();
+
+            //dbg!(local_animation_transform);
+
+            let animation_transform = local_animation_transform * joint_data.inverse_bind_trans;
+            //let animation_transform = joint_data.inverse_bind_trans;
+
+            joints.push((joint_data.joint_id, animation_transform));
+
+            root_joint_transform = local_animation_transform;
+            //root_joint_transform = Matrix4::<f32>::identity();
+            //dbg!(&root_joint_transform);
+        }
+
+        let child_joint_transforms = Self::get_joint_transforms(&self.nodes, &root_joint_transform);
+        joints.extend(child_joint_transforms);
+
+        // sort by joint id
+        joints.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        // check data
+        // check that first item is 0 and last item is length -1
+        if joints.len() == 0 || joints.first().unwrap().0 != 0 || joints.last().unwrap().0 != (joints.len() - 1) as u32
+        {
+            return None;
+        }
+
+        // map and return
+        let joints: Vec<Matrix4<f32>> = joints.iter().map(|joint| joint.1 ).collect();
+
+        Some(joints)
+    }
+
     pub fn get_alpha(&self) -> (f32, bool)
     {
         let alpha_component = self.find_component::<Alpha>();
@@ -359,7 +465,7 @@ impl Node
         self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
     }
 
-    pub fn update(node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
+    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         // ***** copy all components *****
         let all_components;
@@ -385,7 +491,7 @@ impl Node
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update(node.clone(), input_manager, frame_scale);
+            component_write.update(node.clone(), input_manager, time, frame_scale, frame);
         }
 
         // ***** reassign components *****
@@ -401,7 +507,7 @@ impl Node
                 let node_read = node.read().unwrap();
                 for instance in node_read.instances.get_ref()
                 {
-                    if Instance::update(&instance, input_manager, frame_scale)
+                    if Instance::update(&instance, input_manager, time, frame_scale, frame)
                     {
                         updates += 1;
                     }
@@ -439,7 +545,7 @@ impl Node
         let node_read = node.read().unwrap();
         for child_node in &node_read.nodes
         {
-            Self::update(child_node.clone(), input_manager, frame_scale);
+            Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
         }
     }
 

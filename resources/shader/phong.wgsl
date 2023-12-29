@@ -1,6 +1,7 @@
 const PI: f32 = 3.141592653589793;
 
 const MAX_LIGHTS = [MAX_LIGHTS];
+const MAX_JOINTS = [MAX_JOINTS];
 
 const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
 const LIGHT_TYPE_POINT: u32 = 1u;
@@ -32,6 +33,12 @@ struct SceneUniform
     exposure: f32
 };
 
+struct SkeletonUniform
+{
+    joint_transforms: array<mat4x4<f32>, MAX_JOINTS>,
+    joints_amount: u32,
+};
+
 @group(1) @binding(0)
 var<uniform> camera: CameraUniform;
 
@@ -44,6 +51,9 @@ var<uniform> light_amount: i32;
 @group(1) @binding(3)
 var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
 
+@group(2) @binding(0)
+var<uniform> skeleton: SkeletonUniform;
+
 struct VertexInput
 {
     @location(0) position: vec3<f32>,
@@ -51,17 +61,20 @@ struct VertexInput
     @location(2) normal: vec3<f32>,
     @location(3) tangent: vec3<f32>,
     @location(4) bitangent: vec3<f32>,
+
+    @location(5) joints: vec4<u32>,
+    @location(6) weights: vec4<f32>,
 };
 
 struct InstanceInput
 {
-    @location(5) model_matrix_0: vec4<f32>,
-    @location(6) model_matrix_1: vec4<f32>,
-    @location(7) model_matrix_2: vec4<f32>,
-    @location(8) model_matrix_3: vec4<f32>,
+    @location(7) model_matrix_0: vec4<f32>,
+    @location(8) model_matrix_1: vec4<f32>,
+    @location(9) model_matrix_2: vec4<f32>,
+    @location(10) model_matrix_3: vec4<f32>,
 
-    @location(9) alpha: f32,
-    @location(10) highlight: f32,
+    @location(11) alpha: f32,
+    @location(12) highlight: f32,
 };
 
 struct VertexOutput
@@ -77,6 +90,8 @@ struct VertexOutput
 
     @location(6) alpha: f32,
     @location(7) highlight: f32,
+
+    @location(8) weights: vec4<f32>, // just for debugging
 };
 
 // ****************************** vertex ******************************
@@ -92,7 +107,91 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         instance.model_matrix_3,
     );
 
-    let world_position = model_matrix * vec4<f32>(model.position, 1.0);
+    let identityMatrix = mat4x4<f32>
+    (
+        vec4<f32>(1.0, 0.0, 0.0, 0.0),
+        vec4<f32>(0.0, 1.0, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(0.0, 0.0, 0.0, 1.0)
+    );
+
+    //let world_position = model_matrix * vec4<f32>(model.position, 1.0);
+
+    //let model_pos = model_matrix * vec4<f32>(model.position, 1.0);
+    let model_pos = vec4<f32>(model.position, 1.0);
+
+    var world_position = vec4<f32>(0.0);
+
+    var world_normal = vec4<f32>(0.0);
+    var world_tangent = vec4<f32>(0.0);
+    var world_bitangent = vec4<f32>(0.0);
+
+    if (skeleton.joints_amount > 0u)
+    {
+        for (var i: u32 = 0u; i < 4u; i = i + 1u)
+        {
+            //let joint_transform = transpose(skeleton.joint_transforms[model.joints[i]]);
+            let joint_transform = skeleton.joint_transforms[model.joints[i]];
+            //let joint_transform = skeleton.joint_transforms[1];
+            world_position += joint_transform * model_pos * model.weights[i];
+            //world_position += identityMatrix * model_pos * model.weights[i];
+
+            // normal / tangent / bitangent
+            let normal = joint_transform * vec4(model.normal, 0.0);
+            world_normal += normal * model.weights[i];
+
+            let tangent = joint_transform * vec4(model.tangent, 0.0);
+            world_tangent += tangent * model.weights[i];
+
+            let bitangent = joint_transform * vec4(model.bitangent, 0.0);
+            world_bitangent += bitangent * model.weights[i];
+        }
+
+        /*
+        world_position =
+        (
+            skeleton.joint_transforms[model.joints[0]] * model_pos * model.weights[0] +
+            skeleton.joint_transforms[model.joints[1]] * model_pos * model.weights[1] +
+            skeleton.joint_transforms[model.joints[2]] * model_pos * model.weights[2] +
+            skeleton.joint_transforms[model.joints[3]] * model_pos * model.weights[3]
+        );
+        */
+
+
+        //world_position.w = 1.0;
+        world_position = model_matrix * world_position;
+        //world_position = world_position;
+
+
+        /*
+        var influence =  skeleton.joint_transforms[model.joints[0]] * model.weights[0];
+        influence     += skeleton.joint_transforms[model.joints[1]] * model.weights[1];
+        influence     += skeleton.joint_transforms[model.joints[2]] * model.weights[2];
+        influence     += skeleton.joint_transforms[model.joints[3]] * model.weights[3];
+
+        var world_position = model_matrix * vec4<f32>(model.position, 1.0);
+        world_position = influence * world_position;
+        */
+
+
+        /*
+        let skinMatrix =    skeleton.joint_transforms[model.joints[0]] * model.weights[0] +
+                            skeleton.joint_transforms[model.joints[1]] * model.weights[1] +
+                            skeleton.joint_transforms[model.joints[2]] * model.weights[2] +
+                            skeleton.joint_transforms[model.joints[3]] * model.weights[3];
+        let world = model_matrix * skinMatrix;
+        world_position = world * model_pos;
+        */
+    }
+    else
+    {
+        world_position = model_matrix * model_pos;
+
+        world_normal = vec4<f32>(model.normal, 0.0);
+        world_tangent = vec4<f32>(model.tangent, 0.0);
+        world_bitangent = vec4<f32>(model.bitangent, 0.0);
+    }
+
 
     // https://lxjk.github.io/2017/10/01/Stop-Using-Normal-Matrix.html
     let scale_squared = vec3<f32>
@@ -106,9 +205,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     (
         model_matrix * vec4<f32>
         (
-            model.normal.x / scale_squared.x,
-            model.normal.y / scale_squared.y,
-            model.normal.z / scale_squared.z,
+            world_normal.x / scale_squared.x,
+            world_normal.y / scale_squared.y,
+            world_normal.z / scale_squared.z,
             0.0
         )
     ).xyz;
@@ -118,9 +217,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     (
         model_matrix * vec4<f32>
         (
-            model.tangent.x / scale_squared.x,
-            model.tangent.y / scale_squared.y,
-            model.tangent.z / scale_squared.z,
+            world_tangent.x / scale_squared.x,
+            world_tangent.y / scale_squared.y,
+            world_tangent.z / scale_squared.z,
             0.0
         )
     ).xyz;
@@ -129,9 +228,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     (
         model_matrix * vec4<f32>
         (
-            model.bitangent.x / scale_squared.x,
-            model.bitangent.y / scale_squared.y,
-            model.bitangent.z / scale_squared.z,
+            world_bitangent.x / scale_squared.x,
+            world_bitangent.y / scale_squared.y,
+            world_bitangent.z / scale_squared.z,
             0.0
         )
     ).xyz;
@@ -161,6 +260,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     out.alpha = instance.alpha;
     out.highlight = instance.highlight;
+
+    out.weights = model.weights;
 
     return out;
 }
@@ -243,18 +344,6 @@ fn has_custom2_texture() -> bool            { return (material.textures_used & (
 fn has_custom3_texture() -> bool            { return (material.textures_used & (1u << 14u)) != 0u; }
 
 fn has_depth_texture() -> bool              { return (material.textures_used & (1u << 15u)) != 0u; }
-
-
-/*
-fn sphericalCoords(direction: vec3<f32>) -> vec2<f32>
-{
-    var phi: f32 = atan2(direction.z, direction.x);
-    var theta: f32 = acos(direction.y / length(direction));
-    var u: f32 = 1.0 - (phi + PI) / (2.0 * PI);
-    var v: f32 = (theta + (PI / 2.0)) / PI;
-    return vec2<f32>(u, v);
-}
-*/
 
 // https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 const inv_atan: vec2<f32> = vec2<f32>(0.1591, 0.3183);
@@ -480,6 +569,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     return vec4<f32>(color, alpha);
     //return vec4<f32>(1.0, 1.0, 1.0, alpha);
     //return vec4<f32>(object_color.r, object_color.g, object_color.b, alpha);
+    //return vec4<f32>(in.weights.r, in.weights.g, in.weights.b, alpha);
 
     //return textureSample(t_diffuse, s_diffuse, uvs);
 

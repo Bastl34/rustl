@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
+use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material, joint::Joint}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -23,7 +23,11 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let headline_name: String;
-                if node.is_empty()
+                if node.find_component::<Joint>().is_some()
+                {
+                    headline_name = format!("🕱 {}: {}", node_id, name.clone());
+                }
+                else if node.is_empty()
                 {
                     headline_name = format!("👻 {}: {}", node_id, name.clone());
                 }
@@ -174,13 +178,13 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     let mut direct_meshes_amout = 0;
     let mut direct_vertices_amout = 0;
     let mut direct_indices_amout = 0;
-    let mut direct_childs_amount = 0;
+    let direct_childs_amount;
 
     let mut all_instances_amout = 0;
     let mut all_meshes_amout = 0;
     let mut all_vertices_amout = 0;
     let mut all_indices_amout = 0;
-    let mut all_childs_amount = 0;
+    let all_childs_amount;
 
     {
         let node = node.read().unwrap();
@@ -231,17 +235,69 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let node = node.read().unwrap();
 
-            ui.label(format!("name: {}", node.name));
-            ui.label(format!("id: {}", node.id));
+            ui.label(format!("Name: {}", node.name));
+            ui.label(format!("Id: {}", node.id));
 
             if let Some(bounding_box_info) = bounding_box_info
             {
-                ui.label(format!("bbox min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
-                ui.label(format!("bbox max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
+                ui.label(format!("B-Box min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
+                ui.label(format!("B-Box max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
             }
         }
     });
 
+    // Extras
+    collapse_with_title(ui, "object_extras", true, "⊞ Extras", |ui|
+    {
+        ui.scope(|ui|
+        {
+            let node = node.read().unwrap();
+
+            for (key, value) in &node.extras
+            {
+                ui.label(format!("⚫ {}: {}", key, value));
+            }
+        });
+    });
+
+    // Skeleton
+    if node.read().unwrap().skin_root_node.is_some()
+    {
+        collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", |ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Link to Skeleton: ");
+                if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
+                {
+                    /*
+                    {
+                        let node = node.read().unwrap();
+                        let skin_root_node = node.skin_root_node.as_ref().unwrap();
+                        let skin_root_node = skin_root_node.read().unwrap();
+
+                        let res = skin_root_node.get_joint_transform_vec();
+                        dbg!(&res);
+                        if let Some(res) = res.as_ref()
+                        {
+                            dbg!(res.len());
+                        }
+                    }
+                    */
+
+                    editor_state.de_select_current_item(state);
+
+                    let node = node.read().unwrap();
+                    let skin_root_node = node.skin_root_node.as_ref();
+                    let skin_root_node = skin_root_node.unwrap();
+
+                    editor_state.selected_object = format!("objects_{}", skin_root_node.read().unwrap().id);
+                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_type = SelectionType::Object;
+                }
+            });
+        });
+    }
 
     // statistics
     collapse_with_title(ui, "object_info", true, "📈 Object Info", |ui|
@@ -309,7 +365,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                node.write().unwrap().create_default_instance(node.clone(), scene.id_manager.get_next_instance_id());
+                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                node.write().unwrap().create_default_instance(node.clone(), id);
             }
 
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()

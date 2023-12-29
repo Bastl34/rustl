@@ -11,6 +11,7 @@ use crate::state::helper::render_item::RenderItem;
 use crate::state::scene::instance::InstanceItem;
 
 use super::helper::buffer::create_empty_buffer;
+use super::vertex_buffer::VERTEX_ATTRIBUTES_AMOUNT;
 use super::wgpu::WGpu;
 
 #[repr(C)]
@@ -24,7 +25,7 @@ pub struct Instance
 
 impl Instance
 {
-    const SHADER_LOCATION_START: u32 = 5; // based on vertex input
+    const SHADER_LOCATION_START: u32 = VERTEX_ATTRIBUTES_AMOUNT as u32; // based on vertex input
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {

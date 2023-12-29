@@ -1,13 +1,13 @@
 use std::{collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
 
 use anyhow::Ok;
-use nalgebra::Vector3;
+use nalgebra::{Vector3, SimdBool};
 use nalgebra::Point3;
 use parry3d::query::Ray;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType, TextureState}, mesh::Mesh}, light::{LightItem, Light}};
+use super::{manager::id_manager::{IdManager, IdManagerItem}, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType, TextureState}, mesh::Mesh}, light::{LightItem, Light}};
 
 pub type SceneItem = Box<Scene>;
 
@@ -22,7 +22,7 @@ pub struct SceneData
 
 pub struct Scene
 {
-    pub id_manager: IdManager,
+    pub id_manager: IdManagerItem,
 
     pub id: u64,
     pub name: String,
@@ -46,7 +46,7 @@ impl Scene
     {
         Self
         {
-            id_manager: IdManager::new(),
+            id_manager: Arc::new(RwLock::new(IdManager::new())),
 
             id: id,
             name: name.to_string(),
@@ -117,12 +117,12 @@ impl Scene
     }
      */
 
-    pub fn update(&mut self, input_manager: &mut InputManager, frame_scale: f32)
+    pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         // update nodes
         for node in &self.nodes
         {
-            Node::update(node.clone(), input_manager, frame_scale);
+            Node::update(node.clone(), input_manager, time, frame_scale, frame);
         }
 
         let mut cameras = vec![];
@@ -170,21 +170,21 @@ impl Scene
         self.nodes.clear();
     }
 
-    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary_async(path).await?;
 
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
     }
 
-    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary(path)?;
 
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
     }
 
-    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
+    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>, max_tex_res: u32) -> TextureItem
     {
         let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
 
@@ -194,8 +194,8 @@ impl Scene
             return self.textures.get_mut(&hash).unwrap().clone();
         }
 
-        let id = self.id_manager.get_next_texture_id();
-        let texture = Texture::new(id, name, &image_bytes, extension);
+        let id = self.id_manager.write().unwrap().get_next_texture_id();
+        let texture = Texture::new(id, name, &image_bytes, extension, max_tex_res);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
@@ -269,7 +269,7 @@ impl Scene
 
     pub fn add_default_material(&mut self)
     {
-        let material_id = self.id_manager.get_next_component_id();
+        let material_id = self.id_manager.write().unwrap().get_next_component_id();
         let material = Material::new(material_id, "default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
@@ -414,7 +414,7 @@ impl Scene
 
     pub fn add_camera(&mut self, name: &str) -> &CameraItem
     {
-        let cam = Camera::new(self.id_manager.get_next_camera_id(), name.to_string());
+        let cam = Camera::new(self.id_manager.write().unwrap().get_next_camera_id(), name.to_string());
         self.cameras.push(Box::new(cam));
 
         self.cameras.last().unwrap()
@@ -462,7 +462,7 @@ impl Scene
 
     pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_point(self.id_manager.get_next_light_id(), name.to_string(), pos, color, intensity);
+        let light = Light::new_point(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -470,7 +470,7 @@ impl Scene
 
     pub fn add_light_directional(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_directional(self.id_manager.get_next_light_id(), name.to_string(), pos, dir, color, intensity);
+        let light = Light::new_directional(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, dir, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -478,7 +478,7 @@ impl Scene
 
     pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_spot(self.id_manager.get_next_light_id(), name.to_string(), pos, dir, color, max_angle, intensity);
+        let light = Light::new_spot(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, dir, color, max_angle, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -557,6 +557,26 @@ impl Scene
         None
     }
 
+    fn _find_mesh_node_by_name(nodes: &Vec<NodeItem>, name: String) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name && node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Scene::_find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
     pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
     {
         Self::_find_node_by_id(&self.nodes, id)
@@ -565,6 +585,11 @@ impl Scene
     pub fn find_node_by_name(&self, name: &str) -> Option<NodeItem>
     {
         Self::_find_node_by_name(&self.nodes, name.to_string())
+    }
+
+    pub fn find_mesh_node_by_name(&self, name: &str) -> Option<NodeItem>
+    {
+        Self::_find_mesh_node_by_name(&self.nodes, name.to_string())
     }
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
