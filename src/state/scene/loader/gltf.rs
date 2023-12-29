@@ -8,6 +8,13 @@ use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rot
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation, TransformationProperty}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut};
 
+
+struct JointData
+{
+    index: usize,
+    inverse_bind_matrix: Matrix4<f32>
+}
+
 pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let gltf_content = load_binary(path)?;
@@ -103,12 +110,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
 
     dbg!("reading nodes...");
     //let mut scene_nodes = vec![];
-    let mut joint_inverse_bind_mats: HashMap<usize, Vec<Matrix4<f32>>> = HashMap::new();
+    let mut joint_data: HashMap<usize, Vec<JointData>> = HashMap::new();
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
         {
-            read_node(&node, &buffers, object_only, &loaded_materials, &mut joint_inverse_bind_mats, scene_id, main_queue.clone(), id_manager.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
+            read_node(&node, &buffers, object_only, &loaded_materials, &mut joint_data, scene_id, main_queue.clone(), id_manager.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
         }
     }
 
@@ -122,7 +129,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     // ********** map skeletons **********
     dbg!("mapping skeletons...");
     let nodes = vec![root_node.clone()];
-    map_skeletons(&nodes, &joint_inverse_bind_mats, id_manager.clone());
+    map_skeletons(&nodes, &joint_data, id_manager.clone());
 
     // ********** animations **********
     dbg!("loading animations...");
@@ -149,7 +156,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
 }
 
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, joint_inverse_bind_mats: &mut HashMap<usize, Vec<Matrix4<f32>>>, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, joint_data: &mut HashMap<usize, Vec<JointData>>, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
@@ -269,12 +276,10 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     }
 
     // ********** skin/skeleton **********
-    let mut joint_ids = "".to_string();
-    //let mut joint_inverse_bind_mats = "".to_string();
-
     if let Some(skin) = node.skin()
     {
         let joints = skin.joints();
+        let joint_indices = joints.map(|j| j.index()).collect::<Vec<usize>>();
 
         let inverse_bind_matrices: Vec<_> = skin
             .reader(|b| Some(&buffers[b.index()]))
@@ -287,19 +292,22 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             Matrix4::from_fn(|i, j| mat[j][i])
         }).collect::<Vec<Matrix4<f32>>>();
 
-        joint_inverse_bind_mats.insert(node_index, inverse_bind_matrices);
-
-
-        let mut i = 0;
-
-        for joint in joints
+        if inverse_bind_matrices.len() == joint_indices.len()
         {
-            if joint_ids.len() > 0
+            let inverse_bind_matrices = inverse_bind_matrices.iter().enumerate().map(|(i, mat)|
             {
-                joint_ids += ",";
-            }
-            joint_ids += format!("{}={}", i, joint.index()).as_str();
-            i += 1;
+                JointData
+                {
+                    index: joint_indices[i],
+                    inverse_bind_matrix: *mat
+                }
+            }).collect::<Vec<JointData>>();
+
+            joint_data.insert(node_index, inverse_bind_matrices);
+        }
+        else
+        {
+            dbg!("joints len does not match inverse_bind_matrices len");
         }
     }
 
@@ -458,11 +466,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 node.add_component(Arc::new(RwLock::new(Box::new(item))));
                 node.extras.insert("_json_index".to_string(), node_index.to_string());
 
-                if joint_ids.len() > 0
-                {
-                    node.extras.insert("_joint_ids".to_string(), joint_ids.clone());
-                }
-
                 // add material
                 if let Some(material_index) = material_index
                 {
@@ -526,7 +529,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     // ********** children **********
     for child in node.children()
     {
-        read_node(&child, &buffers, object_only, loaded_materials, joint_inverse_bind_mats, scene_id, main_queue.clone(), id_manager.clone(), parent_node.clone(), &world_transform, level + 1);
+        read_node(&child, &buffers, object_only, loaded_materials, joint_data, scene_id, main_queue.clone(), id_manager.clone(), parent_node.clone(), &world_transform, level + 1);
     }
 }
 
@@ -660,7 +663,6 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
                     // TODO
                 }
             };
-            let sampler = channel.sampler();
 
             animation_component.channels.push(animation_channel);
         }
@@ -1106,7 +1108,7 @@ pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<
     }
 }
 
-fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_inverse_bind_mats: &HashMap<usize, Vec<Matrix4<f32>>>, id_manager: IdManagerItem)
+fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_data: &HashMap<usize, Vec<JointData>>, id_manager: IdManagerItem)
 {
     let all_nodes = Scene::list_all_child_nodes(scene_nodes);
     let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
@@ -1116,22 +1118,10 @@ fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_inverse_bind_m
         let mesh_node_json_index = mesh_node.read().unwrap().extras.get("_json_index").unwrap().parse::<u32>().unwrap();
 
         // ******************** map joint_ids ********************
-        if let Some(joint_ids) = mesh_node.read().unwrap().extras.get("_joint_ids")
+        if let Some(mesh_joint_data) = joint_data.get(&(mesh_node_json_index as usize))
         {
-            let joint_ids = joint_ids.split(",");
-
-            let inverse_bind_matrices = joint_inverse_bind_mats.get(&(mesh_node_json_index as usize));
-            let inverse_bind_matrices = inverse_bind_matrices.unwrap();
-
-            for joint_id in joint_ids
+            for (joint_id, mesh_joint_data) in mesh_joint_data.iter().enumerate()
             {
-                let joint_id = joint_id.to_string();
-                let joint_ids_parts = joint_id.split("=");
-                let joint_ids_parts = joint_ids_parts.collect::<Vec<&str>>();
-
-                let joint_id = joint_ids_parts[0].parse::<u32>().unwrap();
-                let joint_json_id = joint_ids_parts[1].parse::<u32>().unwrap();
-
                 for node_arc in &all_nodes
                 {
                     let mut json_index = "".to_string();
@@ -1151,14 +1141,11 @@ fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_inverse_bind_m
                     {
                         let json_index = json_index.parse::<u32>().unwrap();
 
-                        if json_index == joint_json_id
+                        if json_index == mesh_joint_data.index as u32
                         {
-                            let inverse_bind_matrix = inverse_bind_matrices.get(joint_id as usize);
-                            let inverse_bind_matrix = inverse_bind_matrix.unwrap();
-
                             let component_id = id_manager.write().unwrap().get_next_component_id();
-                            let mut joint = Joint::new(component_id, "Joint", joint_id);
-                            joint.get_data_mut().get_mut().inverse_bind_trans = inverse_bind_matrix.clone();
+                            let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
+                            joint.get_data_mut().get_mut().inverse_bind_trans = mesh_joint_data.inverse_bind_matrix.clone();
 
                             node_arc.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(joint))));
                         }
@@ -1168,25 +1155,9 @@ fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_inverse_bind_m
         }
 
         // ******************** map skin_root_node and find root joint ********************
-        let joint_ids;
+        if let Some(mesh_joint_data) = joint_data.get(&(mesh_node_json_index as usize))
         {
-            joint_ids = mesh_node.read().unwrap().extras.get("_joint_ids").cloned()
-        }
-
-        if let Some(joint_ids) = joint_ids
-        {
-            //dbg!(joint_ids);
-            // 0=1,1=2,2=3
-            let joint_ids = joint_ids.split(",");
-            let joint_ids = joint_ids.collect::<Vec<&str>>();
-            let joint_ids = joint_ids.iter().map(|item|
-            {
-                let parts = item.split("=");
-                let parts = parts.collect::<Vec<&str>>();
-                parts[0].parse::<u32>().unwrap()
-            }).collect::<Vec<u32>>();
-
-            for joint_id in joint_ids
+            for (joint_id, _mesh_joint_data) in mesh_joint_data.iter().enumerate()
             {
                 for node_arc in &all_nodes
                 {
@@ -1206,7 +1177,7 @@ fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_inverse_bind_m
                         parent = node.parent.clone();
                     }
 
-                    if joint_id == joint_component.get_data().joint_id
+                    if joint_id as u32 == joint_component.get_data().joint_id
                     {
                         // the node has no parent and joint id is matching
                         if parent.is_none()
@@ -1221,11 +1192,9 @@ fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_inverse_bind_m
                             if parent.read().unwrap().find_component::<Joint>().is_none()
                             {
                                 mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
-                                //joint_component.get_data_mut().get_mut().skin_root_node = Some(node_arc.clone());
                             }
                         }
                     }
-
                 }
             }
         }
