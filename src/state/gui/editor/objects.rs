@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material, joint::Joint}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
+use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material, joint::Joint, animation::Animation}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -23,7 +23,11 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let headline_name: String;
-                if node.find_component::<Joint>().is_some()
+                if node.find_component::<Animation>().is_some()
+                {
+                    headline_name = format!("🎞 {}: {}", node_id, name.clone());
+                }
+                else if node.find_component::<Joint>().is_some()
                 {
                     headline_name = format!("🕱 {}: {}", node_id, name.clone());
                 }
@@ -270,21 +274,6 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 ui.label("Link to Skeleton: ");
                 if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
                 {
-                    /*
-                    {
-                        let node = node.read().unwrap();
-                        let skin_root_node = node.skin_root_node.as_ref().unwrap();
-                        let skin_root_node = skin_root_node.read().unwrap();
-
-                        let res = skin_root_node.get_joint_transform_vec();
-                        dbg!(&res);
-                        if let Some(res) = res.as_ref()
-                        {
-                            dbg!(res.len());
-                        }
-                    }
-                    */
-
                     editor_state.de_select_current_item(state);
 
                     let node = node.read().unwrap();
