@@ -156,7 +156,7 @@ impl Animation
 
     pub fn set_speed(&mut self, speed: f32)
     {
-
+        self.speed = speed;
     }
 
     pub fn reset(&mut self)
