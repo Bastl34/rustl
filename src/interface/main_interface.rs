@@ -458,6 +458,7 @@ impl MainInterface
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
+                //let _ = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);

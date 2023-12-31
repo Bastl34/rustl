@@ -494,6 +494,7 @@ impl Component for Animation
 
     fn ui(&mut self, ui: &mut egui::Ui)
     {
+        ui.label(format!("Duration: {}", self.duration));
         ui.label(format!("Channels: {}", self.channels.len()));
 
         let mut is_running = self.running();
