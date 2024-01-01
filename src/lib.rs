@@ -56,6 +56,7 @@ mod state
             pub(crate) mod transformation_animation;
             pub(crate) mod joint;
             pub(crate) mod animation;
+            pub(crate) mod animatable;
         }
 
         pub(crate) mod camera_controller

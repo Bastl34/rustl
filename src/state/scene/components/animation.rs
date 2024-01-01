@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use egui::RichText;
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
-use crate::{helper::math::{interpolate_vec3, approx_zero}, component_impl_default, state::scene::{node::NodeItem, components::joint::Joint}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
+use crate::{helper::math::{interpolate_vec3, approx_zero}, component_impl_default, state::scene::{node::NodeItem, components::joint::{Joint, self}}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
 
-use super::{component::{ComponentBase, Component}, joint::JointItem};
+use super::{component::{ComponentBase, Component, ComponentItem}, animatable::{Animatable, self}};
 
 pub enum Interpolation
 {
@@ -229,13 +229,14 @@ impl Component for Animation
                 return;
             }
 
-            let mut joint_map: HashMap<u64, (JointItem, Matrix4::<f32>)> = HashMap::new();
+            let mut target_map: HashMap<u64, (ComponentItem, Matrix4::<f32>)> = HashMap::new();
 
             // ********** reset joints (if needed) **********
             for channel in &self.channels
             {
                 let target = channel.target.write().unwrap();
                 let joint = target.find_component::<Joint>();
+                let animatable = target.find_component::<Animatable>();
 
                 if let Some(joint) = joint
                 {
@@ -252,7 +253,24 @@ impl Component for Animation
                         joint.get_data_mut().get_mut().animation_weight = 0.0;
                     }
 
-                    joint_map.insert(joint.id(), (joint_clone, Matrix4::<f32>::identity()));
+                    target_map.insert(joint.id(), (joint_clone, Matrix4::<f32>::identity()));
+                }
+                else if let Some(animatable) = animatable
+                {
+                    let animatable_clone = animatable.clone();
+
+                    component_downcast_mut!(animatable, Animatable);
+
+                    let data: &mut animatable::AnimatableData = animatable.get_data_mut().get_mut();
+
+                    if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                    {
+                        animatable.get_data_mut().get_mut().animation_trans = Matrix4::<f32>::identity();
+                        animatable.get_data_mut().get_mut().animation_update_frame = Some(frame);
+                        animatable.get_data_mut().get_mut().animation_weight = 0.0;
+                    }
+
+                    target_map.insert(animatable.id(), (animatable_clone, Matrix4::<f32>::identity()));
                 }
             }
 
@@ -261,20 +279,36 @@ impl Component for Animation
             {
                 let joint;
                 {
-                    let target = channel.target.write().unwrap();
+                    let target = channel.target.read().unwrap();
 
                     joint = target.find_component::<Joint>();
                 }
 
-                if joint.is_none()
+                let animatable;
+                {
+                    let target = channel.target.read().unwrap();
+
+                    animatable = target.find_component::<Animatable>();
+                }
+
+                if joint.is_none() && animatable.is_none()
+                //if joint.is_none()
                 {
                     // NOT SUPPORTED
                     dbg!("not supported for now");
                     continue;
                 }
 
-                let joint = joint.unwrap();
-                let joint_id = joint.read().unwrap().id();
+                let mut target_id = 0;
+                if let Some(joint) = joint
+                {
+                    target_id = joint.read().unwrap().id();
+                }
+
+                if let Some(animatable) = animatable
+                {
+                    target_id = animatable.read().unwrap().id();
+                }
 
                 // ********** only one item per channel **********
                 if channel.timestamps.len() == 0
@@ -299,8 +333,8 @@ impl Component for Animation
                         },
                     };
 
-                    let joint_item = joint_map.get_mut(&joint_id).unwrap();
-                    joint_item.1 = joint_item.1 * transform;
+                    let target_item = target_map.get_mut(&target_id).unwrap();
+                    target_item.1 = target_item.1 * transform;
                 }
                 // ********** some items per channel **********
                 else
@@ -384,8 +418,8 @@ impl Component for Animation
                                 },
                             };
 
-                            let joint_item = joint_map.get_mut(&joint_id).unwrap();
-                            joint_item.1 = joint_item.1 * transform;
+                            let target_item = target_map.get_mut(&target_id).unwrap();
+                            target_item.1 = target_item.1 * transform;
                         }
                         (TransformationProperty::Rotation(rot0), TransformationProperty::Rotation(rot1)) =>
                         {
@@ -423,8 +457,8 @@ impl Component for Animation
                                 },
                             };
 
-                            let joint_item = joint_map.get_mut(&joint_id).unwrap();
-                            joint_item.1 = joint_item.1 * transform;
+                            let target_item = target_map.get_mut(&target_id).unwrap();
+                            target_item.1 = target_item.1 * transform;
                         }
                         (TransformationProperty::Scale(scale0), TransformationProperty::Scale(scale1)) =>
                         {
@@ -456,8 +490,8 @@ impl Component for Animation
                                 },
                             };
 
-                            let joint_item = joint_map.get_mut(&joint_id).unwrap();
-                            joint_item.1 = joint_item.1 * transform;
+                            let target_item = target_map.get_mut(&target_id).unwrap();
+                            target_item.1 = target_item.1 * transform;
                         }
                         _ =>{} // not possible
                     }
@@ -465,29 +499,53 @@ impl Component for Animation
             }
 
             // ********** apply animation matrix with weight **********
-            for (_, joint_item) in joint_map
+            for (_, target_item) in target_map
             {
-                let joint = joint_item.0;
-                component_downcast_mut!(joint, Joint);
-                let joint_data = joint.get_data_mut().get_mut();
+                let target_component_arc = target_item.0;
+                let mut target_component = target_component_arc.write().unwrap();
 
-                let animation_trans = joint_data.animation_trans.as_mut().unwrap();
-
-                // apply if its the first one
-                if approx_zero(joint_data.animation_weight)
+                // joint
+                if let Some(joint) = target_component.as_any_mut().downcast_mut::<Joint>()
                 {
-                    *animation_trans = joint_item.1 * self.weight;
+                    let component_data = joint.get_data_mut().get_mut();
+
+                    let animation_trans = component_data.animation_trans.as_mut().unwrap();
+
+                    // apply if its the first one
+                    if approx_zero(component_data.animation_weight)
+                    {
+                        *animation_trans = target_item.1 * self.weight;
+                    }
+                    // add if its not the first one
+                    else
+                    {
+                        // animation blending - blend this animation with the prev one
+                        *animation_trans = *animation_trans + (target_item.1 * self.weight);
+                    }
+
+                    component_data.animation_weight += self.weight;
                 }
-                // add if its not the first one
-                else
+                // animatable
+                else if let Some(animatable) = target_component.as_any_mut().downcast_mut::<Animatable>()
                 {
-                    // animation blending - blend this animation with the prev one
-                    *animation_trans = *animation_trans + (joint_item.1 * self.weight);
+                    let component_data = animatable.get_data_mut().get_mut();
+
+                    let animation_trans = &mut component_data.animation_trans;
+
+                    // apply if its the first one
+                    if approx_zero(component_data.animation_weight)
+                    {
+                        *animation_trans = target_item.1 * self.weight;
+                    }
+                    // add if its not the first one
+                    else
+                    {
+                        // animation blending - blend this animation with the prev one
+                        *animation_trans = *animation_trans + (target_item.1 * self.weight);
+                    }
+
+                    component_data.animation_weight += self.weight;
                 }
-
-                joint_data.animation_weight += self.weight;
-
-
             }
         }
     }

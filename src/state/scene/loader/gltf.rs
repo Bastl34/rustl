@@ -6,7 +6,7 @@ use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, i
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation, TransformationProperty}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation, TransformationProperty}, animatable::{self, Animatable}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut, component_downcast};
 
 
 struct JointData
@@ -134,6 +134,10 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     // ********** animations **********
     dbg!("loading animations...");
     read_animations(root_node.clone(), id_manager.clone(), gltf.animations(), &buffers);
+
+    // ********** map animatables **********
+    dbg!("mapping animatables...");
+    map_animatables(&nodes, id_manager.clone());
 
     // ********** add to scene **********
     dbg!("adding nodes to scene...");
@@ -545,6 +549,8 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 
         let mut duration: f32 = 0.0;
 
+        let mut target_map: HashMap<u64, Arc<RwLock<Box<Node>>>> = HashMap::new();
+
         // create channels
         for channel in animation.channels()
         {
@@ -575,6 +581,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
             }
 
             let target_node = target_node.unwrap();
+            target_map.insert(target_node.read().unwrap().id, target_node.clone());
 
             let mut animation_channel = Channel::new(target_node);
 
@@ -603,18 +610,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 
                     animation_channel.transformation = trans.iter().map(|trans|
                     {
-                        /*
-                        let component_id = id_manager.write().unwrap().get_next_component_id();
-
-                        let pos = Vector3::<f32>::new(trans[0], trans[1], trans[2]);
-                        let rotation = Vector3::<f32>::zeros();
-                        let scale = Vector3::<f32>::new(1.0, 1.0, 1.0);
-
-                        Transformation::new(component_id, "Channel Transformation", pos, rotation, scale)
-                         */
-
                         TransformationProperty::Translation(Vector3::<f32>::new(trans[0], trans[1], trans[2]))
-
                     }).collect::<Vec<TransformationProperty>>();
                 },
                 ReadOutputs::Rotations(r) =>
@@ -623,13 +619,6 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 
                     animation_channel.transformation = rot_quat.iter().map(|rot_quat|
                     {
-                        /*
-                        let component_id = id_manager.write().unwrap().get_next_component_id();
-                        let mut transform_component = Transformation::identity(component_id, "Channel Transformation");
-                        transform_component.get_data_mut().get_mut().rotation_quat = Some(Vector4::<f32>::new(rot_quat[0], rot_quat[1], rot_quat[2], rot_quat[3]));
-
-                        transform_component
-                         */
                         TransformationProperty::Rotation(Vector4::<f32>::new(rot_quat[0], rot_quat[1], rot_quat[2], rot_quat[3]))
                     }).collect::<Vec<TransformationProperty>>();
                 },
@@ -639,16 +628,6 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 
                     animation_channel.transformation = scale.iter().map(|scale|
                     {
-                        /*
-                        let component_id = id_manager.write().unwrap().get_next_component_id();
-
-                        let pos = Vector3::<f32>::zeros();
-                        let rotation = Vector3::<f32>::zeros();
-                        let scale = Vector3::<f32>::new(scale[0], scale[1], scale[2]);
-
-                        Transformation::new(component_id, "Channel Transformation", pos, rotation, scale)
-                         */
-
                         TransformationProperty::Scale(Vector3::<f32>::new(scale[0], scale[1], scale[2]))
 
                     }).collect::<Vec<TransformationProperty>>();
@@ -669,7 +648,42 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 
         animation_component.duration = duration;
 
-        root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
+
+        // find best node for animation
+        let mut target_nodes_vec: Vec<(u32, Arc<RwLock<Box<Node>>>)> = vec![];
+        for (_, target_node) in target_map
+        {
+            let parent_amount = target_node.read().unwrap().parent_amount();
+            target_nodes_vec.push((parent_amount, target_node.clone()));
+        }
+
+        // sort by parent amount (to find parent with the fewest parent items)
+        target_nodes_vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        // use the item with the fewest parent item as the animation node
+        if let Some((parent_nodes, first)) = target_nodes_vec.first()
+        {
+            let parent_of_first = &first.read().unwrap().parent;
+            let parent_of_first = parent_of_first.clone().unwrap();
+
+            // root node or the first node after the root node
+            if *parent_nodes <= 2
+            {
+                parent_of_first.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
+            }
+            // otherwise use the parent of the found on in the hierarchy
+            else
+            {
+                let parent_of_parent_first = &parent_of_first.read().unwrap().parent;
+                let parent_of_parent_first = parent_of_parent_first.clone().unwrap();
+
+                parent_of_parent_first.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
+            }
+        }
+        else
+        {
+            root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
+        }
     }
 }
 
@@ -1195,6 +1209,41 @@ fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_data: &HashMap
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+
+fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, id_manager: IdManagerItem)
+{
+    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
+
+    for node in &all_nodes
+    {
+        if let Some(animation) = node.read().unwrap().find_component::<Animation>()
+        {
+            component_downcast!(animation, Animation);
+
+            for channel in &animation.channels
+            {
+                let target = channel.target.as_ref();
+                if target.read().unwrap().find_component::<Joint>().is_none()
+                {
+                    let component_id = id_manager.write().unwrap().get_next_component_id();
+                    let animatable: Animatable = Animatable::new(component_id, "Animatable");
+
+                    target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animatable))));
+                }
+
+                // check if transformation node is extisting -> if not create one
+                if target.read().unwrap().find_component::<Transformation>().is_none()
+                {
+                    let component_id = id_manager.write().unwrap().get_next_component_id();
+                    let transformation: Transformation = Transformation::identity(component_id, "Transformation");
+
+                    target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 }
             }
         }

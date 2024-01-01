@@ -16,6 +16,8 @@ pub struct TransformationData
     pub rotation_quat: Option<Vector4<f32>>,
     pub scale: Vector3<f32>,
 
+    pub animation_trans: Option<Matrix4<f32>>, // only supported with transform_vectors
+
     trans: Matrix4<f32>,
     tran_inverse: Matrix4<f32>
 }
@@ -39,6 +41,8 @@ impl Transformation
             rotation,
             rotation_quat: None,
             scale,
+
+            animation_trans: None,
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity()
@@ -66,6 +70,8 @@ impl Transformation
             rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
+            animation_trans: None,
+
             trans: trans,
             tran_inverse: Matrix4::<f32>::identity()
         };
@@ -91,6 +97,8 @@ impl Transformation
             rotation: Vector3::<f32>::new(0.0, 0.0, 0.0),
             rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
+
+            animation_trans: None,
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity()
@@ -174,6 +182,11 @@ impl Transformation
             }
 
             trans = trans * scale;
+
+            if let Some(animation_trans) = data.animation_trans
+            {
+                trans = trans * animation_trans;
+            }
 
             data.trans = trans;
         }

@@ -5,14 +5,12 @@ use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
 
-pub type JointItem = ComponentItem;
-
 pub struct JointData
 {
     pub joint_id: u32,
     pub local_trans: Matrix4<f32>,
     pub inverse_bind_trans: Matrix4<f32>,
-    pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
+    //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
     pub animation_weight: f32,
     pub animation_update_frame: Option<u64>,
@@ -34,7 +32,7 @@ impl Joint
             joint_id,
             local_trans: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
-            inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
+            //inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
 
             animation_weight: 0.0,
             animation_update_frame: None,
@@ -120,10 +118,10 @@ impl Component for Joint
             component_downcast!(transform_component, Transformation);
             if transform_component.get_data_tracker().changed()
             {
-                let transform = node.get_full_joint_transform();
+                //let transform = node.get_full_joint_transform();
                 self.get_data_mut().get_mut().local_trans = transform_component.get_transform().clone();
 
-                self.get_data_mut().get_mut().inverse_bind_trans_calculated = transform.try_inverse().unwrap();
+                //self.get_data_mut().get_mut().inverse_bind_trans_calculated = transform.try_inverse().unwrap();
             }
         }
     }
@@ -133,7 +131,7 @@ impl Component for Joint
         ui.label(format!("Joint Id: {}", self.get_data().joint_id));
 
         ui.label(format!("Inverse Bind Trans:\n{:?}", self.get_data().inverse_bind_trans));
-        ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));
+        //ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));
 
         ui.label(format!("Animation Trans:\n{:?}", self.get_data().animation_trans));
     }

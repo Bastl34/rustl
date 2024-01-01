@@ -228,6 +228,20 @@ impl Node
         None
     }
 
+    pub fn parent_amount(&self) -> u32
+    {
+        let mut parent_amount = 0;
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            parent_amount += 1;
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        parent_amount
+    }
+
     pub fn has_changed_instance_data(&self) -> bool
     {
         for instance in self.instances.get_ref()
@@ -287,6 +301,7 @@ impl Node
         }
     }
 
+    /*
     pub fn get_full_joint_transform(&self) -> Matrix4<f32>
     {
         let (node_transform, _) = self.get_transform();
@@ -303,6 +318,7 @@ impl Node
 
         parent_trans * node_transform
     }
+    */
 
     fn get_joint_transforms(nodes: &Vec<Arc<RwLock<Box<Node>>>>, parent_transform: &Matrix4<f32>) -> Vec::<(u32, Matrix4<f32>)>
     {
