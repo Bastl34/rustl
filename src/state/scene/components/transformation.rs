@@ -193,8 +193,8 @@ impl Transformation
 
             if let Some(animation_trans) = data.animation_trans
             {
-                //trans = trans * animation_trans;
-                trans = animation_trans;
+                trans = trans * animation_trans;
+                //trans = animation_trans;
             }
 
             data.trans = trans;

@@ -6,7 +6,7 @@ use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, i
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation, TransformationProperty}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut, component_downcast};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut, component_downcast};
 
 
 struct JointData
@@ -585,15 +585,6 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 
             let mut animation_channel = Channel::new(target_node);
 
-            let input: Vec<_> = reader.read_inputs().unwrap().collect(); // key frames
-            let input_len = input.len();
-
-            duration = duration.max(input[input_len - 1]);
-            animation_channel.timestamps = input.clone();
-
-            let output = reader.read_outputs().unwrap();
-
-
             let sampler = channel.sampler();
             match sampler.interpolation()
             {
@@ -602,35 +593,43 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
                 gltf::animation::Interpolation::CubicSpline => animation_channel.interpolation = Interpolation::CubicSpline,
             }
 
+            let input: Vec<_> = reader.read_inputs().unwrap().collect();
+            let input_len = input.len();
+
+            duration = duration.max(input[input_len - 1]);
+            animation_channel.timestamps = input.clone();
+
+            let output = reader.read_outputs().unwrap();
+
             match output
             {
                 ReadOutputs::Translations(t) =>
                 {
                     let trans: Vec<[f32; 3]> = t.collect();
 
-                    animation_channel.transformation = trans.iter().map(|trans|
+                    animation_channel.transform_translation = trans.iter().map(|trans|
                     {
-                        TransformationProperty::Translation(Vector3::<f32>::new(trans[0], trans[1], trans[2]))
-                    }).collect::<Vec<TransformationProperty>>();
+                        Vector3::<f32>::new(trans[0], trans[1], trans[2])
+                    }).collect::<Vec<Vector3<f32>>>();
                 },
                 ReadOutputs::Rotations(r) =>
                 {
                     let rot_quat: Vec<[f32; 4]> = r.into_f32().collect();
 
-                    animation_channel.transformation = rot_quat.iter().map(|rot_quat|
+                    animation_channel.transform_rotation = rot_quat.iter().map(|rot_quat|
                     {
-                        TransformationProperty::Rotation(Vector4::<f32>::new(rot_quat[0], rot_quat[1], rot_quat[2], rot_quat[3]))
-                    }).collect::<Vec<TransformationProperty>>();
+                        Vector4::<f32>::new(rot_quat[0], rot_quat[1], rot_quat[2], rot_quat[3])
+                    }).collect::<Vec<Vector4<f32>>>();
                 },
                 ReadOutputs::Scales(s) =>
                 {
                     let scale: Vec<[f32; 3]> = s.collect();
 
-                    animation_channel.transformation = scale.iter().map(|scale|
+                    animation_channel.transform_scale = scale.iter().map(|scale|
                     {
-                        TransformationProperty::Scale(Vector3::<f32>::new(scale[0], scale[1], scale[2]))
+                        Vector3::<f32>::new(scale[0], scale[1], scale[2])
 
-                    }).collect::<Vec<TransformationProperty>>();
+                    }).collect::<Vec<Vector3<f32>>>();
                 },
                 ReadOutputs::MorphTargetWeights(m) =>
                 {
@@ -638,9 +637,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
                     let chuck_size = weights.len() / input_len;
 
                     let morpth_targets: Vec<Vec<f32>> = weights.chunks(chuck_size).map(|x| x.to_vec()).collect();
-
-                    // TODO
-                    dbg!("TODO: morph targets are not supported yet");
+                    animation_channel.transform_morph = morpth_targets;
                 }
             };
 

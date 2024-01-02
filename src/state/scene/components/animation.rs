@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use egui::RichText;
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
-use crate::{helper::math::{interpolate_vec3, approx_zero}, component_impl_default, state::scene::{node::NodeItem, components::joint::{Joint, self}}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
+use crate::{helper::math::{interpolate_vec3, approx_zero, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4}, component_impl_default, state::scene::{node::NodeItem, components::joint::{Joint, self}}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
+#[derive(PartialEq)]
 pub enum Interpolation
 {
     Linear,
@@ -14,19 +15,16 @@ pub enum Interpolation
     CubicSpline
 }
 
-pub enum TransformationProperty
-{
-    Translation(Vector3::<f32>),
-    Rotation(Vector4::<f32>),
-    Scale(Vector3::<f32>),
-    //Morph(Vec<Vec<f32>>), TODO
-}
 
 pub struct Channel
 {
     pub interpolation: Interpolation,
     pub timestamps: Vec<f32>,
-    pub transformation: Vec<TransformationProperty>,
+
+    pub transform_translation: Vec<Vector3<f32>>,
+    pub transform_rotation: Vec<Vector4<f32>>,
+    pub transform_scale: Vec<Vector3<f32>>,
+    pub transform_morph: Vec<Vec<f32>>,
 
     pub target: NodeItem
 }
@@ -39,7 +37,13 @@ impl Channel
         {
             interpolation: Interpolation::Linear,
             timestamps: vec![],
-            transformation: vec![],
+
+
+            transform_translation: vec![],
+            transform_rotation: vec![],
+            transform_scale: vec![],
+            transform_morph: vec![],
+
             target
         }
     }
@@ -318,37 +322,37 @@ impl Component for Animation
                     target_id = transformation.read().unwrap().id();
                 }
 
-                if channel.timestamps.len() != 0 && channel.transformation.len() == 0
-                {
-                    dbg!("ok something is weird - (morph targets?)");
-                    continue;
-                }
-
                 // ********** only one item per channel **********
-                if channel.timestamps.len() == 0 && channel.transformation.len() == 1
+                if channel.timestamps.len() == 0
                 {
-                    let from = &channel.transformation[0];
-
-                    let transform = match from
+                    let mut transform = None;
+                    if channel.transform_translation.len() > 0
                     {
-                        TransformationProperty::Translation(t) =>
-                        {
-                            nalgebra::Isometry3::translation(t.x, t.y, t.z).to_homogeneous()
-                        },
-                        TransformationProperty::Rotation(r) =>
-                        {
-                            let quaternion = UnitQuaternion::new_normalize(Quaternion::new(r.w, r.x, r.y, r.z));
-                            let quaternion: Rotation3<f32> = quaternion.into();
-                            quaternion.to_homogeneous()
-                        },
-                        TransformationProperty::Scale(s) =>
-                        {
-                            Matrix4::new_nonuniform_scaling(&s)
-                        },
-                    };
+                        let t = &channel.transform_translation[0];
+                        transform = Some(nalgebra::Isometry3::translation(t.x, t.y, t.z).to_homogeneous());
+                    }
+                    else if channel.transform_rotation.len() > 0
+                    {
+                        let r = &channel.transform_rotation[0];
+                        let quaternion = UnitQuaternion::new_normalize(Quaternion::new(r.w, r.x, r.y, r.z));
+                        let quaternion: Rotation3<f32> = quaternion.into();
+                        transform = Some(quaternion.to_homogeneous());
+                    }
+                    else if channel.transform_scale.len() > 0
+                    {
+                        let s = &channel.transform_scale[0];
+                        transform = Some(Matrix4::new_nonuniform_scaling(&s));
+                    }
+                    else if channel.transform_morph.len() > 0
+                    {
+                        // TODO
+                    }
 
-                    let target_item = target_map.get_mut(&target_id).unwrap();
-                    target_item.1 = target_item.1 * transform;
+                    if let Some(transform) = transform
+                    {
+                        let target_item = target_map.get_mut(&target_id).unwrap();
+                        target_item.1 = target_item.1 * transform;
+                    }
                 }
                 // ********** some items per channel **********
                 else
@@ -392,122 +396,177 @@ impl Component for Animation
                         }
                     }
 
-                    let s3 = t0 * 3;
                     let prev_time = channel.timestamps[t0];
                     let next_time = channel.timestamps[t1];
                     let factor = (t - prev_time) / (next_time - prev_time);
 
-                    let from = &channel.transformation[t0];
-                    let to = &channel.transformation[t1];
 
-                    match (from, to)
+                    // ********** translation **********
+                    if channel.transform_translation.len() > 0
                     {
-                        (TransformationProperty::Translation(trans0), TransformationProperty::Translation(trans1)) =>
+                        let transform = match channel.interpolation
                         {
-                            let transform = match channel.interpolation
+                            Interpolation::Linear =>
                             {
-                                Interpolation::Linear =>
-                                {
-                                    let interpolated = interpolate_vec3(&trans0, &trans1, factor);
-                                    nalgebra::Isometry3::translation(interpolated.x, interpolated.y, interpolated.z).to_homogeneous()
-                                },
-                                Interpolation::Step =>
-                                {
-                                    nalgebra::Isometry3::translation(trans0.x, trans0.y, trans0.z).to_homogeneous()
-                                },
-                                Interpolation::CubicSpline =>
-                                {
-                                    /*
-                                    let res = cubic_spline(
-                                        [t[s3], t[s3 + 1], t[s3 + 2]],
-                                        prev_time,
-                                        [t[s3 + 3], t[s3 + 4], t[s3 + 5]],
-                                        next_time,
-                                        factor,
-                                    )
-                                    */
+                                let from = &channel.transform_translation[t0];
+                                let to = &channel.transform_translation[t1];
 
-                                    dbg!("TODO");
-                                    Matrix4::<f32>::identity()
-                                },
-                            };
+                                let interpolated = interpolate_vec3(&from, &to, factor);
+                                nalgebra::Isometry3::translation(interpolated.x, interpolated.y, interpolated.z).to_homogeneous()
+                            },
+                            Interpolation::Step =>
+                            {
+                                let from = &channel.transform_translation[t0];
+                                nalgebra::Isometry3::translation(from.x, from.y, from.z).to_homogeneous()
+                            },
+                            Interpolation::CubicSpline =>
+                            {
+                                let delta_time = next_time - prev_time;
 
-                            let target_item = target_map.get_mut(&target_id).unwrap();
-                            target_item.1 = target_item.1 * transform;
-                        }
-                        (TransformationProperty::Rotation(rot0), TransformationProperty::Rotation(rot1)) =>
+                                let l = t0 * 3;
+
+                                let prev_input_tangent = &channel.transform_translation[l];
+                                let prev_keyframe_value = &channel.transform_translation[l+1];
+                                let prev_output_tangent = &channel.transform_translation[l+2];
+
+                                let r = t1 * 3;
+
+                                let next_input_tangent = &channel.transform_translation[r];
+                                let next_keyframe_value = &channel.transform_translation[r+1];
+                                let next_output_tangent = &channel.transform_translation[r+2];
+
+                                let res = cubic_spline_interpolate_vec3
+                                (
+                                    factor,
+                                    delta_time,
+                                    prev_input_tangent,
+                                    prev_keyframe_value,
+                                    prev_output_tangent,
+                                    next_input_tangent,
+                                    next_keyframe_value,
+                                    next_output_tangent,
+                                );
+
+                                nalgebra::Isometry3::translation(res.x, res.y, res.z).to_homogeneous()
+                            },
+                        };
+
+                        let target_item = target_map.get_mut(&target_id).unwrap();
+                        target_item.1 = target_item.1 * transform;
+                    }
+                    // ********** rotation **********
+                    else if channel.transform_rotation.len() > 0
+                    {
+                        let transform = match channel.interpolation
                         {
-                            let transform = match channel.interpolation
+                            Interpolation::Linear =>
                             {
-                                Interpolation::Linear =>
-                                {
-                                    let quaternion0 = UnitQuaternion::new_normalize(Quaternion::new(rot0.w, rot0.x, rot0.y, rot0.z));
-                                    let quaternion1 = UnitQuaternion::new_normalize(Quaternion::new(rot1.w, rot1.x, rot1.y, rot1.z));
+                                let from = &channel.transform_rotation[t0];
+                                let to = &channel.transform_rotation[t1];
 
-                                    let interpolated = quaternion0.slerp(&quaternion1, factor);
-                                    let interpolated: Rotation3<f32> = interpolated.into();
-                                    interpolated.to_homogeneous()
-                                },
-                                Interpolation::Step =>
-                                {
-                                    let quaternion = UnitQuaternion::new_normalize(Quaternion::new(rot0.w, rot0.x, rot0.y, rot0.z));
-                                    let quaternion: Rotation3<f32> = quaternion.into();
-                                    quaternion.to_homogeneous()
-                                },
-                                Interpolation::CubicSpline =>
-                                {
-                                    /*
-                                    let res = cubic_spline(
-                                        [t[s3], t[s3 + 1], t[s3 + 2]],
-                                        prev_time,
-                                        [t[s3 + 3], t[s3 + 4], t[s3 + 5]],
-                                        next_time,
-                                        factor,
-                                    )
-                                    */
+                                let quaternion0 = UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z));
+                                let quaternion1 = UnitQuaternion::new_normalize(Quaternion::new(to.w, to.x, to.y, to.z));
 
-                                    dbg!("TODO");
-                                    Matrix4::<f32>::identity()
-                                },
-                            };
+                                let interpolated = quaternion0.slerp(&quaternion1, factor);
+                                let interpolated: Rotation3<f32> = interpolated.into();
+                                interpolated.to_homogeneous()
+                            },
+                            Interpolation::Step =>
+                            {
+                                let from = &channel.transform_rotation[t0];
+                                let quaternion = UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z));
+                                let quaternion: Rotation3<f32> = quaternion.into();
+                                quaternion.to_homogeneous()
+                            },
+                            Interpolation::CubicSpline =>
+                            {
+                                let delta_time = next_time - prev_time;
 
-                            let target_item = target_map.get_mut(&target_id).unwrap();
-                            target_item.1 = target_item.1 * transform;
-                        }
-                        (TransformationProperty::Scale(scale0), TransformationProperty::Scale(scale1)) =>
+                                let l = t0 * 3;
+
+                                let prev_input_tangent = &channel.transform_rotation[l];
+                                let prev_keyframe_value = &channel.transform_rotation[l+1];
+                                let prev_output_tangent = &channel.transform_rotation[l+2];
+
+                                let r = t1 * 3;
+
+                                let next_input_tangent = &channel.transform_rotation[r];
+                                let next_keyframe_value = &channel.transform_rotation[r+1];
+                                let next_output_tangent = &channel.transform_rotation[r+2];
+
+                                let res = cubic_spline_interpolate_vec4
+                                (
+                                    factor,
+                                    delta_time,
+                                    prev_input_tangent,
+                                    prev_keyframe_value,
+                                    prev_output_tangent,
+                                    next_input_tangent,
+                                    next_keyframe_value,
+                                    next_output_tangent,
+                                );
+
+                                let quaternion = UnitQuaternion::new_normalize(Quaternion::new(res.w, res.x, res.y, res.z));
+                                let quaternion: Rotation3<f32> = quaternion.into();
+                                quaternion.to_homogeneous()
+                            },
+                        };
+
+                        let target_item = target_map.get_mut(&target_id).unwrap();
+                        target_item.1 = target_item.1 * transform;
+                    }
+                    // ********** scale **********
+                    else if channel.transform_scale.len() > 0
+                    {
+                        let transform = match channel.interpolation
                         {
-                            let transform = match channel.interpolation
+                            Interpolation::Linear =>
                             {
-                                Interpolation::Linear =>
-                                {
-                                    let interpolated = interpolate_vec3(&scale0, &scale1, factor);
-                                    Matrix4::new_nonuniform_scaling(&interpolated)
-                                },
-                                Interpolation::Step =>
-                                {
-                                    Matrix4::new_nonuniform_scaling(&scale0)
-                                },
-                                Interpolation::CubicSpline =>
-                                {
-                                    /*
-                                    let res = cubic_spline(
-                                        [t[s3], t[s3 + 1], t[s3 + 2]],
-                                        prev_time,
-                                        [t[s3 + 3], t[s3 + 4], t[s3 + 5]],
-                                        next_time,
-                                        factor,
-                                    )
-                                    */
+                                let from = &channel.transform_scale[t0];
+                                let to = &channel.transform_scale[t1];
 
-                                    dbg!("TODO");
-                                    Matrix4::<f32>::identity()
-                                },
-                            };
+                                let interpolated = interpolate_vec3(&from, &to, factor);
+                                Matrix4::new_nonuniform_scaling(&interpolated)
+                            },
+                            Interpolation::Step =>
+                            {
+                                let from = &channel.transform_scale[t0];
+                                Matrix4::new_nonuniform_scaling(&from)
+                            },
+                            Interpolation::CubicSpline =>
+                            {
+                                let delta_time = next_time - prev_time;
 
-                            let target_item = target_map.get_mut(&target_id).unwrap();
-                            target_item.1 = target_item.1 * transform;
-                        }
-                        _ =>{} // not possible
+                                let l = t0 * 3;
+
+                                let prev_input_tangent = &channel.transform_scale[l];
+                                let prev_keyframe_value = &channel.transform_scale[l+1];
+                                let prev_output_tangent = &channel.transform_scale[l+2];
+
+                                let r = t1 * 3;
+
+                                let next_input_tangent = &channel.transform_scale[r];
+                                let next_keyframe_value = &channel.transform_scale[r+1];
+                                let next_output_tangent = &channel.transform_scale[r+2];
+
+                                let res = cubic_spline_interpolate_vec3
+                                (
+                                    factor,
+                                    delta_time,
+                                    prev_input_tangent,
+                                    prev_keyframe_value,
+                                    prev_output_tangent,
+                                    next_input_tangent,
+                                    next_keyframe_value,
+                                    next_output_tangent,
+                                );
+
+                                Matrix4::new_nonuniform_scaling(&res)
+                            },
+                        };
+
+                        let target_item = target_map.get_mut(&target_id).unwrap();
+                        target_item.1 = target_item.1 * transform;
                     }
                 }
             }

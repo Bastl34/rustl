@@ -74,23 +74,55 @@ pub fn interpolate_vec4(a: &Vector4<f32>, b: &Vector4<f32>, f: f32) -> Vector4<f
     )
 }
 
-// borrowed from here: https://github.com/KaminariOS/rustracer/blob/0a6f950bd1506ca2ccf927e53e1cc5b458aa3bb5/crates/libs/asset_loader/src/animation.rs#L156
-fn cubic_spline_vec3(source: [Vector3::<f32>; 3], source_time: f32, target: [Vector3::<f32>; 3], target_time: f32, amount: f32 ) -> Vector3::<f32>
+//https://github.com/dakom/awsm-renderer/blob/1c7df6b66a3507e11721d549d85c3cfeae146a1f/crate/src/animation/clip.rs#L151
+pub fn cubic_spline_interpolate_vec3
+(
+    interpolation_time: f32,
+    delta_time: f32,
+    prev_input_tangent: &Vector3::<f32>,
+    prev_keyframe_value: &Vector3::<f32>,
+    prev_output_tangent: &Vector3::<f32>,
+    next_input_tangent: &Vector3::<f32>,
+    next_keyframe_value: &Vector3::<f32>,
+    next_output_tangent: &Vector3::<f32>
+) -> Vector3::<f32>
 {
-    let source = source.map(Vector3::<f32>::from);
-    let target = target.map(Vector3::<f32>::from);
-    let t = amount;
-    let p0 = source[1];
-    let m0 = (target_time - source_time) * source[2];
-    let p1 = target[1];
-    let m1 = (target_time - source_time) * target[0];
+    let t = interpolation_time;
+    let t2 = t * t;
+    let t3 = t * t * t;
 
-    let res = (2.0 * t * t * t - 3.0 * t * t + 1.0) * p0
-        + (t * t * t - 2.0 * t * t + t) * m0
-        + (-2.0 * t * t * t + 3.0 * t * t) * p1
-        + (t * t * t - t * t) * m1;
+    let prev_tangent = delta_time * prev_output_tangent;
+    let next_tangent = delta_time * next_input_tangent;
 
-    res
+    ((2.0 * t3 - 3.0 * t2 + 1.0) * prev_keyframe_value)
+    + ((t3 - 2.0 * t2 + t) * prev_tangent)
+    + (( -2.0 * t3 + 3.0 * t2) * next_keyframe_value)
+    + ((t3 - t2) * next_tangent)
+}
+
+pub fn cubic_spline_interpolate_vec4
+(
+    interpolation_time: f32,
+    delta_time: f32,
+    prev_input_tangent: &Vector4::<f32>,
+    prev_keyframe_value: &Vector4::<f32>,
+    prev_output_tangent: &Vector4::<f32>,
+    next_input_tangent: &Vector4::<f32>,
+    next_keyframe_value: &Vector4::<f32>,
+    next_output_tangent: &Vector4::<f32>
+) -> Vector4::<f32> {
+    let t = interpolation_time;
+    let t2 = t * t;
+    let t3 = t * t * t;
+
+    let prev_tangent = delta_time * prev_output_tangent;
+    let next_tangent = delta_time * next_input_tangent;
+
+    ((2.0 * t3 - 3.0 * t2 + 1.0) * prev_keyframe_value)
+    + ((t3 - 2.0 * t2 + t) * prev_tangent)
+    + (( -2.0 * t3 + 3.0 * t2) * next_keyframe_value)
+    + ((t3 - t2) * next_tangent)
+    //prev_keyframe_value.clone()
 }
 
 pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)
