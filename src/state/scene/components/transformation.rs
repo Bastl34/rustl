@@ -2,7 +2,7 @@ use std::any::Any;
 
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem}, component_impl_no_update};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem, gui::helper::info_box::info_box_with_body}, component_impl_no_update};
 
 use super::component::{Component, ComponentBase};
 
@@ -16,6 +16,8 @@ pub struct TransformationData
     pub rotation_quat: Option<Vector4<f32>>,
     pub scale: Vector3<f32>,
 
+    pub animation_weight: f32,
+    pub animation_update_frame: Option<u64>,
     pub animation_trans: Option<Matrix4<f32>>, // only supported with transform_vectors
 
     trans: Matrix4<f32>,
@@ -42,6 +44,8 @@ impl Transformation
             rotation_quat: None,
             scale,
 
+            animation_weight: 0.0,
+            animation_update_frame: None,
             animation_trans: None,
 
             trans: Matrix4::<f32>::identity(),
@@ -70,6 +74,8 @@ impl Transformation
             rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
+            animation_weight: 0.0,
+            animation_update_frame: None,
             animation_trans: None,
 
             trans: trans,
@@ -98,6 +104,8 @@ impl Transformation
             rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
 
+            animation_weight: 0.0,
+            animation_update_frame: None,
             animation_trans: None,
 
             trans: Matrix4::<f32>::identity(),
@@ -185,7 +193,8 @@ impl Transformation
 
             if let Some(animation_trans) = data.animation_trans
             {
-                trans = trans * animation_trans;
+                //trans = trans * animation_trans;
+                trans = animation_trans;
             }
 
             data.trans = trans;
@@ -533,6 +542,14 @@ impl Component for Transformation
             data.get_mut().scale = scale;
             data.get_mut().parent_inheritance = inheritance;
             self.calc_transform();
+        }
+
+        if let Some(animation_trans) = &self.get_data().animation_trans
+        {
+            info_box_with_body(ui, |ui|
+            {
+                ui.label(format!("Animation Trans:\n{:?}", animation_trans));
+            });
         }
     }
 }

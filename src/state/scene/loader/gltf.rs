@@ -6,7 +6,7 @@ use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, i
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation, TransformationProperty}, animatable::{self, Animatable}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut, component_downcast};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation, TransformationProperty}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut, component_downcast};
 
 
 struct JointData
@@ -640,6 +640,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
                     let morpth_targets: Vec<Vec<f32>> = weights.chunks(chuck_size).map(|x| x.to_vec()).collect();
 
                     // TODO
+                    dbg!("TODO: morph targets are not supported yet");
                 }
             };
 
@@ -674,6 +675,29 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
             // otherwise use the parent of the found on in the hierarchy
             else
             {
+                // find best item based on parents
+                /*
+                let mut possible_node = parent_of_first.clone();
+                let mut parent_nodes = *parent_nodes;
+                while parent_nodes > 2
+                {
+                    if possible_node.read().unwrap().parent.is_some()
+                    {
+                        let parent;
+                        {
+                            let parent_arc = &possible_node.read().unwrap().parent;
+                            parent = parent_arc.clone().unwrap();
+                        }
+                        possible_node = parent;
+                        parent_nodes -= 1;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                possible_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
+                */
                 let parent_of_parent_first = &parent_of_first.read().unwrap().parent;
                 let parent_of_parent_first = parent_of_parent_first.clone().unwrap();
 
@@ -722,9 +746,9 @@ pub fn transform_decompose(transform: gltf::scene::Transform) ->(Vector3<f32>, V
     );
 
     let rotation: Rotation3<f32> = quaternion.into();
-    let euer_angles = rotation.euler_angles();
+    let euler_angles = rotation.euler_angles();
 
-    let rotation = Vector3::<f32>::new(euer_angles.0, euer_angles.1, euer_angles.2);
+    let rotation = Vector3::<f32>::new(euler_angles.0, euler_angles.1, euler_angles.2);
 
     (translate, rotation, scale)
 }
@@ -1229,19 +1253,13 @@ fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, id_manager: IdMana
             for channel in &animation.channels
             {
                 let target = channel.target.as_ref();
-                if target.read().unwrap().find_component::<Joint>().is_none()
+
+                // check if transformation node is existing -> if not create one
+                if target.read().unwrap().find_component::<Joint>().is_none() && target.read().unwrap().find_component::<Transformation>().is_none()
+                //if target.read().unwrap().find_component::<Transformation>().is_none()
                 {
                     let component_id = id_manager.write().unwrap().get_next_component_id();
-                    let animatable: Animatable = Animatable::new(component_id, "Animatable");
-
-                    target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animatable))));
-                }
-
-                // check if transformation node is extisting -> if not create one
-                if target.read().unwrap().find_component::<Transformation>().is_none()
-                {
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
-                    let transformation: Transformation = Transformation::identity(component_id, "Transformation");
+                    let transformation: Transformation = Transformation::identity(component_id, "Animation Transformation");
 
                     target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 }
