@@ -585,12 +585,12 @@ impl Component for Animation
                     let animation_trans = component_data.animation_trans.as_mut().unwrap();
 
                     // apply if its the first one
-                    if approx_zero(component_data.animation_weight)
+                    if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
                     {
                         *animation_trans = target_item.1 * self.weight;
                     }
                     // add if its not the first one
-                    else
+                    else if !approx_zero(self.weight)
                     {
                         // animation blending - blend this animation with the prev one
                         *animation_trans = *animation_trans + (target_item.1 * self.weight);
@@ -606,12 +606,12 @@ impl Component for Animation
                     let animation_trans = component_data.animation_trans.as_mut().unwrap();
 
                     // apply if its the first one
-                    if approx_zero(component_data.animation_weight)
+                    if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
                     {
                         *animation_trans = target_item.1 * self.weight;
                     }
                     // add if its not the first one
-                    else
+                    else if !approx_zero(self.weight)
                     {
                         // animation blending - blend this animation with the prev one
                         *animation_trans = *animation_trans + (target_item.1 * self.weight);
