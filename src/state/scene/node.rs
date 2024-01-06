@@ -60,6 +60,7 @@ impl Node
             components: vec![],
 
             parent: None,
+
             skin_root_node: None,
 
             extras: HashMap::new(),
@@ -383,7 +384,15 @@ impl Node
         joints.extend(child_joint_transforms);
 
         // sort by joint id
+        // CHECK IF NEEDED
         joints.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        // let it start from id=0
+        // TODO CHECK IF THIS IS CORRECT
+        for (i, joint) in &mut joints.iter_mut().enumerate()
+        {
+            joint.0 = i as u32;
+        }
 
         // check data
         // check that first item is 0 and last item is length -1

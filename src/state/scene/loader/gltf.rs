@@ -1,12 +1,12 @@
 
 use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
 
-use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, iter::Animations};
+use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, iter::{Animations, Skins}};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light}, component_downcast_mut, component_downcast};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light, skeleton}, component_downcast_mut, component_downcast};
 
 
 struct JointData
@@ -14,6 +14,8 @@ struct JointData
     index: usize,
     inverse_bind_matrix: Matrix4<f32>
 }
+
+type Skeletons = HashMap<usize, Vec<JointData>>;
 
 pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
@@ -109,13 +111,11 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     root_node.write().unwrap().root_node = true;
 
     dbg!("reading nodes...");
-    //let mut scene_nodes = vec![];
-    let mut joint_data: HashMap<usize, Vec<JointData>> = HashMap::new();
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
         {
-            read_node(&node, &buffers, object_only, &loaded_materials, &mut joint_data, scene_id, main_queue.clone(), id_manager.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
+            read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), id_manager.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
         }
     }
 
@@ -127,9 +127,9 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     }
 
     // ********** map skeletons **********
-    dbg!("mapping skeletons...");
+    dbg!("loading skeletons...");
     let nodes = vec![root_node.clone()];
-    map_skeletons(&nodes, &joint_data, id_manager.clone());
+    load_skeletons(&nodes, gltf.skins(), &buffers, id_manager.clone());
 
     // ********** animations **********
     dbg!("loading animations...");
@@ -160,7 +160,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
 }
 
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, joint_data: &mut HashMap<usize, Vec<JointData>>, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
@@ -276,42 +276,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     }));
                 },
             };
-        }
-    }
-
-    // ********** skin/skeleton **********
-    if let Some(skin) = node.skin()
-    {
-        let joints = skin.joints();
-        let joint_indices = joints.map(|j| j.index()).collect::<Vec<usize>>();
-
-        let inverse_bind_matrices: Vec<_> = skin
-            .reader(|b| Some(&buffers[b.index()]))
-            .read_inverse_bind_matrices()
-            .unwrap()
-            .collect();
-
-        let inverse_bind_matrices = inverse_bind_matrices.iter().map(|mat|
-        {
-            Matrix4::from_fn(|i, j| mat[j][i])
-        }).collect::<Vec<Matrix4<f32>>>();
-
-        if inverse_bind_matrices.len() == joint_indices.len()
-        {
-            let inverse_bind_matrices = inverse_bind_matrices.iter().enumerate().map(|(i, mat)|
-            {
-                JointData
-                {
-                    index: joint_indices[i],
-                    inverse_bind_matrix: *mat
-                }
-            }).collect::<Vec<JointData>>();
-
-            joint_data.insert(node_index, inverse_bind_matrices);
-        }
-        else
-        {
-            dbg!("joints len does not match inverse_bind_matrices len");
         }
     }
 
@@ -466,30 +430,37 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
             let node_arc = Node::new(id, name.as_str());
             {
-                let mut node = node_arc.write().unwrap();
-                node.add_component(Arc::new(RwLock::new(Box::new(item))));
-                node.extras.insert("_json_index".to_string(), node_index.to_string());
+                let mut scene_node = node_arc.write().unwrap();
+                scene_node.add_component(Arc::new(RwLock::new(Box::new(item))));
+                scene_node.extras.insert("_json_index".to_string(), node_index.to_string());
 
                 // add material
                 if let Some(material_index) = material_index
                 {
                     let material_arc = loaded_materials.get(&material_index).unwrap().clone();
-                    node.add_component(material_arc);
+                    scene_node.add_component(material_arc);
                 }
 
                 // transformation
                 if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
                 {
                     let component_id = id_manager.write().unwrap().get_next_component_id();
-                    node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                    scene_node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                }
+
+                // add skeleton/skin if needed
+                if let Some(skin) = node.skin()
+                {
+                    dbg!(" --- {} {}", name, skin.index());
+                    scene_node.extras.insert("_skeleton_index".to_string(), skin.index().to_string());
                 }
 
                 // add default instance
                 let instance_id = id_manager.write().unwrap().get_next_instance_id();
-                node.create_default_instance(node_arc.clone(), instance_id);
+                scene_node.create_default_instance(node_arc.clone(), instance_id);
 
                 // parent
-                node.parent = Some(parent_node.clone());
+                scene_node.parent = Some(parent_node.clone());
             }
 
             Node::add_node(parent_node.clone(), node_arc.clone());
@@ -533,7 +504,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     // ********** children **********
     for child in node.children()
     {
-        read_node(&child, &buffers, object_only, loaded_materials, joint_data, scene_id, main_queue.clone(), id_manager.clone(), parent_node.clone(), &world_transform, level + 1);
+        read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), id_manager.clone(), parent_node.clone(), &world_transform, level + 1);
     }
 }
 
@@ -704,6 +675,306 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
         else
         {
             root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
+        }
+    }
+}
+
+
+fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, buffers: &Vec<gltf::buffer::Data>, id_manager: IdManagerItem)
+{
+    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
+    let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
+
+    for skin in skins
+    {
+        let skin_index = skin.index();
+        dbg!("loading skin: {}", skin.name().unwrap_or("unknown skin"));
+
+        // ********** load skeleton **********
+        let joints = skin.joints();
+        let joint_indices = joints.map(|j| j.index()).collect::<Vec<usize>>();
+
+        let inverse_bind_matrices: Vec<_> = skin
+            .reader(|b| Some(&buffers[b.index()]))
+            .read_inverse_bind_matrices()
+            .unwrap()
+            .collect();
+
+        let inverse_bind_matrices = inverse_bind_matrices.iter().map(|mat|
+        {
+            Matrix4::from_fn(|i, j| mat[j][i])
+        }).collect::<Vec<Matrix4<f32>>>();
+
+        if joint_indices.len() != inverse_bind_matrices.len()
+        {
+            dbg!("its not supported that joint_indices.len() != inverse_bind_matrices.len()");
+            continue;
+        }
+
+        // ********** map joints **********
+        for i in 0..joint_indices.len()
+        {
+            let joint_id = i;
+            let joint_index = joint_indices[i];
+            let inverse_bind_matrix = inverse_bind_matrices[i];
+
+            for node in &all_nodes
+            {
+                let mut node = node.write().unwrap();
+
+                let json_index = node.extras.get("_json_index");
+
+                if let Some(json_index) = json_index
+                {
+                    let json_index = json_index.parse::<usize>().unwrap();
+
+                    if json_index == joint_index
+                    {
+                        if node.find_component::<Joint>().is_none()
+                        {
+                            let component_id = id_manager.write().unwrap().get_next_component_id();
+                            let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
+                            joint.get_data_mut().get_mut().inverse_bind_trans = inverse_bind_matrix.clone();
+
+                            node.add_component(Arc::new(RwLock::new(Box::new(joint))));
+                        }
+
+                        let joint = node.find_component::<Joint>().unwrap();
+                        component_downcast_mut!(joint, Joint);
+                        let joint_data = joint.get_data_mut().get_mut();
+                        joint_data.skin_ids.insert(skin_index as u32);
+                    }
+                }
+            }
+        }
+
+        // ********** map skeletons (root skeleton nodes) **********
+        for mesh_node in &all_nodes_with_mesh
+        {
+            //scene_node.extras.insert("_skeleton_index".to_string(), skin.index().to_string());
+            let mut skeleton_index = None;
+            {
+                let mesh_node = mesh_node.read().unwrap();
+                if let Some(_skeleton_index) = mesh_node.extras.get("_skeleton_index")
+                {
+                    skeleton_index = Some(_skeleton_index.clone());
+                }
+            }
+
+            if let Some(skeleton_index) = skeleton_index
+            {
+                let skeleton_index = skeleton_index.parse::<usize>().unwrap();
+
+                //dbg!(skeleton_index);
+
+                // INFO: this is only working because all_nodes adds parent first and next items are the child items of the parent
+                for node_arc in &all_nodes
+                {
+                    let node = node_arc.read().unwrap();
+                    if let Some(joint) = node.find_component::<Joint>()
+                    {
+                        component_downcast!(joint, Joint);
+                        let joint_data = joint.get_data();
+
+                        if joint_data.skin_ids.contains(&(skeleton_index as u32))
+                        {
+                            let mut mesh_node = mesh_node.write().unwrap();
+                            mesh_node.skin_root_node = Some(node_arc.clone());
+                            //mesh_node.skin_root_id = Some(skin_index as u32);
+                            break;
+                        }
+                    }
+                }
+
+
+                /*
+                if skeleton_index == skin.index()
+                {
+                    let mut node = node.write().unwrap();
+
+                    let parent = node.parent.clone();
+
+                    if parent.is_none()
+                    {
+                        node.skin_root_node = Some(node.clone());
+                    }
+                    else
+                    {
+                        let parent = parent.unwrap();
+
+                        if parent.read().unwrap().find_component::<Joint>().is_none()
+                        {
+                            node.skin_root_node = Some(node.clone());
+                        }
+                    }
+                }
+                 */
+            }
+        }
+    }
+
+
+    /*
+
+        // ********** skin/skeleton **********
+    /*
+    if let Some(skin) = node.skin()
+    {
+        let joints = skin.joints();
+        let joint_indices = joints.map(|j| j.index()).collect::<Vec<usize>>();
+
+        dbg!("skin: {} joints {}", skin.index(), joint_indices.len());
+        dbg!(&joint_indices);
+
+        let inverse_bind_matrices: Vec<_> = skin
+            .reader(|b| Some(&buffers[b.index()]))
+            .read_inverse_bind_matrices()
+            .unwrap()
+            .collect();
+
+        let inverse_bind_matrices = inverse_bind_matrices.iter().map(|mat|
+        {
+            Matrix4::from_fn(|i, j| mat[j][i])
+        }).collect::<Vec<Matrix4<f32>>>();
+
+        if inverse_bind_matrices.len() == joint_indices.len()
+        {
+            let inverse_bind_matrices = inverse_bind_matrices.iter().enumerate().map(|(i, mat)|
+            {
+                JointData
+                {
+                    index: joint_indices[i],
+                    inverse_bind_matrix: *mat
+                }
+            }).collect::<Vec<JointData>>();
+
+            skeletons.insert(node_index, inverse_bind_matrices);
+        }
+        else
+        {
+            dbg!("joints len does not match inverse_bind_matrices len");
+        }
+    }
+     */
+     */
+
+    /*
+    dbg!(skeletons.len());
+
+    for mesh_node in &all_nodes_with_mesh
+    {
+        let mesh_node_json_index = mesh_node.read().unwrap().extras.get("_json_index").unwrap().parse::<u32>().unwrap();
+
+        // ******************** map joint_ids ********************
+        if let Some(mesh_joint_data) = skeletons.get(&(mesh_node_json_index as usize))
+        {
+            for (joint_id, mesh_joint_data) in mesh_joint_data.iter().enumerate()
+            {
+                for node_arc in &all_nodes
+                {
+                    let mut json_index = "".to_string();
+                    let has_joint;
+                    {
+                        let node = node_arc.read().unwrap();
+                        let _json_index = node.extras.get("_json_index");
+                        if let Some(_json_index) = _json_index
+                        {
+                            json_index = _json_index.clone();
+                        }
+
+                        has_joint = node_arc.read().unwrap().find_component::<Joint>().is_some();
+                    }
+
+                    if json_index.len() > 0 && !has_joint
+                    {
+                        let json_index = json_index.parse::<u32>().unwrap();
+
+                        if json_index == mesh_joint_data.index as u32
+                        {
+                            let component_id = id_manager.write().unwrap().get_next_component_id();
+                            let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
+                            joint.get_data_mut().get_mut().inverse_bind_trans = mesh_joint_data.inverse_bind_matrix.clone();
+
+                            node_arc.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(joint))));
+                        }
+                    }
+                }
+            }
+        }
+
+        // ******************** map skin_root_node and find root joint ********************
+        if let Some(mesh_joint_data) = skeletons.get(&(mesh_node_json_index as usize))
+        {
+            for (joint_id, _mesh_joint_data) in mesh_joint_data.iter().enumerate()
+            {
+                for node_arc in &all_nodes
+                {
+                    let joint_component = node_arc.read().unwrap().find_component::<Joint>();
+
+                    if joint_component.is_none()
+                    {
+                        continue;
+                    }
+
+                    let joint_component = joint_component.unwrap();
+                    component_downcast_mut!(joint_component, Joint);
+
+                    let parent;
+                    {
+                        let node = node_arc.read().unwrap();
+                        parent = node.parent.clone();
+                    }
+
+                    if joint_id as u32 == joint_component.get_data().joint_id
+                    {
+                        // the node has no parent and joint id is matching
+                        if parent.is_none()
+                        {
+                            //joint_component.get_data_mut().get_mut().skin_root_node = Some(node_arc.clone());
+                            mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
+                        }
+
+                        // node has parent but parent is no joint
+                        if let Some(parent) = &parent
+                        {
+                            if parent.read().unwrap().find_component::<Joint>().is_none()
+                            {
+                                mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+     */
+}
+
+
+fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, id_manager: IdManagerItem)
+{
+    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
+
+    for node in &all_nodes
+    {
+        if let Some(animation) = node.read().unwrap().find_component::<Animation>()
+        {
+            component_downcast!(animation, Animation);
+
+            for channel in &animation.channels
+            {
+                let target = channel.target.as_ref();
+
+                // check if transformation node is existing -> if not create one
+                if target.read().unwrap().find_component::<Joint>().is_none() && target.read().unwrap().find_component::<Transformation>().is_none()
+                //if target.read().unwrap().find_component::<Transformation>().is_none()
+                {
+                    let component_id = id_manager.write().unwrap().get_next_component_id();
+                    let transformation: Transformation = Transformation::identity(component_id, "Animation Transformation");
+
+                    target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+                }
+            }
         }
     }
 }
@@ -1137,128 +1408,6 @@ pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<
                 else
                 {
                     (bytes, None)
-                }
-            }
-        }
-    }
-}
-
-fn map_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, joint_data: &HashMap<usize, Vec<JointData>>, id_manager: IdManagerItem)
-{
-    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
-    let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
-
-    for mesh_node in &all_nodes_with_mesh
-    {
-        let mesh_node_json_index = mesh_node.read().unwrap().extras.get("_json_index").unwrap().parse::<u32>().unwrap();
-
-        // ******************** map joint_ids ********************
-        if let Some(mesh_joint_data) = joint_data.get(&(mesh_node_json_index as usize))
-        {
-            for (joint_id, mesh_joint_data) in mesh_joint_data.iter().enumerate()
-            {
-                for node_arc in &all_nodes
-                {
-                    let mut json_index = "".to_string();
-                    let has_joint;
-                    {
-                        let node = node_arc.read().unwrap();
-                        let _json_index = node.extras.get("_json_index");
-                        if let Some(_json_index) = _json_index
-                        {
-                            json_index = _json_index.clone();
-                        }
-
-                        has_joint = node_arc.read().unwrap().find_component::<Joint>().is_some();
-                    }
-
-                    if json_index.len() > 0 && !has_joint
-                    {
-                        let json_index = json_index.parse::<u32>().unwrap();
-
-                        if json_index == mesh_joint_data.index as u32
-                        {
-                            let component_id = id_manager.write().unwrap().get_next_component_id();
-                            let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
-                            joint.get_data_mut().get_mut().inverse_bind_trans = mesh_joint_data.inverse_bind_matrix.clone();
-
-                            node_arc.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(joint))));
-                        }
-                    }
-                }
-            }
-        }
-
-        // ******************** map skin_root_node and find root joint ********************
-        if let Some(mesh_joint_data) = joint_data.get(&(mesh_node_json_index as usize))
-        {
-            for (joint_id, _mesh_joint_data) in mesh_joint_data.iter().enumerate()
-            {
-                for node_arc in &all_nodes
-                {
-                    let joint_component = node_arc.read().unwrap().find_component::<Joint>();
-
-                    if joint_component.is_none()
-                    {
-                        continue;
-                    }
-
-                    let joint_component = joint_component.unwrap();
-                    component_downcast_mut!(joint_component, Joint);
-
-                    let parent;
-                    {
-                        let node = node_arc.read().unwrap();
-                        parent = node.parent.clone();
-                    }
-
-                    if joint_id as u32 == joint_component.get_data().joint_id
-                    {
-                        // the node has no parent and joint id is matching
-                        if parent.is_none()
-                        {
-                            //joint_component.get_data_mut().get_mut().skin_root_node = Some(node_arc.clone());
-                            mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
-                        }
-
-                        // node has parent but parent is no joint
-                        if let Some(parent) = &parent
-                        {
-                            if parent.read().unwrap().find_component::<Joint>().is_none()
-                            {
-                                mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, id_manager: IdManagerItem)
-{
-    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
-
-    for node in &all_nodes
-    {
-        if let Some(animation) = node.read().unwrap().find_component::<Animation>()
-        {
-            component_downcast!(animation, Animation);
-
-            for channel in &animation.channels
-            {
-                let target = channel.target.as_ref();
-
-                // check if transformation node is existing -> if not create one
-                if target.read().unwrap().find_component::<Joint>().is_none() && target.read().unwrap().find_component::<Transformation>().is_none()
-                //if target.read().unwrap().find_component::<Transformation>().is_none()
-                {
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
-                    let transformation: Transformation = Transformation::identity(component_id, "Animation Transformation");
-
-                    target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 }
             }
         }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use nalgebra::Matrix4;
 
 use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::NodeItem, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast};
@@ -8,6 +10,7 @@ use super::{component::{ComponentBase, Component, ComponentItem}, transformation
 pub struct JointData
 {
     pub joint_id: u32,
+    pub skin_ids: HashSet<u32>,
     pub local_trans: Matrix4<f32>,
     pub inverse_bind_trans: Matrix4<f32>,
     //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
@@ -30,6 +33,7 @@ impl Joint
         let data = JointData
         {
             joint_id,
+            skin_ids: HashSet::new(),
             local_trans: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
             //inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
@@ -129,6 +133,7 @@ impl Component for Joint
     fn ui(&mut self, ui: &mut egui::Ui)
     {
         ui.label(format!("Joint Id: {}", self.get_data().joint_id));
+        ui.label(format!("Skin Id: {:?}", self.get_data().skin_ids));
 
         ui.label(format!("Inverse Bind Trans:\n{:?}", self.get_data().inverse_bind_trans));
         //ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));

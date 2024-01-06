@@ -1,4 +1,4 @@
-use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap};
+use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, vec};
 
 use nalgebra::{Point3, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
@@ -419,10 +419,12 @@ impl Scene
                 {
                     if node.skeleton_render_item.is_none()
                     {
+                        //println!("---------------------------------- OK0 {}", node.name);
+
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            //dbg!("---------------------------------- OK");
+                            //println!("---------------------------------- OK1");
 
                             // consume changes
                             //Self::consume_changed_joints(skin_root_node.clone());
@@ -430,10 +432,17 @@ impl Scene
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &joint_matrices);
                             node.skeleton_render_item = Some(Box::new(skeleton_buffer));
                         }
+                        else
+                        {
+                            println!("---------------------------------- OK1.1");
+
+                            let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &vec![]);
+                            node.skeleton_render_item = Some(Box::new(skeleton_buffer));
+                        }
                     }
                     else if Self::has_changed_joints(skin_root_node.clone())
                     {
-                        //dbg!("---------------------------------- OK 2");
+                        //println!("---------------------------------- OK 2");
 
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
                         if let Some(joint_matrices) = joint_matrices
