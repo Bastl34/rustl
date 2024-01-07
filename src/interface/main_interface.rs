@@ -462,7 +462,7 @@ impl MainInterface
                 //let _ = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let _ = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -478,7 +478,7 @@ impl MainInterface
                 //let _ = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let _ = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|

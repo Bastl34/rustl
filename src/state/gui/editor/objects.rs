@@ -269,6 +269,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     {
         collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", |ui|
         {
+            ui.label(format!(" ⚫ skeleton id: {:?}", node.read().unwrap().skin_id));
+
             ui.horizontal(|ui|
             {
                 ui.label("Link to Skeleton: ");

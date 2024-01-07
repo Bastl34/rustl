@@ -451,7 +451,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 // add skeleton/skin if needed
                 if let Some(skin) = node.skin()
                 {
-                    dbg!(" --- {} {}", name, skin.index());
                     scene_node.extras.insert("_skeleton_index".to_string(), skin.index().to_string());
                 }
 
@@ -733,7 +732,8 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                         if node.find_component::<Joint>().is_none()
                         {
                             let component_id = id_manager.write().unwrap().get_next_component_id();
-                            let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
+                            //let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
+                            let mut joint = Joint::new(component_id, "Joint");
                             joint.get_data_mut().get_mut().inverse_bind_trans = inverse_bind_matrix.clone();
 
                             node.add_component(Arc::new(RwLock::new(Box::new(joint))));
@@ -742,212 +742,97 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                         let joint = node.find_component::<Joint>().unwrap();
                         component_downcast_mut!(joint, Joint);
                         let joint_data = joint.get_data_mut().get_mut();
-                        joint_data.skin_ids.insert(skin_index as u32);
+                        //joint_data.skin_ids.insert(skin_index as u32);
+                        joint_data.skin_ids.insert(skin_index as u32, joint_id as u32);
                     }
                 }
-            }
-        }
-
-        // ********** map skeletons (root skeleton nodes) **********
-        for mesh_node in &all_nodes_with_mesh
-        {
-            //scene_node.extras.insert("_skeleton_index".to_string(), skin.index().to_string());
-            let mut skeleton_index = None;
-            {
-                let mesh_node = mesh_node.read().unwrap();
-                if let Some(_skeleton_index) = mesh_node.extras.get("_skeleton_index")
-                {
-                    skeleton_index = Some(_skeleton_index.clone());
-                }
-            }
-
-            if let Some(skeleton_index) = skeleton_index
-            {
-                let skeleton_index = skeleton_index.parse::<usize>().unwrap();
-
-                //dbg!(skeleton_index);
-
-                // INFO: this is only working because all_nodes adds parent first and next items are the child items of the parent
-                for node_arc in &all_nodes
-                {
-                    let node = node_arc.read().unwrap();
-                    if let Some(joint) = node.find_component::<Joint>()
-                    {
-                        component_downcast!(joint, Joint);
-                        let joint_data = joint.get_data();
-
-                        if joint_data.skin_ids.contains(&(skeleton_index as u32))
-                        {
-                            let mut mesh_node = mesh_node.write().unwrap();
-                            mesh_node.skin_root_node = Some(node_arc.clone());
-                            //mesh_node.skin_root_id = Some(skin_index as u32);
-                            break;
-                        }
-                    }
-                }
-
-
-                /*
-                if skeleton_index == skin.index()
-                {
-                    let mut node = node.write().unwrap();
-
-                    let parent = node.parent.clone();
-
-                    if parent.is_none()
-                    {
-                        node.skin_root_node = Some(node.clone());
-                    }
-                    else
-                    {
-                        let parent = parent.unwrap();
-
-                        if parent.read().unwrap().find_component::<Joint>().is_none()
-                        {
-                            node.skin_root_node = Some(node.clone());
-                        }
-                    }
-                }
-                 */
             }
         }
     }
 
-
-    /*
-
-        // ********** skin/skeleton **********
-    /*
-    if let Some(skin) = node.skin()
-    {
-        let joints = skin.joints();
-        let joint_indices = joints.map(|j| j.index()).collect::<Vec<usize>>();
-
-        dbg!("skin: {} joints {}", skin.index(), joint_indices.len());
-        dbg!(&joint_indices);
-
-        let inverse_bind_matrices: Vec<_> = skin
-            .reader(|b| Some(&buffers[b.index()]))
-            .read_inverse_bind_matrices()
-            .unwrap()
-            .collect();
-
-        let inverse_bind_matrices = inverse_bind_matrices.iter().map(|mat|
-        {
-            Matrix4::from_fn(|i, j| mat[j][i])
-        }).collect::<Vec<Matrix4<f32>>>();
-
-        if inverse_bind_matrices.len() == joint_indices.len()
-        {
-            let inverse_bind_matrices = inverse_bind_matrices.iter().enumerate().map(|(i, mat)|
-            {
-                JointData
-                {
-                    index: joint_indices[i],
-                    inverse_bind_matrix: *mat
-                }
-            }).collect::<Vec<JointData>>();
-
-            skeletons.insert(node_index, inverse_bind_matrices);
-        }
-        else
-        {
-            dbg!("joints len does not match inverse_bind_matrices len");
-        }
-    }
-     */
-     */
-
-    /*
-    dbg!(skeletons.len());
-
+    // ********** map skeletons (root skeleton nodes) **********
     for mesh_node in &all_nodes_with_mesh
     {
-        let mesh_node_json_index = mesh_node.read().unwrap().extras.get("_json_index").unwrap().parse::<u32>().unwrap();
-
-        // ******************** map joint_ids ********************
-        if let Some(mesh_joint_data) = skeletons.get(&(mesh_node_json_index as usize))
+        let mut skeleton_index = None;
         {
-            for (joint_id, mesh_joint_data) in mesh_joint_data.iter().enumerate()
+            let mesh_node = mesh_node.read().unwrap();
+            if let Some(_skeleton_index) = mesh_node.extras.get("_skeleton_index")
             {
-                for node_arc in &all_nodes
-                {
-                    let mut json_index = "".to_string();
-                    let has_joint;
-                    {
-                        let node = node_arc.read().unwrap();
-                        let _json_index = node.extras.get("_json_index");
-                        if let Some(_json_index) = _json_index
-                        {
-                            json_index = _json_index.clone();
-                        }
-
-                        has_joint = node_arc.read().unwrap().find_component::<Joint>().is_some();
-                    }
-
-                    if json_index.len() > 0 && !has_joint
-                    {
-                        let json_index = json_index.parse::<u32>().unwrap();
-
-                        if json_index == mesh_joint_data.index as u32
-                        {
-                            let component_id = id_manager.write().unwrap().get_next_component_id();
-                            let mut joint = Joint::new(component_id, "Joint", joint_id as u32);
-                            joint.get_data_mut().get_mut().inverse_bind_trans = mesh_joint_data.inverse_bind_matrix.clone();
-
-                            node_arc.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(joint))));
-                        }
-                    }
-                }
+                skeleton_index = Some(_skeleton_index.clone());
             }
         }
 
-        // ******************** map skin_root_node and find root joint ********************
-        if let Some(mesh_joint_data) = skeletons.get(&(mesh_node_json_index as usize))
+        if let Some(skeleton_index) = skeleton_index
         {
-            for (joint_id, _mesh_joint_data) in mesh_joint_data.iter().enumerate()
+            let skeleton_index = skeleton_index.parse::<usize>().unwrap();
+
+            if let Some(skin_root_node) = find_skin_root(skeleton_index as u32, &all_nodes)
             {
-                for node_arc in &all_nodes
-                {
-                    let joint_component = node_arc.read().unwrap().find_component::<Joint>();
+                let mut mesh_node = mesh_node.write().unwrap();
+                mesh_node.skin_root_node = Some(skin_root_node.clone());
+                mesh_node.skin_id = Some(skeleton_index as u32);
 
-                    if joint_component.is_none()
-                    {
-                        continue;
-                    }
-
-                    let joint_component = joint_component.unwrap();
-                    component_downcast_mut!(joint_component, Joint);
-
-                    let parent;
-                    {
-                        let node = node_arc.read().unwrap();
-                        parent = node.parent.clone();
-                    }
-
-                    if joint_id as u32 == joint_component.get_data().joint_id
-                    {
-                        // the node has no parent and joint id is matching
-                        if parent.is_none()
-                        {
-                            //joint_component.get_data_mut().get_mut().skin_root_node = Some(node_arc.clone());
-                            mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
-                        }
-
-                        // node has parent but parent is no joint
-                        if let Some(parent) = &parent
-                        {
-                            if parent.read().unwrap().find_component::<Joint>().is_none()
-                            {
-                                mesh_node.write().unwrap().skin_root_node = Some(node_arc.clone());
-                            }
-                        }
-                    }
-                }
+                let joint = skin_root_node.read().unwrap().find_component::<Joint>().unwrap();
+                component_downcast_mut!(joint, Joint);
+                let joint_data = joint.get_data_mut().get_mut();
+                joint_data.root_joint = true;
             }
         }
     }
-     */
+
+}
+
+fn find_skin_root(skin_id: u32, nodes: &Vec<Arc<RwLock<Box<Node>>>>) -> Option<NodeItem>
+{
+    let mut candidate = None;
+    for node in nodes
+    {
+        if has_skin_id(skin_id, Some(node.clone()))
+        {
+            candidate = Some(node.clone());
+            break;
+        }
+    }
+
+    if candidate.is_none()
+    {
+        return None;
+    }
+
+    let mut candidate = candidate.unwrap();
+
+    while has_skin_id(skin_id, candidate.read().unwrap().parent.clone())
+    {
+        let parent;
+        {
+            parent = candidate.read().unwrap().parent.clone();
+        }
+
+        candidate = parent.clone().unwrap();
+    }
+
+    Some(candidate)
+}
+
+fn has_skin_id(skin_id: u32, node: Option<NodeItem>) -> bool
+{
+    if node.is_none()
+    {
+        return false;
+    }
+
+    let node = node.unwrap();
+
+    let node = node.read().unwrap();
+    if let Some(joint) = node.find_component::<Joint>()
+    {
+        component_downcast!(joint, Joint);
+        let joint_data = joint.get_data();
+
+        return joint_data.skin_ids.contains_key(&(skin_id as u32));
+    }
+
+    false
 }
 
 

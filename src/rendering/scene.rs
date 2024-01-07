@@ -417,11 +417,12 @@ impl Scene
 
                 if let Some(skin_root_node) = &node.skin_root_node
                 {
+                    let skin_id = node.skin_id.unwrap();
                     if node.skeleton_render_item.is_none()
                     {
                         //println!("---------------------------------- OK0 {}", node.name);
 
-                        let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
+                        let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id);
                         if let Some(joint_matrices) = joint_matrices
                         {
                             //println!("---------------------------------- OK1");
@@ -444,7 +445,7 @@ impl Scene
                     {
                         //println!("---------------------------------- OK 2");
 
-                        let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec();
+                        let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id);
                         if let Some(joint_matrices) = joint_matrices
                         {
                             let render_item = get_render_item_mut::<SkeletonBuffer>(node.skeleton_render_item.as_mut().unwrap());

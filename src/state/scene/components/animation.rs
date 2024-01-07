@@ -296,10 +296,12 @@ impl Component for Animation
                     let target = channel.target.read().unwrap();
                     joint = target.find_component::<Joint>();
 
+                    /*
                     if joint.is_some()
                     {
                         println!("joint target: {} {:?}", target.id, &target.name);
                     }
+                    */
                 }
 
                 let transformation;
@@ -308,10 +310,12 @@ impl Component for Animation
 
                     transformation = target.find_component::<Transformation>();
 
+                    /*
                     if joint.is_some()
                     {
                         println!("transformation target: {} {:?}", target.id, &target.name);
                     }
+                    */
                 }
 
                 if joint.is_none() && transformation.is_none()
