@@ -1,10 +1,11 @@
 
-use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
+use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap, string};
 
-use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, iter::{Animations, Skins}};
+use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, iter::{Animations, Skins}, json::extras};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
+use serde_json::Value;
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light, skeleton}, component_downcast_mut, component_downcast};
 
@@ -401,6 +402,41 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 }).collect::<Vec<[f32; 4]>>();
             }
 
+            // morph targets
+            let morpth_targets = reader.read_morph_targets();
+            dbg!(morpth_targets.len());
+
+            for mopth_target in morpth_targets
+            {
+
+            }
+
+            // mopth_target names
+            let mut target_names: Option<Vec<String>> = None;
+            let extras: Option<&Box<serde_json::value::RawValue>> = mesh.extras().as_ref();
+
+            if let Some(extras) = extras
+            {
+                if let Ok(json) = serde_json::from_str::<Value>(extras.get())
+                {
+                    if let Some(names) = json["targetNames"].as_array()
+                    {
+                        let names = names.iter().map(|n| n.as_str().unwrap().to_string()).collect::<Vec<String>>();
+                        target_names = Some(names);
+                    }
+                }
+            }
+
+            dbg!(target_names);
+
+
+            /*
+            if let Option::<MorphTargetNames>::Some(names) = extras.and_then(|extras| serde_json::from_str(extras.get()).ok())
+            {
+                //mesh.set_morph_target_names(names.target_names);
+            }
+             */
+
             if verts.len() == 0 || indices.len() == 0
             {
                 continue;
@@ -607,6 +643,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
                     let chuck_size = weights.len() / input_len;
 
                     let morpth_targets: Vec<Vec<f32>> = weights.chunks(chuck_size).map(|x| x.to_vec()).collect();
+
                     animation_channel.transform_morph = morpth_targets;
                 }
             };
