@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
 use serde_json::Value;
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::Component, joint::Joint, animation::{Animation, Channel, Interpolation}}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light, skeleton}, component_downcast_mut, component_downcast};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::{Component, ComponentItem}, joint::Joint, animation::{Animation, Channel, Interpolation}, morph_target::MorphTarget}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light, skeleton}, component_downcast_mut, component_downcast};
 
 
 struct JointData
@@ -402,17 +402,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 }).collect::<Vec<[f32; 4]>>();
             }
 
-            // morph targets
-            let morpth_targets = reader.read_morph_targets();
-            dbg!(morpth_targets.len());
-
-            for mopth_target in morpth_targets
-            {
-
-            }
-
             // mopth_target names
-            let mut target_names: Option<Vec<String>> = None;
+            let mut target_names: Vec<String> = vec![];
             let extras: Option<&Box<serde_json::value::RawValue>> = mesh.extras().as_ref();
 
             if let Some(extras) = extras
@@ -422,41 +413,89 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     if let Some(names) = json["targetNames"].as_array()
                     {
                         let names = names.iter().map(|n| n.as_str().unwrap().to_string()).collect::<Vec<String>>();
-                        target_names = Some(names);
+                        target_names = names;
                     }
                 }
             }
-
-            dbg!(target_names);
-
-
-            /*
-            if let Option::<MorphTargetNames>::Some(names) = extras.and_then(|extras| serde_json::from_str(extras.get()).ok())
-            {
-                //mesh.set_morph_target_names(names.target_names);
-            }
-             */
 
             if verts.len() == 0 || indices.len() == 0
             {
                 continue;
             }
 
+            let mut components: Vec<ComponentItem> = vec![];
+
+            // mesh component
             let component_id = id_manager.write().unwrap().get_next_component_id();
-            let mut item = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
-            item.get_data_mut().get_mut().uvs_2 = uvs2;
-            item.get_data_mut().get_mut().uvs_3 = uvs3;
+            let mut mesh_component: Mesh = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
+            mesh_component.get_data_mut().get_mut().uvs_2 = uvs2;
+            mesh_component.get_data_mut().get_mut().uvs_3 = uvs3;
 
             if joints.len() == weights.len()
             {
-                item.get_data_mut().get_mut().joints = joints;
-                item.get_data_mut().get_mut().weights = weights;
+                mesh_component.get_data_mut().get_mut().joints = joints;
+                mesh_component.get_data_mut().get_mut().weights = weights;
             }
             else
             {
                 println!("can not load joints and weights, because length does not match");
             }
 
+            components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
+
+            // morph targets
+            let morpth_targets = reader.read_morph_targets();
+            if morpth_targets.len() > 0
+            {
+                let morph_targets: Vec<_> = morpth_targets.map(|(positions, normals, tangents)|
+                {
+                    // positions
+                    let mut res_positions: Vec<Point3<f32>> = vec![];
+                    if let Some(positions) = positions
+                    {
+                        for position in positions
+                        {
+                            res_positions.push(Point3::<f32>::new(position[0], position[1], position[2]));
+                        }
+                    }
+
+                    // normals
+                    let mut res_normals: Vec<Vector3<f32>> = vec![];
+                    if let Some(normals) = normals
+                    {
+                        for normal in normals
+                        {
+                            res_normals.push(Vector3::<f32>::new(normal[0], normal[1], normal[2]));
+                        }
+                    }
+
+                    //tangents
+                    let mut res_tangents: Vec<Vector3<f32>> = vec![];
+                    if let Some(tangents) = tangents
+                    {
+                        for tangent in tangents
+                        {
+                            res_tangents.push(Vector3::<f32>::new(tangent[0], tangent[1], tangent[2]));
+                        }
+                    }
+
+                    (res_positions, res_normals, res_tangents)
+                })
+                .collect();
+
+                for (i, target) in morph_targets.iter().enumerate()
+                {
+                    let name = format!("Morph Target {}", i);
+                    let name = target_names.get(i).unwrap_or(&name);
+
+                    let component_id = id_manager.write().unwrap().get_next_component_id();
+                    let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
+
+                    components.push(Arc::new(RwLock::new(Box::new(morph_target))));
+                }
+            }
+
+            // node
             let id = id_manager.write().unwrap().get_next_node_id();
 
             if primitives_amount > 1
@@ -467,7 +506,12 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let node_arc = Node::new(id, name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
-                scene_node.add_component(Arc::new(RwLock::new(Box::new(item))));
+
+                for component in &components
+                {
+                    scene_node.add_component(component.clone());
+                }
+
                 scene_node.extras.insert("_json_index".to_string(), node_index.to_string());
 
                 // add material

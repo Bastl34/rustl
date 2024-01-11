@@ -48,7 +48,7 @@ impl MeshData
         self.weights.clear();
 
         // "empty" triangle
-        let triangle = [ Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0) ];
+        let triangle = [Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0)];
         let indices: [u32; 3] = [0, 1, 2];
 
         self.mesh = TriMesh::new(triangle.to_vec(), [indices].to_vec());
@@ -67,7 +67,7 @@ impl Mesh
 {
     pub fn new_with_data(id: u64, name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Vector3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
-        let mut mesh_data = MeshData
+        let mesh_data = MeshData
         {
             mesh: TriMesh::new(vertices.clone(), indices.clone()),
 
