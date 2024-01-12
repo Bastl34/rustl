@@ -441,8 +441,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 println!("can not load joints and weights, because length does not match");
             }
 
-            components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
-
             // morph targets
             let morpth_targets = reader.read_morph_targets();
             if morpth_targets.len() > 0
@@ -489,11 +487,19 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let name = target_names.get(i).unwrap_or(&name);
 
                     let component_id = id_manager.write().unwrap().get_next_component_id();
-                    let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
+                    //let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
+                    let morph_target = MorphTarget::new(component_id, name, i as u32);
+
+                    let mesh_component_data = mesh_component.get_data_mut().get_mut();
+                    mesh_component_data.morph_target_positions.push(target.0.clone());
+                    mesh_component_data.morph_target_normals.push(target.1.clone());
+                    mesh_component_data.morph_target_tangents.push(target.2.clone());
 
                     components.push(Arc::new(RwLock::new(Box::new(morph_target))));
                 }
             }
+
+            components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
 
             // node
             let id = id_manager.write().unwrap().get_next_node_id();

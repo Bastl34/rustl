@@ -11,6 +11,7 @@ todo:
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
  * memory leak
  * dead lock while loading an object/scene (just sometimes)
+ * optimize shader - do not use empty morph targets or animation weights
 
 done:
  * limit texture resolution for load

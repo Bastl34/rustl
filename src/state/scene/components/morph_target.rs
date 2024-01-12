@@ -10,11 +10,8 @@ use super::{component::{ComponentBase, Component, ComponentItem}, transformation
 
 pub struct MorphTargetData
 {
-    pub positions: Vec<Point3<f32>>,
-    pub normals: Vec<Vector3<f32>>,
-    pub tangents: Vec<Vector3<f32>>,
-
-    pub weight: RwLock<ChangeTracker<f32>>,
+    pub target_id: u32,
+    pub weight: f32,
 }
 
 pub struct MorphTarget
@@ -25,15 +22,12 @@ pub struct MorphTarget
 
 impl MorphTarget
 {
-    pub fn new(id: u64, name: &str, positions: Vec<Point3<f32>>, normals: Vec<Vector3<f32>>, tangents: Vec<Vector3<f32>>) -> MorphTarget
+    pub fn new(id: u64, name: &str, target_id: u32) -> MorphTarget
     {
         let data = MorphTargetData
         {
-            positions,
-            normals,
-            tangents,
-
-            weight: RwLock::new(ChangeTracker::new(0.0))
+            target_id,
+            weight: 0.0
         };
 
         let morph_target = MorphTarget
@@ -91,17 +85,15 @@ impl Component for MorphTarget
 
     fn ui(&mut self, ui: &mut egui::Ui)
     {
-        let data = self.get_data();
-
         ui.horizontal(|ui|
         {
             ui.label("Weight: ");
 
-            let mut weight = data.weight.read().get_ref().clone();
+            let mut weight = self.get_data().weight;
 
             if ui.add(egui::Slider::new(&mut weight, 0.0..=1.0).fixed_decimals(2)).changed()
             {
-                *data.weight.write().get_mut() = weight;
+                self.get_data_mut().get_mut().weight = weight;
             }
         });
     }

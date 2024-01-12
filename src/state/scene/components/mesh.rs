@@ -6,6 +6,7 @@ use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math
 use super::component::{Component, ComponentBase};
 
 pub const JOINTS_LIMIT: usize = 4;
+pub const MOPRH_TARGETS_LIMIT: usize = 8;
 
 pub struct MeshData
 {
@@ -24,6 +25,10 @@ pub struct MeshData
 
     pub joints: Vec<[u32; JOINTS_LIMIT]>,
     pub weights: Vec<[f32; JOINTS_LIMIT]>,
+
+    pub morph_target_positions: Vec<Vec<Point3<f32>>>,
+    pub morph_target_normals: Vec<Vec<Vector3<f32>>>,
+    pub morph_target_tangents: Vec<Vec<Vector3<f32>>>,
 
     pub flip_normals: bool,
     pub b_box: Aabb,
@@ -46,6 +51,10 @@ impl MeshData
 
         self.joints.clear();
         self.weights.clear();
+
+        self.morph_target_positions.clear();
+        self.morph_target_normals.clear();
+        self.morph_target_tangents.clear();
 
         // "empty" triangle
         let triangle = [Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0)];
@@ -84,6 +93,10 @@ impl Mesh
 
             joints: vec![],
             weights: vec![],
+
+            morph_target_positions: vec![],
+            morph_target_normals: vec![],
+            morph_target_tangents: vec![],
 
             flip_normals: false,
             b_box: Aabb::new_invalid(),
@@ -484,6 +497,10 @@ impl Component for Mesh
 
         ui.label(format!(" ⚫ joints: {}", data.joints.len()));
         ui.label(format!(" ⚫ weights: {}", data.weights.len()));
+
+        ui.label(format!(" ⚫ morph target positions: {}", data.morph_target_positions.len()));
+        ui.label(format!(" ⚫ morph target normals: {}", data.morph_target_normals.len()));
+        ui.label(format!(" ⚫ morph target tangents: {}", data.morph_target_tangents.len()));
 
         ui.label(format!(" ⚫ flip_normals: {}", data.flip_normals));
     }

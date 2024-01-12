@@ -24,13 +24,6 @@ impl SkeletonUniform
     {
         let mut transform = [[[0.0; 4]; 4]; MAX_JOINTS];
 
-        /*
-        for i in 0..MAX_JOINTS
-        {
-            transform[i] = Matrix4::<f32>::identity().into();
-        }
-         */
-
         for (i, joint) in joint_matrices.iter().enumerate()
         {
             if i + 1 > MAX_JOINTS
@@ -40,8 +33,6 @@ impl SkeletonUniform
             }
 
             transform[i] = joint.clone().into();
-
-            //dbg!(&transform[i]);
         }
 
         SkeletonUniform
