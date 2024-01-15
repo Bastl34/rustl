@@ -11,6 +11,7 @@ pub type StateItem = Rc<RefCell<State>>;
 
 pub const FPS_CHART_VALUES: usize = 100;
 pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
+pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 
 pub struct AdapterFeatures
 {
@@ -22,6 +23,7 @@ pub struct AdapterFeatures
     pub storage_buffer_array_support: bool,
     pub max_msaa_samples: u32,
     pub max_texture_resolution: u32,
+    pub max_supported_texture_resolution: u32
 }
 
 pub struct Rendering
@@ -119,7 +121,8 @@ impl State
                 backend: String::new(),
                 storage_buffer_array_support: false,
                 max_msaa_samples: 1,
-                max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION
+                max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION,
+                max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
             },
 
             rendering: Rendering

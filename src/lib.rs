@@ -12,6 +12,7 @@ mod rendering
     pub(crate) mod light;
     pub(crate) mod material;
     pub(crate) mod skeleton;
+    pub(crate) mod morph_target;
 
     pub(crate) mod bind_groups
     {

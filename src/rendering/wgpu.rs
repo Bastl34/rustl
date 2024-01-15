@@ -114,6 +114,7 @@ impl WGpu
         let msaa_samples = *state.rendering.msaa.get_ref();
 
         state.adapter.max_texture_resolution = device.limits().max_texture_dimension_2d;
+        state.adapter.max_supported_texture_resolution = device.limits().max_texture_dimension_2d;
 
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
