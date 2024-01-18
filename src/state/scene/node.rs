@@ -38,7 +38,7 @@ pub struct Node
     pub components: Vec<ComponentItem>,
 
     pub instance_render_item: RenderItemOption,
-    pub skeleton_render_item: RenderItemOption,
+    pub skeleton_morph_target_render_item: RenderItemOption,
 
     // bounding box
     b_box_node_index: usize,
@@ -71,7 +71,7 @@ impl Node
             instances: ChangeTracker::new(vec![]),
 
             instance_render_item: None,
-            skeleton_render_item: None,
+            skeleton_morph_target_render_item: None,
 
             b_box_node_index: 0
         };

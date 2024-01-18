@@ -37,6 +37,9 @@ struct SkeletonUniform
 {
     joint_transforms: array<mat4x4<f32>, MAX_JOINTS>,
     joints_amount: u32,
+
+    //morph_targets_amount: u32,
+    //joint_transforms: array<mat4x4<f32>, MAX_JOINTS>,
 };
 
 @group(1) @binding(0)

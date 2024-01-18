@@ -3,9 +3,9 @@ use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, vec};
 use nalgebra::{Point3, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType, joint::Joint}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType, joint::Joint}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut, rendering::morph_target};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::{self, SkeletonBuffer}};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, morph_target::MorphTarget, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::{self, SkeletonBuffer}};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -63,7 +63,8 @@ pub struct Scene
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
 
-    empty_skeleton: SkeletonBuffer
+    empty_skeleton: SkeletonBuffer,
+    empty_morph_target: MorphTarget,
 }
 
 impl RenderItem for Scene
@@ -98,7 +99,8 @@ impl Scene
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
             depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
 
-            empty_skeleton: SkeletonBuffer::empty(wgpu)
+            empty_skeleton: SkeletonBuffer::empty(wgpu),
+            empty_morph_target: MorphTarget::empty(wgpu),
         };
 
         render_scene.to_buffer(wgpu, scene);
@@ -388,7 +390,7 @@ impl Scene
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
         {
-            // ********** vertex buffer **********
+            // ********** vertex buffer and morph target/s **********
             {
                 let node = nodes.get_mut(node_id).unwrap();
 
@@ -399,12 +401,18 @@ impl Scene
                 {
                     component_downcast_mut!(mesh, crate::state::scene::components::mesh::Mesh);
 
-                    let (mesh_data, mesh_data_changed) = mesh.get_data_mut().consume_borrow_mut();
+                    let mesh_data_changed = mesh.get_data_mut().consume_change();
 
                     if mesh_data_changed
                     {
-                        let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh_data);
+                        let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh.get_data());
                         mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
+
+                        if MorphTarget::get_morph_targets(mesh.get_data()) > 0
+                        {
+                            let morph_target = MorphTarget::new(wgpu, "morph target", mesh.get_data());
+                            mesh.morph_target_render_item = Some(Box::new(morph_target));
+                        }
                     }
                 }
             }
@@ -418,7 +426,7 @@ impl Scene
                 if let Some(skin_root_node) = &node.skin_root_node
                 {
                     let skin_id = node.skin_id.unwrap();
-                    if node.skeleton_render_item.is_none()
+                    if node.skeleton_morph_target_render_item.is_none()
                     {
                         //println!("---------------------------------- OK0 {}", node.name);
 
@@ -431,14 +439,14 @@ impl Scene
                             //Self::consume_changed_joints(skin_root_node.clone());
 
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &joint_matrices);
-                            node.skeleton_render_item = Some(Box::new(skeleton_buffer));
+                            node.skeleton_morph_target_render_item = Some(Box::new(skeleton_buffer));
                         }
                         else
                         {
                             println!("---------------------------------- OK1.1");
 
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &vec![]);
-                            node.skeleton_render_item = Some(Box::new(skeleton_buffer));
+                            node.skeleton_morph_target_render_item = Some(Box::new(skeleton_buffer));
                         }
                     }
                     else if Self::has_changed_joints(skin_root_node.clone())
@@ -448,7 +456,7 @@ impl Scene
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id);
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            let render_item = get_render_item_mut::<SkeletonBuffer>(node.skeleton_render_item.as_mut().unwrap());
+                            let render_item = get_render_item_mut::<SkeletonBuffer>(node.skeleton_morph_target_render_item.as_mut().unwrap());
                             render_item.update_buffer(wgpu, &joint_matrices);
                         }
                     }
@@ -1165,10 +1173,10 @@ impl Scene
                     pass.set_bind_group(1, light_cam_bind_group, &[]);
 
                     // skeleton
-                    let skeleton_render_item = node.skeleton_render_item.as_ref();
-                    if let Some(skeleton_render_item) = skeleton_render_item
+                    let skeleton_morph_target_render_item = node.skeleton_morph_target_render_item.as_ref();
+                    if let Some(skeleton_morph_target_render_item) = skeleton_morph_target_render_item
                     {
-                        let skeleton_buffer = get_render_item::<SkeletonBuffer>(skeleton_render_item);
+                        let skeleton_buffer = get_render_item::<SkeletonBuffer>(skeleton_morph_target_render_item);
                         pass.set_bind_group(2, skeleton_buffer.bind_group.as_ref().unwrap(), &[]);
                     }
                     else

@@ -1,7 +1,7 @@
 use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
 use parry3d::{shape::{TriMesh, FeatureId}, bounding_volume::Aabb, query::{Ray, RayCast}};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::scene::{node::NodeItem, components::mesh}, component_impl_no_update, component_impl_set_enabled};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{scene::{node::NodeItem, components::mesh}, helper::render_item::RenderItemOption}, component_impl_no_update, component_impl_set_enabled};
 
 use super::component::{Component, ComponentBase};
 
@@ -70,6 +70,8 @@ pub struct Mesh
 {
     base: ComponentBase,
     data: ChangeTracker<MeshData>,
+
+    pub morph_target_render_item: RenderItemOption,
 }
 
 impl Mesh
@@ -105,7 +107,9 @@ impl Mesh
         let mut mesh = Mesh
         {
             base: ComponentBase::new(id, name.to_string(), "Mesh".to_string(), "◼".to_string()),
-            data: ChangeTracker::new(mesh_data)
+            data: ChangeTracker::new(mesh_data),
+
+            morph_target_render_item: None
         };
 
         mesh.calc_bbox();

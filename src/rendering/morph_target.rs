@@ -6,9 +6,10 @@ use crate::{state::{helper::render_item::RenderItem, scene::components::mesh::Me
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
+const FLOATS_PER_PIXEL: usize = 4;
 const ITEMS_PER_VERTEX: usize = 4; //pos, normal, tangent, bitangent
 
-pub struct MorpthTarget
+pub struct MorphTarget
 {
     pub width: u32,
     pub height: u32,
@@ -18,22 +19,31 @@ pub struct MorpthTarget
     sampler: wgpu::Sampler,
 }
 
-impl RenderItem for MorpthTarget
+impl RenderItem for MorphTarget
 {
     render_item_impl_default!();
 }
 
-impl MorpthTarget
+impl MorphTarget
 {
-    pub fn new_from_texture(wgpu: &mut WGpu, name: &str, mesh_data: &MeshData) -> MorpthTarget
+    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshData) -> MorphTarget
     {
         let device = wgpu.device();
 
         let max_tex_size = wgpu.device().limits().max_texture_dimension_2d;
-        let vertices = mesh_data.vertices.len() as u32 * ITEMS_PER_VERTEX as u32;
+        let data_len = mesh_data.vertices.len() as u32 * ITEMS_PER_VERTEX as u32;
 
-        let width = vertices.min(max_tex_size);
-        let height = ((vertices as f64) / (width as f64)).ceil() as u32;
+        let width = data_len.min(max_tex_size);
+        let height = ((data_len as f64) / (width as f64)).ceil() as u32;
+
+        let targets = Self::get_morph_targets(mesh_data);
+
+        /*
+        dbg!(mesh_data.vertices.len());
+        dbg!(data_len);
+        dbg!(width);
+        dbg!(height);
+         */
 
         let texture_size = wgpu::Extent3d
         {
@@ -69,9 +79,16 @@ impl MorpthTarget
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-
+        /*
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor
+        {
+            label: Some(texture_name.as_str()),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: Some(Self::get_morph_targets(mesh_data)),
+            ..Default::default()
+        });
+        */
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
 
         let mut morph_target = Self
         {
@@ -89,7 +106,69 @@ impl MorpthTarget
         morph_target
     }
 
-    fn get_morph_targets(mesh_data: &MeshData) -> u32
+    pub fn empty(wgpu: &mut WGpu) -> MorphTarget
+    {
+        let device = wgpu.device();
+
+        let width = 1;
+        let height = 1;
+
+        let texture_size = wgpu::Extent3d
+        {
+            width: width,
+            height: height,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = device.create_texture
+        (
+            &wgpu::TextureDescriptor
+            {
+                size: texture_size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba32Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                label: Some("Empty Morph Texture Array"),
+
+                view_formats: &[],
+            }
+        );
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor
+        {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        /*
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor
+        {
+            label: Some(texture_name.as_str()),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: Some(Self::get_morph_targets(mesh_data)),
+            ..Default::default()
+        });
+        */
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self
+        {
+            width: width,
+            height: height,
+
+            texture: texture,
+            view: texture_view,
+            sampler: sampler,
+        }
+    }
+
+    pub fn get_morph_targets(mesh_data: &MeshData) -> u32
     {
         let pos_amount = mesh_data.morph_target_positions.len();
         let normal_amount = mesh_data.morph_target_normals.len();
@@ -100,16 +179,21 @@ impl MorpthTarget
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, mesh_data: &MeshData)
     {
-        let device = wgpu.device();
         let queue = wgpu.queue_mut();
 
         let targets = Self::get_morph_targets(mesh_data);
+
+        let len = (self.width * self.height * targets) as usize * FLOATS_PER_PIXEL;
+        let mut morph_data: Vec<f32> = Vec::with_capacity(len);
+        morph_data.extend(vec![0.0; len]);
 
         for morpth_target_id in 0..targets
         {
             // prepare data
             //let mut data: Vec<f32> = Vec::with_capacity(mesh_data.vertices.len() * ITEMS_PER_VERTEX);
-            let mut data: Vec<f32> = Vec::with_capacity(self.width as usize * self.height as usize * ITEMS_PER_VERTEX);
+            //let mut morph_data: Vec<f32> = Vec::with_capacity(self.width as usize * self.height as usize * ITEMS_PER_VERTEX);
+
+            let pos_start = (self.width * self.height * morpth_target_id) as usize;
 
             let positions = mesh_data.morph_target_positions.get(morpth_target_id as usize);
             let normals = mesh_data.morph_target_normals.get(morpth_target_id as usize);
@@ -119,7 +203,7 @@ impl MorpthTarget
             {
                 let mut position = vec![0.0, 0.0, 0.0, 0.0];
                 let mut normal = vec![0.0, 0.0, 0.0, 0.0];
-                let mut tanget = vec![0.0, 0.0, 0.0, 0.0];
+                let mut tangent = vec![0.0, 0.0, 0.0, 0.0];
                 let mut bitangent = vec![0.0, 0.0, 0.0, 0.0];
 
                 if let Some(positions) = positions
@@ -142,11 +226,11 @@ impl MorpthTarget
                 {
                     if let Some(tang) = tangents.get(i)
                     {
-                        tanget = vec![tang.x, tang.y, tang.z, 0.0];
+                        tangent = vec![tang.x, tang.y, tang.z, 0.0];
                     }
                 }
 
-                if tangents.is_some() && normals.is_some()
+                if normals.is_some() && tangents.is_some() && normals.unwrap().len() > 0 && tangents.unwrap().len() > 0
                 {
                     let normal = normals.unwrap().get(i).unwrap();
                     let tangent = tangents.unwrap().get(i).unwrap();
@@ -155,68 +239,27 @@ impl MorpthTarget
                     bitangent = vec![bitang.x, bitang.y, bitang.z, 0.0];
                 }
 
-                let pos = i * ITEMS_PER_VERTEX * ITEMS_PER_VERTEX;
-                data.splice(pos..(pos + ITEMS_PER_VERTEX), position);
+                let pos = pos_start + (i * ITEMS_PER_VERTEX * FLOATS_PER_PIXEL);
+                morph_data.splice(pos..(pos + FLOATS_PER_PIXEL), position);
 
-                let pos = (i * ITEMS_PER_VERTEX * ITEMS_PER_VERTEX) + ITEMS_PER_VERTEX;
-                data.splice(pos..(pos + ITEMS_PER_VERTEX), normal);
+                let pos = pos_start + (i * ITEMS_PER_VERTEX * FLOATS_PER_PIXEL) + FLOATS_PER_PIXEL;
+                morph_data.splice(pos..(pos + FLOATS_PER_PIXEL), normal);
 
-                let pos = (i * ITEMS_PER_VERTEX * ITEMS_PER_VERTEX) + (ITEMS_PER_VERTEX * 2);
-                data.splice(pos..(pos + ITEMS_PER_VERTEX), tanget);
+                let pos = pos_start + (i * ITEMS_PER_VERTEX * FLOATS_PER_PIXEL) + (FLOATS_PER_PIXEL * 2);
+                morph_data.splice(pos..(pos + FLOATS_PER_PIXEL), tangent);
 
-                let pos = (i * ITEMS_PER_VERTEX * ITEMS_PER_VERTEX) + (ITEMS_PER_VERTEX * 3);
-                data.splice(pos..(pos + ITEMS_PER_VERTEX), bitangent);
+                let pos = pos_start + (i * ITEMS_PER_VERTEX * FLOATS_PER_PIXEL) + (FLOATS_PER_PIXEL * 3);
+                morph_data.splice(pos..(pos + FLOATS_PER_PIXEL), bitangent);
             }
-
-            let texture_size = wgpu::Extent3d
-            {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: targets,
-            };
-
-            /*
-            TODO (check https://github.com/sotrh/learn-wgpu/blob/677300a5e96fa0b06ee7c3b4e09eb9bd6fee2e88/docs/intermediate/tutorial13-hdr/readme.md?plain=1#L591)
-            queue.write_texture
-            (
-                wgpu::ImageCopyTexture
-                {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                data,
-                wgpu::ImageDataLayout
-                {
-                    offset: 0,
-                    bytes_per_row: std::num::NonZeroU32::new(4 * self.width as u32),
-                    rows_per_image: std::num::NonZeroU32::new(self.height as u32),
-                },
-                texture_size,
-            );
-            */
         }
-    }
-
-    /*
-    pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene_texture: &crate::state::scene::texture::Texture)
-    {
-        dbg!("update texture");
-
-        let device = wgpu.device();
-        let queue = wgpu.queue_mut();
 
         let texture_size = wgpu::Extent3d
         {
-            width: scene_texture.width(),
-            height: scene_texture.height(),
-            depth_or_array_layers: 1,
+            width: self.width,
+            height: self.height,
+            depth_or_array_layers: targets,
         };
 
-        // TODO: performance bottle neck if there was no texture data change
-
-        // upload
         queue.write_texture
         (
             wgpu::ImageCopyTexture
@@ -226,19 +269,16 @@ impl MorpthTarget
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            scene_texture.rgba_data(),
+            morph_data.as_bytes(),
             wgpu::ImageDataLayout
             {
                 offset: 0,
-                bytes_per_row: Some(scene_texture.channels() * scene_texture.width()),
-                rows_per_image: Some(scene_texture.height())
+                bytes_per_row: Some((FLOATS_PER_PIXEL * std::mem::size_of::<f32>()) as u32 * self.width),
+                rows_per_image: Some(self.height as u32),
             },
             texture_size,
         );
-
-        self.sampler = Self::create_sampler(device, scene_texture);
     }
-     */
 
     pub fn get_texture(&self) -> &wgpu::Texture
     {
@@ -255,12 +295,12 @@ impl MorpthTarget
         &self.sampler
     }
 
-    pub fn get_bind_group_layout_entries(&self) -> [BindGroupLayoutEntry; 2]
+    pub fn get_bind_group_layout_entries(index_start: u32) -> [BindGroupLayoutEntry; 2]
     {
         [
             wgpu::BindGroupLayoutEntry
             {
-                binding: 0,
+                binding: index_start,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture
                 {
@@ -272,7 +312,7 @@ impl MorpthTarget
             },
             wgpu::BindGroupLayoutEntry
             {
-                binding: 1,
+                binding: index_start + 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 // This should match the filterable field of the
                 // corresponding Texture entry above.

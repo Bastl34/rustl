@@ -17,6 +17,7 @@ mod rendering
     pub(crate) mod bind_groups
     {
         pub(crate) mod light_cam_scene;
+        pub(crate) mod skeleton_morph_target;
     }
 
     pub(crate) mod helper
