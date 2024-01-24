@@ -1,11 +1,12 @@
 use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, vec};
 
+use gltf::mesh::util::weights;
 use nalgebra::{Point3, distance_squared};
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType, joint::Joint}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut, rendering::morph_target};
+use crate::{state::{state::State, scene::{components::{component::{Component, ComponentBox}, transformation::Transformation, alpha::Alpha, mesh::Mesh, material::TextureType, joint::Joint, self}, node::{Node, NodeItem}, camera::CameraData, scene::SceneData}, helper::render_item::{get_render_item, get_render_item_mut, RenderItem}}, helper::image::float32_to_grayscale, resources::resources, render_item_impl_default, component_downcast, component_downcast_mut, rendering::morph_target};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, morph_target::MorphTarget, light::LightBuffer, bind_groups::light_cam_scene::LightCamSceneBindGroup, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::{self, SkeletonBuffer}};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::{self, SkeletonBuffer}, morph_target::MorphTarget};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 //type MeshComponent = crate::state::scene::components::mesh::Mesh;
@@ -65,6 +66,7 @@ pub struct Scene
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
+    empty_skeleton_morph: SkeletonMorphTargetBindGroup,
 }
 
 impl RenderItem for Scene
@@ -80,6 +82,10 @@ impl Scene
         let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
 
+        let empty_skeleton = SkeletonBuffer::empty(wgpu);
+        let empty_morph_target = MorphTarget::empty(wgpu);
+
+        let empty_skeleton_morph = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
 
         let mut render_scene = Self
         {
@@ -99,8 +105,10 @@ impl Scene
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
             depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
 
-            empty_skeleton: SkeletonBuffer::empty(wgpu),
-            empty_morph_target: MorphTarget::empty(wgpu),
+            empty_skeleton,
+            empty_morph_target,
+
+            empty_skeleton_morph
         };
 
         render_scene.to_buffer(wgpu, scene);
@@ -155,13 +163,13 @@ impl Scene
         let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
         let material_bind_layout = material_render_item.bind_group_layout.as_ref().unwrap();
 
-        let skeleton_bind_layout = SkeletonBuffer::bind_layout(wgpu);
+        let skeleton_morph_bind_layout = SkeletonMorphTargetBindGroup::bind_layout(wgpu);
 
         let bind_group_layouts =
         [
             material_bind_layout,
             &light_cam_scene_bind_layout,
-            &skeleton_bind_layout
+            &skeleton_morph_bind_layout
         ];
 
         // ********** depth pass **********
@@ -390,11 +398,15 @@ impl Scene
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
         {
+            let mut create_new_skeleton_morph_target_bind_group = false;
+
             // ********** vertex buffer and morph target/s **********
             {
-                let node = nodes.get_mut(node_id).unwrap();
+                let node_arc = nodes.get(node_id).unwrap();
 
-                let node = node.write().unwrap();
+                let has_changed_morph_target_weights = Self::consume_changed_morph_targets(node_arc.clone());
+
+                let node = node_arc.read().unwrap();
                 let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
 
                 if let Some(mesh) = mesh
@@ -412,10 +424,39 @@ impl Scene
                         {
                             let morph_target = MorphTarget::new(wgpu, "morph target", mesh.get_data());
                             mesh.morph_target_render_item = Some(Box::new(morph_target));
+
+                            create_new_skeleton_morph_target_bind_group = true;
+                        }
+                    }
+
+                    //if let Some(morph_target_render_item) = &mesh.morph_target_render_item
+                    if mesh.morph_target_render_item.is_some()
+                    {
+                        if has_changed_morph_target_weights
+                        {
+                            /*
+
+                            let weights = node.get_morph_targets_vec();
+
+                            if let Some(weights) = weights
+                            {
+                                let mut morph_render_item = get_render_item_mut::<MorphTarget>(mesh.morph_target_render_item.as_mut().unwrap());
+                                morph_render_item.update_buffer(wgpu, &weights);
+                            }
+                             */
                         }
                     }
                 }
             }
+
+            // ********** morph target/s **********
+            /*
+            {
+                let node = nodes.get_mut(node_id).unwrap();
+
+                let node = node.write().unwrap();
+            }
+             */
 
             // ********** skeleton **********
             {
@@ -426,7 +467,7 @@ impl Scene
                 if let Some(skin_root_node) = &node.skin_root_node
                 {
                     let skin_id = node.skin_id.unwrap();
-                    if node.skeleton_morph_target_render_item.is_none()
+                    if node.skeleton_render_item.is_none()
                     {
                         //println!("---------------------------------- OK0 {}", node.name);
 
@@ -439,14 +480,16 @@ impl Scene
                             //Self::consume_changed_joints(skin_root_node.clone());
 
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &joint_matrices);
-                            node.skeleton_morph_target_render_item = Some(Box::new(skeleton_buffer));
+                            node.skeleton_render_item = Some(Box::new(skeleton_buffer));
+                            create_new_skeleton_morph_target_bind_group = true;
                         }
                         else
                         {
                             println!("---------------------------------- OK1.1");
 
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &vec![]);
-                            node.skeleton_morph_target_render_item = Some(Box::new(skeleton_buffer));
+                            node.skeleton_render_item = Some(Box::new(skeleton_buffer));
+                            create_new_skeleton_morph_target_bind_group = true;
                         }
                     }
                     else if Self::has_changed_joints(skin_root_node.clone())
@@ -456,8 +499,56 @@ impl Scene
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id);
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            let render_item = get_render_item_mut::<SkeletonBuffer>(node.skeleton_morph_target_render_item.as_mut().unwrap());
+                            let render_item = get_render_item_mut::<SkeletonBuffer>(node.skeleton_render_item.as_mut().unwrap());
                             render_item.update_buffer(wgpu, &joint_matrices);
+                        }
+                    }
+                }
+            }
+
+            // ********** skeleton and morph target/s bind group **********
+            {
+                let node = nodes.get_mut(node_id).unwrap();
+                let mut node = node.write().unwrap();
+
+                let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
+
+                if let Some(mesh) = mesh
+                {
+                    component_downcast!(mesh, crate::state::scene::components::mesh::Mesh);
+
+                    let has_morph_targets = MorphTarget::get_morph_targets(mesh.get_data()) > 0;
+                    let has_skeleton = node.skin_root_node.is_some();
+
+                    if has_morph_targets || has_skeleton
+                    {
+                        if node.skeleton_morph_target_bind_group_render_item.is_none() || create_new_skeleton_morph_target_bind_group
+                        {
+                            // skeleton and morph targets
+                            if has_morph_targets && has_skeleton
+                            {
+                                let skeleton_render_item = get_render_item::<SkeletonBuffer>(node.skeleton_render_item.as_ref().unwrap());
+                                let morph_render_item = get_render_item::<MorphTarget>(mesh.morph_target_render_item.as_ref().unwrap());
+
+                                let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Skeleton Morph Target", &skeleton_render_item, &morph_render_item);
+                                node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                            }
+                            // only skeleton
+                            else if has_skeleton
+                            {
+                                let skeleton_render_item = get_render_item::<SkeletonBuffer>(node.skeleton_render_item.as_ref().unwrap());
+
+                                let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Skeleton and Empty Morph Target", &skeleton_render_item, &self.empty_morph_target);
+                                node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                            }
+                            // only morph targets
+                            else if has_morph_targets
+                            {
+                                let morph_render_item = get_render_item::<MorphTarget>(mesh.morph_target_render_item.as_ref().unwrap());
+
+                                let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Empty Skeleton Morph Target", &self.empty_skeleton, &morph_render_item);
+                                node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                            }
                         }
                     }
                 }
@@ -587,6 +678,21 @@ impl Scene
                 }
             }
         }
+    }
+
+    pub fn consume_changed_morph_targets(node: Arc<RwLock<Box<Node>>>) -> bool
+    {
+        let node = node.read().unwrap();
+        let morph_target_components = node.find_components::<components::morph_target::MorphTarget>();
+
+        let mut has_changed = false;
+        for morph_target in morph_target_components
+        {
+            component_downcast_mut!(morph_target, components::morph_target::MorphTarget);
+            has_changed = morph_target.get_data_mut().consume_change() || has_changed;
+        }
+
+        has_changed
     }
 
     pub fn has_changed_joints(root_node: Arc<RwLock<Box<Node>>>) -> bool
@@ -1173,15 +1279,15 @@ impl Scene
                     pass.set_bind_group(1, light_cam_bind_group, &[]);
 
                     // skeleton
-                    let skeleton_morph_target_render_item = node.skeleton_morph_target_render_item.as_ref();
+                    let skeleton_morph_target_render_item = node.skeleton_morph_target_bind_group_render_item.as_ref();
                     if let Some(skeleton_morph_target_render_item) = skeleton_morph_target_render_item
                     {
-                        let skeleton_buffer = get_render_item::<SkeletonBuffer>(skeleton_morph_target_render_item);
-                        pass.set_bind_group(2, skeleton_buffer.bind_group.as_ref().unwrap(), &[]);
+                        let skeleton_morph_target_render_item = get_render_item::<SkeletonMorphTargetBindGroup>(skeleton_morph_target_render_item);
+                        pass.set_bind_group(2, &skeleton_morph_target_render_item.as_ref().bind_group, &[]);
                     }
                     else
                     {
-                        pass.set_bind_group(2, self.empty_skeleton.bind_group.as_ref().unwrap(), &[]);
+                        pass.set_bind_group(2, &self.empty_skeleton_morph.bind_group, &[]);
                     }
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));

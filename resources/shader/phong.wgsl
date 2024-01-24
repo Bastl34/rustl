@@ -2,6 +2,7 @@ const PI: f32 = 3.141592653589793;
 
 const MAX_LIGHTS = [MAX_LIGHTS];
 const MAX_JOINTS = [MAX_JOINTS];
+const MAX_MORPH_TARGETS: u32 = [MAX_MORPH_TARGETS]u;
 
 const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
 const LIGHT_TYPE_POINT: u32 = 1u;
@@ -37,9 +38,17 @@ struct SkeletonUniform
 {
     joint_transforms: array<mat4x4<f32>, MAX_JOINTS>,
     joints_amount: u32,
+};
 
-    //morph_targets_amount: u32,
-    //joint_transforms: array<mat4x4<f32>, MAX_JOINTS>,
+struct wrapped_f32
+{
+    @size(16) elem: f32 // array stride must be 16
+}
+
+struct MorphTargetUniform
+{
+    weights: array<wrapped_f32, MAX_MORPH_TARGETS>,
+    amount: u32,
 };
 
 @group(1) @binding(0)
@@ -57,8 +66,15 @@ var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
 @group(2) @binding(0)
 var<uniform> skeleton: SkeletonUniform;
 
+@group(2) @binding(1)
+var<uniform> morpth_target: MorphTargetUniform;
+
+@group(2) @binding(2) var t_morpth_targets: texture_2d_array<f32>;
+@group(2) @binding(3) var s_morpth_targets: sampler;
+
 struct VertexInput
 {
+    @builtin(vertex_index) index: u32,
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) normal: vec3<f32>,
@@ -99,6 +115,26 @@ struct VertexOutput
 
 // ****************************** vertex ******************************
 
+const items: u32 = 4u;
+//fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, texture: texture_2d_array<f32>, s: sampler) -> vec4<f32>
+fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, texture: texture_2d_array<f32>) -> vec4<f32>
+{
+    let dimensions = textureDimensions(texture);
+    let pos = (vertex_index * items) + offset;
+    let x = pos % dimensions.x;
+    //let y = floor(pos / dimensions.x);
+    let y = pos / dimensions.x;
+    //let tex_coord = vec2<u32>(x, y);
+    //let tex_coord = vec2<f32>(f32(x) / f32(dimensions.x), f32(y) / f32(dimensions.y));
+
+    //let data = textureSample(texture, s, tex_coord, tex_id);
+
+    //return vec4<f32>(0.0);
+
+    return textureLoad(texture, vec2<u32>(x, y), tex_id, 0);
+}
+
+
 @vertex
 fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 {
@@ -121,7 +157,44 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     //let world_position = model_matrix * vec4<f32>(model.position, 1.0);
 
     //let model_pos = model_matrix * vec4<f32>(model.position, 1.0);
-    let model_pos = vec4<f32>(model.position, 1.0);
+    var model_pos = vec4<f32>(model.position, 1.0);
+    var model_normal = vec4<f32>(model.normal, 0.0);
+    var model_tangent = vec4<f32>(model.tangent, 0.0);
+    var model_bitangent = vec4<f32>(model.bitangent, 0.0);
+
+    // morph targets
+    if (morpth_target.amount > 0u)
+    {
+        let vertex_id = model.index;
+        for (var i: u32 = 0u; i < min(morpth_target.amount, MAX_MORPH_TARGETS); i = i + 1u)
+        {
+            let weight = morpth_target.weights[i].elem;
+
+            // position
+            let pos = read_vec_from_texture_array(vertex_id, i, 0u, t_morpth_targets);
+            model_pos.x += pos.x * weight;
+            model_pos.y += pos.y * weight;
+            model_pos.z += pos.z * weight;
+
+            // normal
+            let normal = read_vec_from_texture_array(vertex_id, i, 1u, t_morpth_targets);
+            model_normal.x += normal.x * weight;
+            model_normal.y += normal.y * weight;
+            model_normal.z += normal.z * weight;
+
+            // tangent
+            let tangent = read_vec_from_texture_array(vertex_id, i, 2u, t_morpth_targets);
+            model_tangent.x += tangent.x * weight;
+            model_tangent.y += tangent.y * weight;
+            model_tangent.z += tangent.z * weight;
+
+            // bitangent
+            let bitangent = read_vec_from_texture_array(vertex_id, i, 2u, t_morpth_targets);
+            model_bitangent.x += bitangent.x * weight;
+            model_bitangent.y += bitangent.y * weight;
+            model_bitangent.z += bitangent.z * weight;
+        }
+    }
 
     var world_position = vec4<f32>(0.0);
 
@@ -140,15 +213,27 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
             //world_position += identityMatrix * model_pos * model.weights[i];
 
             // normal / tangent / bitangent
-            let normal = joint_transform * vec4(model.normal, 0.0);
+            let normal = joint_transform * model_normal;
             world_normal += normal * model.weights[i];
 
-            let tangent = joint_transform * vec4(model.tangent, 0.0);
+            let tangent = joint_transform * model_tangent;
             world_tangent += tangent * model.weights[i];
 
-            let bitangent = joint_transform * vec4(model.bitangent, 0.0);
+            let bitangent = joint_transform * model_bitangent;
             world_bitangent += bitangent * model.weights[i];
         }
+
+        // Morph Targets
+        /*
+        for (var i: u32 = 0u; i <  morpth_target.amount; i = i + 1u)
+        {
+            wrapped_f32 weight = morph_target.weights[j];
+            mat4x4<f32> morphTargetTransform = textureLoad(t_morpth_targets, i.xy, j).xyzw;
+
+            // Kombinieren Sie die Skelettanimation und die Morph Targets basierend auf den Gewichten
+            animatedJointTransform = mix(animatedJointTransform, morphTargetTransform, weight.elem);
+        }
+        */
 
         /*
         world_position =
@@ -190,9 +275,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     {
         world_position = model_matrix * model_pos;
 
-        world_normal = vec4<f32>(model.normal, 0.0);
-        world_tangent = vec4<f32>(model.tangent, 0.0);
-        world_bitangent = vec4<f32>(model.bitangent, 0.0);
+        world_normal = model_normal;
+        world_tangent = model_tangent;
+        world_bitangent = model_bitangent;
     }
 
 

@@ -17,7 +17,7 @@ impl SkeletonMorphTargetBindGroup
 {
     pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
-        let morph_layout_entries = MorphTarget::get_bind_group_layout_entries(1);
+        let morph_layout_entries = MorphTarget::get_bind_group_layout_entries(2);
 
         let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
@@ -26,7 +26,10 @@ impl SkeletonMorphTargetBindGroup
                 // skeleton
                 uniform::uniform_bind_group_layout_entry(0, true, true),
 
-                // morph targets
+                // morph targets buffer
+                uniform::uniform_bind_group_layout_entry(1, true, true),
+
+                // morph targets (texture array)
                 morph_layout_entries[0],
                 morph_layout_entries[1],
             ],
@@ -40,9 +43,9 @@ impl SkeletonMorphTargetBindGroup
     {
         let bind_group_layout = Self::bind_layout(wgpu);
 
-        let morph_target_tex_bind_groups = morph_target.get_bind_group_entries(1);
+        let morph_target_tex_bind_groups = morph_target.get_bind_group_entries(2);
 
-        let bind_group_name = format!("{} light_camera_scene_bind_group", name);
+        let bind_group_name = format!("{} skeleton_morph_bind_group", name);
         let bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
         {
             layout: &bind_group_layout,
@@ -51,11 +54,12 @@ impl SkeletonMorphTargetBindGroup
                 // skeleton
                 uniform::uniform_bind_group(0, &skeleton_buffer.get_buffer()),
 
-                // morph targets
+                // morph targets buffer
+                uniform::uniform_bind_group(1, &morph_target.get_buffer()),
+
+                // morph targets (texture array)
                 morph_target_tex_bind_groups[0].clone(), // ????
                 morph_target_tex_bind_groups[1].clone(), // ????
-                //uniform::uniform_bind_group(1, &scene_buffer.get_buffer()),
-                //uniform::uniform_bind_group(1, &scene_buffer.get_buffer()),
             ],
             label: Some(bind_group_name.as_str()),
         });

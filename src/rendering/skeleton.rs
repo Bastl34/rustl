@@ -73,7 +73,7 @@ impl SkeletonBuffer
         };
 
         buffer.to_buffer(wgpu, joint_matrices);
-        buffer.create_binding_groups(wgpu, name.to_string());
+        //buffer.create_binding_groups(wgpu, name.to_string());
 
         buffer
     }
@@ -92,7 +92,7 @@ impl SkeletonBuffer
         let joint_matrices: Vec<Matrix4<f32>> = vec![];
 
         buffer.to_buffer(wgpu, &joint_matrices);
-        buffer.create_binding_groups(wgpu, "empty".to_string());
+        //buffer.create_binding_groups(wgpu, "empty".to_string());
 
         buffer
     }
@@ -124,6 +124,7 @@ impl SkeletonBuffer
         &self.buffer
     }
 
+    /*
     pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
         let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
@@ -155,4 +156,5 @@ impl SkeletonBuffer
 
         self.bind_group = Some(bind_group);
     }
+     */
 }

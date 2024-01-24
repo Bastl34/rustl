@@ -6,7 +6,7 @@ use nalgebra::{Matrix4, Point3, Matrix, Matrix4x1};
 
 use crate::{state::{helper::render_item::RenderItemOption, scene::{scene::Scene, components::joint}}, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
-use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha, joint::Joint}, instance::{InstanceItem, Instance}};
+use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha, joint::Joint, morph_target::MorphTarget}, instance::{InstanceItem, Instance}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -38,7 +38,8 @@ pub struct Node
     pub components: Vec<ComponentItem>,
 
     pub instance_render_item: RenderItemOption,
-    pub skeleton_morph_target_render_item: RenderItemOption,
+    pub skeleton_render_item: RenderItemOption,
+    pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
 
     // bounding box
     b_box_node_index: usize,
@@ -71,7 +72,8 @@ impl Node
             instances: ChangeTracker::new(vec![]),
 
             instance_render_item: None,
-            skeleton_morph_target_render_item: None,
+            skeleton_render_item: None,
+            skeleton_morph_target_bind_group_render_item: None,
 
             b_box_node_index: 0
         };
@@ -422,6 +424,31 @@ impl Node
         let joints: Vec<Matrix4<f32>> = joints.iter().map(|joint| joint.1 ).collect();
 
         Some(joints)
+    }
+
+    pub fn get_morph_targets_vec(&self) -> Option<Vec<f32>>
+    {
+        let morph_components = self.find_components::<MorphTarget>();
+
+        if morph_components.len() == 0
+        {
+            return None;
+        }
+
+        let mut morph_target_weights: Vec<(u32, f32)> = vec![];
+
+        for morph_target in morph_components
+        {
+            component_downcast!(morph_target, MorphTarget);
+            let morph_data = morph_target.get_data();
+            morph_target_weights.push((morph_data.target_id, morph_data.weight));
+        }
+
+        morph_target_weights.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        let morph_tagets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
+
+        Some(morph_tagets)
     }
 
     pub fn get_alpha(&self) -> (f32, bool)
