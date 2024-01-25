@@ -40,14 +40,9 @@ struct SkeletonUniform
     joints_amount: u32,
 };
 
-struct wrapped_f32
-{
-    @size(16) elem: f32 // array stride must be 16
-}
-
 struct MorphTargetUniform
 {
-    weights: array<wrapped_f32, MAX_MORPH_TARGETS>,
+    weights: array<vec4<f32>, MAX_MORPH_TARGETS>, // array stride must be 16 - so we use vec4
     amount: u32,
 };
 
@@ -70,7 +65,6 @@ var<uniform> skeleton: SkeletonUniform;
 var<uniform> morpth_target: MorphTargetUniform;
 
 @group(2) @binding(2) var t_morpth_targets: texture_2d_array<f32>;
-@group(2) @binding(3) var s_morpth_targets: sampler;
 
 struct VertexInput
 {
@@ -116,20 +110,12 @@ struct VertexOutput
 // ****************************** vertex ******************************
 
 const items: u32 = 4u;
-//fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, texture: texture_2d_array<f32>, s: sampler) -> vec4<f32>
 fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, texture: texture_2d_array<f32>) -> vec4<f32>
 {
     let dimensions = textureDimensions(texture);
     let pos = (vertex_index * items) + offset;
     let x = pos % dimensions.x;
-    //let y = floor(pos / dimensions.x);
     let y = pos / dimensions.x;
-    //let tex_coord = vec2<u32>(x, y);
-    //let tex_coord = vec2<f32>(f32(x) / f32(dimensions.x), f32(y) / f32(dimensions.y));
-
-    //let data = textureSample(texture, s, tex_coord, tex_id);
-
-    //return vec4<f32>(0.0);
 
     return textureLoad(texture, vec2<u32>(x, y), tex_id, 0);
 }
@@ -167,8 +153,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     {
         let vertex_id = model.index;
         for (var i: u32 = 0u; i < min(morpth_target.amount, MAX_MORPH_TARGETS); i = i + 1u)
+        //let i: u32 = 1u;
         {
-            let weight = morpth_target.weights[i].elem;
+            let weight = morpth_target.weights[i].x;
 
             // position
             let pos = read_vec_from_texture_array(vertex_id, i, 0u, t_morpth_targets);
@@ -222,18 +209,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
             let bitangent = joint_transform * model_bitangent;
             world_bitangent += bitangent * model.weights[i];
         }
-
-        // Morph Targets
-        /*
-        for (var i: u32 = 0u; i <  morpth_target.amount; i = i + 1u)
-        {
-            wrapped_f32 weight = morph_target.weights[j];
-            mat4x4<f32> morphTargetTransform = textureLoad(t_morpth_targets, i.xy, j).xyzw;
-
-            // Kombinieren Sie die Skelettanimation und die Morph Targets basierend auf den Gewichten
-            animatedJointTransform = mix(animatedJointTransform, morphTargetTransform, weight.elem);
-        }
-        */
 
         /*
         world_position =

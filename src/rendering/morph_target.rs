@@ -1,15 +1,14 @@
-use image::{DynamicImage, ImageBuffer, Rgba, EncodableLayout};
-use nalgebra::{Point3, Vector4, Point4};
-use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler, util::DeviceExt};
+use image::EncodableLayout;
+use wgpu::{BindGroupEntry, BindGroupLayoutEntry, util::DeviceExt};
 
 use crate::{state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}, render_item_impl_default};
 
-use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
+use super::wgpu::WGpu;
 
 const FLOATS_PER_PIXEL: usize = 4;
 const ITEMS_PER_VERTEX: usize = 4; //pos, normal, tangent, bitangent
 
-pub const MAX_MORPH_TARGETS: usize = 128;
+pub const MAX_MORPH_TARGETS: usize = 256;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -55,7 +54,6 @@ pub struct MorphTarget
 
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
 
     buffer: wgpu::Buffer,
 }
@@ -78,14 +76,6 @@ impl MorphTarget
         let height = ((data_len as f64) / (width as f64)).ceil() as u32;
 
         let targets = Self::get_morph_targets(mesh_data);
-
-        /*
-        dbg!(mesh_data.vertices.len());
-        dbg!(data_len);
-        dbg!(width);
-        dbg!(height);
-         */
-
         let texture_size = wgpu::Extent3d
         {
             width: width,
@@ -110,17 +100,6 @@ impl MorphTarget
             }
         );
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor
         {
             label: Some(texture_name.as_str()),
@@ -128,7 +107,6 @@ impl MorphTarget
             array_layer_count: Some(Self::get_morph_targets(mesh_data)),
             ..Default::default()
         });
-        //let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let uniform = MorphTargetUniform::new(targets);
         let buffer = wgpu.device().create_buffer_init
@@ -148,7 +126,6 @@ impl MorphTarget
 
             texture: texture,
             view: texture_view,
-            sampler: sampler,
             buffer
         };
 
@@ -188,16 +165,6 @@ impl MorphTarget
             }
         );
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor
         {
             label: Some("empty morph target"),
@@ -205,7 +172,6 @@ impl MorphTarget
             array_layer_count: Some(1),
             ..Default::default()
         });
-        //let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let uniform = MorphTargetUniform::empty();
         let buffer = wgpu.device().create_buffer_init
@@ -225,7 +191,6 @@ impl MorphTarget
 
             texture: texture,
             view: texture_view,
-            sampler: sampler,
             buffer
         }
     }
@@ -252,10 +217,7 @@ impl MorphTarget
         for morpth_target_id in 0..targets
         {
             // prepare data
-            //let mut data: Vec<f32> = Vec::with_capacity(mesh_data.vertices.len() * ITEMS_PER_VERTEX);
-            //let mut morph_data: Vec<f32> = Vec::with_capacity(self.width as usize * self.height as usize * ITEMS_PER_VERTEX);
-
-            let pos_start = (self.width * self.height * morpth_target_id) as usize;
+            let pos_start = (self.width * self.height * morpth_target_id) as usize * FLOATS_PER_PIXEL;
 
             let positions = mesh_data.morph_target_positions.get(morpth_target_id as usize);
             let normals = mesh_data.morph_target_normals.get(morpth_target_id as usize);
@@ -353,66 +315,33 @@ impl MorphTarget
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
-    pub fn get_texture(&self) -> &wgpu::Texture
-    {
-        &self.texture
-    }
-
-    pub fn get_view(&self) -> &wgpu::TextureView
-    {
-        &self.view
-    }
-
-    pub fn get_sampler(&self) -> &wgpu::Sampler
-    {
-        &self.sampler
-    }
-
     pub fn get_buffer(&self) -> &wgpu::Buffer
     {
         &self.buffer
     }
 
-    pub fn get_bind_group_layout_entries(index_start: u32) -> [BindGroupLayoutEntry; 2]
+    pub fn get_bind_group_layout_entry(index_start: u32) -> BindGroupLayoutEntry
     {
-        [
-            wgpu::BindGroupLayoutEntry
+        wgpu::BindGroupLayoutEntry
+        {
+            binding: index_start,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Texture
             {
-                binding: index_start,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture
-                {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                },
-                count: None,
+                multisampled: false,
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
             },
-            wgpu::BindGroupLayoutEntry
-            {
-                binding: index_start + 1,
-                visibility: wgpu::ShaderStages::VERTEX,
-                // This should match the filterable field of the
-                // corresponding Texture entry above.
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            }
-        ]
+            count: None,
+        }
     }
 
-    pub fn get_bind_group_entries(&self, index_start: u32) -> [BindGroupEntry; 2]
+    pub fn get_bind_group_entry(&self, index_start: u32) -> BindGroupEntry
     {
-        [
-            wgpu::BindGroupEntry
-            {
-                binding: index_start,
-                resource: wgpu::BindingResource::TextureView(&self.view),
-            },
-            wgpu::BindGroupEntry
-            {
-                binding: index_start + 1,
-                resource: wgpu::BindingResource::Sampler(&self.sampler),
-            }
-        ]
+        wgpu::BindGroupEntry
+        {
+            binding: index_start,
+            resource: wgpu::BindingResource::TextureView(&self.view),
+        }
     }
 }

@@ -17,21 +17,20 @@ impl SkeletonMorphTargetBindGroup
 {
     pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
-        let morph_layout_entries = MorphTarget::get_bind_group_layout_entries(2);
+        let morph_layout_entry = MorphTarget::get_bind_group_layout_entry(2);
 
         let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
             &[
                 // skeleton
-                uniform::uniform_bind_group_layout_entry(0, true, true),
+                uniform::uniform_bind_group_layout_entry(0, true, false),
 
                 // morph targets buffer
-                uniform::uniform_bind_group_layout_entry(1, true, true),
+                uniform::uniform_bind_group_layout_entry(1, true, false),
 
                 // morph targets (texture array)
-                morph_layout_entries[0],
-                morph_layout_entries[1],
+                morph_layout_entry
             ],
             label: Some("skeleton_morph_target_bind_group_layout"),
         });
@@ -43,7 +42,7 @@ impl SkeletonMorphTargetBindGroup
     {
         let bind_group_layout = Self::bind_layout(wgpu);
 
-        let morph_target_tex_bind_groups = morph_target.get_bind_group_entries(2);
+        let morph_target_tex_bind_group = morph_target.get_bind_group_entry(2);
 
         let bind_group_name = format!("{} skeleton_morph_bind_group", name);
         let bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
@@ -58,8 +57,7 @@ impl SkeletonMorphTargetBindGroup
                 uniform::uniform_bind_group(1, &morph_target.get_buffer()),
 
                 // morph targets (texture array)
-                morph_target_tex_bind_groups[0].clone(), // ????
-                morph_target_tex_bind_groups[1].clone(), // ????
+                morph_target_tex_bind_group.clone(), // ????
             ],
             label: Some(bind_group_name.as_str()),
         });

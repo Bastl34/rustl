@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use egui::RichText;
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
-use crate::{helper::math::{interpolate_vec3, approx_zero, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4}, component_impl_default, state::scene::{node::NodeItem, components::joint::{Joint, self}}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
+use crate::{helper::math::{interpolate_vec3, approx_zero, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, cubic_spline_interpolate_vec}, component_impl_default, state::scene::{node::NodeItem, components::joint::{Joint, self}}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut, component_downcast};
 
-use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
+use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
 #[derive(PartialEq)]
 pub enum Interpolation
@@ -358,7 +358,24 @@ impl Component for Animation
                     }
                     else if channel.transform_morph.len() > 0
                     {
-                        // TODO
+                        let weights = &channel.transform_morph[0];
+
+                        let target = channel.target.read().unwrap();
+                        let morph_targets = target.find_components::<MorphTarget>();
+
+                        for morph_target in morph_targets
+                        {
+                            component_downcast_mut!(morph_target, MorphTarget);
+
+                            for (target_id, weight) in weights.iter().enumerate()
+                            {
+                                if morph_target.get_data().target_id == target_id as u32
+                                {
+                                    let morph_target_data = morph_target.get_data_mut().get_mut();
+                                    morph_target_data.weight = *weight;
+                                }
+                            }
+                        }
                     }
 
                     if let Some(transform) = transform
@@ -580,6 +597,69 @@ impl Component for Animation
 
                         let target_item = target_map.get_mut(&target_id).unwrap();
                         target_item.1 = target_item.1 * transform;
+                    }
+                    // ********** morph targets **********
+                    else if channel.transform_morph.len() > 0
+                    {
+                        let weights = match channel.interpolation
+                        {
+                            Interpolation::Linear =>
+                            {
+                                let from = &channel.transform_morph[t0];
+                                let to = &channel.transform_morph[t1];
+
+                                interpolate_vec(&from, &to, factor)
+                            },
+                            Interpolation::Step =>
+                            {
+                                channel.transform_morph[t0].clone()
+                            },
+                            Interpolation::CubicSpline =>
+                            {
+                                let delta_time = next_time - prev_time;
+
+                                let l = t0 * 3;
+
+                                let prev_input_tangent = &channel.transform_morph[l];
+                                let prev_keyframe_value = &channel.transform_morph[l+1];
+                                let prev_output_tangent = &channel.transform_morph[l+2];
+
+                                let r = t1 * 3;
+
+                                let next_input_tangent = &channel.transform_morph[r];
+                                let next_keyframe_value = &channel.transform_morph[r+1];
+                                let next_output_tangent = &channel.transform_morph[r+2];
+
+                                cubic_spline_interpolate_vec
+                                (
+                                    factor,
+                                    delta_time,
+                                    prev_input_tangent,
+                                    prev_keyframe_value,
+                                    prev_output_tangent,
+                                    next_input_tangent,
+                                    next_keyframe_value,
+                                    next_output_tangent,
+                                )
+                            },
+                        };
+
+                        let target = channel.target.read().unwrap();
+                        let morph_targets = target.find_components::<MorphTarget>();
+
+                        for morph_target in morph_targets
+                        {
+                            component_downcast_mut!(morph_target, MorphTarget);
+
+                            for (target_id, weight) in weights.iter().enumerate()
+                            {
+                                if morph_target.get_data().target_id == target_id as u32
+                                {
+                                    let morph_target_data = morph_target.get_data_mut().get_mut();
+                                    morph_target_data.weight = *weight;
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -20,6 +20,8 @@ type Skeletons = HashMap<usize, Vec<JointData>>;
 
 pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
+    println!("load gltf file {}", path);
+
     let gltf_content = load_binary(path)?;
 
     let mut gltf = Gltf::from_slice(gltf_content.as_slice())?;

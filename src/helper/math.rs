@@ -74,6 +74,19 @@ pub fn interpolate_vec4(a: &Vector4<f32>, b: &Vector4<f32>, f: f32) -> Vector4<f
     )
 }
 
+pub fn interpolate_vec(a: &Vec<f32>, b: &Vec<f32>, f: f32) -> Vec<f32>
+{
+    let mut vec: Vec<f32> = Vec::with_capacity(a.len());
+    vec.extend(vec![0.0; a.len()]);
+
+    for i in 0..a.len()
+    {
+        vec[i] = interpolate(a[i], b[i], f);
+    }
+
+    vec
+}
+
 //https://github.com/dakom/awsm-renderer/blob/1c7df6b66a3507e11721d549d85c3cfeae146a1f/crate/src/animation/clip.rs#L151
 pub fn cubic_spline_interpolate_vec3
 (
@@ -123,6 +136,39 @@ pub fn cubic_spline_interpolate_vec4
     + (( -2.0 * t3 + 3.0 * t2) * next_keyframe_value)
     + ((t3 - t2) * next_tangent)
     //prev_keyframe_value.clone()
+}
+
+pub fn cubic_spline_interpolate_vec
+(
+    interpolation_time: f32,
+    delta_time: f32,
+    prev_input_tangent: &Vec::<f32>,
+    prev_keyframe_value: &Vec::<f32>,
+    prev_output_tangent: &Vec::<f32>,
+    next_input_tangent: &Vec::<f32>,
+    next_keyframe_value: &Vec::<f32>,
+    next_output_tangent: &Vec::<f32>
+) -> Vec::<f32> {
+    let t = interpolation_time;
+    let t2 = t * t;
+    let t3 = t * t * t;
+
+    let mut vec: Vec<f32> = Vec::with_capacity(prev_input_tangent.len());
+    vec.extend(vec![0.0; prev_input_tangent.len()]);
+
+    for i in 0..prev_input_tangent.len()
+    {
+        let prev_tangent = delta_time * prev_output_tangent[i];
+        let next_tangent = delta_time * next_input_tangent[i];
+
+        vec[i] = ((2.0 * t3 - 3.0 * t2 + 1.0) * prev_keyframe_value[i])
+        + ((t3 - 2.0 * t2 + t) * prev_tangent)
+        + (( -2.0 * t3 + 3.0 * t2) * next_keyframe_value[i])
+        + ((t3 - t2) * next_tangent)
+        //prev_keyframe_value.clone()
+    }
+
+    vec
 }
 
 pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)

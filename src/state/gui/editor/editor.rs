@@ -857,6 +857,7 @@ impl Editor
             if loaded.is_err()
             {
                 dbg!("loading failed");
+                dbg!(loaded.err());
                 *editor_state.write().unwrap() = false;
                 return;
             }

@@ -404,8 +404,6 @@ impl Scene
             {
                 let node_arc = nodes.get(node_id).unwrap();
 
-                let has_changed_morph_target_weights = Self::consume_changed_morph_targets(node_arc.clone());
-
                 let node = node_arc.read().unwrap();
                 let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
 
@@ -429,34 +427,62 @@ impl Scene
                         }
                     }
 
+                    /*
+                    let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                    swap(&mut mesh.morph_target_render_item, &mut render_item);
+
+                    drop(mesh);
+
                     //if let Some(morph_target_render_item) = &mesh.morph_target_render_item
-                    if mesh.morph_target_render_item.is_some()
+                    if render_item.is_some()
                     {
                         if has_changed_morph_target_weights
                         {
-                            /*
-
                             let weights = node.get_morph_targets_vec();
 
                             if let Some(weights) = weights
                             {
-                                let mut morph_render_item = get_render_item_mut::<MorphTarget>(mesh.morph_target_render_item.as_mut().unwrap());
+                                let mut morph_render_item = get_render_item_mut::<MorphTarget>(render_item.as_mut().unwrap());
                                 morph_render_item.update_buffer(wgpu, &weights);
                             }
-                             */
                         }
                     }
+
+                    let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
+                    let mesh = mesh.unwrap();
+                    component_downcast_mut!(mesh, crate::state::scene::components::mesh::Mesh);
+
+                    swap(&mut render_item, &mut mesh.morph_target_render_item);
+                     */
                 }
             }
 
             // ********** morph target/s **********
-            /*
             {
-                let node = nodes.get_mut(node_id).unwrap();
+                let node_arc = nodes.get(node_id).unwrap();
 
-                let node = node.write().unwrap();
+                let has_changed_morph_target_weights = Self::consume_changed_morph_targets(node_arc.clone());
+
+                if has_changed_morph_target_weights
+                {
+                    let node = nodes.get_mut(node_id).unwrap();
+                    let node = node.read().unwrap();
+
+                    let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
+                    if let Some(mesh) = mesh
+                    {
+                        let weights = node.get_morph_targets_vec();
+
+                        if let Some(weights) = weights
+                        {
+                            component_downcast_mut!(mesh, crate::state::scene::components::mesh::Mesh);
+                            let mut morph_render_item = get_render_item_mut::<MorphTarget>(mesh.morph_target_render_item.as_mut().unwrap());
+
+                            morph_render_item.update_buffer(wgpu, &weights);
+                        }
+                    }
+                }
             }
-             */
 
             // ********** skeleton **********
             {
