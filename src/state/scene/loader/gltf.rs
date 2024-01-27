@@ -379,6 +379,11 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 }
             }
 
+            if verts.len() == 0 || indices.len() == 0
+            {
+                continue;
+            }
+
             // joints
             let joints_gltf = reader.read_joints(0); // JOINTS_0
             if let Some(joints_gltf) = joints_gltf
@@ -420,11 +425,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 }
             }
 
-            if verts.len() == 0 || indices.len() == 0
-            {
-                continue;
-            }
-
             let mut components: Vec<ComponentItem> = vec![];
 
             // mesh component
@@ -451,11 +451,16 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 {
                     // positions
                     let mut res_positions: Vec<Point3<f32>> = vec![];
+
                     if let Some(positions) = positions
                     {
-                        for position in positions
+                        let len = positions.len();
+                        for (i, position) in positions.enumerate()
                         {
                             res_positions.push(Point3::<f32>::new(position[0], position[1], position[2]));
+
+                            // for some reason iteratoring over positions can be larger as positions.len() 🤔
+                            if i > len - 1 { break; }
                         }
                     }
 
@@ -463,9 +468,13 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let mut res_normals: Vec<Vector3<f32>> = vec![];
                     if let Some(normals) = normals
                     {
-                        for normal in normals
+                        let len = normals.len();
+                        for (i, normal) in normals.enumerate()
                         {
                             res_normals.push(Vector3::<f32>::new(normal[0], normal[1], normal[2]));
+
+                            // for some reason iteratoring over normals can be larger as normals.len() 🤔
+                            if i > len - 1 { break; }
                         }
                     }
 
@@ -473,9 +482,13 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let mut res_tangents: Vec<Vector3<f32>> = vec![];
                     if let Some(tangents) = tangents
                     {
-                        for tangent in tangents
+                        let len = tangents.len();
+                        for (i, tangent) in tangents.enumerate()
                         {
                             res_tangents.push(Vector3::<f32>::new(tangent[0], tangent[1], tangent[2]));
+
+                            // for some reason iteratoring over tangents can be larger as tangents.len() 🤔
+                            if i > len - 1 { break; }
                         }
                     }
 
