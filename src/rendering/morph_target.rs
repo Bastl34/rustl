@@ -69,10 +69,10 @@ impl MorphTarget
     {
         let device = wgpu.device();
 
-        let max_tex_size = wgpu.device().limits().max_texture_dimension_2d;
+        let max_tex_array_size = wgpu.device().limits().max_texture_dimension_2d;
         let data_len = mesh_data.vertices.len() as u32 * ITEMS_PER_VERTEX as u32;
 
-        let width = data_len.min(max_tex_size);
+        let width = data_len.min(max_tex_array_size);
         let height = ((data_len as f64) / (width as f64)).ceil() as u32;
 
         let targets = Self::get_morph_targets(mesh_data);
@@ -82,6 +82,11 @@ impl MorphTarget
             height: height,
             depth_or_array_layers: Self::get_morph_targets(mesh_data),
         };
+
+        if targets > max_tex_array_size
+        {
+            println!("WARNING: can not use more then {} morph targets", max_tex_array_size);
+        }
 
         let texture_name = format!("{} Morph Texture Array", name);
         let texture = device.create_texture
@@ -209,6 +214,8 @@ impl MorphTarget
         let queue = wgpu.queue_mut();
 
         let targets = Self::get_morph_targets(mesh_data);
+        let max_tex_array_size = wgpu.device().limits().max_texture_dimension_2d;
+        let targets = targets.min(max_tex_array_size);
 
         let len = (self.width * self.height * targets) as usize * FLOATS_PER_PIXEL;
         let mut morph_data: Vec<f32> = Vec::with_capacity(len);
@@ -306,8 +313,11 @@ impl MorphTarget
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, weights: &Vec<f32>)
     {
+        let max_tex_array_size = wgpu.device().limits().max_texture_dimension_2d as usize;
+        let weights_amount = weights.len().min(max_tex_array_size);
+
         let mut uniform = MorphTargetUniform::new(weights.len() as u32);
-        for i in 0..weights.len()
+        for i in 0..weights_amount
         {
             uniform.weights[i][0] = weights[i];
         }
