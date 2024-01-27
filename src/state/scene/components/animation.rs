@@ -372,7 +372,7 @@ impl Component for Animation
                                 if morph_target.get_data().target_id == target_id as u32
                                 {
                                     let morph_target_data = morph_target.get_data_mut().get_mut();
-                                    morph_target_data.weight = *weight;
+                                    morph_target_data.weight = *weight * self.weight;
                                 }
                             }
                         }
@@ -656,7 +656,7 @@ impl Component for Animation
                                 if morph_target.get_data().target_id == target_id as u32
                                 {
                                     let morph_target_data = morph_target.get_data_mut().get_mut();
-                                    morph_target_data.weight = *weight;
+                                    morph_target_data.weight = *weight * self.weight;
                                 }
                             }
                         }
