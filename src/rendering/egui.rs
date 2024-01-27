@@ -1,4 +1,4 @@
-use egui::FullOutput;
+use egui::{FullOutput, ViewportId};
 use egui_winit::winit;
 use wgpu::{TextureView, CommandEncoder};
 
@@ -20,10 +20,8 @@ impl EGui
     {
         let size = window.inner_size();
 
-        let mut ui_state = egui_winit::State::new(event_loop);
-        ui_state.set_pixels_per_point(window.scale_factor() as f32);
-
-        let ctx = egui::Context::default();
+        let ctx: egui::Context = egui::Context::default();
+        let ui_state = egui_winit::State::new(ViewportId::ROOT, event_loop, None, None);
 
         Self
         {
@@ -41,9 +39,8 @@ impl EGui
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder) -> Vec<egui::ClippedPrimitive>
     {
-        let output = self.output.clone().unwrap(); // TODO: check clone
-
-        let clipped_primitives = self.ctx.tessellate(output.shapes);
+        let output = self.output.clone().unwrap();
+        let clipped_primitives = self.ctx.tessellate(output.shapes, output.pixels_per_point);
 
         self.renderer.update_buffers(device, queue, encoder, &clipped_primitives, &self.screen_descriptor);
 
@@ -68,13 +65,12 @@ impl EGui
         if scale_factor.is_some()
         {
             self.screen_descriptor.pixels_per_point = scale_factor.unwrap() as f32;
-            self.ui_state.set_pixels_per_point(scale_factor.unwrap() as f32);
         }
     }
 
     pub fn on_event(&mut self, event: &winit::event::WindowEvent) -> bool
     {
-        let r = self.ui_state.on_event(&self.ctx, event);
+        let r = self.ui_state.on_window_event(&self.ctx, event);
         r.consumed
     }
 
@@ -100,11 +96,13 @@ impl EGui
                         ops: wgpu::Operations
                         {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         }
                     })
                 ],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
             self.renderer.render(&mut pass, &primitives, &self.screen_descriptor);

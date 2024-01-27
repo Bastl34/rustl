@@ -1164,7 +1164,7 @@ impl Scene
                 ops: wgpu::Operations
                 {
                     load: clear_color,
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             })
         ];
@@ -1185,10 +1185,12 @@ impl Scene
                 depth_ops: Some(wgpu::Operations
                 {
                     load: clear_depth,
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
-            })
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
         let x = cam_data.viewport_x * cam_data.resolution_width as f32;
@@ -1233,7 +1235,7 @@ impl Scene
                     ops: wgpu::Operations
                     {
                         load: clear_color,
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })
             ],
@@ -1243,10 +1245,12 @@ impl Scene
                 depth_ops: Some(wgpu::Operations
                 {
                     load: clear_depth,
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
-            })
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
         let x = cam_data.viewport_x * cam_data.resolution_width as f32;
