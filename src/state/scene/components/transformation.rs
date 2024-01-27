@@ -27,7 +27,12 @@ pub struct TransformationData
 pub struct Transformation
 {
     base: ComponentBase,
-    data: ChangeTracker<TransformationData>
+    data: ChangeTracker<TransformationData>,
+
+    ui_lock_translation: bool,
+    ui_lock_rotation: bool,
+    ui_lock_rotation_quat: bool,
+    ui_lock_scale: bool,
 }
 
 impl Transformation
@@ -55,7 +60,12 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
         };
         transform.calc_transform();
 
@@ -85,7 +95,12 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
         };
         transform.calc_transform();
 
@@ -115,7 +130,12 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
         };
         transform.calc_transform();
 
@@ -479,16 +499,30 @@ impl Component for Transformation
                 ui.horizontal(|ui|
                 {
                     ui.label("Position: ");
-                    changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    let changed_x = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed();
+                    let changed_y = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed();
+                    let changed_z = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed();
+                    ui.toggle_value(&mut self.ui_lock_translation, "🔒").on_hover_text("same position value for all coordinates");
+
+                    if self.ui_lock_translation  && changed_x { pos.y = pos.x; pos.z = pos.x; }
+                    if self.ui_lock_translation  && changed_y { pos.x = pos.y; pos.z = pos.y; }
+                    if self.ui_lock_translation  && changed_z { pos.x = pos.z; pos.y = pos.z; }
+
+                    changed = changed_x || changed_y || changed_z || changed;
                 });
                 ui.horizontal(|ui|
                 {
                     ui.label("Rotation\n(Euler): ");
-                    changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    let changed_x = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed();
+                    let changed_y = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed();
+                    let changed_z = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed();
+                    ui.toggle_value(&mut self.ui_lock_rotation, "🔒").on_hover_text("same rotation value for all coordinates");
+
+                    if self.ui_lock_rotation  && changed_x { rot.y = rot.x; rot.z = rot.x; }
+                    if self.ui_lock_rotation  && changed_y { rot.x = rot.y; rot.z = rot.y; }
+                    if self.ui_lock_rotation  && changed_z { rot.x = rot.z; rot.y = rot.z; }
+
+                    changed = changed_x || changed_y || changed_z || changed;
                 });
 
                 if let Some(rot_quat) = rot_quat.as_mut()
@@ -496,10 +530,17 @@ impl Component for Transformation
                     ui.horizontal(|ui|
                     {
                         ui.label("Rotation\n(Quaternion): ");
-                        changed = ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: ")).changed() || changed;
-                        changed = ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: ")).changed() || changed;
-                        changed = ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: ")).changed() || changed;
-                        changed = ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: ")).changed() || changed;
+                        let changed_x = ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: ")).changed();
+                        let changed_y = ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: ")).changed();
+                        let changed_z = ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: ")).changed();
+                        let changed_w = ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: ")).changed();
+                        ui.toggle_value(&mut self.ui_lock_rotation_quat, "🔒").on_hover_text("same rotation value for all coordinates (x, y, z)");
+
+                        if self.ui_lock_rotation_quat  && changed_x { rot_quat.y = rot_quat.x; rot_quat.z = rot_quat.x; }
+                        if self.ui_lock_rotation_quat  && changed_y { rot_quat.x = rot_quat.y; rot_quat.z = rot_quat.y; }
+                        if self.ui_lock_rotation_quat  && changed_z { rot_quat.x = rot_quat.z; rot_quat.y = rot_quat.z; }
+
+                        changed = changed_x || changed_y || changed_z || changed_w || changed;
 
                         if changed && approx_zero_vec4(rot_quat)
                         {
@@ -512,9 +553,16 @@ impl Component for Transformation
                 ui.horizontal(|ui|
                 {
                     ui.label("Scale: ");
-                    changed = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    let changed_x = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed();
+                    let changed_y = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed();
+                    let changed_z = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed();
+                    ui.toggle_value(&mut self.ui_lock_scale, "🔒").on_hover_text("same scaling value for all coordinates");
+
+                    if self.ui_lock_scale  && changed_x { scale.y = scale.x; scale.z = scale.x; }
+                    if self.ui_lock_scale  && changed_y { scale.x = scale.y; scale.z = scale.y; }
+                    if self.ui_lock_scale  && changed_z { scale.x = scale.z; scale.y = scale.z; }
+
+                    changed = changed_x || changed_y || changed_z || changed;
 
                     // scale = 0 is not supported / working -> otherwise a inverse transform can not be created
                     if scale.x == 0.0 { scale.x = 0.00000001; }
