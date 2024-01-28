@@ -29,7 +29,8 @@ bvh = "0.7"
 
 tobj = { version = "4.0", features = ["async"]}
 
-gltf = { version = "1.4.0", features = [
+#gltf = { version = "1.4.0", features = [
+gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "extras",
   "names",
   "KHR_lights_punctual",

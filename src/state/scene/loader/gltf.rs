@@ -454,13 +454,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     if let Some(positions) = positions
                     {
-                        let len = positions.len();
-                        for (i, position) in positions.enumerate()
+                        for position in positions
                         {
                             res_positions.push(Point3::<f32>::new(position[0], position[1], position[2]));
-
-                            // for some reason iteratoring over positions can be larger as positions.len() 🤔
-                            if i > len - 1 { break; }
                         }
                     }
 
@@ -468,13 +464,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let mut res_normals: Vec<Vector3<f32>> = vec![];
                     if let Some(normals) = normals
                     {
-                        let len = normals.len();
-                        for (i, normal) in normals.enumerate()
+                        for normal in normals
                         {
                             res_normals.push(Vector3::<f32>::new(normal[0], normal[1], normal[2]));
-
-                            // for some reason iteratoring over normals can be larger as normals.len() 🤔
-                            if i > len - 1 { break; }
                         }
                     }
 
@@ -482,13 +474,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let mut res_tangents: Vec<Vector3<f32>> = vec![];
                     if let Some(tangents) = tangents
                     {
-                        let len = tangents.len();
-                        for (i, tangent) in tangents.enumerate()
+                        for tangent in tangents
                         {
                             res_tangents.push(Vector3::<f32>::new(tangent[0], tangent[1], tangent[2]));
-
-                            // for some reason iteratoring over tangents can be larger as tangents.len() 🤔
-                            if i > len - 1 { break; }
                         }
                     }
 
