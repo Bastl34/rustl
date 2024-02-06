@@ -279,14 +279,6 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
                 let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("Clear").clicked()
-                    {
-                        ui.close_menu();
-                        scene.clear();
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -303,6 +295,15 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         editor_state.settings = SettingsPanel::Rendering;
                     }
                 }
+
+                let toggle = toggle.context_menu(|ui|
+                {
+                    if ui.button("Clear").clicked()
+                    {
+                        ui.close_menu();
+                        scene.clear();
+                    }
+                });
             });
         }).body(|ui|
         {
@@ -357,14 +358,6 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
 
                 let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("Add New Camera").clicked()
-                    {
-                        ui.close_menu();
-                        scene.add_camera("Camera");
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -380,6 +373,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                let toggle = toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Camera").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_camera("Camera");
+                    }
+                });
             });
         }).body(|ui|
         {

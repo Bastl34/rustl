@@ -7,6 +7,7 @@ use std::{vec, cmp};
 use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
+use winit::keyboard::ModifiersKeyState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
@@ -469,7 +470,8 @@ impl MainInterface
                 //let _ = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let _ = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let _ = scene_utils::load_object("objects/temp/rpm3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -787,12 +789,11 @@ impl MainInterface
 
             match event
             {
-                winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
+                winit::event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } =>
+                //winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
                 {
-                    if let Some(key) = input.virtual_keycode
-                    {
-                        let key = winit_map_key(key);
-                        if input.state == ElementState::Pressed
+                        let key = winit_map_key(event.logical_key);
+                        if event.state == ElementState::Pressed
                         {
                             global_state.input_manager.keyboard.set_key(key, true);
                         }
@@ -800,14 +801,20 @@ impl MainInterface
                         {
                             global_state.input_manager.keyboard.set_key(key, false);
                         }
-                    }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift());
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed);
+
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed);
+
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed);
+
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed);
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
                 {

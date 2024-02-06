@@ -193,10 +193,14 @@ pub fn get_keys_as_string_vec() -> Vec<String>
 #[derive(EnumIter, Debug, PartialEq, Display)]
 pub enum Modifier
 {
-    Shift = 0,
-    Ctrl,
-    Alt,
-    Logo
+    LeftShift = 0,
+    RightShift,
+    LeftCtrl,
+    RightCtrl,
+    LeftAlt,
+    RightAlt,
+    LeftLogo,
+    RightLogo
 }
 
 pub struct Keyboard

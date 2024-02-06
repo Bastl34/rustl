@@ -16,6 +16,8 @@ pub enum MouseButton
     Left,
     Right,
     Middle,
+    Back,
+    Forward,
     Other1,
     Other2,
     Other3,

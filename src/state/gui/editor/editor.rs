@@ -35,7 +35,7 @@ impl Editor
     pub fn update(&mut self, state: &mut State)
     {
         // start try out mde
-        if !self.editor_state.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)) && state.input_manager.keyboard.is_pressed(Key::R)
+        if !self.editor_state.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.input_manager.keyboard.is_pressed(Key::R)
         {
             self.editor_state.set_try_out(state, true);
         }
@@ -521,7 +521,7 @@ impl Editor
 
                 if state.input_manager.keyboard.is_pressed(Key::X)
                 {
-                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos.clone(), true, false, false)); }
                         else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos.clone(), true, false, false)); }
@@ -535,7 +535,7 @@ impl Editor
 
                 if state.input_manager.keyboard.is_pressed(Key::Y)
                 {
-                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, false)); }
                         else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, false)); }
@@ -549,7 +549,7 @@ impl Editor
 
                 if state.input_manager.keyboard.is_pressed(Key::Z)
                 {
-                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, false, true)); }
                         else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, false, true)); }
@@ -658,7 +658,7 @@ impl Editor
                             let mut vec = Vector3::<f32>::zeros();
                             if x
                             {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                                 {
                                     let sign = movement.x.signum();
                                     if movement.x.abs() >= step_size
@@ -676,7 +676,7 @@ impl Editor
 
                             if y
                             {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                                 {
                                     let sign = movement.z.signum();
                                     if movement.z.abs() >= step_size
@@ -694,7 +694,7 @@ impl Editor
 
                             if z
                             {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                                 {
                                     let sign = -movement.z.signum();
                                     if movement.z.abs() >= step_size
@@ -727,7 +727,7 @@ impl Editor
                             let mut vec = Vector3::<f32>::zeros();
                             if x
                             {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                                 {
                                     let sign = movement.z.signum();
                                     if movement.z.abs() >= angle_steps
@@ -745,7 +745,7 @@ impl Editor
 
                             if y
                             {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                                 {
                                     let sign = movement.x.signum();
                                     if movement.x.abs() >= angle_steps
@@ -763,7 +763,7 @@ impl Editor
 
                             if z
                             {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                                if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                                 {
                                     let sign = movement.x.signum();
                                     if movement.x.abs() >= angle_steps
@@ -983,7 +983,7 @@ impl Editor
 
         let platform_output = full_output.platform_output.clone();
 
-        egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
+        egui.ui_state.handle_platform_output(window, platform_output);
 
         full_output
     }
