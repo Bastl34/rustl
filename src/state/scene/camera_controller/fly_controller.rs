@@ -93,7 +93,7 @@ impl CameraController for FlyController
             }
         }
 
-        if input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec()) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        if input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec()) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
         {
             let cam_data = cam_data.get_mut();
             last_eye_pos = Some(cam_data.eye_pos.clone());
@@ -105,7 +105,7 @@ impl CameraController for FlyController
             let mut vec = Vector3::<f32>::zeros();
 
             let mut factor = self.move_speed;
-            if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 factor = self.move_speed_shift;
             }

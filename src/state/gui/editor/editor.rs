@@ -920,13 +920,13 @@ impl Editor
                     {
                         let component = node.components.get_mut(components_len - 2).unwrap();
                         component_downcast_mut!(component, TransformationAnimation);
-                        component.keyboard_key = Some(Key::Left as usize);
+                        component.keyboard_key = Some(Key::ArrowLeft as usize);
                     }
 
                     {
                         let component = node.components.get_mut(components_len - 1).unwrap();
                         component_downcast_mut!(component, TransformationAnimation);
-                        component.keyboard_key = Some(Key::Right as usize);
+                        component.keyboard_key = Some(Key::ArrowRight as usize);
                     }
                 }
 

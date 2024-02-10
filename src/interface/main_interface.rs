@@ -792,7 +792,7 @@ impl MainInterface
                 winit::event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } =>
                 //winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
                 {
-                        let key = winit_map_key(event.logical_key);
+                        let key = winit_map_key(event.logical_key, event.physical_key, event.location);
                         if event.state == ElementState::Pressed
                         {
                             global_state.input_manager.keyboard.set_key(key, true);

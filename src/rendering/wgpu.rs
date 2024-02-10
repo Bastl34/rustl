@@ -5,11 +5,11 @@ use crate::{helper::{image::brga_to_rgba, platform::is_windows, concurrency::thr
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
-pub struct WGpu
+pub struct WGpu<'a>
 {
     device: Device,
     queue: Queue,
-    surface: Surface,
+    surface: Surface<'a>,
 
     msaa_samples: u32,
     msaa_texture: Option<wgpu::Texture>,
@@ -18,7 +18,7 @@ pub struct WGpu
     pub surface_caps: SurfaceCapabilities,
 }
 
-impl WGpu
+impl<'a> WGpu<'a>
 {
     pub async fn new(window: &winit::window::Window, state: &mut State) -> Self
     {
@@ -59,9 +59,9 @@ impl WGpu
             {
                 label: None,
                 //features: wgpu::Features::empty(),
-                features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
-                limits: if cfg!(target_arch = "wasm32")
+                required_limits: if cfg!(target_arch = "wasm32")
                 {
                     wgpu::Limits::downlevel_webgl2_defaults()
                 }
@@ -99,6 +99,7 @@ impl WGpu
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 1, // higher values will increase latency
         };
 
         surface.configure(&device, &surface_config);
@@ -131,7 +132,6 @@ impl WGpu
             wgpu::Backend::Vulkan => state.adapter.backend = "Vulkan".to_string(),
             wgpu::Backend::Metal => state.adapter.backend = "Metal".to_string(),
             wgpu::Backend::Dx12 => state.adapter.backend = "Dx12".to_string(),
-            wgpu::Backend::Dx11 => state.adapter.backend = "Dx11".to_string(),
             wgpu::Backend::Gl => state.adapter.backend = "Gl".to_string(),
             wgpu::Backend::BrowserWebGpu => state.adapter.backend = "BrowserWebGpu".to_string(),
         }
@@ -139,7 +139,7 @@ impl WGpu
         let mut wgpu = Self
         {
             device,
-            surface,
+            surface: surface,
             msaa_samples,
             msaa_texture: None,
             queue,
