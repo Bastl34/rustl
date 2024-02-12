@@ -492,8 +492,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     {
         let mut delete_component_id = None;
 
-        let node_read = node.read().unwrap();
-        for component in &node_read.components
+        let all_components;
+        let all_components_clone;
+        {
+            let node_read = node.read().unwrap();
+            all_components = node_read.components.clone();
+            all_components_clone = node_read.components.clone();
+        }
+
+        for (component_i, component) in all_components.iter().enumerate()
         {
             let component_id;
             let name;
@@ -562,12 +569,23 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 ui.label(format!("Id: {}", component_id));
                 ui.label(format!("Name: {}", name));
 
+                // filter out current component
+                {
+                    let mut node: std::sync::RwLockWriteGuard<'_, Box<crate::state::scene::node::Node>> = node.write().unwrap();
+                    node.components = all_components_clone.clone();
+                    node.components.remove(component_i);
+                }
+
                 let mut component = component.write().unwrap();
-                component.ui(ui);
+                component.ui(ui, Some(node.clone()));
+
+                // re-add current component
+                {
+                    let mut node = node.write().unwrap();
+                    node.components = all_components_clone.clone();
+                }
             });
         }
-
-        drop(node_read);
 
         if let Some(delete_component_id) = delete_component_id
         {
@@ -643,7 +661,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         ui.label(format!("Name: {}", name));
 
                         let mut component = component.write().unwrap();
-                        component.ui(ui);
+                        component.ui(ui, None);
                     });
                 }
             }

@@ -485,7 +485,7 @@ impl Component for Mesh
         false
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         let data = self.get_data();
         ui.label(format!(" ⚫ vertices: {}", data.vertices.len()));

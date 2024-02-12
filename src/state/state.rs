@@ -110,6 +110,7 @@ impl State
         //components.push(("Mesh".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
         components.push(("Transform".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
         components.push(("Transform Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
+        components.push(("Morph Target Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
 
         Self
         {

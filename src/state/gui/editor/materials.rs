@@ -66,7 +66,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
         collapse_with_title(ui, "material_settings", true, "🎨 Material Settings", |ui|
         {
             let mut material = material.write().unwrap();
-            material.ui(ui);
+            material.ui(ui, None);
         });
 
         collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", |ui|

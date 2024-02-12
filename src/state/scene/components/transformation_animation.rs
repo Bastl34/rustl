@@ -185,7 +185,7 @@ impl Component for TransformationAnimation
         self._update(instance.find_component::<Transformation>(), input_manager, time, frame_scale, frame);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         let mut changed = false;
 
@@ -293,7 +293,7 @@ impl Component for TransformationAnimation
         ui.horizontal(|ui|
         {
             ui.label("Keyboard key: ");
-            egui::ComboBox::from_label("").selected_text(current_key_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_source(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
             {
                 ui.style_mut().wrap = Some(false);
                 ui.set_min_width(60.0);

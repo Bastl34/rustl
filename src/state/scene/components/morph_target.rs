@@ -83,7 +83,7 @@ impl Component for MorphTarget
 
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         ui.horizontal(|ui|
         {

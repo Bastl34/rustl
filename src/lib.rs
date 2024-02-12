@@ -59,6 +59,7 @@ mod state
             pub(crate) mod joint;
             pub(crate) mod animation;
             pub(crate) mod morph_target;
+            pub(crate) mod morph_target_animation;
         }
 
         pub(crate) mod camera_controller

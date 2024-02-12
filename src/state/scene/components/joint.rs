@@ -149,7 +149,7 @@ impl Component for Joint
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         ui.label(format!("Root Joint: {}", self.get_data().root_joint));
         ui.label(format!("Skin Ids: {:?}", self.get_data().skin_ids));

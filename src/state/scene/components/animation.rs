@@ -38,7 +38,6 @@ impl Channel
             interpolation: Interpolation::Linear,
             timestamps: vec![],
 
-
             transform_translation: vec![],
             transform_rotation: vec![],
             transform_scale: vec![],
@@ -717,7 +716,7 @@ impl Component for Animation
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         ui.label(format!("Duration: {}", self.duration));
         ui.label(format!("Channels: {}", self.channels.len()));
