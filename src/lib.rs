@@ -60,6 +60,7 @@ mod state
             pub(crate) mod animation;
             pub(crate) mod morph_target;
             pub(crate) mod morph_target_animation;
+            pub(crate) mod animation_blending;
         }
 
         pub(crate) mod camera_controller

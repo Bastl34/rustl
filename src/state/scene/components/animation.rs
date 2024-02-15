@@ -75,7 +75,7 @@ impl Animation
         {
             base: ComponentBase::new(id, name.to_string(), "Animation".to_string(), "🎞".to_string()),
 
-            looped: false,
+            looped: true,
 
             duration: 0.0,
             start_time: None,

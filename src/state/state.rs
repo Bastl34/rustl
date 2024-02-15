@@ -111,6 +111,7 @@ impl State
         components.push(("Transform".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
         components.push(("Transform Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
         components.push(("Morph Target Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
+        components.push(("Animation Blending".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
 
         Self
         {
