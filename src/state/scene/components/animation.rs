@@ -118,13 +118,17 @@ impl Animation
 
     pub fn start(&mut self)
     {
+        if self.running()
+        {
+            return;
+        }
+
         self.start_time = Some(0);
         self.pause_time = None;
     }
 
     pub fn resume(&mut self)
     {
-        //let time = self.current_time - (self.current_local_time as f64 * 1000.0 * 1000.0) as u128;
         let time = (self.current_time as f64 - (self.current_local_time as f64 * 1000.0 * 1000.0) * (1.0 / self.speed as f64)) as u128;
 
         self.start_time = Some(time);
@@ -133,8 +137,23 @@ impl Animation
 
     pub fn stop(&mut self)
     {
+        if !self.running()
+        {
+            return;
+        }
+
         self.start_time = None;
         self.reset();
+    }
+
+    pub fn stop_without_reset(&mut self)
+    {
+        if !self.running()
+        {
+            return;
+        }
+
+        self.start_time = None;
     }
 
     pub fn pause(&mut self)

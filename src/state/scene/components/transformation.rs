@@ -482,6 +482,7 @@ impl Component for Transformation
         let mut rot_quat;
         let mut scale;
         let mut inheritance;
+        let mut transform_vectors;
 
         {
             let data = self.get_data();
@@ -491,10 +492,12 @@ impl Component for Transformation
             rot_quat = data.rotation_quat;
             scale = data.scale;
             inheritance = data.parent_inheritance;
+            transform_vectors = data.transform_vectors;
 
             ui.vertical(|ui|
             {
                 changed = ui.checkbox(&mut inheritance, "parent transformation inheritance").changed() || changed;
+                changed = ui.checkbox(&mut transform_vectors, "use vectors").changed() || changed;
 
                 ui.horizontal(|ui|
                 {
@@ -589,6 +592,7 @@ impl Component for Transformation
             data.get_mut().rotation_quat = rot_quat;
             data.get_mut().scale = scale;
             data.get_mut().parent_inheritance = inheritance;
+            data.get_mut().transform_vectors = transform_vectors;
             self.calc_transform();
         }
 
