@@ -81,8 +81,15 @@ impl Joint
             if joint_data.animation_weight < 1.0
             {
                 // animation blending - blend the animation with the initial pose if weight is smaller as 1.0
-                (joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
+                //(joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
                 //joint_data.full_joint_trans * (joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
+
+                //(animation_trans * joint_data.animation_weight) * (joint_data.local_trans * (1.0 - joint_data.animation_weight))
+
+                //(joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
+
+                let animation_weight = joint_data.animation_weight.clamp(0.0, 1.0);
+                joint_data.local_trans * (1.0 - animation_weight) + animation_trans * animation_weight
             }
             else
             {

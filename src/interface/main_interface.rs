@@ -23,6 +23,7 @@ use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
+use crate::state::scene::components::animation::Animation;
 use crate::state::scene::light::Light;
 use crate::state::scene::manager::id_manager;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
@@ -463,7 +464,7 @@ impl MainInterface
                 //let _ = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -479,8 +480,27 @@ impl MainInterface
                 //let _ = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let _ = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let _ = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let _ = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                // start first animation
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    if let Ok(nodes) = &nodes
+                    {
+                        for node_id in nodes
+                        {
+                            if let Some(node) = scene.find_node_by_id(*node_id)
+                            {
+                                if let Some(animation) = node.read().unwrap().find_animation_by_name("")
+                                {
+                                    component_downcast_mut!(animation, Animation);
+                                    animation.start();
+                                }
+                            }
+                        }
+                    }
+                }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|

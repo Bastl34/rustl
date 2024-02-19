@@ -319,7 +319,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.normal = normal;
     out.tangent = tangent;
     out.bitangent = bitangent;
-    out.view_dir = (camera.view_pos - world_position).xyz;
+    out.view_dir = camera.view_pos.xyz - out.position;
 
     out.alpha = instance.alpha;
     out.highlight = instance.highlight;

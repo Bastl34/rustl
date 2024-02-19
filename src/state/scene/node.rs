@@ -6,7 +6,7 @@ use nalgebra::{Matrix4, Point3, Matrix, Matrix4x1};
 
 use crate::{state::{helper::render_item::RenderItemOption, scene::{scene::Scene, components::joint}}, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
-use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha, joint::Joint, morph_target::MorphTarget}, instance::{InstanceItem, Instance}};
+use super::{components::{alpha::Alpha, animation::{self, Animation}, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -449,6 +449,45 @@ impl Node
         let morph_tagets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
 
         Some(morph_tagets)
+    }
+
+    // find animation by name and return first animation if there is no name set
+    pub fn find_animation_by_name(&self, name: &str) -> Option<ComponentItem>
+    {
+        let name = name.to_string();
+
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone();
+
+            if componen_name == name || name == ""
+            {
+                return Some(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone();
+
+                if componen_name == name || name == ""
+                {
+                    return Some(animation.clone());
+                }
+            }
+        }
+
+        None
     }
 
     pub fn get_alpha(&self) -> (f32, bool)

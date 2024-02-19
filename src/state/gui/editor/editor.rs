@@ -981,6 +981,12 @@ impl Editor
 
         self.apply_drag(state, &egui.ctx);
 
+        // stop textinput when the user wants to move/navigate in 3d space
+        if state.input_manager.mouse.is_any_button_holding()
+        {
+            egui.ctx.memory_mut(|mem| { mem.stop_text_input() });
+        }
+
         let platform_output = full_output.platform_output.clone();
 
         egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
