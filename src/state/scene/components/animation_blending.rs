@@ -1,42 +1,32 @@
-use egui::Color32;
-use gltf::mesh::util::weights;
-use nalgebra::{Vector3, Vector4};
+#![allow(dead_code)]
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{self, change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::{instance::InstanceItem, node::{InstanceItemArc, NodeItem}}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::input_manager::InputManager, state::scene::node::NodeItem};
 
-use super::{animation::Animation, component::{Component, ComponentBase, ComponentItem}, transformation::Transformation};
+use super::{animation::Animation, component::{Component, ComponentBase}};
 
 const INFO_STRING: &str = "The changes are applies on the Animation Component.\nIf there is no Animation Component: Nothing is happening.";
 
-pub struct AnimationBlendingData
+pub struct AnimationBlending
 {
+    base: ComponentBase,
+
     pub from: Option<u64>,
     pub to: Option<u64>,
 
     pub speed: f32,
 }
 
-pub struct AnimationBlending
-{
-    base: ComponentBase,
-    data: ChangeTracker<AnimationBlendingData>,
-}
-
 impl AnimationBlending
 {
     pub fn new(id: u64, name: &str, from: Option<u64>, to: Option<u64>, speed: f32) -> AnimationBlending
     {
-        let data = AnimationBlendingData
-        {
-            from,
-            to,
-            speed
-        };
-
         let mut animation_blending = AnimationBlending
         {
             base: ComponentBase::new(id, name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
-            data: ChangeTracker::new(data),
+
+            from,
+            to,
+            speed
         };
 
         animation_blending.base.info = Some(INFO_STRING.to_string());
@@ -46,37 +36,18 @@ impl AnimationBlending
 
     pub fn new_empty(id: u64, name: &str) -> AnimationBlending
     {
-        let data = AnimationBlendingData
+        let mut animation_blending = AnimationBlending
         {
+            base: ComponentBase::new(id, name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+
             from: None,
             to: None,
             speed: 0.0,
         };
 
-        let mut animation_blending = AnimationBlending
-        {
-            base: ComponentBase::new(id, name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
-            data: ChangeTracker::new(data),
-        };
-
         animation_blending.base.info = Some(INFO_STRING.to_string());
 
         animation_blending
-    }
-
-    pub fn get_data(&self) -> &AnimationBlendingData
-    {
-        &self.data.get_ref()
-    }
-
-    pub fn get_data_tracker(&self) -> &ChangeTracker<AnimationBlendingData>
-    {
-        &self.data
-    }
-
-    pub fn get_data_mut(&mut self) -> &mut ChangeTracker<AnimationBlendingData>
-    {
-        &mut self.data
     }
 }
 
@@ -95,9 +66,6 @@ impl Component for AnimationBlending
         if self.base.is_enabled != state
         {
             self.base.is_enabled = state;
-
-            // force update
-            self.data.force_change();
         }
     }
 
@@ -109,21 +77,19 @@ impl Component for AnimationBlending
             return;
         }
 
-        if approx_zero(self.get_data().speed)
+        if approx_zero(self.speed)
         {
             return;
         }
 
-        if self.get_data().from.is_some() && self.get_data().to.is_some() && self.get_data().to == self.get_data().from
+        if self.from.is_some() && self.to.is_some() && self.to == self.from
         {
             return;
         }
-
-        let blending_data = self.get_data_mut().get_mut();
 
         // animation to
         let node = node.read().unwrap();
-        if let Some(to) = blending_data.to
+        if let Some(to) = self.to
         {
             if let Some(animation_to) = node.find_component_by_id(to)
             {
@@ -141,7 +107,7 @@ impl Component for AnimationBlending
                     from_weight = 0.0;
                 }
 
-                animation_to.weight = (from_weight + (blending_data.speed * frame_scale)).min(1.0);
+                animation_to.weight = (from_weight + (self.speed * frame_scale)).min(1.0);
                 animation_to.start();
             }
         }
@@ -152,9 +118,9 @@ impl Component for AnimationBlending
             for animation in all_animations
             {
                 component_downcast_mut!(animation, Animation);
-                if animation.running() && (blending_data.from.is_none() || blending_data.from.unwrap() != animation.get_base().id)
+                if animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
                 {
-                    animation.weight = (animation.weight - (blending_data.speed * frame_scale)).max(0.0);
+                    animation.weight = (animation.weight - (self.speed * frame_scale)).max(0.0);
 
                     if approx_zero(animation.weight)
                     {
@@ -165,13 +131,13 @@ impl Component for AnimationBlending
         }
 
         // animation from
-        if let Some(from) = blending_data.from
+        if let Some(from) = self.from
         {
             if let Some(animation_from) = node.find_component_by_id(from)
             {
                 component_downcast_mut!(animation_from, Animation);
                 //animation_from.weight = (1.0 - to_weight).max(0.0);
-                animation_from.weight = (animation_from.weight - (blending_data.speed * frame_scale)).max(0.0);
+                animation_from.weight = (animation_from.weight - (self.speed * frame_scale)).max(0.0);
 
                 if approx_zero(animation_from.weight)
                 {
@@ -185,9 +151,9 @@ impl Component for AnimationBlending
             for animation in all_animations
             {
                 component_downcast_mut!(animation, Animation);
-                if animation.running() && (blending_data.to.is_none() || blending_data.to.unwrap() != animation.get_base().id)
+                if animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
                 {
-                    animation.weight = (animation.weight - (blending_data.speed * frame_scale)).max(0.0);
+                    animation.weight = (animation.weight - (self.speed * frame_scale)).max(0.0);
 
                     if approx_zero(animation.weight)
                     {
@@ -212,15 +178,13 @@ impl Component for AnimationBlending
         let mut speed;
 
         {
-            let data = self.get_data();
-
-            from = data.from.unwrap_or(0);
+            from = self.from.unwrap_or(0);
             from_name = "".to_string();
 
-            to = data.to.unwrap_or(0);
+            to = self.to.unwrap_or(0);
             to_name = "".to_string();
 
-            speed = data.speed;
+            speed = self.speed;
         }
 
         let mut animations: Vec<(u64, String)> = vec![];
@@ -281,28 +245,25 @@ impl Component for AnimationBlending
 
         if changed
         {
-            let data = self.get_data_mut();
-            let data = data.get_mut();
-
             if from > 0
             {
-                data.from = Some(from);
+                self.from = Some(from);
             }
             else
             {
-                data.from = None
+                self.from = None
             }
 
             if to > 0
             {
-                data.to = Some(to);
+                self.to = Some(to);
             }
             else
             {
-                data.to = None
+                self.to = None
             }
 
-            data.speed = speed;
+            self.speed = speed;
         }
     }
 }

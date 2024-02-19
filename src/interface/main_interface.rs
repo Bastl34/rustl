@@ -459,29 +459,29 @@ impl MainInterface
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
-                //let _ = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let _ = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 // start first animation
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
