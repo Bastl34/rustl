@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use egui::RichText;
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
-use crate::{helper::math::{interpolate_vec3, approx_zero, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, cubic_spline_interpolate_vec}, component_impl_default, state::scene::{node::NodeItem, components::joint::{Joint, self}}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut, component_downcast};
+use crate::{helper::math::{interpolate_vec3, approx_zero, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, cubic_spline_interpolate_vec}, component_impl_default, state::scene::{node::NodeItem, components::joint::Joint}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
@@ -14,7 +16,6 @@ pub enum Interpolation
     Step,
     CubicSpline
 }
-
 
 pub struct Channel
 {
@@ -53,6 +54,7 @@ pub struct Animation
     base: ComponentBase,
 
     pub looped: bool,
+    pub reverse: bool,
 
     pub duration: f32,
     pub start_time: Option<u128>,
@@ -76,6 +78,7 @@ impl Animation
             base: ComponentBase::new(id, name.to_string(), "Animation".to_string(), "🎞".to_string()),
 
             looped: true,
+            reverse: false,
 
             duration: 0.0,
             start_time: None,
@@ -255,11 +258,16 @@ impl Component for Animation
             let local_timestamp = ((time - start_time) as f64 / 1000.0 / 1000.0) as f32;
             self.current_local_time = local_timestamp * self.speed;
 
-            if !self.looped && self.current_local_time > self.duration
+            let mut t = self.current_local_time;
+
+            if !self.looped && t > self.duration
             {
                 self.stop();
                 return;
             }
+
+            t = t % self.duration;
+            if self.reverse { t = self.duration - t; }
 
             let mut target_map: HashMap<u64, (ComponentItem, Matrix4::<f32>)> = HashMap::new();
 
@@ -409,25 +417,8 @@ impl Component for Animation
                     let len = channel.timestamps.len();
                     let max = channel.timestamps[len - 1];
 
-                    let interval = max - min;
-                    //let t = if self.current_local_time > min { (self.current_local_time - min) % interval + min } else { self.current_local_time };
-
-                    let mut t = self.current_local_time;
-
-                    // some checks
-                    if t > max && self.looped
-                    {
-                        t = t % interval;
-                    }
-                    else if t > max && !self.looped
-                    {
-                        t = max;
-                    }
-
-                    if t < min
-                    {
-                        t = min;
-                    }
+                    if t < min { t = min; }
+                    if t > max { t = max; }
 
                     let mut t0 = 0;
                     let mut t1 = 0;
@@ -447,7 +438,6 @@ impl Component for Animation
                     let prev_time = channel.timestamps[t0];
                     let next_time = channel.timestamps[t1];
                     let factor = (t - prev_time) / (next_time - prev_time);
-
 
                     // ********** translation **********
                     if channel.transform_translation.len() > 0
@@ -779,6 +769,7 @@ impl Component for Animation
         });
 
         ui.checkbox(&mut self.looped, "Loop");
+        ui.checkbox(&mut self.reverse, "Reverse");
 
         ui.horizontal(|ui|
         {
