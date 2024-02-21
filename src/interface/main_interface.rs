@@ -482,7 +482,6 @@ impl MainInterface
                 let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                let id_manager_thread = id_manager_thread.clone();
                 // start first animation
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
@@ -503,7 +502,7 @@ impl MainInterface
 
                     // add camera controller and run auto setup
                     let mut controller = CharacterController::default();
-                    controller.auto_setup(scene, id_manager_thread.clone(), "avatar2");
+                    controller.auto_setup(scene, "avatar2");
                     scene.controller.push(Box::new(controller));
                 }));
 

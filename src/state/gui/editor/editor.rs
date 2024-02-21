@@ -956,7 +956,10 @@ impl Editor
                 if scene.cameras.len() > 0
                 {
                     let cam = scene.cameras.get_mut(0).unwrap();
-                    cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                    if cam.controller.is_none()
+                    {
+                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                    }
 
                     //let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
                     //cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);

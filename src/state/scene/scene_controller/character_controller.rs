@@ -1,11 +1,14 @@
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
-use crate::{component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use nalgebra::{Vector2, Vector3};
+
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
 
 const FADE_SPEED: f32 = 0.1;
+const JUMP_FADE_SPEED: f32 = 0.4;
 
 enum CharAnimationType
 {
@@ -31,6 +34,8 @@ pub struct CharacterController
 {
     base: SceneControllerBase,
 
+    pub node_name: String,
+
     node: Option<NodeItem>,
     animation_node: Option<NodeItem>,
 
@@ -43,6 +48,8 @@ pub struct CharacterController
     animation_right: Option<ComponentItem>,
 
     animation_blending: Option<ComponentItem>,
+
+    transformation_animation: Option<ComponentItem>,
 }
 
 impl CharacterController
@@ -52,6 +59,8 @@ impl CharacterController
         CharacterController
         {
             base: SceneControllerBase::new("Character Controller".to_string(), "🏃".to_string()),
+
+            node_name: "".to_string(),
 
             node: None,
             animation_node: None,
@@ -65,12 +74,15 @@ impl CharacterController
             animation_right: None,
 
             animation_blending: None,
+
+            transformation_animation: None
         }
     }
 
-    pub fn auto_setup(&mut self, scene: &mut crate::state::scene::scene::Scene, id_manager: IdManagerItem, character_node: &str)
+    pub fn auto_setup(&mut self, scene: &mut crate::state::scene::scene::Scene, character_node: &str)
     {
-        let node = scene.find_node_by_name("avatar2");
+        let id_manager = scene.id_manager.clone();
+        let node = scene.find_node_by_name(character_node);
         let cam = scene.get_active_camera_mut();
 
         if node.is_none()
@@ -87,6 +99,7 @@ impl CharacterController
 
         self.node = Some(node.unwrap());
         let node_arc = self.node.clone().unwrap();
+        self.node_name = node_arc.read().unwrap().name.clone();
 
         let cam = cam.unwrap();
         cam.node = Some(node_arc.clone());
@@ -132,6 +145,33 @@ impl CharacterController
             self.animation_right = node.find_animation_by_regex("(?i)right");
         }
 
+        // transformation animation
+        {
+            let mut node = node_arc.write().unwrap();
+
+            if node.find_component::<Transformation>().is_none()
+            {
+                let component_id = id_manager.write().unwrap().get_next_component_id();
+                let component = Transformation::identity(component_id, "Transformation");
+                node.add_component(Arc::new(RwLock::new(Box::new(component))));
+            }
+            {
+                let transformation = node.find_component::<Transformation>().unwrap();
+                component_downcast_mut!(transformation, Transformation);
+                transformation.get_data_mut().get_mut().transform_vectors = false;
+            }
+
+
+            if node.find_component::<TransformationAnimation>().is_none()
+            {
+                let component_id = id_manager.write().unwrap().get_next_component_id();
+                let component = TransformationAnimation::new_empty(component_id, "Transformation Animation");
+                node.add_component(Arc::new(RwLock::new(Box::new(component))));
+
+                self.transformation_animation = node.find_component::<TransformationAnimation>();
+            }
+        }
+
         self.start_animation(CharAnimationType::Idle, AnimationMixing::Stop, true, false);
     }
 
@@ -156,6 +196,40 @@ impl CharacterController
         }
 
         0.0
+    }
+
+    fn is_animation_running(&self, animation: CharAnimationType) -> bool
+    {
+        let animation_item = match animation
+        {
+            CharAnimationType::None => None,
+            CharAnimationType::Idle => self.animation_idle.clone(),
+            CharAnimationType::Walk => self.animation_walk.clone(),
+            CharAnimationType::Run => self.animation_run.clone(),
+            CharAnimationType::Left => self.animation_left.clone(),
+            CharAnimationType::Right => self.animation_right.clone(),
+            CharAnimationType::Jump => self.animation_jump.clone(),
+            CharAnimationType::Crouch => self.animation_crouch.clone(),
+        };
+
+        if let Some(animation_item) = animation_item
+        {
+            component_downcast!(animation_item, Animation);
+            return animation_item.running();
+        }
+
+        false
+    }
+
+    fn is_jumping(&self) -> bool
+    {
+        if let Some(animation_jump) = &self.animation_jump
+        {
+            component_downcast!(animation_jump, Animation);
+            return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - JUMP_FADE_SPEED
+        }
+
+        false
     }
 
     fn start_animation(&mut self, animation: CharAnimationType, mix_type: AnimationMixing, looped: bool, reverse: bool)
@@ -201,10 +275,6 @@ impl CharacterController
                 component_downcast_mut!(animation_blending, AnimationBlending);
                 animation_blending.speed = FADE_SPEED;
                 animation_blending.to = Some(animation_item.read().unwrap().get_base().id);
-
-                //component_downcast_mut!(animation_item, Animation);
-                //animation_item.weight = 0.0;
-                //animation_item.start();
             }
         }
 
@@ -224,78 +294,134 @@ impl SceneController for CharacterController
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
     {
-        let walk_keys = vec![Key::W, Key::A, Key::S, Key::D];
+        let mut has_change = false;
 
-        let mut animation_running = false;
+        let all_keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::Escape];
+        let mut movement = Vector3::<f32>::zeros();
+        let mut rotation = Vector3::<f32>::zeros();
 
-        //if input_manager.keyboard.is_holding_by_keys(&walk_keys) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-        if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-        {
-            self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, false);
-            animation_running = true;
-            dbg!("start walking");
-        }
-        else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-        {
-            self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true);
-            animation_running = true;
-            dbg!("start walking");
-        }
-        else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-        {
-            self.start_animation(CharAnimationType::Run, AnimationMixing::Fade, true, false);
-            animation_running = true;
-            dbg!("start running");
-        }
-        else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-        {
-            self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true);
-            animation_running = true;
-            dbg!("start running");
-        }
-        else if input_manager.keyboard.is_pressed_no_wait(Key::Space)
-        {
-            self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false);
-            animation_running = true;
-            dbg!("start jumping");
-        }
-        else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
-        {
-            //self.start_animation(CharAnimationType::None, AnimationMixing::Stop);
-            self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false);
-            animation_running = true;
-            dbg!("start STOP");
-        }
-        //else
-        {
-            //self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, true);
-        }
+        let movement_speed = 0.03;
+        let movement_speed_fast = 0.09;
 
-        // check running animations and start idle if needed
-        /*
-        if !animation_running
+        let rotation_speed = 0.06;
+
+        // forward/backward
+        if !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
         {
-            if let Some(animation_node) = &self.animation_node
+            if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                for animation in animation_node.read().unwrap().find_components::<Animation>()
+                if !self.is_jumping()
                 {
-                    component_downcast!(animation, Animation);
-                    animation_running = animation.running() || animation_running;
+                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, false);
                 }
+
+                movement.z = movement_speed;
+                has_change = true;
+            }
+            else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            {
+                if !self.is_jumping()
+                {
+                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true);
+                }
+                movement.z = -movement_speed;
+                has_change = true;
+            }
+            else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            {
+                if !self.is_jumping()
+                {
+                    self.start_animation(CharAnimationType::Run, AnimationMixing::Fade, true, false);
+                }
+
+                movement.z = movement_speed_fast;
+                has_change = true;
+            }
+            else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            {
+                if !self.is_jumping()
+                {
+                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true);
+                }
+
+                movement.z = -movement_speed;
+                has_change = true;
             }
         }
 
-        if !animation_running
+        // left/right
+        if input_manager.keyboard.is_holding(Key::A)
         {
-            self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, true);
+            rotation.y = rotation_speed;
+            has_change = true;
         }
-         */
+        else if input_manager.keyboard.is_holding(Key::D)
+        {
+            rotation.y = -rotation_speed;
+            has_change = true;
+        }
 
-        false
+        // jump Crouch
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        {
+            self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false);
+            has_change = true;
+        }
+        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        {
+            self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false);
+            has_change = true;
+        }
+        else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
+        {
+            self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false);
+            has_change = true;
+        }
+
+        // idle
+        if approx_zero_vec3(&movement) && !self.is_jumping() && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        {
+            self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false);
+        }
+
+        // apply movement
+        if let Some(transformation_animation) = &self.transformation_animation
+        {
+            component_downcast_mut!(transformation_animation, TransformationAnimation);
+
+            let current_movement = transformation_animation.get_data().translation;
+            let current_rotation = transformation_animation.get_data().rotation;
+
+            if !approx_equal_vec(&current_movement, &movement)
+            {
+                transformation_animation.get_data_mut().get_mut().translation = movement;
+                has_change = true;
+            }
+
+            if !approx_equal_vec(&current_rotation, &rotation)
+            {
+                transformation_animation.get_data_mut().get_mut().rotation = rotation;
+                has_change = true;
+            }
+        }
+
+        has_change
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene)
     {
+        ui.horizontal(|ui|
+        {
+            ui.label("Character Target Name: ");
+            ui.text_edit_singleline(&mut self.node_name);
+        });
 
+        ui.vertical(|ui|
+        {
+            if ui.button("Run Auto Setup").clicked()
+            {
+                self.auto_setup(scene, self.node_name.clone().as_str());
+            }
+        });
     }
 }

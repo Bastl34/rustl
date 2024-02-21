@@ -1,3 +1,5 @@
+use std::mem::swap;
+
 use egui::{Ui, RichText, Color32};
 
 use crate::{state::{state::State, scene::{scene::Scene, components::{mesh::Mesh, material::TextureType}}, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, helper::concurrency::thread::spawn_thread};
@@ -217,9 +219,12 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     });
 
     let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+    let mut controller = vec![];
+    swap(&mut scene.controller, &mut controller);
 
     let mut delete_controller = None;
-    for (i, controller) in scene.controller.iter_mut().enumerate()
+
+    for (i, controller) in controller.iter_mut().enumerate()
     {
         let mut enabled;
         let name;
@@ -255,11 +260,14 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         },
         |ui|
         {
-            controller.ui(ui);
+            controller.ui(ui, scene);
         });
 
         controller.get_base_mut().is_enabled = enabled;
     }
+
+    // swap back
+    swap(&mut controller, &mut scene.controller);
 
     if let Some(delete_controller) = delete_controller
     {

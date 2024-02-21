@@ -87,14 +87,8 @@ impl Component for AnimationBlending
             return;
         }
 
-        //frame_scale * (REFERENCE_UPDATE_FRAMES / speed)
-        //let factor = (self.speed * frame_scale);
-        //let factor = frame_scale * (REFERENCE_UPDATE_FRAMES / self.speed);
-        //let diff = (1000000.0 * frame_scale) / REFERENCE_UPDATE_FRAMES;
-        let diff = frame_scale / REFERENCE_UPDATE_FRAMES;
-        let factor = (frame_scale / REFERENCE_UPDATE_FRAMES) / self.speed;
-
-        //println!("diff={} factor={}", diff, factor);
+        //let weight_delta = (self.speed * frame_scale);
+        let weight_delta = (frame_scale / REFERENCE_UPDATE_FRAMES) / self.speed;
 
         // animation to
         let node = node.read().unwrap();
@@ -104,17 +98,6 @@ impl Component for AnimationBlending
             {
                 component_downcast_mut!(animation_to, Animation);
 
-                //if (animation_to.running() || animation_to.is_over()) && approx_equal(animation_to.weight, 1.0)
-
-                //if (animation_to.running() || animation_to.is_over()) && approx_equal(animation_to.weight, 1.0)
-                {
-                    //return;
-                }
-
-                //println!("{} {} {}", animation_to.running(), animation_to.is_over(), approx_equal(animation_to.weight, 1.0));
-
-                //if (!animation_to.running() || !animation_to.is_over()) && !approx_equal(animation_to.weight, 1.0)
-                //println!("{} {}", animation_to.running(), animation_to.is_over());
                 if !animation_to.running() || !animation_to.is_over()
                 {
                     // start with no weight on target animation
@@ -122,34 +105,14 @@ impl Component for AnimationBlending
                     if !animation_to.running() && !animation_to.is_over()
                     {
                         from_weight = 0.0;
-                        dbg!("reset to 0");
                     }
 
-                    println!("{}", animation_to.weight);
-
-                    animation_to.weight = (from_weight + factor).min(1.0);
-                    //dbg!(animation_to.weight, from_weight);
+                    animation_to.weight = (from_weight + weight_delta).min(1.0);
 
                     if !animation_to.is_over()
                     {
                         animation_to.start();
                     }
-
-                    //if !approx_equal(animation_to.weight, 1.0) && !animation_to.looped
-                    //{
-                        //animation_to.start();
-                    //}
-
-                    /*
-                    if approx_equal(animation_to.weight, 1.0) && !animation_to.looped
-                    {
-                        //animation_to.stop();
-                        //self.to = None;
-                    }
-                    else
-                    {
-                        animation_to.start();
-                    } */
                 }
             }
         }
@@ -162,7 +125,7 @@ impl Component for AnimationBlending
                 component_downcast_mut!(animation, Animation);
                 if animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
                 {
-                    animation.weight = (animation.weight - factor).max(0.0);
+                    animation.weight = (animation.weight - weight_delta).max(0.0);
 
                     if approx_zero(animation.weight)
                     {
@@ -179,7 +142,7 @@ impl Component for AnimationBlending
             {
                 component_downcast_mut!(animation_from, Animation);
                 //animation_from.weight = (1.0 - to_weight).max(0.0);
-                animation_from.weight = (animation_from.weight - factor).max(0.0);
+                animation_from.weight = (animation_from.weight - weight_delta).max(0.0);
 
                 if approx_zero(animation_from.weight)
                 {
@@ -194,17 +157,12 @@ impl Component for AnimationBlending
             {
                 component_downcast_mut!(animation, Animation);
 
-                //dbg!("fade out whaat {}", animation.running(), self.to.is_none(), self.to.unwrap() != animation.get_base().id);
-
                 if animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
                 {
-                    animation.weight = (animation.weight - factor).max(0.0);
-
-                    //dbg!("fade out weight {}", animation.weight);
+                    animation.weight = (animation.weight - weight_delta).max(0.0);
 
                     if approx_zero(animation.weight)
                     {
-                        //dbg!("stop {}", &animation.get_base().name);
                         animation.stop_without_reset();
                     }
                 }

@@ -92,7 +92,10 @@ impl Scene
         swap(&mut self.controller, &mut controller);
         for controller_item in &mut controller
         {
-            controller_item.update(self, input_manager, frame_scale);
+            if controller_item.get_base().is_enabled
+            {
+                controller_item.update(self, input_manager, frame_scale);
+            }
         }
 
         swap(&mut controller, &mut self.controller);
