@@ -167,14 +167,23 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                 camera.controller = None;
             }
         }
-    }
 
-    // delete camera
-    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
-    {
-        if ui.button(RichText::new("Dispose Camera").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+        // add camera controller
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
-            scene.delete_camera_by_id(camera_id);
-        }
-    });
+            if ui.button(RichText::new("Add Cam Controller").heading().strong().color(Color32::WHITE)).clicked()
+            {
+                editor_state.dialog_add_camera_controller = true;
+            }
+        });
+
+        // delete camera
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Dispose Camera").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_camera_by_id(camera_id);
+            }
+        });
+    }
 }

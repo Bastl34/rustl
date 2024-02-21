@@ -5,13 +5,15 @@ use nalgebra::Vector3;
 
 use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager};
 
-use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::TextureType}, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::ComponentItem, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::{SceneControllerBase, SceneControllerBox}, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
 pub const FPS_CHART_VALUES: usize = 100;
 pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
 pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
+
+pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
 pub struct AdapterFeatures
 {
@@ -57,6 +59,9 @@ pub struct State
     pub scenes: Vec<SceneItem>,
 
     pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
+    pub registered_camera_controller: Vec<(String, fn() -> CameraControllerBox)>,
+    pub registered_scene_controller: Vec<(String, fn() -> SceneControllerBox)>,
+
     pub supported_file_types: SupportedFileTypes,
 
     pub in_focus: bool,
@@ -113,6 +118,13 @@ impl State
         components.push(("Morph Target Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
         components.push(("Animation Blending".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
 
+        let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
+        cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
+        cam_controller.push(("Target Rotation Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController::default()) }));
+
+        let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];
+        scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::character_controller::CharacterController::default()) }));
+
         Self
         {
             adapter: AdapterFeatures
@@ -148,6 +160,8 @@ impl State
             scenes: vec![],
 
             registered_components: components,
+            registered_camera_controller: cam_controller,
+            registered_scene_controller: scene_controller,
 
             supported_file_types: SupportedFileTypes
             {

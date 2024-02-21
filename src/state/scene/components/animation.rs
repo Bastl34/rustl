@@ -56,7 +56,9 @@ pub struct Animation
     pub looped: bool,
     pub reverse: bool,
 
-    pub duration: f32,
+    pub duration: f32, // can be customized
+    pub duration_max: f32, // based on animation data
+
     pub start_time: Option<u128>,
     pub pause_time: Option<u128>,
 
@@ -81,6 +83,8 @@ impl Animation
             reverse: false,
 
             duration: 0.0,
+            duration_max: 0.0,
+
             start_time: None,
             pause_time: None,
 
@@ -184,6 +188,16 @@ impl Animation
         self.speed = speed;
     }
 
+    pub fn is_over(&self) -> bool
+    {
+        if self.current_local_time >= self.duration && !self.looped
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub fn reset(&mut self)
     {
         for channel in &self.channels
@@ -262,7 +276,7 @@ impl Component for Animation
 
             if !self.looped && t > self.duration
             {
-                self.stop();
+                self.stop_without_reset();
                 return;
             }
 
@@ -781,6 +795,12 @@ impl Component for Animation
         {
             ui.label("Speed: ");
             ui.add(egui::Slider::new(&mut self.speed, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Duration: ");
+            ui.add(egui::Slider::new(&mut self.duration, 0.0..=self.duration_max).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|

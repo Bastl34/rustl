@@ -13,7 +13,6 @@ use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
-use crate::helper::platform;
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::rendering::egui::EGui;
@@ -22,16 +21,14 @@ use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
-use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
 use crate::state::scene::components::animation::Animation;
 use crate::state::scene::light::Light;
-use crate::state::scene::manager::id_manager;
+use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
-use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
+use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::winit::winit_map_key;
 
-const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 const FPS_CHART_FACTOR: f32 = 25.0;
 
 pub struct MainInterface
@@ -444,6 +441,7 @@ impl MainInterface
             let scene_id = scene.id.clone();
             let id_manager = scene.id_manager.clone();
             let id_manager_clone = scene.id_manager.clone();
+            let id_manager_thread = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
             //scene.update(&mut state.input_manager, state.frame_scale);
@@ -480,9 +478,11 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
+                let id_manager_thread = id_manager_thread.clone();
                 // start first animation
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
@@ -500,6 +500,11 @@ impl MainInterface
                             }
                         }
                     }
+
+                    // add camera controller and run auto setup
+                    let mut controller = CharacterController::default();
+                    controller.auto_setup(scene, id_manager_thread.clone(), "avatar2");
+                    scene.controller.push(Box::new(controller));
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
@@ -565,7 +570,7 @@ impl MainInterface
     {
         let frame_time = Instant::now();
 
-        // update states
+        // ******************** update states ********************
         {
             let state = &mut *(self.state.borrow_mut());
 
@@ -616,7 +621,7 @@ impl MainInterface
             state.frame_update_time = now;
         }
 
-        // editor/ui update
+        // ******************** editor/ui update ********************
         {
             let now = Instant::now();
             let state = &mut *(self.state.borrow_mut());
@@ -625,7 +630,7 @@ impl MainInterface
             state.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // build ui
+        // ******************** build ui ********************
         if self.editor_gui.editor_state.visible
         {
             let now = Instant::now();
@@ -638,7 +643,7 @@ impl MainInterface
             state.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // app update
+        // ******************** app update ********************
         {
             let now = Instant::now();
             self.app_update();
@@ -647,14 +652,14 @@ impl MainInterface
             state.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // update main thread queue
+        // ******************** update main thread queue ********************
         {
             let state = &mut *(self.state.borrow_mut());
             let main_queue = state.main_thread_execution_queue.clone();
             ExecutionQueue::run_all(main_queue, state);
         }
 
-        // update scene
+        // ******************** update scene ********************
         {
             let engine_update_time = Instant::now();
 
@@ -694,7 +699,7 @@ impl MainInterface
             state.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // render
+        // ******************** render ********************
         let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
         {
             let state = &mut *(self.state.borrow_mut());
@@ -735,7 +740,7 @@ impl MainInterface
         }
         self.wgpu.end_render(output, encoder);
 
-        // screenshot
+        // ******************** screenshot ********************
         {
             let state = &mut *(self.state.borrow_mut());
 
@@ -763,12 +768,13 @@ impl MainInterface
             }
         }
 
-        // update inputs
+        // ******************** update inputs ********************
         {
             let state = &mut *(self.state.borrow_mut());
             state.input_manager.update();
         }
 
+        // ******************** mouse visibility ********************
         {
             let state = &mut *(self.state.borrow_mut());
             let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
@@ -778,7 +784,7 @@ impl MainInterface
             }
         }
 
-        // frame time
+        // ******************** frame time ********************
         {
             let state = &mut *(self.state.borrow_mut());
             state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;

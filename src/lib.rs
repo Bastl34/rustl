@@ -63,6 +63,12 @@ mod state
             pub(crate) mod animation_blending;
         }
 
+        pub(crate) mod scene_controller
+        {
+            pub(crate) mod scene_controller;
+            pub(crate) mod character_controller;
+        }
+
         pub(crate) mod camera_controller
         {
             pub(crate) mod camera_controller;

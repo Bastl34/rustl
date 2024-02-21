@@ -1,13 +1,13 @@
 use std::{collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
 
 use anyhow::Ok;
-use nalgebra::{Vector3, SimdBool};
+use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 
-use super::{manager::id_manager::{IdManager, IdManagerItem}, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType, TextureState}, mesh::Mesh}, light::{LightItem, Light}};
+use super::{camera::{Camera, CameraItem}, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBox, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 
@@ -35,6 +35,8 @@ pub struct Scene
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
+
+    pub controller: Vec<SceneControllerBox>,
 
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
@@ -66,6 +68,8 @@ impl Scene
             textures: HashMap::new(),
             materials: HashMap::new(),
 
+            controller: vec![],
+
             render_item: None,
             lights_render_item: None,
         }
@@ -81,44 +85,18 @@ impl Scene
         &mut self.data
     }
 
-    /*
-    pub fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
-    {
-        let extension = Path::new(path).extension();
-
-        if extension.is_none()
-        {
-            println!("can not load {}", path);
-            return Ok(vec![]);
-        }
-        let extension = extension.unwrap();
-
-        let main_queue = state.main_thread_execution_queue.clone();
-        let create_mipmaps = state.rendering.create_mipmaps;
-
-        let path = path.to_string();
-        let scene_id = self.id;
-
-        spawn_thread(move ||
-        {
-            load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-        });
-
-        if extension == "obj"
-        {
-            //return wavefront::load(path, self, create_mipmaps);
-        }
-        else if extension == "gltf" || extension == "glb"
-        {
-            //return gltf::load(path, self, create_mipmaps);
-        }
-
-        Ok(vec![])
-    }
-     */
-
     pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
+        // update controller
+        let mut controller = vec![];
+        swap(&mut self.controller, &mut controller);
+        for controller_item in &mut controller
+        {
+            controller_item.update(self, input_manager, frame_scale);
+        }
+
+        swap(&mut controller, &mut self.controller);
+
         // update nodes
         for node in &self.nodes
         {
@@ -424,6 +402,18 @@ impl Scene
     pub fn get_active_camera(&self) -> Option<&CameraItem>
     {
         for camera in &self.cameras
+        {
+            if camera.enabled
+            {
+                return Some(camera);
+            }
+        }
+        None
+    }
+
+    pub fn get_active_camera_mut(&mut self) -> Option<&mut CameraItem>
+    {
+        for camera in self.cameras.iter_mut()
         {
             if camera.enabled
             {

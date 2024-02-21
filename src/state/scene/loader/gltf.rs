@@ -705,6 +705,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
         }
 
         animation_component.duration = duration;
+        animation_component.duration_max = duration;
 
 
         // find best node for animation

@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use nalgebra::{Vector2, Vector3, Point3};
 
-use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene::Scene, camera::CameraData}, input::{input_manager::InputManager, mouse::MouseButton}, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec2, self, approx_zero}, generic::get_millis}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_zero, approx_zero_vec2}, platform}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -64,6 +64,35 @@ impl TargetRotationController
             last_manual_move: 0
         }
     }
+
+    pub fn default() -> Self
+    {
+        let mouse_wheel_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+
+        TargetRotationController
+        {
+            base: CameraControllerBase::new("Target Rotation Controller".to_string(), "⟲".to_string()),
+
+            run_initial_update: true,
+
+            data: ChangeTracker::new(TargetRotationControllerData
+            {
+                offset: Vector3::<f32>::zeros(),
+
+                radius: 3.0,
+                alpha: 0.0,
+                beta: PI / 8.0,
+            }),
+
+            mouse_sensitivity: Vector2::<f32>::new(0.0015, 0.0015),
+            mouse_wheel_sensitivity: mouse_wheel_sensivity,
+
+            auto_rotate: None,
+            auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
+
+            last_manual_move: 0
+        }
+    }
 }
 
 impl CameraController for TargetRotationController
@@ -79,7 +108,7 @@ impl CameraController for TargetRotationController
         let mut update_needed = false;
         if let Some(node) = &node
         {
-            update_needed = node.read().unwrap().has_changed_instance_data();
+            update_needed = node.read().unwrap().has_changed_data();
         }
 
         // offset

@@ -284,11 +284,11 @@ impl Keyboard
         self.keys[key as usize].holding()
     }
 
-    pub fn is_holding_by_keys(&self, keys: Vec<Key>) -> bool
+    pub fn is_holding_by_keys(&self, keys: &Vec<Key>) -> bool
     {
         for key in keys
         {
-            if self.keys[key as usize].holding()
+            if self.keys[*key as usize].holding()
             {
                 return true;
             }
@@ -316,6 +316,27 @@ impl Keyboard
     {
         let state = self.keys[key as usize].pressed(true, false);
         is_pressed_by_state(state)
+    }
+
+    pub fn is_pressed_no_wait(&mut self, key: Key) -> bool
+    {
+        let state = self.keys[key as usize].pressed(false, false);
+        is_pressed_by_state(state)
+    }
+
+    pub fn is_pressed_by_keys(&mut self, keys: &Vec<Key>) -> bool
+    {
+        let mut result = false;
+        for key in keys
+        {
+            if self.keys[*key as usize].holding()
+            {
+                let state = self.keys[*key as usize].pressed(true, false);
+                result =  is_pressed_by_state(state) || result;
+            }
+        }
+
+        result
     }
 
     pub fn is_pressed_modifier(&mut self, modifier: Modifier) -> bool

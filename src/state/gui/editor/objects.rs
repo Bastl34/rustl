@@ -4,7 +4,7 @@ use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::M
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
 {
     for node_arc in nodes
     {
@@ -57,21 +57,37 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, heading).clicked()
                 {
-                    if editor_state.selected_object != id
+                    if editor_state.pick_mode == SelectionType::Camera
                     {
-                        editor_state.selected_object = id;
-                        editor_state.selected_scene_id = Some(scene_id);
-                        editor_state.selected_type = SelectionType::Object;
-
-                        if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                        if let Some(node) = scene.find_node_by_id(node_id)
                         {
-                            editor_state.settings = SettingsPanel::Components;
+                            let (camera_id, ..) = editor_state.get_object_ids();
+                            if let Some(camera_id) = camera_id
+                            {
+                                let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
+                                camera.node = Some(node.clone());
+                            }
                         }
+                        editor_state.pick_mode = SelectionType::None;
                     }
                     else
                     {
-                        editor_state.selected_object.clear();
-                        editor_state.selected_scene_id = None;
+                        if editor_state.selected_object != id
+                        {
+                            editor_state.selected_object = id;
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.selected_type = SelectionType::Object;
+
+                            if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                            {
+                                editor_state.settings = SettingsPanel::Components;
+                            }
+                        }
+                        else
+                        {
+                            editor_state.selected_object.clear();
+                            editor_state.selected_scene_id = None;
+                        }
                     }
                 }
             });
@@ -80,7 +96,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
         {
             if child_nodes.len() > 0
             {
-                build_objects_list(editor_state, ui, child_nodes, scene_id, visible);
+                build_objects_list(editor_state, scene, ui, child_nodes, scene_id, visible);
             }
 
             if node.instances.get_ref().len() > 0

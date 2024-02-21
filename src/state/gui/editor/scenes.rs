@@ -14,6 +14,8 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         return;
     }
 
+    let main_queue = state.main_thread_execution_queue.clone();
+
     let scene_id = scene_id.unwrap();
     let max_tex_res = state.max_texture_resolution();
     let scene = state.find_scene_by_id_mut(scene_id);
@@ -178,8 +180,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
             {
                 if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
                 {
-                    let main_queue = state.main_thread_execution_queue.clone();
-
                     spawn_thread(move ||
                     {
                         load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None, true, max_tex_res);
@@ -214,5 +214,65 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 state.save_screenshot = true;
             }
         });
+    });
+
+    let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+
+    let mut delete_controller = None;
+    for (i, controller) in scene.controller.iter_mut().enumerate()
+    {
+        let mut enabled;
+        let name;
+        {
+            enabled = controller.get_base().is_enabled;
+            name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
+        }
+
+        generic_items::collapse(ui, format!("scene_controller_{}", i).to_string(), true, |ui|
+        {
+            ui.label(RichText::new(name).heading().strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    delete_controller = Some(i);
+                }
+
+                // enabled toggle
+
+                let toggle_text;
+                if enabled
+                {
+                    toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                }
+                else
+                {
+                    toggle_text = RichText::new("⏺").color(Color32::RED);
+                }
+
+                ui.toggle_value(&mut enabled, toggle_text)
+            });
+        },
+        |ui|
+        {
+            controller.ui(ui);
+        });
+
+        controller.get_base_mut().is_enabled = enabled;
+    }
+
+    if let Some(delete_controller) = delete_controller
+    {
+        //camera.controller = None;
+        scene.controller.remove(delete_controller);
+    }
+
+    // add scene controller
+    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+    {
+        if ui.button(RichText::new("Add Scene Controller").heading().strong().color(Color32::WHITE)).clicked()
+        {
+            editor_state.dialog_add_scene_controller = true;
+        }
     });
 }

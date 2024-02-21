@@ -3,6 +3,7 @@ use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use gltf::mesh::util::joints;
 use nalgebra::{Matrix4, Point3, Matrix, Matrix4x1};
+use regex::Regex;
 
 use crate::{state::{helper::render_item::RenderItemOption, scene::{scene::Scene, components::joint}}, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
 
@@ -261,6 +262,27 @@ impl Node
         false
     }
 
+    pub fn has_changed_data(&self) -> bool
+    {
+        if self.has_changed_instance_data()
+        {
+            return true;
+        }
+
+        // check transformation
+        let transformations = self.find_components::<Transformation>();
+        for transformation in transformations
+        {
+            component_downcast!(transformation, Transformation);
+            if transformation.get_data_tracker().changed()
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
@@ -451,6 +473,28 @@ impl Node
         Some(morph_tagets)
     }
 
+    // find the node which has animations
+    pub fn find_animation_node(node: NodeItem) -> Option<NodeItem>
+    {
+        let node_read = node.read().unwrap();
+        if node_read.find_component::<Animation>().is_some()
+        {
+            return Some(node.clone());
+        }
+
+        let all_nodes = Scene::list_all_child_nodes(&node_read.nodes);
+        for child_node in all_nodes
+        {
+            let child_node_read = child_node.read().unwrap();
+            if child_node_read.find_component::<Animation>().is_some()
+            {
+                return Some(child_node.clone());
+            }
+        }
+
+        None
+    }
+
     // find animation by name and return first animation if there is no name set
     pub fn find_animation_by_name(&self, name: &str) -> Option<ComponentItem>
     {
@@ -488,6 +532,70 @@ impl Node
         }
 
         None
+    }
+
+    pub fn find_animation_by_regex(&self, regex: &str) -> Option<ComponentItem>
+    {
+        let regex = Regex::new(regex).unwrap();
+
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+            if regex.is_match(&componen_name)
+            {
+                return Some(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+                if regex.is_match(&componen_name)
+                {
+                    return Some(animation.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn stop_all_animations(&self)
+    {
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.stop();
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                component_downcast_mut!(animation, Animation);
+                animation.stop();
+            }
+        }
     }
 
     pub fn get_alpha(&self) -> (f32, bool)

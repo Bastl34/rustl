@@ -96,6 +96,12 @@ pub struct EditorState
     pub add_component_id: usize,
     pub add_component_name: String,
 
+    pub dialog_add_camera_controller: bool,
+    pub add_camera_controller_id: usize,
+
+    pub dialog_add_scene_controller: bool,
+    pub add_scene_controller_id: usize,
+
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
     pub objects: Vec<Asset>,
@@ -136,6 +142,12 @@ impl EditorState
             dialog_add_component: false,
             add_component_id: 0,
             add_component_name: "Component".to_string(),
+
+            dialog_add_camera_controller: false,
+            add_camera_controller_id: 0,
+
+            dialog_add_scene_controller: false,
+            add_scene_controller_id: 0,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: false,
