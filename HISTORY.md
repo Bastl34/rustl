@@ -2,6 +2,13 @@
 Here are some screenshots which are showing the development progress.
 
 
+# 2023-01-29
+* Morph Targets
+
+<img src="history/2024-01-29.png" width="720">
+<sub>model/animation from: https://readyplayer.me/</sub>
+<br><br>
+
 # 2023-12-31
 * Skeleton animation
 
