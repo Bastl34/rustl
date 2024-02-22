@@ -8,7 +8,12 @@ use super::scene_controller::SceneController;
 
 
 const FADE_SPEED: f32 = 0.1;
-const JUMP_FADE_SPEED: f32 = 0.4;
+const JUMP_TIME_DECREASE_SPEED: f32 = 0.3;
+
+const MOVEMENT_SPEED: f32 = 0.03;
+const MOVEMENT_SPEED_FAST: f32 = 0.12;
+
+const ROTATION_SPEED: f32 = 0.06;
 
 enum CharAnimationType
 {
@@ -26,8 +31,7 @@ enum CharAnimationType
 enum AnimationMixing
 {
     Stop,
-    Fade,
-    Mix
+    Fade
 }
 
 pub struct CharacterController
@@ -35,6 +39,14 @@ pub struct CharacterController
     base: SceneControllerBase,
 
     pub node_name: String,
+
+    pub fade_speed: f32,
+    pub jump_time_decrease_speed: f32,
+
+    pub movement_speed: f32,
+    pub movement_speed_fast: f32,
+
+    pub rotation_speed: f32,
 
     node: Option<NodeItem>,
     animation_node: Option<NodeItem>,
@@ -61,6 +73,14 @@ impl CharacterController
             base: SceneControllerBase::new("Character Controller".to_string(), "🏃".to_string()),
 
             node_name: "".to_string(),
+
+            fade_speed: FADE_SPEED,
+            jump_time_decrease_speed: JUMP_TIME_DECREASE_SPEED,
+
+            movement_speed: MOVEMENT_SPEED,
+            movement_speed_fast: MOVEMENT_SPEED_FAST,
+
+            rotation_speed: ROTATION_SPEED,
 
             node: None,
             animation_node: None,
@@ -172,7 +192,7 @@ impl CharacterController
             }
         }
 
-        self.start_animation(CharAnimationType::Idle, AnimationMixing::Stop, true, false);
+        self.start_animation(CharAnimationType::Idle, AnimationMixing::Stop, true, false, false);
     }
 
     fn get_animation_duration(&self, animation: CharAnimationType) -> f32
@@ -226,13 +246,13 @@ impl CharacterController
         if let Some(animation_jump) = &self.animation_jump
         {
             component_downcast!(animation_jump, Animation);
-            return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - JUMP_FADE_SPEED
+            return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - self.jump_time_decrease_speed
         }
 
         false
     }
 
-    fn start_animation(&mut self, animation: CharAnimationType, mix_type: AnimationMixing, looped: bool, reverse: bool)
+    fn start_animation(&mut self, animation: CharAnimationType, mix_type: AnimationMixing, looped: bool, reverse: bool, reset_time: bool)
     {
         if self.node.is_none()
         {
@@ -273,7 +293,7 @@ impl CharacterController
             if let Some(animation_blending) = &self.animation_blending
             {
                 component_downcast_mut!(animation_blending, AnimationBlending);
-                animation_blending.speed = FADE_SPEED;
+                animation_blending.speed = self.fade_speed;
                 animation_blending.to = Some(animation_item.read().unwrap().get_base().id);
             }
         }
@@ -283,6 +303,11 @@ impl CharacterController
             component_downcast_mut!(animation_item, Animation);
             animation_item.looped = looped;
             animation_item.reverse = reverse;
+
+            if reset_time
+            {
+                animation_item.set_current_time(0.0);
+            }
             animation_item.start();
         }
     }
@@ -300,11 +325,6 @@ impl SceneController for CharacterController
         let mut movement = Vector3::<f32>::zeros();
         let mut rotation = Vector3::<f32>::zeros();
 
-        let movement_speed = 0.03;
-        let movement_speed_fast = 0.09;
-
-        let rotation_speed = 0.06;
-
         // forward/backward
         if !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
         {
@@ -312,39 +332,39 @@ impl SceneController for CharacterController
             {
                 if !self.is_jumping()
                 {
-                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, false);
+                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, false, false);
                 }
 
-                movement.z = movement_speed;
+                movement.z = self.movement_speed;
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
                 if !self.is_jumping()
                 {
-                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true);
+                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true, false);
                 }
-                movement.z = -movement_speed;
+                movement.z = -self.movement_speed;
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
                 if !self.is_jumping()
                 {
-                    self.start_animation(CharAnimationType::Run, AnimationMixing::Fade, true, false);
+                    self.start_animation(CharAnimationType::Run, AnimationMixing::Fade, true, false, false);
                 }
 
-                movement.z = movement_speed_fast;
+                movement.z = self.movement_speed_fast;
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
                 if !self.is_jumping()
                 {
-                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true);
+                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true, false);
                 }
 
-                movement.z = -movement_speed;
+                movement.z = -self.movement_speed;
                 has_change = true;
             }
         }
@@ -352,36 +372,36 @@ impl SceneController for CharacterController
         // left/right
         if input_manager.keyboard.is_holding(Key::A)
         {
-            rotation.y = rotation_speed;
+            rotation.y = self.rotation_speed;
             has_change = true;
         }
         else if input_manager.keyboard.is_holding(Key::D)
         {
-            rotation.y = -rotation_speed;
+            rotation.y = -self.rotation_speed;
             has_change = true;
         }
 
         // jump Crouch
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !self.is_jumping()
         {
-            self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false);
+            self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
         else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
         {
-            self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false);
+            self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false, false);
             has_change = true;
         }
         else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
         {
-            self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false);
+            self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false, false);
             has_change = true;
         }
 
         // idle
         if approx_zero_vec3(&movement) && !self.is_jumping() && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
         {
-            self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false);
+            self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false, false);
         }
 
         // apply movement
@@ -422,6 +442,38 @@ impl SceneController for CharacterController
             {
                 self.auto_setup(scene, self.node_name.clone().as_str());
             }
+        });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Animation Fade Speed: ");
+            ui.add(egui::Slider::new(&mut self.fade_speed, 0.0..=1.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Jump Time Decrease: ");
+            ui.add(egui::Slider::new(&mut self.jump_time_decrease_speed, 0.0..=1.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Movement Speed: ");
+            ui.add(egui::Slider::new(&mut self.movement_speed, 0.0..=0.5).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Movement Speed Fast: ");
+            ui.add(egui::Slider::new(&mut self.movement_speed_fast, 0.0..=0.5).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Rotation Speed: ");
+            ui.add(egui::Slider::new(&mut self.rotation_speed, 0.0..=0.5).fixed_decimals(2));
         });
     }
 }
