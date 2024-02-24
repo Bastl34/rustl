@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -15,6 +15,7 @@ const MOVEMENT_SPEED_FAST: f32 = 0.12;
 
 const ROTATION_SPEED: f32 = 0.06;
 
+#[derive(Debug)]
 enum CharAnimationType
 {
     None,
@@ -24,7 +25,9 @@ enum CharAnimationType
     Left,
     Right,
     Jump,
-    Crouch
+    Crouch,
+    Roll,
+    Punch
 }
 
 #[derive(PartialEq)]
@@ -56,6 +59,8 @@ pub struct CharacterController
     animation_run: Option<ComponentItem>,
     animation_jump: Option<ComponentItem>,
     animation_crouch: Option<ComponentItem>,
+    animation_roll: Option<ComponentItem>,
+    animation_punch: Option<ComponentItem>,
     animation_left: Option<ComponentItem>,
     animation_right: Option<ComponentItem>,
 
@@ -90,6 +95,8 @@ impl CharacterController
             animation_run: None,
             animation_jump: None,
             animation_crouch: None,
+            animation_roll: None,
+            animation_punch: None,
             animation_left: None,
             animation_right: None,
 
@@ -160,7 +167,9 @@ impl CharacterController
             self.animation_walk = node.find_animation_by_regex("(?i)walk.*");
             self.animation_run = node.find_animation_by_regex("(?i)run.*");
             self.animation_jump = node.find_animation_by_regex("(?i)jump.*");
+            self.animation_punch = node.find_animation_by_regex("(?i)punch");
             self.animation_crouch = node.find_animation_by_regex("(?i)crouch.*");
+            self.animation_roll = node.find_animation_by_regex("(?i)roll.*");
             self.animation_left = node.find_animation_by_regex("(?i)left");
             self.animation_right = node.find_animation_by_regex("(?i)right");
         }
@@ -207,6 +216,8 @@ impl CharacterController
             CharAnimationType::Right => self.animation_right.clone(),
             CharAnimationType::Jump => self.animation_jump.clone(),
             CharAnimationType::Crouch => self.animation_crouch.clone(),
+            CharAnimationType::Roll => self.animation_roll.clone(),
+            CharAnimationType::Punch => self.animation_punch.clone(),
         };
 
         if let Some(animation_item) = animation_item
@@ -230,6 +241,8 @@ impl CharacterController
             CharAnimationType::Right => self.animation_right.clone(),
             CharAnimationType::Jump => self.animation_jump.clone(),
             CharAnimationType::Crouch => self.animation_crouch.clone(),
+            CharAnimationType::Roll => self.animation_roll.clone(),
+            CharAnimationType::Punch => self.animation_punch.clone(),
         };
 
         if let Some(animation_item) = animation_item
@@ -247,6 +260,28 @@ impl CharacterController
         {
             component_downcast!(animation_jump, Animation);
             return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - self.jump_time_decrease_speed
+        }
+
+        false
+    }
+
+    fn is_rolling(&self) -> bool
+    {
+        if let Some(animation_roll) = &self.animation_roll
+        {
+            component_downcast!(animation_roll, Animation);
+            return animation_roll.running() && animation_roll.animation_time() < animation_roll.duration - self.fade_speed
+        }
+
+        false
+    }
+
+    fn is_punching(&self) -> bool
+    {
+        if let Some(animation_punch) = &self.animation_punch
+        {
+            component_downcast!(animation_punch, Animation);
+            return animation_punch.running() && animation_punch.animation_time() < animation_punch.duration - self.fade_speed
         }
 
         false
@@ -284,6 +319,8 @@ impl CharacterController
             CharAnimationType::Right => self.animation_right.clone(),
             CharAnimationType::Jump => self.animation_jump.clone(),
             CharAnimationType::Crouch => self.animation_crouch.clone(),
+            CharAnimationType::Roll => self.animation_roll.clone(),
+            CharAnimationType::Punch => self.animation_punch.clone(),
         };
 
         if mix_type == AnimationMixing::Fade && animation_item.is_some()
@@ -326,11 +363,11 @@ impl SceneController for CharacterController
         let mut rotation = Vector3::<f32>::zeros();
 
         // forward/backward
-        if !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        if !input_manager.keyboard.is_holding(Key::C) && !self.is_punching()
         {
             if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping()
+                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
                 {
                     self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, false, false);
                 }
@@ -340,7 +377,7 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping()
+                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
                 {
                     self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true, false);
                 }
@@ -349,7 +386,7 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping()
+                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
                 {
                     self.start_animation(CharAnimationType::Run, AnimationMixing::Fade, true, false, false);
                 }
@@ -359,7 +396,7 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping()
+                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
                 {
                     self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true, false);
                 }
@@ -381,17 +418,39 @@ impl SceneController for CharacterController
             has_change = true;
         }
 
-        // jump Crouch
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !self.is_jumping()
+        // jump
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
         {
             self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
-        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        // crouch
+        else if input_manager.keyboard.is_holding(Key::C) || (input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching())
         {
             self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false, false);
             has_change = true;
         }
+        // roll
+        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+        {
+            if movement.z > 0.0
+            {
+                self.start_animation(CharAnimationType::Roll, AnimationMixing::Fade, false, false, true);
+            }
+            else
+            {
+                self.start_animation(CharAnimationType::Roll, AnimationMixing::Fade, false, true, true);
+            }
+
+            has_change = true;
+        }
+        // punch
+        else if input_manager.keyboard.is_pressed_no_wait(Key::V) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+        {
+            self.start_animation(CharAnimationType::Punch, AnimationMixing::Fade, false, false, true);
+            has_change = true;
+        }
+        // stop
         else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
         {
             self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false, false);
@@ -399,7 +458,7 @@ impl SceneController for CharacterController
         }
 
         // idle
-        if approx_zero_vec3(&movement) && !self.is_jumping() && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        if approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching() && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)&& !input_manager.keyboard.is_holding(Key::C)
         {
             self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false, false);
         }
