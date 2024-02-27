@@ -51,6 +51,9 @@ pub struct CharacterController
 
     pub rotation_speed: f32,
 
+    pub rotation_follow: bool,
+    pub direction: Vector3<f32>,
+
     node: Option<NodeItem>,
     animation_node: Option<NodeItem>,
 
@@ -86,6 +89,9 @@ impl CharacterController
             movement_speed_fast: MOVEMENT_SPEED_FAST,
 
             rotation_speed: ROTATION_SPEED,
+
+            rotation_follow: false,
+            direction: Vector3::<f32>::new(0.0, 0.0, -1.0),
 
             node: None,
             animation_node: None,
@@ -533,6 +539,11 @@ impl SceneController for CharacterController
         {
             ui.label("Rotation Speed: ");
             ui.add(egui::Slider::new(&mut self.rotation_speed, 0.0..=0.5).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut self.rotation_follow, "Rotation Follow");
         });
     }
 }

@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::format};
 
-use egui::RichText;
+use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
-use crate::{helper::math::{interpolate_vec3, approx_zero, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, cubic_spline_interpolate_vec}, component_impl_default, state::scene::{node::NodeItem, components::joint::Joint}, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast_mut};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
@@ -67,8 +67,12 @@ pub struct Animation
 
     pub channels: Vec<Channel>,
 
+    pub joint_filter: Vec<(NodeItem, bool)>, // only apply parts of the animation for specific nodes
+
     current_time: u128,
-    current_local_time: f32
+    current_local_time: f32,
+
+    ui_joint_include_option: bool
 }
 
 impl Animation
@@ -93,8 +97,12 @@ impl Animation
 
             channels: vec![],
 
+            joint_filter: vec![],
+
             current_time: 0,
-            current_local_time: 0.0
+            current_local_time: 0.0,
+
+            ui_joint_include_option: true,
         }
     }
 
@@ -283,7 +291,7 @@ impl Component for Animation
             t = t % self.duration;
             if self.reverse { t = self.duration - t; }
 
-            let mut target_map: HashMap<u64, (ComponentItem, Matrix4::<f32>)> = HashMap::new();
+            let mut target_map: HashMap<u64, (ComponentItem, Matrix4::<f32>, bool)> = HashMap::new();
 
             // ********** reset joints (if needed) **********
             for channel in &self.channels
@@ -307,7 +315,7 @@ impl Component for Animation
                         joint.get_data_mut().get_mut().animation_weight = 0.0;
                     }
 
-                    target_map.insert(joint.id(), (joint_clone, Matrix4::<f32>::identity()));
+                    target_map.insert(joint.id(), (joint_clone, Matrix4::<f32>::identity(), false));
                 }
                 else if let Some(transformation) = transformation
                 {
@@ -324,13 +332,47 @@ impl Component for Animation
                         transformation.get_data_mut().get_mut().animation_weight = 0.0;
                     }
 
-                    target_map.insert(transformation.id(), (transformation_clone, Matrix4::<f32>::identity()));
+                    target_map.insert(transformation.id(), (transformation_clone, Matrix4::<f32>::identity(), false));
                 }
             }
 
             // ********** calculate animation matrix **********
             for channel in &self.channels
             {
+                let mut joint_included_found = false;
+                let mut joint_excluded_found = false;
+
+                for (joint, include) in &self.joint_filter
+                {
+                    let node = joint;
+
+                    if channel.target.read().unwrap().has_parent_or_is_equal(node.clone())
+                    {
+                        if *include
+                        {
+                            joint_included_found = true;
+                        }
+                        else
+                        {
+                            joint_excluded_found = true;
+                        }
+
+                    }
+                }
+
+                let mut skip_joint = false;
+                if joint_excluded_found
+                {
+                    skip_joint = true;
+                }
+
+                if joint_included_found
+                {
+                    skip_joint = false;
+                }
+
+                //let skip_joint = self.joint_filter.len() > 0 && (joint_excluded || !joint_included);
+
                 let joint;
                 {
                     let target = channel.target.read().unwrap();
@@ -367,7 +409,7 @@ impl Component for Animation
                 }
 
                 let mut target_id = 0;
-                if let Some(joint) = joint
+                if let Some(joint) = &joint
                 {
                     target_id = joint.read().unwrap().id();
                 } else if let Some(transformation) = transformation
@@ -422,6 +464,7 @@ impl Component for Animation
                     {
                         let target_item = target_map.get_mut(&target_id).unwrap();
                         target_item.1 = target_item.1 * transform;
+                        target_item.2 = skip_joint;
                     }
                 }
                 // ********** some items per channel **********
@@ -505,6 +548,7 @@ impl Component for Animation
 
                         let target_item = target_map.get_mut(&target_id).unwrap();
                         target_item.1 = target_item.1 * transform;
+                        target_item.2 = skip_joint;
                     }
                     // ********** rotation **********
                     else if channel.transform_rotation.len() > 0
@@ -566,6 +610,7 @@ impl Component for Animation
 
                         let target_item = target_map.get_mut(&target_id).unwrap();
                         target_item.1 = target_item.1 * transform;
+                        target_item.2 = skip_joint;
                     }
                     // ********** scale **********
                     else if channel.transform_scale.len() > 0
@@ -619,6 +664,7 @@ impl Component for Animation
 
                         let target_item = target_map.get_mut(&target_id).unwrap();
                         target_item.1 = target_item.1 * transform;
+                        target_item.2 = skip_joint;
                     }
                     // ********** morph targets **********
                     else if channel.transform_morph.len() > 0
@@ -695,6 +741,12 @@ impl Component for Animation
                 // joint
                 if let Some(joint) = target_component.as_any_mut().downcast_mut::<Joint>()
                 {
+                    let skip = target_item.2;
+                    if skip
+                    {
+                        continue;
+                    }
+
                     let component_data = joint.get_data_mut().get_mut();
 
                     let animation_trans = component_data.animation_trans.as_mut().unwrap();
@@ -739,7 +791,7 @@ impl Component for Animation
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
+    fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
     {
         ui.label(format!("Duration: {}", self.duration));
         ui.label(format!("Channels: {}", self.channels.len()));
@@ -812,5 +864,78 @@ impl Component for Animation
                 self.set_current_time(time);
             }
         });
+
+        ui.separator();
+
+        // partials
+        ui.label("Partial body animation: ");
+
+        let mut delete_id = None;
+        for (i, item) in self.joint_filter.iter().enumerate()
+        {
+            let node = item.0.clone();
+            let include = item.1;
+
+            ui.horizontal(|ui|
+            {
+                let item = node.read().unwrap();
+
+                if include
+                {
+                    ui.label(RichText::new(format!(" - {} (included): ", item.name)).color(Color32::GREEN));
+                }
+                else
+                {
+                    ui.label(RichText::new(format!(" - {} (excluded): ", item.name)).color(Color32::RED));
+                }
+
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    delete_id = Some(i);
+                }
+            });
+        }
+
+        if let Some(delete_id) = delete_id
+        {
+            self.joint_filter.remove(delete_id);
+        }
+
+        if let Some(node) = node
+        {
+            let node = node.read().unwrap();
+            let all_nodes = Scene::list_all_child_nodes(&node.nodes);
+
+            let mut selection: usize = 0;
+            let mut changed = false;
+
+            ui.horizontal(|ui|
+            {
+                ui.label(" - ");
+
+                egui::ComboBox::from_id_source(ui.make_persistent_id("partials")).selected_text("").width(200.0).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
+
+                    for (i, child_node) in all_nodes.iter().enumerate()
+                    {
+                        let child_node = child_node.read().unwrap();
+                        if child_node.find_component::<Joint>().is_some()
+                        {
+                            changed = ui.selectable_value(&mut selection, i + 1, child_node.name.clone()).changed() || changed;
+                        }
+                    }
+                });
+
+                ui.checkbox(&mut self.ui_joint_include_option, "include");
+            });
+
+            if changed
+            {
+                let add_node = &all_nodes[selection - 1];
+                self.joint_filter.push((add_node.clone(), self.ui_joint_include_option));
+            }
+        }
+
     }
 }

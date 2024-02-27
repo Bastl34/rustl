@@ -248,6 +248,37 @@ impl Node
         parent_amount
     }
 
+    pub fn has_parent(&self, parent_node: NodeItem) -> bool
+    {
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            let parent_clone = parent.clone();
+
+            if let Some(parent) = parent
+            {
+                if parent.read().unwrap().id == parent_node.read().unwrap().id
+                {
+                    return true;
+                }
+            }
+
+            parent = parent_clone.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
+    }
+
+    pub fn has_parent_or_is_equal(&self, node: NodeItem) -> bool
+    {
+        if self.id == node.read().unwrap().id
+        {
+            return true;
+        }
+
+        self.has_parent(node)
+    }
+
     pub fn has_changed_instance_data(&self) -> bool
     {
         for instance in self.instances.get_ref()
