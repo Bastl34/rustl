@@ -1,8 +1,8 @@
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
-use nalgebra::{Vector2, Vector3};
+use nalgebra::{Normed, Rotation3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -14,6 +14,8 @@ const MOVEMENT_SPEED: f32 = 0.03;
 const MOVEMENT_SPEED_FAST: f32 = 0.12;
 
 const ROTATION_SPEED: f32 = 0.06;
+
+const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, 1.0);
 
 #[derive(Debug)]
 enum CharAnimationType
@@ -69,7 +71,7 @@ pub struct CharacterController
 
     animation_blending: Option<ComponentItem>,
 
-    transformation_animation: Option<ComponentItem>,
+    transformation: Option<ComponentItem>
 }
 
 impl CharacterController
@@ -90,8 +92,8 @@ impl CharacterController
 
             rotation_speed: ROTATION_SPEED,
 
-            rotation_follow: false,
-            direction: Vector3::<f32>::new(0.0, 0.0, -1.0),
+            rotation_follow: true,
+            direction: CHARACTER_DIRECTION,
 
             node: None,
             animation_node: None,
@@ -108,7 +110,7 @@ impl CharacterController
 
             animation_blending: None,
 
-            transformation_animation: None
+            transformation: None
         }
     }
 
@@ -192,19 +194,11 @@ impl CharacterController
             }
             {
                 let transformation = node.find_component::<Transformation>().unwrap();
+                self.transformation = Some(transformation.clone());
+
                 component_downcast_mut!(transformation, Transformation);
-                transformation.get_data_mut().get_mut().transform_vectors = false;
             }
 
-
-            if node.find_component::<TransformationAnimation>().is_none()
-            {
-                let component_id = id_manager.write().unwrap().get_next_component_id();
-                let component = TransformationAnimation::new_empty(component_id, "Transformation Animation");
-                node.add_component(Arc::new(RwLock::new(Box::new(component))));
-
-                self.transformation_animation = node.find_component::<TransformationAnimation>();
-            }
         }
 
         self.start_animation(CharAnimationType::Idle, AnimationMixing::Stop, true, false, false);
@@ -431,7 +425,7 @@ impl SceneController for CharacterController
             has_change = true;
         }
         // crouch
-        else if input_manager.keyboard.is_holding(Key::C) || (input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching())
+        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
         {
             self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false, false);
             has_change = true;
@@ -470,23 +464,41 @@ impl SceneController for CharacterController
         }
 
         // apply movement
-        if let Some(transformation_animation) = &self.transformation_animation
+        if !approx_zero_vec3(&movement) || !approx_zero_vec3(&rotation)
         {
-            component_downcast_mut!(transformation_animation, TransformationAnimation);
-
-            let current_movement = transformation_animation.get_data().translation;
-            let current_rotation = transformation_animation.get_data().rotation;
-
-            if !approx_equal_vec(&current_movement, &movement)
+            if let Some(transformation) = &self.transformation
             {
-                transformation_animation.get_data_mut().get_mut().translation = movement;
-                has_change = true;
+                let movement = movement * frame_scale;
+                let rotation = rotation * frame_scale;
+
+                component_downcast_mut!(transformation, Transformation);
+
+                transformation.apply_rotation(rotation);
+
+                let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y);
+                self.direction = (rotation_mat * CHARACTER_DIRECTION).normalize();
+
+                if !approx_zero_vec3(&movement)
+                {
+                    let movement_in_direction = movement.z * self.direction.normalize();
+                    transformation.apply_translation(movement_in_direction);
+                }
             }
+        }
 
-            if !approx_equal_vec(&current_rotation, &rotation)
+        // camera angle
+        if !approx_zero_vec3(&rotation) && self.rotation_follow
+        {
+            if let Some(cam) = scene.get_active_camera_mut()
             {
-                transformation_animation.get_data_mut().get_mut().rotation = rotation;
-                has_change = true;
+                if let Some(controller) = cam.controller.as_mut()
+                {
+                    if let Some(controller) = controller.as_any_mut().downcast_mut::<TargetRotationController>()
+                    {
+                        let (yaw, _) = yaw_pitch_from_direction(self.direction);
+                        controller.data.get_mut().alpha = yaw + PI;
+                    }
+                }
             }
         }
 

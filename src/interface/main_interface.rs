@@ -22,6 +22,7 @@ use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::animation::Animation;
+use crate::state::scene::components::material::Material;
 use crate::state::scene::light::Light;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
@@ -457,6 +458,26 @@ impl MainInterface
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
+                let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    if let Ok(gizmo_nodes) = &gizmo_nodes
+                    {
+                        for node_id in gizmo_nodes
+                        {
+                            if let Some(node) = scene.find_node_by_id(*node_id)
+                            {
+                                if let Some(material) = node.read().unwrap().find_component::<Material>()
+                                {
+                                    component_downcast_mut!(material, Material);
+                                    material.get_data_mut().get_mut().unlit_shading = true;
+                                }
+                            }
+                        }
+                    }
+                }));
+
                 //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);

@@ -8,7 +8,7 @@ const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
 const LIGHT_TYPE_POINT: u32 = 1u;
 const LIGHT_TYPE_SPOT: u32 = 2u;
 
-// ****************************** inputs ******************************
+// ****************************** structs ******************************
 
 struct CameraUniform
 {
@@ -46,25 +46,26 @@ struct MorphTargetUniform
     amount: u32,
 };
 
-@group(1) @binding(0)
-var<uniform> camera: CameraUniform;
+struct MaterialUniform
+{
+    ambient_color: vec4<f32>,
+    base_color: vec4<f32>,
+    specular_color: vec4<f32>,
+    highlight_color: vec4<f32>,
 
-@group(1) @binding(1)
-var<uniform> scene: SceneUniform;
+    alpha: f32,
+    shininess: f32,
+    reflectivity: f32,
+    refraction_index: f32,
 
-@group(1) @binding(2)
-var<uniform> light_amount: i32;
+    normal_map_strength: f32,
+    roughness: f32,
+    receive_shadow: u32,
 
-@group(1) @binding(3)
-var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
+    unlit_shading: u32,
 
-@group(2) @binding(0)
-var<uniform> skeleton: SkeletonUniform;
-
-@group(2) @binding(1)
-var<uniform> morpth_target: MorphTargetUniform;
-
-@group(2) @binding(2) var t_morpth_targets: texture_2d_array<f32>;
+    textures_used: u32,
+};
 
 struct VertexInput
 {
@@ -107,7 +108,31 @@ struct VertexOutput
     @location(8) weights: vec4<f32>, // just for debugging
 };
 
-// ****************************** vertex ******************************
+// ****************************** inputs / bindings ******************************
+
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
+
+@group(1) @binding(1)
+var<uniform> scene: SceneUniform;
+
+@group(1) @binding(2)
+var<uniform> light_amount: i32;
+
+@group(1) @binding(3)
+var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
+
+@group(2) @binding(0)
+var<uniform> skeleton: SkeletonUniform;
+
+@group(2) @binding(1)
+var<uniform> morpth_target: MorphTargetUniform;
+
+@group(2) @binding(2) var t_morpth_targets: texture_2d_array<f32>;
+
+
+
+// ****************************** helper ******************************
 
 const items: u32 = 4u;
 fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, texture: texture_2d_array<f32>) -> vec4<f32>
@@ -120,6 +145,7 @@ fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, text
     return textureLoad(texture, vec2<u32>(x, y), tex_id, 0);
 }
 
+// ****************************** vertex ******************************
 
 @vertex
 fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
@@ -140,9 +166,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         vec4<f32>(0.0, 0.0, 0.0, 1.0)
     );
 
-    //let world_position = model_matrix * vec4<f32>(model.position, 1.0);
-
-    //let model_pos = model_matrix * vec4<f32>(model.position, 1.0);
     var model_pos = vec4<f32>(model.position, 1.0);
     var model_normal = vec4<f32>(model.normal, 0.0);
     var model_tangent = vec4<f32>(model.tangent, 0.0);
@@ -153,7 +176,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     {
         let vertex_id = model.index;
         for (var i: u32 = 0u; i < min(morpth_target.amount, MAX_MORPH_TARGETS); i = i + 1u)
-        //let i: u32 = 1u;
         {
             let weight = morpth_target.weights[i].x;
 
@@ -193,11 +215,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     {
         for (var i: u32 = 0u; i < 4u; i = i + 1u)
         {
-            //let joint_transform = transpose(skeleton.joint_transforms[model.joints[i]]);
             let joint_transform = skeleton.joint_transforms[model.joints[i]];
-            //let joint_transform = skeleton.joint_transforms[1];
             world_position += joint_transform * model_pos * model.weights[i];
-            //world_position += identityMatrix * model_pos * model.weights[i];
 
             // normal / tangent / bitangent
             let normal = joint_transform * model_normal;
@@ -210,41 +229,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
             world_bitangent += bitangent * model.weights[i];
         }
 
-        /*
-        world_position =
-        (
-            skeleton.joint_transforms[model.joints[0]] * model_pos * model.weights[0] +
-            skeleton.joint_transforms[model.joints[1]] * model_pos * model.weights[1] +
-            skeleton.joint_transforms[model.joints[2]] * model_pos * model.weights[2] +
-            skeleton.joint_transforms[model.joints[3]] * model_pos * model.weights[3]
-        );
-        */
-
-
-        //world_position.w = 1.0;
         world_position = model_matrix * world_position;
-        //world_position = world_position;
-
-
-        /*
-        var influence =  skeleton.joint_transforms[model.joints[0]] * model.weights[0];
-        influence     += skeleton.joint_transforms[model.joints[1]] * model.weights[1];
-        influence     += skeleton.joint_transforms[model.joints[2]] * model.weights[2];
-        influence     += skeleton.joint_transforms[model.joints[3]] * model.weights[3];
-
-        var world_position = model_matrix * vec4<f32>(model.position, 1.0);
-        world_position = influence * world_position;
-        */
-
-
-        /*
-        let skinMatrix =    skeleton.joint_transforms[model.joints[0]] * model.weights[0] +
-                            skeleton.joint_transforms[model.joints[1]] * model.weights[1] +
-                            skeleton.joint_transforms[model.joints[2]] * model.weights[2] +
-                            skeleton.joint_transforms[model.joints[3]] * model.weights[3];
-        let world = model_matrix * skinMatrix;
-        world_position = world * model_pos;
-        */
     }
     else
     {
@@ -275,7 +260,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         )
     ).xyz;
 
-
     var tangent =
     (
         model_matrix * vec4<f32>
@@ -298,19 +282,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         )
     ).xyz;
 
-
-    /*
-    var tangent = cross(normal, vec3<f32>(0.0, 1.0, 0.0));
-
-    if length(tangent)  <= 0.0001
-    {
-        tangent = cross(normal, vec3<f32>(0.0, 0.0, 1.0));
-    }
-
-    tangent = normalize(tangent);
-    let bitangent = normalize(cross(normal, tangent));
-    */
-
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
     out.tex_coords = model.tex_coords;
@@ -331,27 +302,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
 
 // ****************************** fragment ******************************
-
-struct MaterialUniform
-{
-    ambient_color: vec4<f32>,
-    base_color: vec4<f32>,
-    specular_color: vec4<f32>,
-    highlight_color: vec4<f32>,
-
-    alpha: f32,
-    shininess: f32,
-    reflectivity: f32,
-    refraction_index: f32,
-
-    normal_map_strength: f32,
-    roughness: f32,
-    receive_shadow: u32,
-
-    unlit_shading: u32,
-
-    textures_used: u32,
-};
 
 @group(0) @binding(0)
 var<uniform> material: MaterialUniform;
