@@ -1,4 +1,4 @@
-use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
+use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
 use parry3d::{shape::{TriMesh, FeatureId}, bounding_volume::Aabb, query::{Ray, RayCast}};
 
 use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{scene::{node::NodeItem, components::mesh}, helper::render_item::RenderItemOption}, component_impl_no_update, component_impl_set_enabled};
@@ -228,10 +228,75 @@ impl Mesh
             if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
             {
                 let hit = ray.origin + (ray.dir * res.toi);
-                normal = self.get_normal(hit, face_id, trans_inverse);
+                normal = self.get_normal(hit, face_id, trans_inverse, &data.vertices);
                 normal = (trans * normal.to_homogeneous()).xyz().normalize();
 
                 if data.mesh.is_backface(res.feature)
+                {
+                    normal = -normal;
+                }
+            }
+            else
+            {
+                normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
+            }
+
+            return Some((res.toi, normal, face_id))
+        }
+        None
+    }
+
+    pub fn intersect_skinned(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, joint_matrices: &Vec<Matrix4<f32>>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
+    {
+        if self.get_data().joints.len() == 0 || self.get_data().weights.len() == 0 || joint_matrices.len() == 0
+        {
+            return self.intersect(ray, ray_inverse, trans, trans_inverse, solid, smooth_shading);
+        }
+
+        let data = self.get_data();
+
+        // transform by skin
+        let vertices = self.get_data().vertices.iter().enumerate().map(|(v_i, v)|
+        {
+            let mut pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
+            for i in 0..4
+            {
+                let joints = data.joints[v_i];
+                let weights = data.weights[v_i];
+
+                let joint_transform = joint_matrices[joints[i] as usize];
+                let transformed = joint_transform * (pos * weights[i]);
+
+                pos.x += transformed.x;
+                pos.y += transformed.y;
+                pos.z += transformed.z;
+            }
+
+            Point3::<f32>::new(pos.x, pos.y, pos.z)
+        }).collect::<Vec<Point3<f32>>>();
+
+        let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
+
+        // run intersection test
+        let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
+        if let Some(res) = res
+        {
+            let mut face_id = 0;
+            if let FeatureId::Face(i) = res.feature
+            {
+                face_id = i;
+            }
+
+            let mut normal;
+
+            // use normal based on loaded normal (not on computed normal by parry -- for smooth shading)
+            if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
+            {
+                let hit = ray.origin + (ray.dir * res.toi);
+                normal = self.get_normal(hit, face_id, trans_inverse, &vertices);
+                normal = (trans * normal.to_homogeneous()).xyz().normalize();
+
+                if mesh.is_backface(res.feature)
                 {
                     normal = -normal;
                 }
@@ -414,7 +479,7 @@ impl Mesh
         self.calc_bbox();
     }
 
-    pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>) -> Vector3<f32>
+    pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>, vertices: &Vec<Point3<f32>>) -> Vector3<f32>
     {
         let data = self.data.get_ref();
 
@@ -438,9 +503,9 @@ impl Mesh
         let i_normal_1 = normal_face[1] as usize;
         let i_normal_2 = normal_face[2] as usize;
 
-        let a = data.mesh.vertices()[i0].to_homogeneous();
-        let b = data.mesh.vertices()[i1].to_homogeneous();
-        let c = data.mesh.vertices()[i2].to_homogeneous();
+        let a = vertices[i0].to_homogeneous();
+        let b = vertices[i1].to_homogeneous();
+        let c = vertices[i2].to_homogeneous();
 
         let a_t = data.normals[i_normal_0];
         let b_t = data.normals[i_normal_1];
