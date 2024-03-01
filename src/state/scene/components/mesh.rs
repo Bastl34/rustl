@@ -253,6 +253,8 @@ impl Mesh
             return self.intersect(ray, ray_inverse, trans, trans_inverse, solid, smooth_shading);
         }
 
+        dbg!("intersect_skinned");
+
         let data = self.get_data();
 
         // transform by skin

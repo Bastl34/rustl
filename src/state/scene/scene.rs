@@ -707,6 +707,7 @@ impl Scene
                 {
                     hits.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
                 }
+                //hits.push((node_arc, instance.id, 0.0, transform, transform_inverse, ray_inverse));
             }
         }
 
@@ -753,7 +754,22 @@ impl Scene
 
             let solid = !material_data.backface_cullig;
 
-            let intersection = mesh.intersect(ray, &ray_inverse, &transform, &transform_inverse, solid, material_data.smooth_shading);
+            let mut joint_matrices = vec![];
+            if let Some(skin_root_node) = &node.skin_root_node
+            {
+                if let Some(skin_id) = node.skin_id
+                {
+                    let skin_root_node = skin_root_node.read().unwrap();
+                    let matrices = skin_root_node.get_joint_transform_vec(skin_id);
+
+                    if let Some(matrices) = matrices
+                    {
+                        joint_matrices = matrices;
+                    }
+                }
+            }
+
+            let intersection = mesh.intersect_skinned(ray, &ray_inverse, &transform, &transform_inverse, &joint_matrices, solid, material_data.smooth_shading);
 
             if let Some(intersection) = intersection
             {

@@ -495,24 +495,15 @@ impl Scene
                     let skin_id = node.skin_id.unwrap();
                     if node.skeleton_render_item.is_none()
                     {
-                        //println!("---------------------------------- OK0 {}", node.name);
-
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id);
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            //println!("---------------------------------- OK1");
-
-                            // consume changes
-                            //Self::consume_changed_joints(skin_root_node.clone());
-
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &joint_matrices);
                             node.skeleton_render_item = Some(Box::new(skeleton_buffer));
                             create_new_skeleton_morph_target_bind_group = true;
                         }
                         else
                         {
-                            println!("---------------------------------- OK1.1");
-
                             let skeleton_buffer = SkeletonBuffer::new(wgpu, "skeleton", &vec![]);
                             node.skeleton_render_item = Some(Box::new(skeleton_buffer));
                             create_new_skeleton_morph_target_bind_group = true;
@@ -520,8 +511,6 @@ impl Scene
                     }
                     else if Self::has_changed_joints(skin_root_node.clone())
                     {
-                        //println!("---------------------------------- OK 2");
-
                         let joint_matrices = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id);
                         if let Some(joint_matrices) = joint_matrices
                         {
