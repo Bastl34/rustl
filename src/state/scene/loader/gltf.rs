@@ -871,6 +871,25 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
         }
     }
 
+    // ********** calculate skin bounding boxes **********
+    for mesh_node in &all_nodes_with_mesh
+    {
+        let node = mesh_node.read().unwrap();
+        if let Some(skin_root_node) = &node.skin_root_node
+        {
+            let skin_id = node.skin_id.unwrap();
+
+            let joint_transform_vec = skin_root_node.read().unwrap().get_joint_transform_vec(skin_id, false);
+
+            if let Some(joint_transform_vec) = joint_transform_vec
+            {
+                let mesh = node.find_component::<Mesh>().unwrap();
+                component_downcast_mut!(mesh, Mesh);
+                mesh.calc_bbox_skin(&joint_transform_vec);
+            }
+        }
+    }
+
 }
 
 fn find_skin_root(skin_id: u32, nodes: &Vec<Arc<RwLock<Box<Node>>>>) -> Option<NodeItem>

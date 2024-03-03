@@ -378,7 +378,7 @@ impl Node
     }
     */
 
-    fn get_joint_transforms(skin_id: u32, nodes: &Vec<Arc<RwLock<Box<Node>>>>, parent_transform: &Matrix4<f32>) -> Vec::<(u32, Matrix4<f32>)>
+    fn get_joint_transforms(skin_id: u32, nodes: &Vec<Arc<RwLock<Box<Node>>>>, parent_transform: &Matrix4<f32>, animated: bool) -> Vec::<(u32, Matrix4<f32>)>
     {
         let mut joints: Vec::<(u32, Matrix4<f32>)> = vec![];
 
@@ -390,7 +390,17 @@ impl Node
             {
                 component_downcast!(joint_component, Joint);
 
-                let local_animation_transform = joint_component.get_animation_transform();
+                // animated transformation or just skinned transformation
+                let local_animation_transform;
+                if animated
+                {
+                    local_animation_transform = joint_component.get_animation_transform();
+                }
+                else
+                {
+                    local_animation_transform = joint_component.get_local_transform();
+                }
+
                 let joint_data = joint_component.get_data();
 
                 if let Some(joint_id) = joint_data.skin_ids.get(&skin_id)
@@ -401,7 +411,7 @@ impl Node
                     //joints.push((joint_data.joint_id, animation_transform));
                     joints.push((*joint_id, animation_transform));
 
-                    let childs = Self::get_joint_transforms(skin_id, &node.read().unwrap().nodes, &current_transform);
+                    let childs = Self::get_joint_transforms(skin_id, &node.read().unwrap().nodes, &current_transform, animated);
                     joints.extend(childs);
                 }
             }
@@ -410,7 +420,7 @@ impl Node
         joints
     }
 
-    pub fn get_joint_transform_vec(&self, skin_id: u32) -> Option<Vec<Matrix4<f32>>>
+    pub fn get_joint_transform_vec(&self, skin_id: u32, animated: bool) -> Option<Vec<Matrix4<f32>>>
     {
         let joint_component = self.find_component::<Joint>();
 
@@ -426,7 +436,17 @@ impl Node
 
         let root_joint_transform;
         {
-            let local_animation_transform = joint_component.get_animation_transform();
+            // animated transformation or just skinned transformation
+            let local_animation_transform;
+            if animated
+            {
+                local_animation_transform = joint_component.get_animation_transform();
+            }
+            else
+            {
+                local_animation_transform = joint_component.get_local_transform();
+            }
+
             let joint_data = joint_component.get_data();
 
             //dbg!(local_animation_transform);
@@ -452,7 +472,7 @@ impl Node
             //dbg!(&root_joint_transform);
         }
 
-        let child_joint_transforms = Self::get_joint_transforms(skin_id, &self.nodes, &root_joint_transform);
+        let child_joint_transforms = Self::get_joint_transforms(skin_id, &self.nodes, &root_joint_transform, animated);
         joints.extend(child_joint_transforms);
 
         // sort by joint id

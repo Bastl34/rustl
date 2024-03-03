@@ -760,7 +760,7 @@ impl Scene
                 if let Some(skin_id) = node.skin_id
                 {
                     let skin_root_node = skin_root_node.read().unwrap();
-                    let matrices = skin_root_node.get_joint_transform_vec(skin_id);
+                    let matrices = skin_root_node.get_joint_transform_vec(skin_id, true);
 
                     if let Some(matrices) = matrices
                     {

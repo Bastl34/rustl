@@ -105,6 +105,13 @@ impl Joint
             //Matrix4::<f32>::identity()
         }
     }
+
+    pub fn get_local_transform(&self) -> Matrix4<f32>
+    {
+        let joint_data = self.get_data();
+
+        joint_data.local_trans
+    }
 }
 
 impl Component for Joint

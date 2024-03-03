@@ -102,7 +102,7 @@ impl Animation
             current_time: 0,
             current_local_time: 0.0,
 
-            ui_joint_include_option: true,
+            ui_joint_include_option: true
         }
     }
 
@@ -371,19 +371,10 @@ impl Component for Animation
                     skip_joint = false;
                 }
 
-                //let skip_joint = self.joint_filter.len() > 0 && (joint_excluded || !joint_included);
-
                 let joint;
                 {
                     let target = channel.target.read().unwrap();
                     joint = target.find_component::<Joint>();
-
-                    /*
-                    if joint.is_some()
-                    {
-                        println!("joint target: {} {:?}", target.id, &target.name);
-                    }
-                    */
                 }
 
                 let transformation;
@@ -391,17 +382,9 @@ impl Component for Animation
                     let target = channel.target.read().unwrap();
 
                     transformation = target.find_component::<Transformation>();
-
-                    /*
-                    if joint.is_some()
-                    {
-                        println!("transformation target: {} {:?}", target.id, &target.name);
-                    }
-                    */
                 }
 
                 if joint.is_none() && transformation.is_none()
-                //if joint.is_none()
                 {
                     // NOT SUPPORTED
                     dbg!("not supported for now");

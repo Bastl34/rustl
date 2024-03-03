@@ -506,6 +506,7 @@ impl MainInterface
                 // start first animation
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
+                    /*
                     if let Ok(nodes) = &nodes
                     {
                         for node_id in nodes
@@ -520,11 +521,14 @@ impl MainInterface
                             }
                         }
                     }
+                     */
 
                     // add camera controller and run auto setup
+                    /*
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar2");
                     scene.controller.push(Box::new(controller));
+                     */
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
