@@ -393,8 +393,8 @@ impl Editor
 
                     let scene_hit = scene.pick(&ray, false, false);
 
-                    dbg!(scene_hit.is_some());
-                    dbg!(grid_hit.is_some());
+                    //dbg!(scene_hit.is_some());
+                    //dbg!(grid_hit.is_some());
 
                     // check if grid hit is closer or scene hit
                     let mut new_hit = grid_hit;
@@ -413,7 +413,7 @@ impl Editor
                         }
                     }
 
-                    dbg!(new_hit.is_some());
+                    //dbg!(new_hit.is_some());
 
                     let mut save_hit = false;
 

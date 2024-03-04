@@ -524,11 +524,9 @@ impl MainInterface
                      */
 
                     // add camera controller and run auto setup
-                    /*
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar2");
                     scene.controller.push(Box::new(controller));
-                     */
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();

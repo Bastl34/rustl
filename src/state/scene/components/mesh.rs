@@ -1,3 +1,4 @@
+
 use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
 use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
@@ -309,28 +310,27 @@ impl Mesh
         // transform by skin
         let vertices = self.get_data().vertices.iter().enumerate().map(|(v_i, v)|
         {
-            let mut pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
+            let pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
+            let mut transformed_pos = Point4::<f32>::new(0.0, 0.0, 0.0, 0.0);
             for i in 0..4
             {
                 let joints = data.joints[v_i];
                 let weights = data.weights[v_i];
 
                 let joint_transform = joint_matrices[joints[i] as usize];
-                let transformed = joint_transform * (pos * weights[i]);
+                let transformed = joint_transform * pos * weights[i];
 
-                pos.x += transformed.x;
-                pos.y += transformed.y;
-                pos.z += transformed.z;
-                pos.w += transformed.w;
+                transformed_pos.x += transformed.x;
+                transformed_pos.y += transformed.y;
+                transformed_pos.z += transformed.z;
+                transformed_pos.w += transformed.w;
             }
 
-            /*
-            pos.x /= pos.w;
-            pos.y /= pos.w;
-            pos.z /= pos.w;
-             */
+            transformed_pos.x /= transformed_pos.w;
+            transformed_pos.y /= transformed_pos.w;
+            transformed_pos.z /= transformed_pos.w;
 
-            Point3::<f32>::new(pos.x, pos.y, pos.z)
+            Point3::<f32>::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
         }).collect::<Vec<Point3<f32>>>();
 
         let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
