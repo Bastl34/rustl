@@ -197,13 +197,13 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     let mut direct_instances_amout = 0;
     let mut direct_meshes_amout = 0;
     let mut direct_vertices_amout = 0;
-    let mut direct_indices_amout = 0;
+    let mut direct_faces_amout = 0;
     let direct_childs_amount;
 
     let mut all_instances_amout = 0;
     let mut all_meshes_amout = 0;
     let mut all_vertices_amout = 0;
-    let mut all_indices_amout = 0;
+    let mut all_faces_amout = 0;
     let all_childs_amount;
 
     {
@@ -220,7 +220,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
                 direct_meshes_amout += 1;
                 direct_vertices_amout += mesh.get_data().vertices.len();
-                direct_indices_amout += mesh.get_data().indices.len();
+                direct_faces_amout += mesh.get_data().indices.len();
             }
         }
 
@@ -242,7 +242,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
                 all_meshes_amout += 1;
                 all_vertices_amout += mesh.get_data().vertices.len();
-                all_indices_amout += mesh.get_data().indices.len();
+                all_faces_amout += mesh.get_data().indices.len();
             }
         }
     }
@@ -314,14 +314,16 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         ui.label(format!(" ⚫ nodes: {}", direct_childs_amount));
         ui.label(format!(" ⚫ meshes: {}", direct_meshes_amout));
         ui.label(format!(" ⚫ vertices: {}", direct_vertices_amout));
-        ui.label(format!(" ⚫ indices: {}", direct_indices_amout));
+        ui.label(format!(" ⚫ faces: {}", direct_faces_amout));
+        ui.label(format!(" ⚫ indices: {}", direct_faces_amout * 3));
 
         ui.label(RichText::new("👪 all descendants").strong());
         ui.label(format!(" ⚫ instances: {}", all_instances_amout));
         ui.label(format!(" ⚫ nodes: {}", all_childs_amount));
         ui.label(format!(" ⚫ meshes: {}", all_meshes_amout));
         ui.label(format!(" ⚫ vertices: {}", all_vertices_amout));
-        ui.label(format!(" ⚫ indices: {}", all_indices_amout));
+        ui.label(format!(" ⚫ faces: {}", all_faces_amout));
+        ui.label(format!(" ⚫ indices: {}", all_faces_amout * 3));
     });
 
     // Settings

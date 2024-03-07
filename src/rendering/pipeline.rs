@@ -2,6 +2,8 @@ use std::borrow::Cow;
 
 use wgpu::{ShaderModule, Device, BindGroupLayout};
 
+use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
+
 use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance, skeleton::MAX_JOINTS, morph_target::MAX_MORPH_TARGETS};
 
 pub struct Pipeline
@@ -13,6 +15,11 @@ pub struct Pipeline
 
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
+}
+
+impl RenderItem for Pipeline
+{
+    render_item_impl_default!();
 }
 
 impl Pipeline
