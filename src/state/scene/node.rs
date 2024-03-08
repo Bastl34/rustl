@@ -24,6 +24,8 @@ pub struct Node
     pub render_children_first: bool,
     pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
 
+    pub pick_bbox_first: bool,
+
     pub parent: Option<NodeItem>,
 
     pub skin_id: Option<u32>,
@@ -59,6 +61,8 @@ impl Node
 
             render_children_first: false,
             alpha_index: 0,
+
+            pick_bbox_first: true,
 
             components: vec![],
 

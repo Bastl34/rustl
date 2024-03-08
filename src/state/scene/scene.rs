@@ -651,7 +651,9 @@ impl Scene
     fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         // find hits (bbox based)
-        let mut hits = vec![];
+        let mut hits_bbox = vec![];
+
+        let mut no_bbox_picking_items = vec![];
 
         for node_arc in nodes
         {
@@ -701,27 +703,33 @@ impl Scene
 
                 let ray_inverse = math::inverse_ray(ray, &transform_inverse);
 
-                let solid = true;
-                let dist = mesh.intersect_b_box(&ray_inverse, solid);
-                if let Some(dist) = dist
+                if !node.pick_bbox_first
                 {
-                    hits.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
+                    no_bbox_picking_items.push((node_arc, instance.id, transform, transform_inverse, ray_inverse));
                 }
-                //hits.push((node_arc, instance.id, 0.0, transform, transform_inverse, ray_inverse));
+                else
+                {
+                    let solid = true;
+                    let dist = mesh.intersect_b_box(&ray_inverse, solid);
+                    if let Some(dist) = dist
+                    {
+                        hits_bbox.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
+                    }
+                }
             }
         }
 
-        if hits.len() == 0
+        if hits_bbox.len() == 0 && no_bbox_picking_items.len() == 0
         {
             return None;
         }
 
         // sort bbox dist (to get the nearest)
-        hits.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+        hits_bbox.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
-        if bounding_box_only && hits.len() > 0
+        if bounding_box_only && hits_bbox.len() > 0
         {
-            let first = hits.first().unwrap();
+            let first = hits_bbox.first().unwrap();
             let node = first.0;
             let instance = first.1;
             let dist = first.2;
@@ -737,10 +745,22 @@ impl Scene
             return Some((dist, pos, None, node.clone(), instance, None));
         }
 
+        // combine bbox hits and nodes without bbox picking
+        let mut ray_intersection_checks = vec![];
+        for (node_arc, instance_id, _dist, transform, transform_inverse, ray_inverse) in hits_bbox
+        {
+            ray_intersection_checks.push((node_arc, instance_id, transform, transform_inverse, ray_inverse));
+        }
+
+        for (node_arc, instance_id, transform, transform_inverse, ray_inverse) in no_bbox_picking_items
+        {
+            ray_intersection_checks.push((node_arc, instance_id, transform, transform_inverse, ray_inverse));
+        }
+
         // mesh based intersection
         let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
 
-        for (node_arc, instance_id, _dist, transform, transform_inverse, ray_inverse) in hits
+        for (node_arc, instance_id, transform, transform_inverse, ray_inverse) in ray_intersection_checks
         {
             let node = node_arc.read().unwrap();
 

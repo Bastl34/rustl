@@ -335,6 +335,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut root_node: bool;
         let mut render_children_first;
         let mut alpha_index;
+        let mut pick_bbox_first;
         let mut name;
         {
             let node = node.read().unwrap();
@@ -342,6 +343,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             root_node = node.root_node;
             render_children_first = node.render_children_first;
             alpha_index = node.alpha_index;
+            pick_bbox_first = node.pick_bbox_first;
             name = node.name.clone();
         }
 
@@ -358,6 +360,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             ui.label("alpha index: ");
             changed = ui.add(egui::DragValue::new(&mut alpha_index).speed(1)).changed() || changed;
         });
+        changed = ui.checkbox(&mut pick_bbox_first, "pick bbox first").changed() || changed;
 
         if changed
         {
@@ -366,6 +369,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.root_node = root_node;
             node.render_children_first = render_children_first;
             node.alpha_index = alpha_index;
+            node.pick_bbox_first = pick_bbox_first;
             node.name = name;
         }
 
