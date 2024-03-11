@@ -1,6 +1,6 @@
 use std::collections::{HashSet, HashMap};
 
-use nalgebra::Matrix4;
+use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3, Vector4};
 
 use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::NodeItem, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast};
 
@@ -19,7 +19,11 @@ pub struct JointData
 
     pub animation_weight: f32,
     pub animation_update_frame: Option<u64>,
+
     pub animation_trans: Option<Matrix4<f32>>
+    //pub animation_position: Option<Vector3<f32>>,
+    //pub animation_rotation_quat: Option<Vector4<f32>>,
+    //pub animation_scale: Option<Vector3<f32>>,
 }
 
 pub struct Joint
@@ -45,7 +49,11 @@ impl Joint
 
             animation_weight: 0.0,
             animation_update_frame: None,
+
             animation_trans: None,
+            //animation_position: None,
+            //animation_rotation_quat: None,
+            //animation_scale: None,
         };
 
         let joint = Joint
@@ -72,11 +80,11 @@ impl Joint
         &mut self.data
     }
 
-    pub fn get_animation_transform(&self) -> Matrix4<f32>
+    pub fn get_joint_transform(&self) -> Matrix4<f32>
     {
         let joint_data = self.get_data();
 
-        if let Some(animation_trans) = joint_data.animation_trans
+        if let Some(animation_trans) = self.get_animation_transform()
         {
             if joint_data.animation_weight < 1.0
             {
@@ -104,6 +112,55 @@ impl Joint
             //joint_data.full_joint_trans * joint_data.local_trans
             //Matrix4::<f32>::identity()
         }
+    }
+
+    pub fn get_animation_transform(&self) -> Option<Matrix4<f32>>
+    {
+        self.get_data().animation_trans
+        /*
+        let data = self.get_data();
+
+        if data.animation_position.is_none() && data.animation_rotation_quat.is_none() && data.animation_scale.is_none()
+        {
+            return None;
+        }
+
+        let mut trans = Matrix4::<f32>::identity();
+
+        // translation
+        if let Some(animation_position) = &data.animation_position
+        {
+            trans = trans * nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
+        }
+
+        // rotation
+        if let Some(data_rotation_quat) = &data.animation_rotation_quat
+        {
+            let quaternion = UnitQuaternion::new_normalize
+            (
+                Quaternion::new
+                (
+                    data_rotation_quat.w,
+                    data_rotation_quat.x,
+                    data_rotation_quat.y,
+                    data_rotation_quat.z,
+                )
+            );
+
+            let rotation: Rotation3<f32> = quaternion.into();
+            let rotation = rotation.to_homogeneous();
+
+            trans = trans * rotation;
+        }
+
+        // scale
+        if let Some(animation_scale) = &data.animation_scale
+        {
+            trans = trans * Matrix4::new_nonuniform_scaling(&animation_scale);
+        }
+
+        Some(trans)
+         */
     }
 
     pub fn get_local_transform(&self) -> Matrix4<f32>
@@ -170,7 +227,23 @@ impl Component for Joint
 
         ui.label(format!("Inverse Bind Trans:\n{:?}", self.get_data().inverse_bind_trans));
         //ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));
+        ui.label(format!("Animation Transf:\n{:?}", self.get_data().animation_trans));
 
-        ui.label(format!("Animation Trans:\n{:?}", self.get_data().animation_trans));
+        /*
+        if let Some(animation_position) = self.get_data().animation_position
+        {
+            ui.label(format!("Animation position: [{:.3}, {:.3}, {:.3}]", animation_position.x, animation_position.z, animation_position.z));
+        }
+
+        if let Some(animation_rotation_quat) = self.get_data().animation_rotation_quat
+        {
+            ui.label(format!("Animation rotation (quat): [{:.3}, {:.3}, {:.3}, {:.3}]", animation_rotation_quat.x, animation_rotation_quat.z, animation_rotation_quat.z,animation_rotation_quat.w));
+        }
+
+        if let Some(animation_scale) = self.get_data().animation_scale
+        {
+            ui.label(format!("Animation scale: [{:.3}, {:.3}, {:.3}]", animation_scale.x, animation_scale.z, animation_scale.z));
+        }
+         */
     }
 }

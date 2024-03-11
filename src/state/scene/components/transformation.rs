@@ -18,7 +18,11 @@ pub struct TransformationData
 
     pub animation_weight: f32,
     pub animation_update_frame: Option<u64>,
-    pub animation_trans: Option<Matrix4<f32>>, // only supported with transform_vectors
+
+     // only supported with transform_vectors
+    pub animation_position: Option<Vector3<f32>>,
+    pub animation_rotation_quat: Option<Vector4<f32>>,
+    pub animation_scale: Option<Vector3<f32>>,
 
     trans: Matrix4<f32>,
     tran_inverse: Matrix4<f32>
@@ -51,7 +55,11 @@ impl Transformation
 
             animation_weight: 0.0,
             animation_update_frame: None,
-            animation_trans: None,
+
+            // animation transformation is overwriting position/rotaion/rotation_quat/scale
+            animation_position: None,
+            animation_rotation_quat: None,
+            animation_scale: None,
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity()
@@ -86,7 +94,10 @@ impl Transformation
 
             animation_weight: 0.0,
             animation_update_frame: None,
-            animation_trans: None,
+
+            animation_position: None,
+            animation_rotation_quat: None,
+            animation_scale: None,
 
             trans: trans,
             tran_inverse: Matrix4::<f32>::identity()
@@ -121,7 +132,10 @@ impl Transformation
 
             animation_weight: 0.0,
             animation_update_frame: None,
-            animation_trans: None,
+
+            animation_position: None,
+            animation_rotation_quat: None,
+            animation_scale: None,
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity()
@@ -168,54 +182,97 @@ impl Transformation
 
         if data.transform_vectors
         {
-            let translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
+            // ********** translation **********
+            let translation;
 
-            let scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            if let Some(animation_position) = &data.animation_position
+            {
+                //translation = translation * nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
+                translation = nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
+            }
+            else
+            {
+                translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
+            }
 
-            let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
-            let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
-            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
+            // ********** scale **********
+            let scale;
 
-            let mut rotation = rotation_z;
-            rotation = rotation * rotation_y;
-            rotation = rotation * rotation_x;
+            if let Some(animation_scale) = &data.animation_scale
+            {
+                //scale = scale * Matrix4::new_nonuniform_scaling(&animation_scale);
+                scale = Matrix4::new_nonuniform_scaling(&animation_scale);
+            }
+            else
+            {
+                scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            }
 
-            let mut rotation_quat: Option<Matrix4<f32>> = None;
-            if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+            // ********** rotation **********
+            let mut rotation: Matrix4<f32>;
+            if let Some(animation_rotation_quat) = &data.animation_rotation_quat
             {
                 let quaternion = UnitQuaternion::new_normalize
                 (
                     Quaternion::new
                     (
-                        data_rotation_quat.w,
-                        data_rotation_quat.x,
-                        data_rotation_quat.y,
-                        data_rotation_quat.z,
+                        animation_rotation_quat.w,
+                        animation_rotation_quat.x,
+                        animation_rotation_quat.y,
+                        animation_rotation_quat.z,
                     )
                 );
 
-                let rotation: Rotation3<f32> = quaternion.into();
-                let rotation = rotation.to_homogeneous();
+                let rotation_quat: Rotation3<f32> = quaternion.into();
+                let rotation_quat = rotation_quat.to_homogeneous();
 
-                rotation_quat = Some(rotation);
+                rotation = rotation_quat;
+            }
+            else
+            {
+                let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
+                let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
+                let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
+
+                rotation = rotation_z;
+                rotation = rotation * rotation_y;
+                rotation = rotation * rotation_x;
+
+                // ********** quaternion rotation **********
+                if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+                {
+                    let quaternion = UnitQuaternion::new_normalize
+                    (
+                        Quaternion::new
+                        (
+                            data_rotation_quat.w,
+                            data_rotation_quat.x,
+                            data_rotation_quat.y,
+                            data_rotation_quat.z,
+                        )
+                    );
+
+                    let rotation_quat: Rotation3<f32> = quaternion.into();
+                    let rotation_quat = rotation_quat.to_homogeneous();
+
+                    rotation = rotation * rotation_quat;
+                }
             }
 
+            // ********** combine **********
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
             trans = trans * rotation;
 
-            if let Some(rotation_quat) = rotation_quat
-            {
-                trans = trans * rotation_quat;
-            }
-
             trans = trans * scale;
 
+            /*
             if let Some(animation_trans) = data.animation_trans
             {
                 trans = trans * animation_trans;
                 //trans = animation_trans;
             }
+            */
 
             data.trans = trans;
         }
@@ -596,12 +653,26 @@ impl Component for Transformation
             self.calc_transform();
         }
 
-        if let Some(animation_trans) = &self.get_data().animation_trans
+        let data = self.get_data();
+
+        if data.animation_position.is_some() || data.animation_rotation_quat.is_some() || data.animation_scale.is_some()
         {
-            info_box_with_body(ui, |ui|
+            ui.separator();
+
+            if let Some(animation_position) = data.animation_position
             {
-                ui.label(format!("Animation Trans:\n{:?}", animation_trans));
-            });
+                ui.label(format!("Animation position: [{:.3}, {:.3}, {:.3}]", animation_position.x, animation_position.z, animation_position.z));
+            }
+
+            if let Some(animation_rotation_quat) = data.animation_rotation_quat
+            {
+                ui.label(format!("Animation rotation (quat): [{:.3}, {:.3}, {:.3}, {:.3}]", animation_rotation_quat.x, animation_rotation_quat.z, animation_rotation_quat.z,animation_rotation_quat.w));
+            }
+
+            if let Some(animation_scale) = data.animation_scale
+            {
+                ui.label(format!("Animation scale: [{:.3}, {:.3}, {:.3}]", animation_scale.x, animation_scale.z, animation_scale.z));
+            }
         }
     }
 }

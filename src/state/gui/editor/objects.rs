@@ -55,7 +55,28 @@ pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
                 }
 
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, heading).clicked()
+
+                let mut toggle = ui.toggle_value(&mut selection, heading);
+
+                if node.find_component::<Animation>().is_some()
+                {
+                    toggle = toggle.context_menu(|ui|
+                    {
+                        if ui.button("⏵ Start all Animations").clicked()
+                        {
+                            ui.close_menu();
+                            node.start_all_animations();
+                        }
+
+                        if ui.button("⏹ Stop all Animations").clicked()
+                        {
+                            ui.close_menu();
+                            node.stop_all_animations();
+                        }
+                    });
+                }
+
+                if toggle.clicked()
                 {
                     if editor_state.pick_mode == SelectionType::Camera
                     {

@@ -398,7 +398,7 @@ impl Node
                 let local_animation_transform;
                 if animated
                 {
-                    local_animation_transform = joint_component.get_animation_transform();
+                    local_animation_transform = joint_component.get_joint_transform();
                 }
                 else
                 {
@@ -444,7 +444,7 @@ impl Node
             let local_animation_transform;
             if animated
             {
-                local_animation_transform = joint_component.get_animation_transform();
+                local_animation_transform = joint_component.get_joint_transform();
             }
             else
             {
@@ -625,6 +625,32 @@ impl Node
         }
 
         None
+    }
+
+    pub fn start_all_animations(&self)
+    {
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.start();
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                component_downcast_mut!(animation, Animation);
+                animation.start();
+            }
+        }
     }
 
     pub fn stop_all_animations(&self)

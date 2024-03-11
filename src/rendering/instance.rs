@@ -115,7 +115,7 @@ impl InstanceBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
     {
-        dbg!("update all instances");
+        //dbg!("update all instances");
 
         self.transformations = Vec::with_capacity(instances.len());
 
@@ -152,7 +152,7 @@ impl InstanceBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)
     {
-        dbg!("update instance");
+        //dbg!("update instance");
 
         if index + 1 > self.count as usize
         {
