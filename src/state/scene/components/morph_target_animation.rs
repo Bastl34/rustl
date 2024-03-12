@@ -14,7 +14,7 @@ pub struct MorphTargetAnimation
     pub target_id: Option<u64>,
 
     pub looped: bool,
-    pub periodically: bool,
+    pub ping_pong: bool,
 
     pub from: f32,
     pub to: f32,
@@ -39,7 +39,7 @@ impl MorphTargetAnimation
             to,
 
             looped,
-            periodically: true,
+            ping_pong: true,
 
             speed,
             direction: 1.0,
@@ -64,7 +64,7 @@ impl MorphTargetAnimation
             to: 1.0,
 
             looped: true,
-            periodically: true,
+            ping_pong: true,
 
             speed: 0.1,
             direction: 1.0,
@@ -134,8 +134,8 @@ impl Component for MorphTargetAnimation
             // loop
             else
             {
-                // not periodically
-                if !self.periodically
+                // not ping pong
+                if !self.ping_pong
                 {
                     if weight > self.to
                     {
@@ -167,7 +167,7 @@ impl Component for MorphTargetAnimation
                         }
                     }
                 }
-                // periodically
+                // ping pong
                 else
                 {
                     if weight > self.to
@@ -206,14 +206,14 @@ impl Component for MorphTargetAnimation
         let mut from;
         let mut to;
         let mut looped;
-        let mut periodically;
+        let mut ping_pong;
         let mut speed;
         let mut direction;
         {
             from = self.from;
             to = self.to;
             looped = self.looped;
-            periodically = self.periodically;
+            ping_pong = self.ping_pong;
             speed = self.speed;
             direction = self.direction;
 
@@ -277,7 +277,7 @@ impl Component for MorphTargetAnimation
         });
 
         changed = ui.checkbox(&mut looped, "Loop").changed() || changed;
-        changed = ui.checkbox(&mut periodically, "Periodically").changed() || changed;
+        changed = ui.checkbox(&mut ping_pong, "Ping Pong").changed() || changed;
 
         let keys = get_keys_as_string_vec();
 
@@ -332,7 +332,7 @@ impl Component for MorphTargetAnimation
             self.speed = speed;
             self.direction = direction;
             self.looped = looped;
-            self.periodically = periodically;
+            self.ping_pong = ping_pong;
 
             if target_id > 0
             {
