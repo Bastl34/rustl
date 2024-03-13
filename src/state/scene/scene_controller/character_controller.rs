@@ -1,8 +1,9 @@
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
-use nalgebra::{Normed, Rotation3, Vector2, Vector3};
+use nalgebra::{Normed, Point3, Rotation3, Vector2, Vector3};
+use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -56,6 +57,8 @@ pub struct CharacterController
     pub rotation_follow: bool,
     pub direction: Vector3<f32>,
 
+    pub physics: bool, // very simple at the moment
+
     node: Option<NodeItem>,
     animation_node: Option<NodeItem>,
 
@@ -94,6 +97,8 @@ impl CharacterController
 
             rotation_follow: true,
             direction: CHARACTER_DIRECTION,
+
+            physics: true,
 
             node: None,
             animation_node: None,
@@ -463,25 +468,69 @@ impl SceneController for CharacterController
             self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false, false);
         }
 
+        // "physics"
+        if self.physics && !approx_zero_vec3(&movement)
+        {
+            if let Some(transformation) = &self.transformation
+            {
+                let offset = 0.5; // TODO
+
+                let mut pos;
+                let down;
+                {
+                    component_downcast_mut!(transformation, Transformation);
+                    let transform_data = transformation.get_data();
+
+                    pos = Point3::<f32>::new(transform_data.position.x, transform_data.position.y, transform_data.position.z);
+                    pos.y += offset;
+                    down = Vector3::new(0.0, -1.0, 0.0);
+                }
+
+                let character_node = self.node.clone().unwrap();
+
+                let predicate_func = move |node: NodeItem| -> bool
+                {
+                    let check_node = node.read().unwrap();
+
+                    let is_char_node = check_node.has_parent(character_node.clone());
+
+                    !is_char_node
+                };
+
+                let ray = Ray::new(pos, down);
+                let pick_res = scene.multi_pick(&ray, false, false, Some(Box::new(predicate_func)));
+
+                if let Some(first_pick) = pick_res.first()
+                {
+                    movement.y -= first_pick.0 - offset;
+                }
+            }
+        }
+
+
         // apply movement
         if !approx_zero_vec3(&movement) || !approx_zero_vec3(&rotation)
         {
             if let Some(transformation) = &self.transformation
             {
-                let movement = movement * frame_scale;
-                let rotation = rotation * frame_scale;
+                let movement_frame_scale = movement * frame_scale;
+                let rotation_frame_scale = rotation * frame_scale;
 
                 component_downcast_mut!(transformation, Transformation);
 
-                transformation.apply_rotation(rotation);
+                transformation.apply_rotation(rotation_frame_scale);
 
                 let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y);
                 self.direction = (rotation_mat * CHARACTER_DIRECTION).normalize();
 
-                if !approx_zero_vec3(&movement)
+                if !approx_zero_vec3(&movement_frame_scale)
                 {
-                    let movement_in_direction = movement.z * self.direction.normalize();
-                    transformation.apply_translation(movement_in_direction);
+                    let movement_in_direction = movement_frame_scale.z * self.direction.normalize();
+                    let gravity = Vector3::<f32>::new(0.0, movement.y, 0.0);
+
+                    let res = movement_in_direction + gravity;
+
+                    transformation.apply_translation(res);
                 }
             }
         }
@@ -551,6 +600,11 @@ impl SceneController for CharacterController
         {
             ui.label("Rotation Speed: ");
             ui.add(egui::Slider::new(&mut self.rotation_speed, 0.0..=0.5).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut self.physics, "Physics (Collide with ground)");
         });
 
         ui.horizontal(|ui|

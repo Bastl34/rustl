@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
+use std::{cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}, vec};
 
 use anyhow::Ok;
 use nalgebra::Vector3;
@@ -624,7 +624,7 @@ impl Scene
         false
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         let mut nodes = vec![];
 
@@ -638,24 +638,50 @@ impl Scene
         let child_nodes_with_meshes = Scene::list_all_child_nodes_with_mesh(&node.read().unwrap().nodes);
         nodes.extend(child_nodes_with_meshes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only)
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    {
+        let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
+
+        if hits.len() > 0
+        {
+            return Some(hits.first().unwrap().clone());
+        }
+
+        None
+    }
+
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only)
+        let hits = self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate);
+
+        if hits.len() > 0
+        {
+            return Some(hits.first().unwrap().clone());
+        }
+
+        None
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    {
+        let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
+
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
+    }
+
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         // find hits (bbox based)
         let mut hits_bbox = vec![];
 
         let mut no_bbox_picking_items = vec![];
 
-        for node_arc in nodes
+        'outer: for node_arc in nodes
         {
             let node = node_arc.read().unwrap();
 
@@ -679,6 +705,15 @@ impl Scene
             if !mesh.get_base().is_enabled
             {
                 continue;
+            }
+
+            //if let Some(ref predicate) = predicate
+            if let Some(predicate) = &predicate
+            {
+                if !predicate(node_arc.clone())
+                {
+                    continue;
+                }
             }
 
             for instance in node.instances.get_ref()
@@ -716,12 +751,17 @@ impl Scene
                         hits_bbox.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
                     }
                 }
+
+                if stop_on_first_hit && bounding_box_only && hits_bbox.len() > 0
+                {
+                    break 'outer;
+                }
             }
         }
 
         if hits_bbox.len() == 0 && no_bbox_picking_items.len() == 0
         {
-            return None;
+            return vec![];
         }
 
         // sort bbox dist (to get the nearest)
@@ -729,6 +769,27 @@ impl Scene
 
         if bounding_box_only && hits_bbox.len() > 0
         {
+            let mut res = vec![];
+
+            for hit_bbox in &hits_bbox
+            {
+                let node = hit_bbox.0;
+                let instance = hit_bbox.1;
+                let dist = hit_bbox.2;
+
+                let pos = ray.origin + (ray.dir * dist);
+
+                res.push((dist, pos, None, node.clone(), instance, None));
+
+                if stop_on_first_hit
+                {
+                    return res;
+                }
+            }
+
+            return res;
+
+            /*
             let first = hits_bbox.first().unwrap();
             let node = first.0;
             let instance = first.1;
@@ -742,7 +803,9 @@ impl Scene
             dbg!(" intersection 1");
             dbg!(node.read().unwrap().name.clone());
 
-            return Some((dist, pos, None, node.clone(), instance, None));
+            //return Some((dist, pos, None, node.clone(), instance, None));
+            return
+             */
         }
 
         // combine bbox hits and nodes without bbox picking
@@ -758,7 +821,8 @@ impl Scene
         }
 
         // mesh based intersection
-        let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+        //let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+        let mut hits: Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = Vec::new();
 
         for (node_arc, instance_id, transform, transform_inverse, ray_inverse) in ray_intersection_checks
         {
@@ -793,7 +857,12 @@ impl Scene
 
             if let Some(intersection) = intersection
             {
+                let pos = ray.origin + (ray.dir * intersection.0);
+
+                hits.push((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
+
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
+                /*
                 if best_hit.is_none()
                 {
                     let pos = ray.origin + (ray.dir * intersection.0);
@@ -819,16 +888,22 @@ impl Scene
                         best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                     }
                 }
+                */
             }
 
             //if it should return on first hit
-            if best_hit.is_some() && stop_on_first_hit
+            //if best_hit.is_some() && stop_on_first_hit
+            if hits.len() > 0 && stop_on_first_hit
             {
-                return best_hit;
+                return hits;
             }
         }
 
-        best_hit
+        // sort by distance
+        hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        // best_hit
+        hits
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)

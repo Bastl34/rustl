@@ -386,12 +386,12 @@ impl Editor
                         if let Some(grid) = grid
                         {
                             set_grid_picking(scene, true);
-                            grid_hit = scene.pick_node(grid, &ray, false, true);
+                            grid_hit = scene.pick_node(grid, &ray, false, true, None);
                             set_grid_picking(scene, false);
                         }
                     }
 
-                    let scene_hit = scene.pick(&ray, false, false);
+                    let scene_hit = scene.pick(&ray, false, false, None);
 
                     //dbg!(scene_hit.is_some());
                     //dbg!(grid_hit.is_some());
