@@ -224,7 +224,7 @@ impl Node
         None
     }
 
-    pub fn get_center(&self, recursive: bool) -> Option<Point3<f32>>
+    pub fn get_bbox_center(&self, recursive: bool) -> Option<Point3<f32>>
     {
         let bounding_info = self.get_bounding_info(recursive);
 

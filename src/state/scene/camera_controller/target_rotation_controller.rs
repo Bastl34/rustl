@@ -188,7 +188,7 @@ impl CameraController for TargetRotationController
             {
                 let node = node.read().unwrap();
 
-                if let Some(center) = node.get_center(true)
+                if let Some(center) = node.get_bbox_center(true)
                 {
                     target_pos = center;
                 }

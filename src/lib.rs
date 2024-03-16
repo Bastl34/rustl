@@ -74,6 +74,7 @@ mod state
             pub(crate) mod camera_controller;
             pub(crate) mod fly_controller;
             pub(crate) mod target_rotation_controller;
+            pub(crate) mod follow_controller;
         }
 
         pub(crate) mod utilities
