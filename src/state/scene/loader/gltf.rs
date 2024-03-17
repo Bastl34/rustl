@@ -142,6 +142,9 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     dbg!("mapping animatables...");
     map_animatables(&nodes, id_manager.clone());
 
+    // ********** calculate skin bounding boxes **********
+    calc_bbox_skin(&nodes);
+
     // ********** add to scene **********
     dbg!("adding nodes to scene...");
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
@@ -870,6 +873,23 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             }
         }
     }
+}
+
+fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
+{
+    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
+    let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
+
+    // ********** update local transform for joint nodes **********
+    for node in &all_nodes
+    {
+        let node_read = node.read().unwrap();
+        if let Some(joint) = node_read.find_component::<Joint>()
+        {
+            component_downcast_mut!(joint, Joint);
+            joint.update_local_transform(node.clone());
+        }
+    }
 
     // ********** calculate skin bounding boxes **********
     for mesh_node in &all_nodes_with_mesh
@@ -885,11 +905,11 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             {
                 let mesh = node.find_component::<Mesh>().unwrap();
                 component_downcast_mut!(mesh, Mesh);
+
                 mesh.calc_bbox_skin(&joint_transform_vec);
             }
         }
     }
-
 }
 
 fn find_skin_root(skin_id: u32, nodes: &Vec<Arc<RwLock<Box<Node>>>>) -> Option<NodeItem>

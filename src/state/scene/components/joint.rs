@@ -169,6 +169,22 @@ impl Joint
 
         joint_data.local_trans
     }
+
+    pub fn update_local_transform(&mut self, node: NodeItem)
+    {
+        let node = node.read().unwrap();
+        let transform_component = node.find_component::<Transformation>();
+
+        if let Some(transform_component) = transform_component
+        {
+            component_downcast!(transform_component, Transformation);
+            if transform_component.get_data_tracker().changed()
+            {
+                let local_trans = transform_component.get_transform().clone();
+                self.get_data_mut().get_mut().local_trans = local_trans;
+            }
+        }
+    }
 }
 
 impl Component for Joint
@@ -194,6 +210,8 @@ impl Component for Joint
 
     fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
     {
+        self.update_local_transform(node);
+        /*
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();
 
@@ -205,12 +223,10 @@ impl Component for Joint
                 let local_trans = transform_component.get_transform().clone();
                 //let local_trans_inverse = local_trans.try_inverse().unwrap();
 
-                /*
                 if self.get_data().root_joint
-                {
-                    self.get_data_mut().get_mut().full_joint_trans = node.get_full_joint_transform();
-                }
-                */
+                //{
+                //    self.get_data_mut().get_mut().full_joint_trans = node.get_full_joint_transform();
+                //}
 
                 self.get_data_mut().get_mut().local_trans = local_trans;
                 //self.get_data_mut().get_mut().full_joint_trans = node.get_full_joint_transform();
@@ -218,6 +234,7 @@ impl Component for Joint
                 //self.get_data_mut().get_mut().inverse_bind_trans_calculated = transform.try_inverse().unwrap();
             }
         }
+         */
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)

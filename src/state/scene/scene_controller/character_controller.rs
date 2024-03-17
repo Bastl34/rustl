@@ -3,7 +3,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{Normed, Point3, Rotation3, Vector2, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -25,12 +25,16 @@ enum CharAnimationType
     Idle,
     Walk,
     Run,
-    Left,
-    Right,
+    StrafeLeftWalk,
+    StrafeRightWalk,
+    StrafeLeftRun,
+    StrafeRightRun,
     Jump,
     Crouch,
     Roll,
-    Punch
+    Punch,
+    Fall,
+    FallLanding
 }
 
 #[derive(PartialEq)]
@@ -59,6 +63,11 @@ pub struct CharacterController
 
     pub physics: bool, // very simple at the moment
 
+    pub strafe: bool,
+    pub fall: bool,
+
+    pub update_only_on_move: bool,
+
     node: Option<NodeItem>,
     animation_node: Option<NodeItem>,
 
@@ -69,8 +78,12 @@ pub struct CharacterController
     animation_crouch: Option<ComponentItem>,
     animation_roll: Option<ComponentItem>,
     animation_punch: Option<ComponentItem>,
-    animation_left: Option<ComponentItem>,
-    animation_right: Option<ComponentItem>,
+    animation_strafe_left_walk: Option<ComponentItem>,
+    animation_strafe_right_walk: Option<ComponentItem>,
+    animation_strafe_left_run: Option<ComponentItem>,
+    animation_strafe_right_run: Option<ComponentItem>,
+    animation_fall_idle: Option<ComponentItem>,
+    animation_fall_landing: Option<ComponentItem>,
 
     animation_blending: Option<ComponentItem>,
 
@@ -95,10 +108,15 @@ impl CharacterController
 
             rotation_speed: ROTATION_SPEED,
 
-            rotation_follow: true,
+            rotation_follow: false,
             direction: CHARACTER_DIRECTION,
 
             physics: true,
+
+            strafe: false,
+            fall: true,
+
+            update_only_on_move: false,
 
             node: None,
             animation_node: None,
@@ -110,8 +128,12 @@ impl CharacterController
             animation_crouch: None,
             animation_roll: None,
             animation_punch: None,
-            animation_left: None,
-            animation_right: None,
+            animation_strafe_left_walk: None,
+            animation_strafe_right_walk: None,
+            animation_strafe_left_run: None,
+            animation_strafe_right_run: None,
+            animation_fall_idle: None,
+            animation_fall_landing: None,
 
             animation_blending: None,
 
@@ -185,14 +207,21 @@ impl CharacterController
             let node = node_arc.read().unwrap();
 
             self.animation_idle = node.find_animation_by_regex("(?i)^idle");
-            self.animation_walk = node.find_animation_by_regex("(?i)walk.*");
-            self.animation_run = node.find_animation_by_regex("(?i)run.*");
+            self.animation_walk = node.find_animation_by_include_exclude(&["walk".to_string()].to_vec(), &["strafe".to_string()].to_vec());
+            self.animation_run = node.find_animation_by_include_exclude(&["run".to_string()].to_vec(), &["strafe".to_string()].to_vec());
             self.animation_jump = node.find_animation_by_regex("(?i)jump.*");
             self.animation_punch = node.find_animation_by_regex("(?i)punch");
             self.animation_crouch = node.find_animation_by_regex("(?i)crouch.*");
             self.animation_roll = node.find_animation_by_regex("(?i)roll.*");
-            self.animation_left = node.find_animation_by_regex("(?i)left");
-            self.animation_right = node.find_animation_by_regex("(?i)right");
+            self.animation_strafe_left_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "walk".to_string()].to_vec(), &vec![]);
+            self.animation_strafe_right_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "walk".to_string()].to_vec(), &vec![]);
+            self.animation_strafe_left_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "run".to_string()].to_vec(), &vec![]);
+            self.animation_strafe_right_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "run".to_string()].to_vec(), &vec![]);
+            self.animation_fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
+            self.animation_fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
+
+            dbg!(self.animation_fall_idle.is_some());
+            dbg!(self.animation_fall_landing.is_some());
         }
 
         // transformation animation
@@ -225,12 +254,16 @@ impl CharacterController
             CharAnimationType::Idle => self.animation_idle.clone(),
             CharAnimationType::Walk => self.animation_walk.clone(),
             CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::Left => self.animation_left.clone(),
-            CharAnimationType::Right => self.animation_right.clone(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
             CharAnimationType::Jump => self.animation_jump.clone(),
             CharAnimationType::Crouch => self.animation_crouch.clone(),
             CharAnimationType::Roll => self.animation_roll.clone(),
             CharAnimationType::Punch => self.animation_punch.clone(),
+            CharAnimationType::Fall => self.animation_fall_idle.clone(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
         };
 
         if let Some(animation_item) = animation_item
@@ -250,12 +283,16 @@ impl CharacterController
             CharAnimationType::Idle => self.animation_idle.clone(),
             CharAnimationType::Walk => self.animation_walk.clone(),
             CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::Left => self.animation_left.clone(),
-            CharAnimationType::Right => self.animation_right.clone(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
             CharAnimationType::Jump => self.animation_jump.clone(),
             CharAnimationType::Crouch => self.animation_crouch.clone(),
             CharAnimationType::Roll => self.animation_roll.clone(),
             CharAnimationType::Punch => self.animation_punch.clone(),
+            CharAnimationType::Fall => self.animation_fall_idle.clone(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
         };
 
         if let Some(animation_item) = animation_item
@@ -328,12 +365,16 @@ impl CharacterController
             CharAnimationType::Idle => self.animation_idle.clone(),
             CharAnimationType::Walk => self.animation_walk.clone(),
             CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::Left => self.animation_left.clone(),
-            CharAnimationType::Right => self.animation_right.clone(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
             CharAnimationType::Jump => self.animation_jump.clone(),
             CharAnimationType::Crouch => self.animation_crouch.clone(),
             CharAnimationType::Roll => self.animation_roll.clone(),
             CharAnimationType::Punch => self.animation_punch.clone(),
+            CharAnimationType::Fall => self.animation_fall_idle.clone(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
         };
 
         if mix_type == AnimationMixing::Fade && animation_item.is_some()
@@ -375,7 +416,7 @@ impl SceneController for CharacterController
         let mut movement = Vector3::<f32>::zeros();
         let mut rotation = Vector3::<f32>::zeros();
 
-        // forward/backward
+        // ********** forward/backward **********
         if !input_manager.keyboard.is_holding(Key::C) && !self.is_punching()
         {
             if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
@@ -419,31 +460,65 @@ impl SceneController for CharacterController
             }
         }
 
-        // left/right
+        // ********** left/right **********
         if input_manager.keyboard.is_holding(Key::A)
         {
-            rotation.y = self.rotation_speed;
+            if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+            {
+                rotation.y = self.rotation_speed;
+            }
+            else
+            {
+                if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                {
+                    self.start_animation(CharAnimationType::StrafeLeftRun, AnimationMixing::Fade, true, false, false);
+                    movement.x = -self.movement_speed_fast;
+                }
+                else
+                {
+                    self.start_animation(CharAnimationType::StrafeLeftWalk, AnimationMixing::Fade, true, false, false);
+                    movement.x = -self.movement_speed;
+                }
+            }
+
             has_change = true;
         }
         else if input_manager.keyboard.is_holding(Key::D)
         {
-            rotation.y = -self.rotation_speed;
+            if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+            {
+                rotation.y = -self.rotation_speed;
+            }
+            else
+            {
+                if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                {
+                    self.start_animation(CharAnimationType::StrafeRightRun, AnimationMixing::Fade, true, false, false);
+                    movement.x = self.movement_speed_fast;
+                }
+                else
+                {
+                    self.start_animation(CharAnimationType::StrafeRightWalk, AnimationMixing::Fade, true, false, false);
+                    movement.x = self.movement_speed;
+                }
+            }
+
             has_change = true;
         }
 
-        // jump
+        // ********** jump **********
         if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
         {
             self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
-        // crouch
+        // ********** crouch **********
         else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
         {
             self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false, false);
             has_change = true;
         }
-        // roll
+        // ********** roll **********
         else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
         {
             if movement.z > 0.0
@@ -457,27 +532,27 @@ impl SceneController for CharacterController
 
             has_change = true;
         }
-        // punch
+        // ********** punch **********
         else if input_manager.keyboard.is_pressed_no_wait(Key::V) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
         {
             self.start_animation(CharAnimationType::Punch, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
-        // stop
+        // ********** stop **********
         else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
         {
             self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false, false);
             has_change = true;
         }
 
-        // idle
+        // ********** idle **********
         if approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching() && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)&& !input_manager.keyboard.is_holding(Key::C)
         {
             self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false, false);
         }
 
-        // "physics"
-        if self.physics && !approx_zero_vec3(&movement)
+        // ********** "physics" **********
+        if self.physics && (!approx_zero_vec3(&movement) || !self.update_only_on_move)
         {
             if let Some(transformation) = &self.transformation
             {
@@ -516,7 +591,7 @@ impl SceneController for CharacterController
         }
 
 
-        // apply movement
+        // ********** apply movement **********
         if !approx_zero_vec3(&movement) || !approx_zero_vec3(&rotation)
         {
             if let Some(transformation) = &self.transformation
@@ -533,7 +608,32 @@ impl SceneController for CharacterController
 
                 if !approx_zero_vec3(&movement_frame_scale)
                 {
-                    let movement_in_direction = movement_frame_scale.z * self.direction.normalize();
+                    let movement_in_direction;
+
+                    // strafe left/right
+                    if !approx_zero(movement_frame_scale.x)
+                    {
+                        let rotation_strafe = Rotation3::from_axis_angle(&Vector3::y_axis(), -std::f32::consts::FRAC_PI_2);
+                        let strafe_dir = rotation_strafe * self.direction;
+
+                        // strafe left
+                        if movement_frame_scale.x < 0.0
+                        {
+                            movement_in_direction = movement_frame_scale.x * strafe_dir.normalize();
+                        }
+                        // strafe right
+                        else
+                        {
+                            movement_in_direction = movement_frame_scale.x * strafe_dir.normalize();
+                        }
+                    }
+
+                    // forward/backward
+                    else
+                    {
+                        movement_in_direction = movement_frame_scale.z * self.direction.normalize();
+                    }
+
                     let gravity = Vector3::<f32>::new(0.0, movement.y, 0.0);
 
                     let res = movement_in_direction + gravity;
@@ -543,7 +643,7 @@ impl SceneController for CharacterController
             }
         }
 
-        // camera angle
+        // ********** camera angle **********
         if !approx_zero_vec3(&rotation) && self.rotation_follow
         {
             if let Some(cam) = scene.get_active_camera_mut()
@@ -613,6 +713,21 @@ impl SceneController for CharacterController
         ui.horizontal(|ui|
         {
             ui.checkbox(&mut self.physics, "Physics (Collide with ground)");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut self.strafe, "Strafe (Left/Right)");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut self.update_only_on_move, "Update only on movement");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut self.fall, "Falling");
         });
 
         ui.horizontal(|ui|
