@@ -7,9 +7,8 @@ use crate::{component_downcast, component_downcast_mut, helper::math::{approx_eq
 
 use super::scene_controller::SceneController;
 
-
 const FADE_SPEED: f32 = 0.1;
-const JUMP_TIME_DECREASE_SPEED: f32 = 0.3;
+//const FADE_SPEED: f32 = 0.15;
 
 const MOVEMENT_SPEED: f32 = 0.03;
 const MOVEMENT_SPEED_FAST: f32 = 0.12;
@@ -17,6 +16,13 @@ const MOVEMENT_SPEED_FAST: f32 = 0.12;
 const ROTATION_SPEED: f32 = 0.06;
 
 const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, 1.0);
+
+const GRAVITY: f32 = 0.3;
+//const GRAVITY: f32 = 0.981;
+//const GRAVITY: f32 = 0.0981;
+
+const FALL_HEIGHT: f32 = 2.0;
+const BODY_OFFSET: f32 = 0.5;
 
 #[derive(Debug)]
 enum CharAnimationType
@@ -32,7 +38,7 @@ enum CharAnimationType
     Jump,
     Crouch,
     Roll,
-    Punch,
+    Action,
     Fall,
     FallLanding
 }
@@ -51,7 +57,6 @@ pub struct CharacterController
     pub node_name: String,
 
     pub fade_speed: f32,
-    pub jump_time_decrease_speed: f32,
 
     pub movement_speed: f32,
     pub movement_speed_fast: f32,
@@ -61,10 +66,14 @@ pub struct CharacterController
     pub rotation_follow: bool,
     pub direction: Vector3<f32>,
 
+    pub gravity: f32,
+    pub fall_height: f32,
+    pub body_offset: f32,
+
     pub physics: bool, // very simple at the moment
+    pub falling: bool,
 
     pub strafe: bool,
-    pub fall: bool,
 
     pub update_only_on_move: bool,
 
@@ -77,13 +86,14 @@ pub struct CharacterController
     animation_jump: Option<ComponentItem>,
     animation_crouch: Option<ComponentItem>,
     animation_roll: Option<ComponentItem>,
-    animation_punch: Option<ComponentItem>,
     animation_strafe_left_walk: Option<ComponentItem>,
     animation_strafe_right_walk: Option<ComponentItem>,
     animation_strafe_left_run: Option<ComponentItem>,
     animation_strafe_right_run: Option<ComponentItem>,
     animation_fall_idle: Option<ComponentItem>,
     animation_fall_landing: Option<ComponentItem>,
+
+    animation_actions: Vec<ComponentItem>,
 
     animation_blending: Option<ComponentItem>,
 
@@ -101,7 +111,6 @@ impl CharacterController
             node_name: "".to_string(),
 
             fade_speed: FADE_SPEED,
-            jump_time_decrease_speed: JUMP_TIME_DECREASE_SPEED,
 
             movement_speed: MOVEMENT_SPEED,
             movement_speed_fast: MOVEMENT_SPEED_FAST,
@@ -111,10 +120,14 @@ impl CharacterController
             rotation_follow: false,
             direction: CHARACTER_DIRECTION,
 
+            gravity: GRAVITY,
+            fall_height: FALL_HEIGHT,
+            body_offset: BODY_OFFSET,
+
             physics: true,
+            falling: false,
 
             strafe: false,
-            fall: true,
 
             update_only_on_move: false,
 
@@ -127,13 +140,14 @@ impl CharacterController
             animation_jump: None,
             animation_crouch: None,
             animation_roll: None,
-            animation_punch: None,
             animation_strafe_left_walk: None,
             animation_strafe_right_walk: None,
             animation_strafe_left_run: None,
             animation_strafe_right_run: None,
             animation_fall_idle: None,
             animation_fall_landing: None,
+
+            animation_actions: vec![],
 
             animation_blending: None,
 
@@ -210,7 +224,6 @@ impl CharacterController
             self.animation_walk = node.find_animation_by_include_exclude(&["walk".to_string()].to_vec(), &["strafe".to_string()].to_vec());
             self.animation_run = node.find_animation_by_include_exclude(&["run".to_string()].to_vec(), &["strafe".to_string()].to_vec());
             self.animation_jump = node.find_animation_by_regex("(?i)jump.*");
-            self.animation_punch = node.find_animation_by_regex("(?i)punch");
             self.animation_crouch = node.find_animation_by_regex("(?i)crouch.*");
             self.animation_roll = node.find_animation_by_regex("(?i)roll.*");
             self.animation_strafe_left_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "walk".to_string()].to_vec(), &vec![]);
@@ -220,8 +233,18 @@ impl CharacterController
             self.animation_fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
             self.animation_fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
 
-            dbg!(self.animation_fall_idle.is_some());
-            dbg!(self.animation_fall_landing.is_some());
+            let actions = vec!["(?i)action.*punch", "(?i)action.*thumbs", "(?i)action.*dance"];
+
+            for action in actions
+            {
+                let animation = node.find_animation_by_regex(action);
+
+                if let Some(animation) = animation
+                {
+                    self.animation_actions.push(animation);
+                    dbg!(action);
+                }
+            }
         }
 
         // transformation animation
@@ -243,27 +266,27 @@ impl CharacterController
 
         }
 
-        self.start_animation(CharAnimationType::Idle, AnimationMixing::Stop, true, false, false);
+        self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, true, false, false);
     }
 
-    fn get_animation_duration(&self, animation: CharAnimationType) -> f32
+    fn get_animation_duration(&self, animation: CharAnimationType, index: usize) -> f32
     {
         let animation_item = match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.clone(),
-            CharAnimationType::Walk => self.animation_walk.clone(),
-            CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
-            CharAnimationType::Jump => self.animation_jump.clone(),
-            CharAnimationType::Crouch => self.animation_crouch.clone(),
-            CharAnimationType::Roll => self.animation_roll.clone(),
-            CharAnimationType::Punch => self.animation_punch.clone(),
-            CharAnimationType::Fall => self.animation_fall_idle.clone(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
+            CharAnimationType::Idle => self.animation_idle.as_ref(),
+            CharAnimationType::Walk => self.animation_walk.as_ref(),
+            CharAnimationType::Run => self.animation_run.as_ref(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.as_ref(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.as_ref(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.as_ref(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.as_ref(),
+            CharAnimationType::Jump => self.animation_jump.as_ref(),
+            CharAnimationType::Crouch => self.animation_crouch.as_ref(),
+            CharAnimationType::Roll => self.animation_roll.as_ref(),
+            CharAnimationType::Fall => self.animation_fall_idle.as_ref(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.as_ref(),
+            CharAnimationType::Action => self.animation_actions.get(index),
         };
 
         if let Some(animation_item) = animation_item
@@ -275,24 +298,24 @@ impl CharacterController
         0.0
     }
 
-    fn is_animation_running(&self, animation: CharAnimationType) -> bool
+    fn is_animation_running(&self, animation: CharAnimationType, index: usize) -> bool
     {
         let animation_item = match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.clone(),
-            CharAnimationType::Walk => self.animation_walk.clone(),
-            CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
-            CharAnimationType::Jump => self.animation_jump.clone(),
-            CharAnimationType::Crouch => self.animation_crouch.clone(),
-            CharAnimationType::Roll => self.animation_roll.clone(),
-            CharAnimationType::Punch => self.animation_punch.clone(),
-            CharAnimationType::Fall => self.animation_fall_idle.clone(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
+            CharAnimationType::Idle => self.animation_idle.as_ref(),
+            CharAnimationType::Walk => self.animation_walk.as_ref(),
+            CharAnimationType::Run => self.animation_run.as_ref(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.as_ref(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.as_ref(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.as_ref(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.as_ref(),
+            CharAnimationType::Jump => self.animation_jump.as_ref(),
+            CharAnimationType::Crouch => self.animation_crouch.as_ref(),
+            CharAnimationType::Roll => self.animation_roll.as_ref(),
+            CharAnimationType::Fall => self.animation_fall_idle.as_ref(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.as_ref(),
+            CharAnimationType::Action => self.animation_actions.get(index),
         };
 
         if let Some(animation_item) = animation_item
@@ -304,12 +327,50 @@ impl CharacterController
         false
     }
 
+    fn is_any_animation_running(&self) -> bool
+    {
+        let mut animation_items = vec!
+        [
+            self.animation_idle.clone(),
+            self.animation_walk.clone(),
+            self.animation_run.clone(),
+            self.animation_strafe_left_walk.clone(),
+            self.animation_strafe_right_walk.clone(),
+            self.animation_strafe_left_run.clone(),
+            self.animation_strafe_right_run.clone(),
+            self.animation_jump.clone(),
+            self.animation_crouch.clone(),
+            self.animation_roll.clone(),
+            self.animation_fall_idle.clone(),
+            self.animation_fall_landing.clone(),
+        ];
+
+        for action in &self.animation_actions
+        {
+            animation_items.push(Some(action.clone()));
+        }
+
+        for animation in animation_items
+        {
+            if let Some(animation) = animation
+            {
+                component_downcast!(animation, Animation);
+                if animation.running()
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     fn is_jumping(&self) -> bool
     {
         if let Some(animation_jump) = &self.animation_jump
         {
             component_downcast!(animation_jump, Animation);
-            return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - self.jump_time_decrease_speed
+            return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - self.fade_speed
         }
 
         false
@@ -326,18 +387,32 @@ impl CharacterController
         false
     }
 
-    fn is_punching(&self) -> bool
+    fn is_landing(&self) -> bool
     {
-        if let Some(animation_punch) = &self.animation_punch
+        if let Some(animation_fall_landing) = &self.animation_fall_landing
         {
-            component_downcast!(animation_punch, Animation);
-            return animation_punch.running() && animation_punch.animation_time() < animation_punch.duration - self.fade_speed
+            component_downcast!(animation_fall_landing, Animation);
+            return animation_fall_landing.running() && animation_fall_landing.animation_time() < animation_fall_landing.duration - self.fade_speed
         }
 
         false
     }
 
-    fn start_animation(&mut self, animation: CharAnimationType, mix_type: AnimationMixing, looped: bool, reverse: bool, reset_time: bool)
+    fn is_action(&self) -> bool
+    {
+        for animation in &self.animation_actions
+        {
+            component_downcast!(animation, Animation);
+            if animation.running() && animation.animation_time() < animation.duration - self.fade_speed
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn start_animation(&mut self, animation: CharAnimationType, index: usize, mix_type: AnimationMixing, looped: bool, reverse: bool, reset_time: bool)
     {
         if self.node.is_none()
         {
@@ -362,19 +437,19 @@ impl CharacterController
         let animation_item = match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.clone(),
-            CharAnimationType::Walk => self.animation_walk.clone(),
-            CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
-            CharAnimationType::Jump => self.animation_jump.clone(),
-            CharAnimationType::Crouch => self.animation_crouch.clone(),
-            CharAnimationType::Roll => self.animation_roll.clone(),
-            CharAnimationType::Punch => self.animation_punch.clone(),
-            CharAnimationType::Fall => self.animation_fall_idle.clone(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
+            CharAnimationType::Idle => self.animation_idle.as_ref(),
+            CharAnimationType::Walk => self.animation_walk.as_ref(),
+            CharAnimationType::Run => self.animation_run.as_ref(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.as_ref(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.as_ref(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.as_ref(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.as_ref(),
+            CharAnimationType::Jump => self.animation_jump.as_ref(),
+            CharAnimationType::Crouch => self.animation_crouch.as_ref(),
+            CharAnimationType::Roll => self.animation_roll.as_ref(),
+            CharAnimationType::Fall => self.animation_fall_idle.as_ref(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.as_ref(),
+            CharAnimationType::Action => self.animation_actions.get(index),
         };
 
         if mix_type == AnimationMixing::Fade && animation_item.is_some()
@@ -399,6 +474,11 @@ impl CharacterController
             {
                 animation_item.set_current_time(0.0);
             }
+
+            if mix_type == AnimationMixing::Stop
+            {
+                animation_item.weight = 1.0;
+            }
             animation_item.start();
         }
     }
@@ -416,14 +496,20 @@ impl SceneController for CharacterController
         let mut movement = Vector3::<f32>::zeros();
         let mut rotation = Vector3::<f32>::zeros();
 
+        let mut is_jumping = self.is_jumping();
+        let mut is_landing = self.is_landing();
+        let mut is_rolling = self.is_rolling();
+
+        let mut is_action = self.is_action();
+
         // ********** forward/backward **********
-        if !input_manager.keyboard.is_holding(Key::C) && !self.is_punching()
+        if !input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
         {
             if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+                if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
-                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, false, false);
+                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, false, false);
                 }
 
                 movement.z = self.movement_speed;
@@ -431,18 +517,18 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+                if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
-                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true, false);
+                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, true, false);
                 }
                 movement.z = -self.movement_speed;
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+                if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
-                    self.start_animation(CharAnimationType::Run, AnimationMixing::Fade, true, false, false);
+                    self.start_animation(CharAnimationType::Run, 0, AnimationMixing::Fade, true, false, false);
                 }
 
                 movement.z = self.movement_speed_fast;
@@ -450,9 +536,9 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
             {
-                if !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+                if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
-                    self.start_animation(CharAnimationType::Walk, AnimationMixing::Fade, true, true, false);
+                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, true, false);
                 }
 
                 movement.z = -self.movement_speed;
@@ -461,94 +547,113 @@ impl SceneController for CharacterController
         }
 
         // ********** left/right **********
-        if input_manager.keyboard.is_holding(Key::A)
+        if !is_landing
         {
-            if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+            if input_manager.keyboard.is_holding(Key::A)
             {
-                rotation.y = self.rotation_speed;
-            }
-            else
-            {
-                if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
                 {
-                    self.start_animation(CharAnimationType::StrafeLeftRun, AnimationMixing::Fade, true, false, false);
-                    movement.x = -self.movement_speed_fast;
+                    rotation.y = self.rotation_speed;
                 }
                 else
                 {
-                    self.start_animation(CharAnimationType::StrafeLeftWalk, AnimationMixing::Fade, true, false, false);
-                    movement.x = -self.movement_speed;
+                    if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    {
+                        self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, true, false, false);
+                        movement.x = -self.movement_speed_fast;
+                    }
+                    else
+                    {
+                        self.start_animation(CharAnimationType::StrafeLeftWalk, 0, AnimationMixing::Fade, true, false, false);
+                        movement.x = -self.movement_speed;
+                    }
                 }
-            }
 
-            has_change = true;
-        }
-        else if input_manager.keyboard.is_holding(Key::D)
-        {
-            if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
-            {
-                rotation.y = -self.rotation_speed;
+                has_change = true;
             }
-            else
+            else if input_manager.keyboard.is_holding(Key::D)
             {
-                if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
                 {
-                    self.start_animation(CharAnimationType::StrafeRightRun, AnimationMixing::Fade, true, false, false);
-                    movement.x = self.movement_speed_fast;
+                    rotation.y = -self.rotation_speed;
                 }
                 else
                 {
-                    self.start_animation(CharAnimationType::StrafeRightWalk, AnimationMixing::Fade, true, false, false);
-                    movement.x = self.movement_speed;
+                    if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    {
+                        self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, true, false, false);
+                        movement.x = self.movement_speed_fast;
+                    }
+                    else
+                    {
+                        self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, true, false, false);
+                        movement.x = self.movement_speed;
+                    }
                 }
-            }
 
-            has_change = true;
+                has_change = true;
+            }
         }
 
         // ********** jump **********
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing
         {
-            self.start_animation(CharAnimationType::Jump, AnimationMixing::Fade, false, false, true);
+            self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
         // ********** crouch **********
-        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
         {
-            self.start_animation(CharAnimationType::Crouch, AnimationMixing::Fade, false, false, false);
+            self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, false, false, false);
             has_change = true;
         }
         // ********** roll **********
-        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
         {
             if movement.z > 0.0
             {
-                self.start_animation(CharAnimationType::Roll, AnimationMixing::Fade, false, false, true);
+                self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, false, false, true);
             }
             else
             {
-                self.start_animation(CharAnimationType::Roll, AnimationMixing::Fade, false, true, true);
+                self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, false, true, true);
             }
 
             has_change = true;
         }
-        // ********** punch **********
-        else if input_manager.keyboard.is_pressed_no_wait(Key::V) && approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching()
+        // ********** action **********
+        else if approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
         {
-            self.start_animation(CharAnimationType::Punch, AnimationMixing::Fade, false, false, true);
-            has_change = true;
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key3) { self.start_animation(CharAnimationType::Action, 2, AnimationMixing::Fade, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key4) { self.start_animation(CharAnimationType::Action, 3, AnimationMixing::Fade, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, false, false, true); has_change = true;}
         }
         // ********** stop **********
         else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
         {
-            self.start_animation(CharAnimationType::None, AnimationMixing::Stop, false, false, false);
+            self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, false, false, false);
             has_change = true;
         }
 
+        // ********** refresh states **********
+        is_jumping = self.is_jumping();
+        is_action = self.is_action();
+        is_landing = self.is_landing();
+        is_rolling = self.is_rolling();
+
         // ********** idle **********
-        if approx_zero_vec3(&movement) && !self.is_jumping() && !self.is_rolling() && !self.is_punching() && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)&& !input_manager.keyboard.is_holding(Key::C)
+        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C)
         {
-            self.start_animation(CharAnimationType::Idle, AnimationMixing::Fade, false, false, false);
+            if self.is_any_animation_running()
+            {
+                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, false, false, false);
+            }
+            else
+            {
+                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, false, false, false);
+            }
         }
 
         // ********** "physics" **********
@@ -556,8 +661,6 @@ impl SceneController for CharacterController
         {
             if let Some(transformation) = &self.transformation
             {
-                let offset = 0.5; // TODO
-
                 let mut pos;
                 let down;
                 {
@@ -565,7 +668,7 @@ impl SceneController for CharacterController
                     let transform_data = transformation.get_data();
 
                     pos = Point3::<f32>::new(transform_data.position.x, transform_data.position.y, transform_data.position.z);
-                    pos.y += offset;
+                    pos.y += self.body_offset;
                     down = Vector3::new(0.0, -1.0, 0.0);
                 }
 
@@ -585,11 +688,43 @@ impl SceneController for CharacterController
 
                 if let Some(first_pick) = pick_res.first()
                 {
-                    movement.y -= first_pick.0 - offset;
+                    let distance = first_pick.0 - self.body_offset;
+
+                    if self.falling && approx_zero(distance)
+                    {
+                        self.start_animation(CharAnimationType::FallLanding, 0, AnimationMixing::Fade, false, false, true);
+                        self.falling = false;
+                    }
+
+                    // move up
+                    if distance < 0.0
+                    {
+                        movement.y -= distance;
+                    }
+                    // move down
+                    else if !is_jumping
+                    {
+                        if distance > self.fall_height || self.falling
+                        {
+                            if !is_rolling
+                            {
+                                self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, false, false, false);
+                            }
+                            self.falling = true;
+                        }
+
+                        let mut down = self.gravity * frame_scale;
+
+                        if down > distance
+                        {
+                            down = distance;
+                        }
+
+                        movement.y -= down;
+                    }
                 }
             }
         }
-
 
         // ********** apply movement **********
         if !approx_zero_vec3(&movement) || !approx_zero_vec3(&rotation)
@@ -688,12 +823,6 @@ impl SceneController for CharacterController
 
         ui.horizontal(|ui|
         {
-            ui.label("Jump Time Decrease: ");
-            ui.add(egui::Slider::new(&mut self.jump_time_decrease_speed, 0.0..=1.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
             ui.label("Movement Speed: ");
             ui.add(egui::Slider::new(&mut self.movement_speed, 0.0..=0.5).fixed_decimals(2));
         });
@@ -712,6 +841,24 @@ impl SceneController for CharacterController
 
         ui.horizontal(|ui|
         {
+            ui.label("Body Offset: ");
+            ui.add(egui::Slider::new(&mut self.body_offset, 0.0..=2.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Gravity: ");
+            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=1.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Fall Height: ");
+            ui.add(egui::Slider::new(&mut self.fall_height, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.checkbox(&mut self.physics, "Physics (Collide with ground)");
         });
 
@@ -723,11 +870,6 @@ impl SceneController for CharacterController
         ui.horizontal(|ui|
         {
             ui.checkbox(&mut self.update_only_on_move, "Update only on movement");
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.checkbox(&mut self.fall, "Falling");
         });
 
         ui.horizontal(|ui|
