@@ -127,7 +127,6 @@ pub(crate) mod input
 
     pub(crate) mod keyboard;
     pub(crate) mod mouse;
-
 }
 
 mod window
@@ -157,7 +156,6 @@ mod helper
     pub(crate) mod consumable;
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
-
 }
 
 mod resources

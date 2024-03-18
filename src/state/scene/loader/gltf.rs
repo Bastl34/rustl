@@ -143,6 +143,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     map_animatables(&nodes, id_manager.clone());
 
     // ********** calculate skin bounding boxes **********
+    dbg!("calc bbox skin...");
     calc_bbox_skin(&nodes);
 
     // ********** add to scene **********
@@ -886,8 +887,17 @@ fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
         let node_read = node.read().unwrap();
         if let Some(joint) = node_read.find_component::<Joint>()
         {
-            component_downcast_mut!(joint, Joint);
-            joint.update_local_transform(node.clone());
+            let transform;
+            {
+                component_downcast!(joint, Joint);
+                transform = joint.get_changed_local_transform(node.clone());
+            }
+
+            if let Some(transform) = transform
+            {
+                component_downcast_mut!(joint, Joint);
+                joint.update_local_transform(transform);
+            }
         }
     }
 

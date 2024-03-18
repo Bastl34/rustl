@@ -170,7 +170,7 @@ impl Joint
         joint_data.local_trans
     }
 
-    pub fn update_local_transform(&mut self, node: NodeItem)
+    pub fn get_changed_local_transform(&self, node: NodeItem) -> Option<Matrix4<f32>>
     {
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();
@@ -181,9 +181,16 @@ impl Joint
             if transform_component.get_data_tracker().changed()
             {
                 let local_trans = transform_component.get_transform().clone();
-                self.get_data_mut().get_mut().local_trans = local_trans;
+                return Some(local_trans);
             }
         }
+
+        None
+    }
+
+    pub fn update_local_transform(&mut self, local_trans: Matrix4<f32>)
+    {
+        self.get_data_mut().get_mut().local_trans = local_trans;
     }
 }
 
@@ -210,7 +217,13 @@ impl Component for Joint
 
     fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self.update_local_transform(node);
+        let local_trans = self.get_changed_local_transform(node);
+
+        if let Some(local_trans) = local_trans
+        {
+            self.update_local_transform(local_trans);
+
+        }
         /*
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();

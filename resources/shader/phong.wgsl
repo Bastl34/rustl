@@ -538,6 +538,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             color.y += reflection_color.y * reflectivity;
             color.z += reflection_color.z * reflectivity;
         }
+
+        /*
+        // IBL
+        if (has_environment_texture())
+        {
+            let sphere_coords = sphericalCoords(normal);
+
+            let environment_map_levels = textureNumLevels(t_environment) - 1u;
+            //let mipmap_level = roughness * f32(environment_map_levels);
+            //let mipmap_level = 0.0;
+            let mipmap_level = f32(environment_map_levels) - 2.0;
+
+            let ibl_color = textureSampleLevel(t_environment, s_environment, sphere_coords, mipmap_level);
+            color.x += ibl_color.x;
+            color.y += ibl_color.y;
+            color.z += ibl_color.z;
+        }
+        */
     }
 
     // ambient color

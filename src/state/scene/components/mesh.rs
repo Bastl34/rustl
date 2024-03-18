@@ -350,18 +350,6 @@ impl Mesh
 
         let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
 
-        // DEBUGG
-        {
-            let trans = Isometry3::<f32>::identity();
-            let bbox = mesh.aabb(&trans);
-
-            /*
-            println!("------------");
-            dbg!("intersect skinned calc", data.b_box_skin.unwrap().mins, data.b_box_skin.unwrap().maxs);
-            dbg!("intersect skinned", bbox.mins, bbox.maxs);
-            */
-        }
-
         // run intersection test
         let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
         if let Some(res) = res

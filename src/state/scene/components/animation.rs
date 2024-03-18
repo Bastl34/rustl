@@ -9,7 +9,7 @@ use crate::{component_downcast, component_downcast_mut, component_impl_default, 
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum Interpolation
 {
     Linear,
@@ -593,6 +593,7 @@ impl Component for Animation
                     let len = channel.timestamps.len();
                     let max = channel.timestamps[len - 1];
 
+                    let mut t = t;
                     if t < min { t = min; }
                     if t > max { t = max; }
 
