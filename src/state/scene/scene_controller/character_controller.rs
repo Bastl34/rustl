@@ -1,6 +1,6 @@
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
-use nalgebra::{Normed, Point3, Rotation3, Vector2, Vector3};
+use nalgebra::{ComplexField, Normed, Point3, Rotation3, Vector2, Vector3};
 use parry3d::query::Ray;
 
 use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
@@ -22,6 +22,7 @@ const GRAVITY: f32 = 0.3;
 //const GRAVITY: f32 = 0.0981;
 
 const FALL_HEIGHT: f32 = 2.0;
+const FALL_STOP_HEIGHT: f32 = 0.1;
 const BODY_OFFSET: f32 = 0.5;
 
 #[derive(Debug)]
@@ -68,6 +69,7 @@ pub struct CharacterController
 
     pub gravity: f32,
     pub fall_height: f32,
+    pub fall_stop_height: f32,
     pub body_offset: f32,
 
     pub physics: bool, // very simple at the moment
@@ -122,6 +124,7 @@ impl CharacterController
 
             gravity: GRAVITY,
             fall_height: FALL_HEIGHT,
+            fall_stop_height: FALL_STOP_HEIGHT,
             body_offset: BODY_OFFSET,
 
             physics: true,
@@ -690,7 +693,8 @@ impl SceneController for CharacterController
                 {
                     let distance = first_pick.0 - self.body_offset;
 
-                    if self.falling && approx_zero(distance)
+                    //if self.falling && approx_zero(distance)
+                    if self.falling && distance.abs() <= 0.1
                     {
                         self.start_animation(CharAnimationType::FallLanding, 0, AnimationMixing::Fade, false, false, true);
                         self.falling = false;
@@ -855,6 +859,12 @@ impl SceneController for CharacterController
         {
             ui.label("Fall Height: ");
             ui.add(egui::Slider::new(&mut self.fall_height, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Fall Stop Height: ");
+            ui.add(egui::Slider::new(&mut self.fall_stop_height, 0.001..=1.0).fixed_decimals(3));
         });
 
         ui.horizontal(|ui|
