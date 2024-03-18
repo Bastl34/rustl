@@ -599,7 +599,7 @@ impl SceneController for CharacterController
         }
 
         // ********** jump **********
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
         {
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, false, false, true);
             has_change = true;
