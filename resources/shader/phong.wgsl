@@ -215,7 +215,14 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     {
         for (var i: u32 = 0u; i < 4u; i = i + 1u)
         {
-            let joint_transform = skeleton.joint_transforms[model.joints[i]];
+            // TODO: remove?
+            let joint = model.joints[i];
+            if (joint >= skeleton.joints_amount)
+            {
+                continue;
+            }
+
+            let joint_transform = skeleton.joint_transforms[joint];
             world_position += joint_transform * model_pos * model.weights[i];
 
             // normal / tangent / bitangent

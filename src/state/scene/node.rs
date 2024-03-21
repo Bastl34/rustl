@@ -28,8 +28,9 @@ pub struct Node
 
     pub parent: Option<NodeItem>,
 
-    pub skin_id: Option<u32>,
-    pub skin_root_node: Option<NodeItem>,
+    pub skin_id: Option<u32>, // REMOVE ME
+    pub skin_root_node: Option<NodeItem>, // REMOVE ME
+    pub skin: Vec<NodeItem>,
 
     pub extras: HashMap<String, String>,
 
@@ -70,6 +71,7 @@ impl Node
 
             skin_id: None,
             skin_root_node: None,
+            skin: vec![],
 
             extras: HashMap::new(),
 

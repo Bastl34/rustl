@@ -39,7 +39,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     }
 
     // ********** textures **********
-    dbg!("loading textures...");
+    println!("loading textures...");
     let mut loaded_textures = vec![];
 
     for gltf_texture in gltf.textures()
@@ -56,7 +56,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     let mut clear_textures: Vec<TextureItem> = vec![];
 
     // ********** materials **********
-    dbg!("loading materials...");
+    println!("loading materials...");
     let resource_name = get_stem(path);
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
@@ -104,7 +104,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     }
 
     // ********** scene items **********
-    dbg!("loading scene items...");
+    println!("loading scene items...");
 
     // create_root_node
     let node_id = id_manager.write().unwrap().get_next_node_id();
@@ -113,7 +113,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     let root_node = Node::new(node_id, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
 
-    dbg!("reading nodes...");
+    println!("reading nodes...");
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
@@ -130,31 +130,31 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     }
 
     // ********** map skeletons **********
-    dbg!("loading skeletons...");
+    println!("loading skeletons...");
     let nodes = vec![root_node.clone()];
     load_skeletons(&nodes, gltf.skins(), &buffers, id_manager.clone());
 
     // ********** animations **********
-    dbg!("loading animations...");
+    println!("loading animations...");
     read_animations(root_node.clone(), id_manager.clone(), gltf.animations(), &buffers);
 
     // ********** map animatables **********
-    dbg!("mapping animatables...");
+    println!("mapping animatables...");
     map_animatables(&nodes, id_manager.clone());
 
     // ********** calculate skin bounding boxes **********
-    dbg!("calc bbox skin...");
+    println!("calc bbox skin...");
     calc_bbox_skin(&nodes);
 
     // ********** add to scene **********
-    dbg!("adding nodes to scene...");
+    println!("adding nodes to scene...");
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
         scene.add_node(root_node.clone());
     }));
 
     // cleanup
-    dbg!("cleanup...");
+    println!("cleanup...");
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
         for clear_texture in &clear_textures
@@ -179,6 +179,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     let mut parent_node = parent;
 
     let node_index = node.index();
+
+    //println!("{} - {}", " ".repeat(level * 2), node.name().unwrap_or("unknown"));
 
     // ********** lights **********
     if !object_only
@@ -291,11 +293,11 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     {
         let primitives_amount = mesh.primitives().len();
 
+        let node_name = node.name().unwrap_or("mesh node");
+
         for (primitive_id, primitive) in mesh.primitives().enumerate()
         {
-            let mut name = mesh.name().unwrap_or("unknown mesh").to_string();
-
-            println!("load mesh {}", name.as_str());
+            let mut mesh_name = mesh.name().unwrap_or("unknown mesh").to_string();
 
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             let material_index = primitive.material().index();
@@ -513,10 +515,10 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
             if primitives_amount > 1
             {
-                name = format!("{} primitive_{}", name, primitive_id);
+                mesh_name = format!("{} {} primitive_{}", node_name, mesh_name, primitive_id);
             }
 
-            let node_arc = Node::new(id, name.as_str());
+            let node_arc = Node::new(id, mesh_name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
 
@@ -555,6 +557,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 scene_node.parent = Some(parent_node.clone());
             }
 
+            println!("{} - {} ({}) (mesh)", " ".repeat(level * 2), mesh_name.as_str(), node_index);
             Node::add_node(parent_node.clone(), node_arc.clone());
 
             // only if there is one primitive -> use it as parent for next childs
@@ -573,7 +576,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
         //if node.children().len() > 0
         {
             let name = node.name().unwrap_or("transform node");
-            println!("load empty {} {}", name, node.index());
+            println!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
 
             let node_id = id_manager.write().unwrap().get_next_node_id();
             let scene_node = Node::new(node_id, name);
@@ -782,7 +785,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
     for skin in skins
     {
         let skin_index = skin.index();
-        dbg!("loading skin: {}", skin.name().unwrap_or("unknown skin"));
+        println!("loading skin: {} ({})", skin.name().unwrap_or("unknown skin"), skin_index);
 
         // ********** load skeleton **********
         let joints = skin.joints();
@@ -805,6 +808,8 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             continue;
         }
 
+        let mut joint_nodes = vec![];
+
         // ********** map joints **********
         for i in 0..joint_indices.len()
         {
@@ -812,9 +817,9 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             let joint_index = joint_indices[i];
             let inverse_bind_matrix = inverse_bind_matrices[i];
 
-            for node in &all_nodes
+            for node_arc in &all_nodes
             {
-                let mut node = node.write().unwrap();
+                let mut node = node_arc.write().unwrap();
 
                 let json_index = node.extras.get("_json_index");
 
@@ -839,9 +844,18 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                         let joint_data = joint.get_data_mut().get_mut();
                         //joint_data.skin_ids.insert(skin_index as u32);
                         joint_data.skin_ids.insert(skin_index as u32, joint_id as u32);
+
+                        joint_nodes.push(node_arc.clone());
+
+                        break;
                     }
                 }
             }
+        }
+
+        if joint_nodes.len() != joint_indices.len()
+        {
+            dbg!("ERROR - something is wrong -> joint_nodes should have the same length as joint_indices");
         }
     }
 

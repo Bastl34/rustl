@@ -506,7 +506,10 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/sofa.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 

@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use egui::RichText;
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
 
 use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem, gui::helper::info_box::info_box_with_body}, component_impl_no_update};
@@ -658,21 +659,47 @@ impl Component for Transformation
         if data.animation_position.is_some() || data.animation_rotation_quat.is_some() || data.animation_scale.is_some()
         {
             ui.separator();
+            ui.label(RichText::new("Animation Transformation:").strong());
 
-            if let Some(animation_position) = data.animation_position
+            ui.add_enabled_ui(false, |ui|
             {
-                ui.label(format!("Animation position: [{:.3}, {:.3}, {:.3}]", animation_position.x, animation_position.z, animation_position.z));
-            }
+                if let Some(animation_position) = data.animation_position
+                {
+                    let mut pos = animation_position;
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Position: ");
+                        ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: "));
+                        ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: "));
+                        ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: "));
+                    });
+                }
 
-            if let Some(animation_rotation_quat) = data.animation_rotation_quat
-            {
-                ui.label(format!("Animation rotation (quat): [{:.3}, {:.3}, {:.3}, {:.3}]", animation_rotation_quat.x, animation_rotation_quat.z, animation_rotation_quat.z,animation_rotation_quat.w));
-            }
+                if let Some(animation_rotation_quat) = data.animation_rotation_quat
+                {
+                    let mut rot_quat = animation_rotation_quat;
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Rotation\n(Quaternion): ");
+                        ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: "));
+                        ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: "));
+                        ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: "));
+                        ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: "));
+                    });
+                }
 
-            if let Some(animation_scale) = data.animation_scale
-            {
-                ui.label(format!("Animation scale: [{:.3}, {:.3}, {:.3}]", animation_scale.x, animation_scale.z, animation_scale.z));
-            }
+                if let Some(animation_scale) = data.animation_scale
+                {
+                    let mut scale = animation_scale;
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Scale: ");
+                        ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: "));
+                        ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: "));
+                        ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: "));
+                    });
+                }
+            });
         }
     }
 }

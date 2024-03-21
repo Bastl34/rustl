@@ -229,7 +229,14 @@ impl Mesh
                 let joints = data.joints[v_i];
                 let weights = data.weights[v_i];
 
-                let joint_transform = joint_matrices[joints[i] as usize];
+                // TODO: remove?
+                let joint = joints[i] as usize;
+                if joint >= joint_matrices.len()
+                {
+                    continue;
+                }
+
+                let joint_transform = joint_matrices[joint];
                 let transformed = joint_transform * pos * weights[i];
 
                 transformed_pos.x += transformed.x;
@@ -332,7 +339,14 @@ impl Mesh
                 let joints = data.joints[v_i];
                 let weights = data.weights[v_i];
 
-                let joint_transform = joint_matrices[joints[i] as usize];
+                // TODO: remove?
+                let joint = joints[i] as usize;
+                if joint >= joint_matrices.len()
+                {
+                    continue;
+                }
+
+                let joint_transform = joint_matrices[joint];
                 let transformed = joint_transform * pos * weights[i];
 
                 transformed_pos.x += transformed.x;
