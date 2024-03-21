@@ -1046,11 +1046,14 @@ impl Component for Animation
 
         ui.horizontal(|ui|
         {
-            ui.label("Progress: ");
-            let mut time = self.animation_time();
-            if ui.add(egui::Slider::new(&mut time, 0.0..=self.duration).fixed_decimals(2).text("s")).changed()
+            if !approx_zero(self.duration)
             {
-                self.set_current_time(time);
+                ui.label("Progress: ");
+                let mut time = self.animation_time();
+                if ui.add(egui::Slider::new(&mut time, 0.0..=self.duration).fixed_decimals(2).text("s")).changed()
+                {
+                    self.set_current_time(time);
+                }
             }
         });
 

@@ -631,6 +631,35 @@ impl Node
         }
     }
 
+    pub fn get_all_animations(&self) -> Vec<ComponentItem>
+    {
+        // first check on the item itself
+        let mut animations = self.find_components::<Animation>();
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let child_animations = node.find_components::<Animation>();
+
+            animations.extend(child_animations);
+        }
+
+        animations
+    }
+
+    pub fn start_first_animation(&self)
+    {
+        let animations = self.get_all_animations();
+
+        if let Some(first) = animations.first()
+        {
+            component_downcast_mut!(first, Animation);
+            first.start();
+        }
+    }
+
     pub fn get_alpha(&self) -> (f32, bool)
     {
         let alpha_component = self.find_component::<Alpha>();

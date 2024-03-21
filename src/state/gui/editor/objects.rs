@@ -64,13 +64,19 @@ pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
                 {
                     toggle = toggle.context_menu(|ui|
                     {
-                        if ui.button("⏵ Start all Animations").clicked()
+                        if ui.button("⏵ Start all animations").clicked()
                         {
                             ui.close_menu();
                             node.start_all_animations();
                         }
 
-                        if ui.button("⏹ Stop all Animations").clicked()
+                        if ui.button("⏵ Start first animation").clicked()
+                        {
+                            ui.close_menu();
+                            node.start_first_animation();
+                        }
+
+                        if ui.button("⏹ Stop all animations").clicked()
                         {
                             ui.close_menu();
                             node.stop_all_animations();

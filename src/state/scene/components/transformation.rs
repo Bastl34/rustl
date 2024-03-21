@@ -663,7 +663,7 @@ impl Component for Transformation
 
             ui.add_enabled_ui(false, |ui|
             {
-                if let Some(animation_position) = data.animation_position
+                if let Some(animation_position) = data.animation_position.clone()
                 {
                     let mut pos = animation_position;
                     ui.horizontal(|ui|
@@ -675,7 +675,7 @@ impl Component for Transformation
                     });
                 }
 
-                if let Some(animation_rotation_quat) = data.animation_rotation_quat
+                if let Some(animation_rotation_quat) = data.animation_rotation_quat.clone()
                 {
                     let mut rot_quat = animation_rotation_quat;
                     ui.horizontal(|ui|
@@ -688,7 +688,7 @@ impl Component for Transformation
                     });
                 }
 
-                if let Some(animation_scale) = data.animation_scale
+                if let Some(animation_scale) = data.animation_scale.clone()
                 {
                     let mut scale = animation_scale;
                     ui.horizontal(|ui|

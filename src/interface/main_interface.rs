@@ -486,7 +486,7 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let nodes = scene_utils::load_object("objects/temp/RiggedFigure.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -502,7 +502,7 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
