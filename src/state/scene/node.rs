@@ -1,7 +1,6 @@
 use std::{sync::{Arc, RwLock}, cell::RefCell, collections::{HashMap, HashSet}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use gltf::mesh::util::joints;
 use nalgebra::{Matrix4, Point3, Matrix, Matrix4x1};
 use regex::Regex;
 
@@ -28,8 +27,6 @@ pub struct Node
 
     pub parent: Option<NodeItem>,
 
-    pub skin_id: Option<u32>, // REMOVE ME
-    pub skin_root_node: Option<NodeItem>, // REMOVE ME
     pub skin: Vec<NodeItem>,
 
     pub extras: HashMap<String, String>,
@@ -69,8 +66,6 @@ impl Node
 
             parent: None,
 
-            skin_id: None,
-            skin_root_node: None,
             skin: vec![],
 
             extras: HashMap::new(),
@@ -365,83 +360,14 @@ impl Node
         }
     }
 
-    /*
-    pub fn get_full_joint_transform(&self) -> Matrix4<f32>
+    fn get_joint_transform(node: NodeItem, animated: bool) -> Matrix4<f32>
     {
-        let (node_transform, _) = self.get_transform();
-        let mut parent_trans = Matrix4::<f32>::identity();
+        let joint_component = node.read().unwrap().find_component::<Joint>();
 
-        if let Some(parent_node) = &self.parent
+        if let Some(joint_component) = joint_component
         {
-            if parent_node.read().unwrap().find_component::<Joint>().is_some()
-            {
-                let parent_node = parent_node.read().unwrap();
-                parent_trans = parent_node.get_full_joint_transform();
-            }
-        }
+            component_downcast!(joint_component, Joint);
 
-        parent_trans * node_transform
-    }
-    */
-
-    fn get_joint_transforms(skin_id: u32, nodes: &Vec<Arc<RwLock<Box<Node>>>>, parent_transform: &Matrix4<f32>, animated: bool) -> Vec::<(u32, Matrix4<f32>)>
-    {
-        let mut joints: Vec::<(u32, Matrix4<f32>)> = vec![];
-
-        for node in nodes
-        {
-            let joint_component = node.read().unwrap().find_component::<Joint>();
-
-            if let Some(joint_component) = joint_component
-            {
-                component_downcast!(joint_component, Joint);
-
-                // animated transformation or just skinned transformation
-                let local_animation_transform;
-                if animated
-                {
-                    local_animation_transform = joint_component.get_joint_transform();
-                }
-                else
-                {
-                    local_animation_transform = joint_component.get_local_transform();
-                }
-
-                let joint_data = joint_component.get_data();
-
-                if let Some(joint_id) = joint_data.skin_ids.get(&skin_id)
-                {
-                    let current_transform = parent_transform * local_animation_transform;
-                    let animation_transform = current_transform * joint_data.inverse_bind_trans;
-
-                    //joints.push((joint_data.joint_id, animation_transform));
-                    joints.push((*joint_id, animation_transform));
-
-                    let childs = Self::get_joint_transforms(skin_id, &node.read().unwrap().nodes, &current_transform, animated);
-                    joints.extend(childs);
-                }
-            }
-        }
-
-        joints
-    }
-
-    pub fn get_joint_transform_vec(&self, skin_id: u32, animated: bool) -> Option<Vec<Matrix4<f32>>>
-    {
-        let joint_component = self.find_component::<Joint>();
-
-        if joint_component.is_none()
-        {
-            return None;
-        }
-
-        let mut joints: Vec::<(u32, Matrix4<f32>)> = vec![];
-
-        let joint_component = joint_component.unwrap();
-        component_downcast!(joint_component, Joint);
-
-        let root_joint_transform;
-        {
             // animated transformation or just skinned transformation
             let local_animation_transform;
             if animated
@@ -453,54 +379,42 @@ impl Node
                 local_animation_transform = joint_component.get_local_transform();
             }
 
-            let joint_data = joint_component.get_data();
+            let mut parent_transform = Matrix4::<f32>::identity();
 
-            //dbg!(local_animation_transform);
-
-            let animation_transform = local_animation_transform * joint_data.inverse_bind_trans;
-            //let animation_transform = local_animation_transform * joint_data.inverse_bind_trans;
-            //let animation_transform = joint_data.inverse_bind_trans;
-
-            //joints.push((joint_data.joint_id, animation_transform));
-            if let Some(joint_id) = joint_data.skin_ids.get(&skin_id)
+            if let Some(parent) = &node.read().unwrap().parent
             {
-                joints.push((*joint_id, animation_transform));
-            }
-            else
-            {
-                println!("{} {}", self.name, &skin_id);
-                dbg!("something is wrong - this should not be possible");
-                return None;
+                parent_transform = Self::get_joint_transform(parent.clone(), animated);
             }
 
-            root_joint_transform = local_animation_transform;
-            //root_joint_transform = Matrix4::<f32>::identity();
-            //dbg!(&root_joint_transform);
+            return parent_transform * local_animation_transform;
         }
 
-        let child_joint_transforms = Self::get_joint_transforms(skin_id, &self.nodes, &root_joint_transform, animated);
-        joints.extend(child_joint_transforms);
+        Matrix4::<f32>::identity()
+    }
 
-        // sort by joint id
-        // CHECK IF NEEDED
-        joints.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
-        // let it start from id=0
-        // TODO CHECK IF THIS IS CORRECT (or needed)
-        for (i, joint) in &mut joints.iter_mut().enumerate()
-        {
-            joint.0 = i as u32;
-        }
-
-        // check data
-        // check that first item is 0 and last item is length -1
-        if joints.len() == 0 || joints.first().unwrap().0 != 0 || joints.last().unwrap().0 != (joints.len() - 1) as u32
+    pub fn get_joint_transform_vec(&self, animated: bool) -> Option<Vec<Matrix4<f32>>>
+    {
+        if self.skin.len() == 0
         {
             return None;
         }
 
-        // map and return
-        let joints: Vec<Matrix4<f32>> = joints.iter().map(|joint| joint.1 ).collect();
+        let mut joints = vec![];
+        for joint in &self.skin
+        {
+            let mut transform = Self::get_joint_transform(joint.clone(), animated);
+
+            // inverse bind transform
+            let joint_component = joint.read().unwrap().find_component::<Joint>();
+            if let Some(joint_component) = joint_component
+            {
+                component_downcast!(joint_component, Joint);
+                let joint_data = joint_component.get_data();
+                transform = transform * joint_data.inverse_bind_trans;
+            }
+
+            joints.push(transform);
+        }
 
         Some(joints)
     }
@@ -525,9 +439,9 @@ impl Node
 
         morph_target_weights.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-        let morph_tagets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
+        let morph_targets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
 
-        Some(morph_tagets)
+        Some(morph_targets)
     }
 
     // find the node which has animations

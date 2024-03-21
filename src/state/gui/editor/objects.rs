@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use egui::{Ui, RichText, Color32};
 
 use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material, joint::Joint, animation::Animation}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
@@ -302,12 +304,11 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     });
 
     // Skeleton
-    if node.read().unwrap().skin_root_node.is_some()
+    if let Some(skin_node) = node.read().unwrap().skin.first()
     {
         collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", |ui|
         {
-            ui.label(format!(" ⚫ skeleton id: {:?}", node.read().unwrap().skin_id));
-
+            ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
             ui.horizontal(|ui|
             {
                 ui.label("Link to Skeleton: ");
@@ -315,11 +316,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 {
                     editor_state.de_select_current_item(state);
 
-                    let node = node.read().unwrap();
-                    let skin_root_node = node.skin_root_node.as_ref();
-                    let skin_root_node = skin_root_node.unwrap();
-
-                    editor_state.selected_object = format!("objects_{}", skin_root_node.read().unwrap().id);
+                    editor_state.selected_object = format!("objects_{}", skin_node.read().unwrap().id);
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Object;
                 }

@@ -839,17 +839,13 @@ impl Scene
             let solid = !material_data.backface_cullig;
 
             let mut joint_matrices = vec![];
-            if let Some(skin_root_node) = &node.skin_root_node
+            if node.skin.len() > 0
             {
-                if let Some(skin_id) = node.skin_id
-                {
-                    let skin_root_node = skin_root_node.read().unwrap();
-                    let matrices = skin_root_node.get_joint_transform_vec(skin_id, true);
+                let matrices = node.get_joint_transform_vec(true);
 
-                    if let Some(matrices) = matrices
-                    {
-                        joint_matrices = matrices;
-                    }
+                if let Some(matrices) = matrices
+                {
+                    joint_matrices = matrices;
                 }
             }
 

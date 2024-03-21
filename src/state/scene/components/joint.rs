@@ -10,8 +10,6 @@ use super::{component::{ComponentBase, Component, ComponentItem}, transformation
 pub struct JointData
 {
     pub root_joint: bool,
-    //pub joint_id: u32,
-    pub skin_ids: HashMap<u32, u32>,
     pub local_trans: Matrix4<f32>,
     pub full_joint_trans: Matrix4<f32>,
     pub inverse_bind_trans: Matrix4<f32>,
@@ -21,9 +19,6 @@ pub struct JointData
     pub animation_update_frame: Option<u64>,
 
     pub animation_trans: Option<Matrix4<f32>>
-    //pub animation_position: Option<Vector3<f32>>,
-    //pub animation_rotation_quat: Option<Vector4<f32>>,
-    //pub animation_scale: Option<Vector3<f32>>,
 }
 
 pub struct Joint
@@ -40,8 +35,6 @@ impl Joint
         let data = JointData
         {
             root_joint: false,
-            //joint_id,
-            skin_ids: HashMap::new(),
             full_joint_trans: Matrix4::<f32>::identity(),
             local_trans: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
@@ -50,10 +43,7 @@ impl Joint
             animation_weight: 0.0,
             animation_update_frame: None,
 
-            animation_trans: None,
-            //animation_position: None,
-            //animation_rotation_quat: None,
-            //animation_scale: None,
+            animation_trans: None
         };
 
         let joint = Joint
@@ -253,27 +243,9 @@ impl Component for Joint
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         ui.label(format!("Root Joint: {}", self.get_data().root_joint));
-        ui.label(format!("Skin Ids: {:?}", self.get_data().skin_ids));
 
         ui.label(format!("Inverse Bind Trans:\n{:?}", self.get_data().inverse_bind_trans));
         //ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));
         ui.label(format!("Animation Transf:\n{:?}", self.get_data().animation_trans));
-
-        /*
-        if let Some(animation_position) = self.get_data().animation_position
-        {
-            ui.label(format!("Animation position: [{:.3}, {:.3}, {:.3}]", animation_position.x, animation_position.z, animation_position.z));
-        }
-
-        if let Some(animation_rotation_quat) = self.get_data().animation_rotation_quat
-        {
-            ui.label(format!("Animation rotation (quat): [{:.3}, {:.3}, {:.3}, {:.3}]", animation_rotation_quat.x, animation_rotation_quat.z, animation_rotation_quat.z,animation_rotation_quat.w));
-        }
-
-        if let Some(animation_scale) = self.get_data().animation_scale
-        {
-            ui.label(format!("Animation scale: [{:.3}, {:.3}, {:.3}]", animation_scale.x, animation_scale.z, animation_scale.z));
-        }
-         */
     }
 }
