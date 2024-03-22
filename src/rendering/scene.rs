@@ -720,59 +720,14 @@ impl Scene
             let joint_component = joint.find_component::<Joint>();
             if let Some(joint_component) = joint_component
             {
-                //component_downcast_mut!(joint_component, Joint);
                 component_downcast!(joint_component, Joint);
 
-                //if joint_component.get_data_mut().changed()
                 if joint_component.get_data_tracker().changed()
                 {
                     return true;
                 }
             }
         }
-
-        /*
-        let root_node_clone = root_node.clone();
-
-        // check if node has a joint -> otherwise its not relevant
-        let root_node = root_node.read().unwrap();
-        {
-            let joint_component = root_node.find_component::<Joint>();
-
-            if joint_component.is_none()
-            {
-                return false;
-            }
-        }
-
-        // check root and all child elements
-        let mut all_nodes = [root_node_clone].to_vec();
-        let child_nodes = StateScene::list_all_child_nodes(&root_node.nodes);
-
-        all_nodes.extend(child_nodes);
-
-        for node in &all_nodes
-        {
-            let node = node.read().unwrap();
-            let joint_component = node.find_component::<Joint>();
-
-            if joint_component.is_none()
-            {
-                continue;
-            }
-
-            // check root node
-            if let Some(joint_component) = joint_component
-            {
-                component_downcast_mut!(joint_component, Joint);
-
-                if joint_component.get_data_mut().changed()
-                {
-                    return true;
-                }
-            }
-        }
-        */
 
         false
     }

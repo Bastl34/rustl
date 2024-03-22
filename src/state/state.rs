@@ -47,6 +47,34 @@ pub struct SupportedFileTypes
     pub textures: Vec<String>
 }
 
+pub struct Statistics
+{
+    pub draw_calls: u32,
+    pub fps_timer: Instant,
+    pub last_time: u128,
+    pub fps: u32,
+    pub last_fps: u32,
+    pub fps_absolute: u32,
+    pub fps_chart: Vec<u32>,
+
+    pub frame_update_time: u128,
+    pub frame_scale: f32,
+
+    pub frame_time: f32,
+
+    pub engine_update_time: f32,
+    pub engine_render_time: f32,
+
+    pub app_update_time: f32,
+
+    pub editor_update_time: f32,
+
+    pub egui_update_time: f32,
+    pub egui_render_time: f32,
+
+    pub frame: u64,
+}
+
 pub struct State
 {
     pub adapter: AdapterFeatures,
@@ -76,30 +104,7 @@ pub struct State
 
     pub save_screenshot: bool,
 
-    pub draw_calls: u32,
-    pub fps_timer: Instant,
-    pub last_time: u128,
-    pub fps: u32,
-    pub last_fps: u32,
-    pub fps_absolute: u32,
-    pub fps_chart: Vec<u32>,
-
-    pub frame_update_time: u128,
-    pub frame_scale: f32,
-
-    pub frame_time: f32,
-
-    pub engine_update_time: f32,
-    pub engine_render_time: f32,
-
-    pub app_update_time: f32,
-
-    pub editor_update_time: f32,
-
-    pub egui_update_time: f32,
-    pub egui_render_time: f32,
-
-    pub frame: u64,
+    pub stats: Statistics,
 
     pub exit: bool,
 }
@@ -180,30 +185,33 @@ impl State
             save_depth_buffer_image: false,
             save_screenshot: false,
 
-            draw_calls: 0,
-            fps_timer: Instant::now(),
-            last_time: 0,
-            fps: 0,
-            last_fps: 0,
-            fps_absolute: 0,
-            fps_chart: vec![0; 100],
+            stats: Statistics
+            {
+                draw_calls: 0,
+                fps_timer: Instant::now(),
+                last_time: 0,
+                fps: 0,
+                last_fps: 0,
+                fps_absolute: 0,
+                fps_chart: vec![0; 100],
 
-            frame_update_time: 0,
-            frame_scale: 0.0,
+                frame_update_time: 0,
+                frame_scale: 0.0,
 
-            frame_time: 0.0,
+                frame_time: 0.0,
 
-            engine_update_time: 0.0,
-            engine_render_time: 0.0,
+                engine_update_time: 0.0,
+                engine_render_time: 0.0,
 
-            app_update_time: 0.0,
+                app_update_time: 0.0,
 
-            editor_update_time: 0.0,
+                editor_update_time: 0.0,
 
-            egui_update_time: 0.0,
-            egui_render_time: 0.0,
+                egui_update_time: 0.0,
+                egui_render_time: 0.0,
 
-            frame: 0,
+                frame: 0,
+            },
 
             exit: false
         }

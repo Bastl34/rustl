@@ -171,6 +171,28 @@ pub fn cubic_spline_interpolate_vec
     vec
 }
 
+// https://github.com/BabylonJS/Babylon.js/blob/master/packages/dev/core/src/Maths/math.path.ts
+pub fn bezier_interpolate(t: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32
+{
+    let f0 = 1.0 - 3.0 * x2 + 3.0 * x1;
+    let f1 = 3.0 * x2 - 6.0 * x1;
+    let f2 = 3.0 * x1;
+
+    let mut refined_t = t;
+    for _ in 0..5
+    {
+        let refined_t2 = refined_t * refined_t;
+        let refined_t3 = refined_t2 * refined_t;
+
+        let x = f0 * refined_t3 + f1 * refined_t2 + f2 * refined_t;
+        let slope = 1.0 / (3.0 * f0 * refined_t2 + 2.0 * f1 * refined_t + f2);
+        refined_t -= (x - t) * slope;
+        refined_t = 1.0_f32.min(0.0_f32.max(refined_t));
+    }
+
+    3.0 * (1.0 - refined_t).powi(2) * refined_t * y1 + 3.0 * (1.0 - refined_t) * refined_t.powi(2) * y2 + refined_t.powi(3)
+}
+
 pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)
 {
     let pitch = dir.y.asin();

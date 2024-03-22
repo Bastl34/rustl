@@ -156,6 +156,7 @@ mod helper
     pub(crate) mod consumable;
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
+    pub(crate) mod easing;
 }
 
 mod resources

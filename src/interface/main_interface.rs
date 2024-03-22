@@ -624,34 +624,34 @@ impl MainInterface
             }
 
             // fps
-            let current_time = state.fps_timer.elapsed().as_millis();
-            state.fps += 1;
+            let current_time = state.stats.fps_timer.elapsed().as_millis();
+            state.stats.fps += 1;
 
-            if current_time / 1000 > state.last_time / 1000
+            if current_time / 1000 > state.stats.last_time / 1000
             {
-                state.last_time = state.fps_timer.elapsed().as_millis();
+                state.stats.last_time = state.stats.fps_timer.elapsed().as_millis();
 
-                state.last_fps = state.fps;
-                state.fps_chart.push(state.last_fps);
-                if state.fps_chart.len() > FPS_CHART_VALUES
+                state.stats.last_fps = state.stats.fps;
+                state.stats.fps_chart.push(state.stats.last_fps);
+                if state.stats.fps_chart.len() > FPS_CHART_VALUES
                 {
-                    state.fps_chart.remove(0);
+                    state.stats.fps_chart.remove(0);
                 }
 
-                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.last_fps).as_str());
-                state.fps = 0;
+                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.stats.last_fps).as_str());
+                state.stats.fps = 0;
             }
 
             // frame scale
             let elapsed = self.start_time.elapsed();
             let now = elapsed.as_micros();
 
-            if state.frame_update_time > 0 && now - state.frame_update_time > 0
+            if state.stats.frame_update_time > 0 && now - state.stats.frame_update_time > 0
             {
-                state.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.frame_update_time) as f32);
+                state.stats.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.stats.frame_update_time) as f32);
             }
 
-            state.frame_update_time = now;
+            state.stats.frame_update_time = now;
         }
 
         // ******************** editor/ui update ********************
@@ -660,7 +660,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
             self.editor_gui.update(state);
 
-            state.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // ******************** build ui ********************
@@ -673,7 +673,7 @@ impl MainInterface
             self.egui.output = Some(gui_output);
 
             //self.gui.request_repaint();
-            state.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // ******************** app update ********************
@@ -682,7 +682,7 @@ impl MainInterface
             self.app_update();
 
             let state = &mut *(self.state.borrow_mut());
-            state.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // ******************** update main thread queue ********************
@@ -706,7 +706,7 @@ impl MainInterface
                 self.wgpu.create_msaa_texture(msaa_samples);
             }
 
-            state.update(state.frame_update_time, state.frame_scale, state.frame);
+            state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
@@ -729,7 +729,7 @@ impl MainInterface
 
             swap(&mut scenes, &mut state.scenes);
 
-            state.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
         // ******************** render ********************
@@ -741,7 +741,7 @@ impl MainInterface
             {
                 let engine_render_time = Instant::now();
 
-                state.draw_calls = 0;
+                state.stats.draw_calls = 0;
 
                 for scene in &mut state.scenes
                 {
@@ -754,12 +754,12 @@ impl MainInterface
 
                     let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
                     render_scene.distance_sorting = state.rendering.distance_sorting;
-                    state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                    state.stats.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                     scene.render_item = render_item;
                 }
 
-                state.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
+                state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
             }
 
             // render egui
@@ -768,7 +768,7 @@ impl MainInterface
                 let now = Instant::now();
                 self.egui.render(&mut self.wgpu, &view, &mut encoder);
 
-                state.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
         }
         self.wgpu.end_render(output, encoder);
@@ -820,12 +820,12 @@ impl MainInterface
         // ******************** frame time ********************
         {
             let state = &mut *(self.state.borrow_mut());
-            state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
 
-            state.fps_absolute = (1000.0 / (state.engine_render_time + state.engine_update_time)) as u32;
+            state.stats.fps_absolute = (1000.0 / (state.stats.engine_render_time + state.stats.engine_update_time)) as u32;
 
             // frame update
-            state.frame += 1;
+            state.stats.frame += 1;
         }
     }
 
@@ -905,7 +905,7 @@ impl MainInterface
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
-                    global_state.input_manager.mouse.set_pos(pos, global_state.frame, global_state.width, global_state.height);
+                    global_state.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
