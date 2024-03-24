@@ -1,6 +1,92 @@
 use std::f32::consts::PI;
 
+use strum::IntoEnumIterator;
+use strum_macros::{Display, EnumIter, FromRepr};
+
 use super::math::bezier_interpolate;
+
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+pub enum Easing
+{
+    None,
+    InSine,
+    OutSine,
+    InOutSine,
+    InQuad,
+    OutQuad,
+    InOutQuad,
+    InCubic,
+    OutCubic,
+    InOutCubic,
+    InQuart,
+    OutQuart,
+    InOutQuart,
+    InQuint,
+    OutQuint,
+    InOutQuint,
+    InExpo,
+    OutExpo,
+    InOutExpo,
+    InCirc,
+    OutCirc,
+    InOutCirc,
+    InBack,
+    OutBack,
+    InOutBack,
+    InElastic,
+    OutElastic,
+    InOutElastic,
+    InBounce,
+    OutBounce,
+    InOutBounce,
+
+    InOutFast
+}
+
+pub fn easing(easing_type: Easing, x: f32) -> f32
+{
+    match easing_type
+    {
+        Easing::None => x,
+        Easing::InSine => ease_in_sine(x),
+        Easing::OutSine => ease_out_sine(x),
+        Easing::InOutSine => ease_in_out_sine(x),
+        Easing::InQuad => ease_in_quad(x),
+        Easing::OutQuad => ease_out_quad(x),
+        Easing::InOutQuad => ease_in_out_quad(x),
+        Easing::InCubic => ease_in_cubic(x),
+        Easing::OutCubic => ease_out_cubic(x),
+        Easing::InOutCubic => ease_in_out_cubic(x),
+        Easing::InQuart => ease_in_quart(x),
+        Easing::OutQuart => ease_out_quart(x),
+        Easing::InOutQuart => ease_in_out_quart(x),
+        Easing::InQuint => ease_in_quint(x),
+        Easing::OutQuint => ease_out_quint(x),
+        Easing::InOutQuint => ease_in_out_quint(x),
+        Easing::InExpo => ease_in_expo(x),
+        Easing::OutExpo => ease_out_expo(x),
+        Easing::InOutExpo => ease_in_out_expo(x),
+        Easing::InCirc => ease_in_circ(x),
+        Easing::OutCirc => ease_out_circ(x),
+        Easing::InOutCirc => ease_in_out_circ(x),
+        Easing::InBack => ease_in_back(x),
+        Easing::OutBack => ease_out_back(x),
+        Easing::InOutBack => ease_in_out_back(x),
+        Easing::InElastic => ease_in_elastic(x),
+        Easing::OutElastic => ease_out_elastic(x),
+        Easing::InOutElastic => ease_in_out_elastic(x),
+        Easing::InBounce => ease_in_bounce(x),
+        Easing::OutBounce => ease_out_bounce(x),
+        Easing::InOutBounce => ease_in_out_bounce(x),
+        Easing::InOutFast => ease_in_out_fast(x),
+    }
+}
+
+pub fn get_easing_as_string_vec() -> Vec<String>
+{
+    let vec: Vec<Easing> = Easing::iter().collect::<Vec<_>>();
+    vec.iter().map(|easing| { easing.to_string() }).collect::<Vec<_>>()
+}
 
 // based on: https://easings.net/
 

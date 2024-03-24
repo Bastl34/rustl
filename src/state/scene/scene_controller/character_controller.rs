@@ -295,7 +295,7 @@ impl CharacterController
         if let Some(animation_item) = animation_item
         {
             component_downcast!(animation_item, Animation);
-            return animation_item.duration;
+            return animation_item.to;
         }
 
         0.0
@@ -373,7 +373,7 @@ impl CharacterController
         if let Some(animation_jump) = &self.animation_jump
         {
             component_downcast!(animation_jump, Animation);
-            return animation_jump.running() && animation_jump.animation_time() < animation_jump.duration - self.fade_speed
+            return animation_jump.running() && animation_jump.animation_time() < animation_jump.to - self.fade_speed
         }
 
         false
@@ -384,7 +384,7 @@ impl CharacterController
         if let Some(animation_roll) = &self.animation_roll
         {
             component_downcast!(animation_roll, Animation);
-            return animation_roll.running() && animation_roll.animation_time() < animation_roll.duration - self.fade_speed
+            return animation_roll.running() && animation_roll.animation_time() < animation_roll.to - self.fade_speed
         }
 
         false
@@ -395,7 +395,7 @@ impl CharacterController
         if let Some(animation_fall_landing) = &self.animation_fall_landing
         {
             component_downcast!(animation_fall_landing, Animation);
-            return animation_fall_landing.running() && animation_fall_landing.animation_time() < animation_fall_landing.duration - self.fade_speed
+            return animation_fall_landing.running() && animation_fall_landing.animation_time() < animation_fall_landing.to - self.fade_speed
         }
 
         false
@@ -406,7 +406,7 @@ impl CharacterController
         for animation in &self.animation_actions
         {
             component_downcast!(animation, Animation);
-            if animation.running() && animation.animation_time() < animation.duration - self.fade_speed
+            if animation.running() && animation.animation_time() < animation.to - self.fade_speed
             {
                 return true;
             }
@@ -611,7 +611,7 @@ impl SceneController for CharacterController
             has_change = true;
         }
         // ********** roll **********
-        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
+        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
         {
             if movement.z > 0.0
             {
@@ -651,11 +651,11 @@ impl SceneController for CharacterController
         {
             if self.is_any_animation_running()
             {
-                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, false, false, false);
+                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, true, false, false);
             }
             else
             {
-                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, false, false, false);
+                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, true, false, false);
             }
         }
 

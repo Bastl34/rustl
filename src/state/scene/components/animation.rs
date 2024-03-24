@@ -1,13 +1,11 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, fmt::format};
+use std::collections::HashMap;
 
 use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
-use strum::IntoEnumIterator;
-use strum_macros::{EnumIter, Display, FromRepr};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::{ease_in_back, ease_in_bounce, ease_in_circ, ease_in_cubic, ease_in_elastic, ease_in_expo, ease_in_out_back, ease_in_out_bounce, ease_in_out_circ, ease_in_out_cubic, ease_in_out_elastic, ease_in_out_expo, ease_in_out_fast, ease_in_out_quad, ease_in_out_quart, ease_in_out_quint, ease_in_out_sine, ease_in_quad, ease_in_quart, ease_in_quint, ease_in_sine, ease_out_back, ease_out_bounce, ease_out_circ, ease_out_cubic, ease_out_elastic, ease_out_expo, ease_out_quad, ease_out_quart, ease_out_quint, ease_out_sine}, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
+use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
@@ -17,50 +15,6 @@ pub enum Interpolation
     Linear,
     Step,
     CubicSpline
-}
-
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
-pub enum Easing
-{
-    None,
-    InSine,
-    OutSine,
-    InOutSine,
-    InQuad,
-    OutQuad,
-    InOutQuad,
-    InCubic,
-    OutCubic,
-    InOutCubic,
-    InQuart,
-    OutQuart,
-    InOutQuart,
-    InQuint,
-    OutQuint,
-    InOutQuint,
-    InExpo,
-    OutExpo,
-    InOutExpo,
-    InCirc,
-    OutCirc,
-    InOutCirc,
-    InBack,
-    OutBack,
-    InOutBack,
-    InElastic,
-    OutElastic,
-    InOutElastic,
-    InBounce,
-    OutBounce,
-    InOutBounce,
-
-    InOutFast
-}
-
-pub fn get_easing_as_string_vec() -> Vec<String>
-{
-    let vec: Vec<Easing> = Easing::iter().collect::<Vec<_>>();
-    vec.iter().map(|easing| { easing.to_string() }).collect::<Vec<_>>()
 }
 
 pub struct Channel
@@ -113,8 +67,9 @@ pub struct Animation
 
     pub easing: Easing,
 
-    pub duration: f32, // can be customized
-    pub duration_max: f32, // based on animation data
+    pub from: f32,
+    pub to: f32,
+    pub duration: f32, // based on animation data (to prevent that the animation is longer as the duration)
 
     pub start_time: Option<u128>,
     pub pause_time: Option<u128>,
@@ -145,8 +100,9 @@ impl Animation
 
             easing: Easing::None,
 
+            from: 0.0,
+            to: 0.0,
             duration: 0.0,
-            duration_max: 0.0,
 
             start_time: None,
             pause_time: None,
@@ -182,12 +138,12 @@ impl Animation
             return 0.0;
         }
 
-        1.0 / self.duration * self.current_local_time
+        1.0 / self.to * self.current_local_time
     }
 
     pub fn animation_time(&self) -> f32
     {
-        self.current_local_time % self.duration
+        self.current_local_time % self.to
     }
 
     pub fn start(&mut self)
@@ -246,7 +202,7 @@ impl Animation
 
     pub fn set_current_time(&mut self, time: f32)
     {
-        self.current_local_time = time % self.duration;
+        self.current_local_time = time % self.to;
         self.resume();
     }
 
@@ -257,7 +213,7 @@ impl Animation
 
     pub fn is_over(&self) -> bool
     {
-        if self.current_local_time >= self.duration && !self.looped
+        if self.current_local_time >= self.to && !self.looped
         {
             return true;
         }
@@ -275,9 +231,6 @@ impl Animation
             {
                 component_downcast_mut!(joint, Joint);
 
-                //joint.get_data_mut().get_mut().animation_position = None;
-                //joint.get_data_mut().get_mut().animation_rotation_quat = None;
-                //joint.get_data_mut().get_mut().animation_scale = None;
                 joint.get_data_mut().get_mut().animation_trans = None;
 
                 joint.get_data_mut().get_mut().animation_update_frame = None;
@@ -302,45 +255,6 @@ impl Animation
         self.pause_time = None;
         self.current_time = 0;
         self.current_local_time = 0.0;
-    }
-
-    pub fn easing(&self, x: f32) -> f32
-    {
-        match self.easing
-        {
-            Easing::None => x,
-            Easing::InSine => ease_in_sine(x),
-            Easing::OutSine => ease_out_sine(x),
-            Easing::InOutSine => ease_in_out_sine(x),
-            Easing::InQuad => ease_in_quad(x),
-            Easing::OutQuad => ease_out_quad(x),
-            Easing::InOutQuad => ease_in_out_quad(x),
-            Easing::InCubic => ease_in_cubic(x),
-            Easing::OutCubic => ease_out_cubic(x),
-            Easing::InOutCubic => ease_in_out_cubic(x),
-            Easing::InQuart => ease_in_quart(x),
-            Easing::OutQuart => ease_out_quart(x),
-            Easing::InOutQuart => ease_in_out_quart(x),
-            Easing::InQuint => ease_in_quint(x),
-            Easing::OutQuint => ease_out_quint(x),
-            Easing::InOutQuint => ease_in_out_quint(x),
-            Easing::InExpo => ease_in_expo(x),
-            Easing::OutExpo => ease_out_expo(x),
-            Easing::InOutExpo => ease_in_out_expo(x),
-            Easing::InCirc => ease_in_circ(x),
-            Easing::OutCirc => ease_out_circ(x),
-            Easing::InOutCirc => ease_in_out_circ(x),
-            Easing::InBack => ease_in_back(x),
-            Easing::OutBack => ease_out_back(x),
-            Easing::InOutBack => ease_in_out_back(x),
-            Easing::InElastic => ease_in_elastic(x),
-            Easing::OutElastic => ease_out_elastic(x),
-            Easing::InOutElastic => ease_in_out_elastic(x),
-            Easing::InBounce => ease_in_bounce(x),
-            Easing::OutBounce => ease_out_bounce(x),
-            Easing::InOutBounce => ease_in_out_bounce(x),
-            Easing::InOutFast => ease_in_out_fast(x),
-        }
     }
 }
 
@@ -466,17 +380,30 @@ impl Component for Animation
 
             let mut t = self.current_local_time;
 
-            if !self.looped && t > self.duration
+            if !self.looped && t > self.to
             {
                 self.stop_without_reset();
                 return;
             }
 
-            t = t % self.duration;
-            if self.reverse { t = self.duration - t; }
+            let delta = self.to - self.from;
 
-            // easing
-            t = self.easing(t / self.duration) * self.duration;
+            // animation
+            if !approx_zero(delta)
+            {
+                t = (t % delta) + self.from;
+
+                //if self.reverse { t = self.to - t; }
+                if self.reverse { t = self.to + self.from - t; }
+
+                // easing
+                t = easing(self.easing, t / delta) * delta;
+            }
+            // pose
+            else
+            {
+                t = 0.0;
+            }
 
             let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
 
@@ -497,9 +424,6 @@ impl Component for Animation
 
                     if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
                     {
-                        //joint.get_data_mut().get_mut().animation_position = None;
-                        //joint.get_data_mut().get_mut().animation_rotation_quat = None;
-                        //joint.get_data_mut().get_mut().animation_scale = None;
                         joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
 
                         joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
@@ -594,28 +518,26 @@ impl Component for Animation
                     target_id = transformation.read().unwrap().id();
                 }
 
+
                 // ********** only one item per channel **********
-                if channel.timestamps.len() == 0
+                if channel.timestamps.len() <= 1
                 {
                     let mut transform = (None, None, None);
                     if channel.transform_translation.len() > 0
                     {
                         let t = &channel.transform_translation[0];
-                        //transform = Some(nalgebra::Isometry3::translation(t.x, t.y, t.z).to_homogeneous());
+
                         transform.0 = Some(t.clone());
                     }
                     else if channel.transform_rotation.len() > 0
                     {
                         let r = &channel.transform_rotation[0];
                         let quaternion = UnitQuaternion::new_normalize(Quaternion::new(r.w, r.x, r.y, r.z));
-                        //let quaternion: Rotation3<f32> = quaternion.into();
-                        //transform = Some(quaternion.to_homogeneous());
                         transform.1 = Some(quaternion);
                     }
                     else if channel.transform_scale.len() > 0
                     {
                         let s = &channel.transform_scale[0];
-                        //transform = Some(Matrix4::new_nonuniform_scaling(&s));
                         transform.2 = Some(s.clone());
                     }
                     else if channel.transform_morph.len() > 0
@@ -642,41 +564,12 @@ impl Component for Animation
 
                     apply_transformation_to_target(&mut target_map, target_id, &transform);
 
-                    /*
-                    if let Some(animation_position) = transform.0
-                    {
-                        let target_item = target_map.get_mut(&target_id).unwrap();
-
-                        if target_item.position.is_none()
-                        {
-                            target_item.position = Some(animation_position);
-                        }
-                        else
-                        {
-                            target_item.position = Some(target_item.position.unwrap() + animation_position);
-                        }
-
-
-                        //if
-                        //target_item.1 = target_item.1 * transform;
-                    }
-                    */
-
                     // skip joint flag
                     if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
                     {
                         let target_item = target_map.get_mut(&target_id).unwrap();
                         target_item.skip_joint = skip_joint;
                     }
-
-                    /*
-                    if let Some(transform) = transform
-                    {
-                        let target_item = target_map.get_mut(&target_id).unwrap();
-                        target_item.1 = target_item.1 * transform;
-                        target_item.2 = skip_joint;
-                    }
-                    */
                 }
                 // ********** some items per channel **********
                 else
@@ -719,14 +612,10 @@ impl Component for Animation
                                 let to = &channel.transform_translation[t1];
 
                                 interpolate_vec3(&from, &to, factor)
-                                //let interpolated = interpolate_vec3(&from, &to, factor);
-                                //nalgebra::Isometry3::translation(interpolated.x, interpolated.y, interpolated.z).to_homogeneous()
                             },
                             Interpolation::Step =>
                             {
                                 channel.transform_translation[t0].clone()
-                                //let from = &channel.transform_translation[t0];
-                                //nalgebra::Isometry3::translation(from.x, from.y, from.z).to_homogeneous()
                             },
                             Interpolation::CubicSpline =>
                             {
@@ -756,14 +645,9 @@ impl Component for Animation
                                     next_output_tangent,
                                 );
 
-                                //nalgebra::Isometry3::translation(res.x, res.y, res.z).to_homogeneous()
                                 res
                             },
                         };
-
-                        //let target_item = target_map.get_mut(&target_id).unwrap();
-                        //target_item.1 = target_item.1 * transform;
-                        //target_item.2 = skip_joint;
 
                         apply_transformation_to_target(&mut target_map, target_id, &(Some(translation), None, None));
                     }
@@ -781,18 +665,12 @@ impl Component for Animation
                                 let quaternion1 = UnitQuaternion::new_normalize(Quaternion::new(to.w, to.x, to.y, to.z));
 
                                 quaternion0.slerp(&quaternion1, factor)
-                                //let interpolated = quaternion0.slerp(&quaternion1, factor);
-                                //let interpolated: Rotation3<f32> = interpolated.into();
-                                //interpolated.to_homogeneous()
                             },
                             Interpolation::Step =>
                             {
                                 let from = &channel.transform_rotation[t0];
 
                                 UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z))
-                                //let quaternion = UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z));
-                                //let quaternion: Rotation3<f32> = quaternion.into();
-                                //quaternion.to_homogeneous()
                             },
                             Interpolation::CubicSpline =>
                             {
@@ -823,15 +701,8 @@ impl Component for Animation
                                 );
 
                                 UnitQuaternion::new_normalize(Quaternion::new(res.w, res.x, res.y, res.z))
-                                //let quaternion = UnitQuaternion::new_normalize(Quaternion::new(res.w, res.x, res.y, res.z));
-                                //let quaternion: Rotation3<f32> = quaternion.into();
-                                //quaternion.to_homogeneous()
                             },
                         };
-
-                        //let target_item = target_map.get_mut(&target_id).unwrap();
-                        //target_item.1 = target_item.1 * transform;
-                        //target_item.2 = skip_joint;
 
                         apply_transformation_to_target(&mut target_map, target_id, &(None, Some(rotation), None));
                     }
@@ -846,14 +717,10 @@ impl Component for Animation
                                 let to = &channel.transform_scale[t1];
 
                                 interpolate_vec3(&from, &to, factor)
-                                //let interpolated = interpolate_vec3(&from, &to, factor);
-                                //Matrix4::new_nonuniform_scaling(&interpolated)
                             },
                             Interpolation::Step =>
                             {
                                 channel.transform_scale[t0].clone()
-                                //let from = &channel.transform_scale[t0];
-                                //Matrix4::new_nonuniform_scaling(&from)
                             },
                             Interpolation::CubicSpline =>
                             {
@@ -884,13 +751,8 @@ impl Component for Animation
                                 );
 
                                 res
-                                //Matrix4::new_nonuniform_scaling(&res)
                             },
                         };
-
-                        //let target_item = target_map.get_mut(&target_id).unwrap();
-                        //target_item.1 = target_item.1 * transform;
-                        //target_item.2 = skip_joint;
 
                         apply_transformation_to_target(&mut target_map, target_id, &(None, None, Some(scale)));
                     }
@@ -1045,28 +907,6 @@ impl Component for Animation
 
                     component_data.animation_weight += self.weight;
                     transformation.calc_transform();
-
-
-                    /*
-                    let component_data = transformation.get_data_mut().get_mut();
-
-                    let animation_trans = component_data.animation_trans.as_mut().unwrap();
-
-                    // apply if its the first one
-                    if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
-                    {
-                        *animation_trans = target_item.1 * self.weight;
-                    }
-                    // add if its not the first one
-                    else if !approx_zero(self.weight)
-                    {
-                        // animation blending - blend this animation with the prev one
-                        *animation_trans = *animation_trans + (target_item.1 * self.weight);
-                    }
-
-                    component_data.animation_weight += self.weight;
-                    transformation.calc_transform();
-                     */
                 }
             }
         }
@@ -1074,7 +914,7 @@ impl Component for Animation
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
     {
-        ui.label(format!("Duration: {}", self.duration));
+        ui.label(format!("Duration: {}", self.to));
         ui.label(format!("Channels: {}", self.channels.len()));
 
         let mut is_running = self.running();
@@ -1158,17 +998,23 @@ impl Component for Animation
 
         ui.horizontal(|ui|
         {
-            ui.label("Duration: ");
-            ui.add(egui::Slider::new(&mut self.duration, 0.0..=self.duration_max).fixed_decimals(2));
+            ui.label("From: ");
+            ui.add(egui::Slider::new(&mut self.from, 0.0..=self.to).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
         {
-            if !approx_zero(self.duration)
+            ui.label("To: ");
+            ui.add(egui::Slider::new(&mut self.to, 0.0..=self.duration).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            if !approx_zero(self.to)
             {
                 ui.label("Progress: ");
                 let mut time = self.animation_time();
-                if ui.add(egui::Slider::new(&mut time, 0.0..=self.duration).fixed_decimals(2).text("s")).changed()
+                if ui.add(egui::Slider::new(&mut time, 0.0..=self.to).fixed_decimals(2).text("s")).changed()
                 {
                     self.set_current_time(time);
                 }

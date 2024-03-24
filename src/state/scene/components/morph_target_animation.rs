@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::approx_equal, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::NodeItem};
+use crate::helper::easing::{Easing, easing, get_easing_as_string_vec};
 
 use super::{component::{Component, ComponentBase}, morph_target::MorphTarget};
 
@@ -16,11 +17,15 @@ pub struct MorphTargetAnimation
     pub looped: bool,
     pub ping_pong: bool,
 
+    pub easing: Easing,
+
     pub from: f32,
     pub to: f32,
 
     pub speed: f32,
     pub direction: f32,
+
+    weight: f32,
 
     pub keyboard_key: Option<usize>,
 }
@@ -35,6 +40,8 @@ impl MorphTargetAnimation
 
             target_id: Some(target_id),
 
+            easing: Easing::None,
+
             from,
             to,
 
@@ -43,6 +50,8 @@ impl MorphTargetAnimation
 
             speed,
             direction: 1.0,
+
+            weight: 0.0,
 
             keyboard_key: None,
         };
@@ -63,11 +72,15 @@ impl MorphTargetAnimation
             from: 0.0,
             to: 1.0,
 
+            easing: Easing::None,
+
             looped: true,
             ping_pong: true,
 
             speed: 0.1,
             direction: 1.0,
+
+            weight: 0.0,
 
             keyboard_key: None,
         };
@@ -75,6 +88,11 @@ impl MorphTargetAnimation
         animation.base.info = Some(INFO_STRING.to_string());
 
         animation
+    }
+
+    pub fn reset(&mut self)
+    {
+        self.weight = 0.0;
     }
 }
 
@@ -117,7 +135,8 @@ impl Component for MorphTargetAnimation
         {
             component_downcast_mut!(morph_target, MorphTarget);
 
-            let mut weight = morph_target.get_data().weight.max(self.from) + (self.direction * self.speed * frame_scale);
+            //let mut weight = morph_target.get_data().weight.max(self.from) + (self.direction * self.speed * frame_scale);
+            let mut weight = self.weight.max(self.from) + (self.direction * self.speed * frame_scale);
 
             // no loop
             if !self.looped
@@ -188,7 +207,13 @@ impl Component for MorphTargetAnimation
                 }
             }
 
+
             weight = weight.clamp(self.from, self.to);
+            self.weight = weight;
+
+            // easing
+            let delta_t = self.to - self.from;
+            weight = easing(self.easing, weight / delta_t) * delta_t;
 
             if !approx_equal(weight, morph_target.get_data().weight)
             {
@@ -254,6 +279,32 @@ impl Component for MorphTargetAnimation
 
         ui.horizontal(|ui|
         {
+            ui.label("Easing: ");
+
+            let easings = get_easing_as_string_vec();
+            let current_easing_name = easings[self.easing as usize].as_str();
+            egui::ComboBox::from_id_source(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap = Some(false);
+                ui.set_min_width(30.0);
+
+                let mut current_easing_id = self.easing as usize;
+
+                let mut changed = false;
+                for (easing_id, easing) in easings.iter().enumerate()
+                {
+                    changed = ui.selectable_value(&mut current_easing_id, easing_id, easing).changed() || changed;
+                }
+
+                if changed
+                {
+                    self.easing = Easing::from_repr(current_easing_id).unwrap()
+                }
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("From: ");
             changed = ui.add(egui::Slider::new(&mut from, 0.0..=1.0).fixed_decimals(2)).changed() || changed;
         });
@@ -268,6 +319,12 @@ impl Component for MorphTargetAnimation
         {
             ui.label("Speed: ");
             changed = ui.add(egui::Slider::new(&mut speed, 0.0..=1.0).fixed_decimals(2)).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Progress: ");
+            ui.add(egui::Slider::new(&mut self.weight, 0.0..=1.0).fixed_decimals(2))
         });
 
         ui.horizontal(|ui|
