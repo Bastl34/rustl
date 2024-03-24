@@ -224,27 +224,8 @@ impl Component for MorphTargetAnimation
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
     {
-        let mut changed = false;
-
-        let mut target_id;
-        let mut target_name;
-        let mut from;
-        let mut to;
-        let mut looped;
-        let mut ping_pong;
-        let mut speed;
-        let mut direction;
-        {
-            from = self.from;
-            to = self.to;
-            looped = self.looped;
-            ping_pong = self.ping_pong;
-            speed = self.speed;
-            direction = self.direction;
-
-            target_name = "".to_string();
-            target_id = self.target_id.unwrap_or(0);
-        }
+        let mut target_id = self.target_id.unwrap_or(0);
+        let mut target_name = "".to_string();
 
         let mut morph_targets: Vec<(u64, String)> = vec![];
 
@@ -270,9 +251,23 @@ impl Component for MorphTargetAnimation
             ui.label("Target: ");
             egui::ComboBox::from_id_source(ui.make_persistent_id("target_id")).width(160.0).selected_text(target_name.clone()).show_ui(ui, |ui|
             {
+                let mut changed = false;
+
                 for target in &morph_targets
                 {
                     changed = ui.selectable_value(&mut target_id, target.0, target.1.clone()).changed() || changed;
+                }
+
+                if changed
+                {
+                    if target_id > 0
+                    {
+                        self.target_id = Some(target_id);
+                    }
+                    else
+                    {
+                        self.target_id = None
+                    }
                 }
             });
         });
@@ -306,19 +301,19 @@ impl Component for MorphTargetAnimation
         ui.horizontal(|ui|
         {
             ui.label("From: ");
-            changed = ui.add(egui::Slider::new(&mut from, 0.0..=1.0).fixed_decimals(2)).changed() || changed;
+            ui.add(egui::Slider::new(&mut self.from, 0.0..=1.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
         {
             ui.label("To: ");
-            changed = ui.add(egui::Slider::new(&mut to, 0.0..=1.0).fixed_decimals(2)).changed() || changed;
+            ui.add(egui::Slider::new(&mut self.to, 0.0..=1.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Speed: ");
-            changed = ui.add(egui::Slider::new(&mut speed, 0.0..=1.0).fixed_decimals(2)).changed() || changed;
+            ui.add(egui::Slider::new(&mut self.speed, 0.0..=1.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
@@ -330,11 +325,11 @@ impl Component for MorphTargetAnimation
         ui.horizontal(|ui|
         {
             ui.label("Direction: ");
-            changed = ui.add(egui::Slider::new(&mut direction, -1.0..=1.0).fixed_decimals(0)).changed() || changed;
+            ui.add(egui::Slider::new(&mut self.direction, -1.0..=1.0).fixed_decimals(0));
         });
 
-        changed = ui.checkbox(&mut looped, "Loop").changed() || changed;
-        changed = ui.checkbox(&mut ping_pong, "Ping Pong").changed() || changed;
+        ui.checkbox(&mut self.looped, "Loop");
+        ui.checkbox(&mut self.ping_pong, "Ping Pong");
 
         let keys = get_keys_as_string_vec();
 
@@ -381,24 +376,5 @@ impl Component for MorphTargetAnimation
                 }
             });
         });
-
-        if changed
-        {
-            self.from = from;
-            self.to = to;
-            self.speed = speed;
-            self.direction = direction;
-            self.looped = looped;
-            self.ping_pong = ping_pong;
-
-            if target_id > 0
-            {
-                self.target_id = Some(target_id);
-            }
-            else
-            {
-                self.target_id = None
-            }
-        }
     }
 }
