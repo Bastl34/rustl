@@ -78,7 +78,7 @@ pub fn error_box(ui: &mut Ui, text: &str)
 
 pub fn warn_box(ui: &mut Ui, text: &str)
 {
-    let bg_color = Color32::from_rgba_premultiplied(255, 129, 36, 5);
+    let bg_color = Color32::from_rgba_premultiplied(200, 90, 30, 5);
     egui::Frame::group(ui.style()).fill(bg_color).show(ui, |ui|
     {
         ui.horizontal_wrapped(|ui|

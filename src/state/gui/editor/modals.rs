@@ -141,6 +141,7 @@ pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mu
 pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_add_scene_controller = editor_state.dialog_add_scene_controller;
+    let mut post_controller = editor_state.add_scene_controller_post;
 
     modal_with_title(ctx, &mut dialog_add_scene_controller, "Add Controller", |ui|
     {
@@ -171,7 +172,15 @@ pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut
                 let scene_controller = state.registered_scene_controller.get(editor_state.add_scene_controller_id).unwrap().clone();
 
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                scene.controller.push(scene_controller.1());
+
+                if post_controller
+                {
+                    scene.post_controller.push(scene_controller.1());
+                }
+                else
+                {
+                    scene.pre_controller.push(scene_controller.1());
+                }
             }
 
             editor_state.dialog_add_scene_controller = false;

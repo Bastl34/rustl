@@ -7,7 +7,7 @@ use parry3d::query::Ray;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 
-use super::{camera::{Camera, CameraItem}, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBox, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 
@@ -36,7 +36,8 @@ pub struct Scene
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
 
-    pub controller: Vec<SceneControllerBox>,
+    pub pre_controller: Vec<SceneControllerBox>, // before scene updates
+    pub post_controller: Vec<SceneControllerBox>, // after scene updates
 
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
@@ -68,7 +69,8 @@ impl Scene
             textures: HashMap::new(),
             materials: HashMap::new(),
 
-            controller: vec![],
+            pre_controller: vec![],
+            post_controller: vec![],
 
             render_item: None,
             lights_render_item: None,
@@ -87,10 +89,10 @@ impl Scene
 
     pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
-        // update controller
-        let mut controller = vec![];
-        swap(&mut self.controller, &mut controller);
-        for controller_item in &mut controller
+        // update pre controller
+        let mut pre_controller = vec![];
+        swap(&mut self.pre_controller, &mut pre_controller);
+        for controller_item in &mut pre_controller
         {
             if controller_item.get_base().is_enabled
             {
@@ -98,7 +100,7 @@ impl Scene
             }
         }
 
-        swap(&mut controller, &mut self.controller);
+        swap(&mut pre_controller, &mut self.pre_controller);
 
         // update nodes
         for node in &self.nodes
@@ -106,6 +108,7 @@ impl Scene
             Node::update(node.clone(), input_manager, time, frame_scale, frame);
         }
 
+        // cameras
         let mut cameras = vec![];
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
@@ -114,6 +117,19 @@ impl Scene
         }
 
         swap(&mut cameras, &mut self.cameras);
+
+        // update post controller
+        let mut post_controller = vec![];
+        swap(&mut self.post_controller, &mut post_controller);
+        for controller_item in &mut post_controller
+        {
+            if controller_item.get_base().is_enabled
+            {
+                controller_item.update(self, input_manager, frame_scale);
+            }
+        }
+
+        swap(&mut post_controller, &mut self.post_controller);
     }
 
     pub fn print(&self)
@@ -236,6 +252,15 @@ impl Scene
             let hash = env_texture.item.read().unwrap().hash.clone();
             self.textures.insert(hash, env_texture.item.clone());
         }
+    }
+
+    pub fn add_defaults(&mut self)
+    {
+        self.add_default_material();
+
+        // post controller
+        let mut controller = GenericController::default();
+        self.post_controller.push(Box::new(controller));
     }
 
     pub fn clear_empty_nodes(&mut self)

@@ -176,11 +176,9 @@ impl Instance
 
         for (component_id, component) in all_components.clone().iter_mut().enumerate()
         {
+            if !component.read().unwrap().is_enabled()
             {
-                if !component.read().unwrap().is_enabled()
-                {
-                    continue;
-                }
+                continue;
             }
 
             // remove the component itself  for the component update

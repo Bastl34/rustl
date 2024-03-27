@@ -373,541 +373,545 @@ impl Component for Animation
         }
 
         // do not update if animation is already over
-        if let Some(start_time) = self.start_time
+        if self.start_time.is_none()
         {
-            let local_timestamp = ((time - start_time) as f64 / 1000.0 / 1000.0) as f32;
-            self.current_local_time = local_timestamp * self.speed;
+            return;
+        }
 
-            let mut t = self.current_local_time;
+        let start_time = self.start_time.unwrap();
 
-            if !self.looped && t > self.to
+        let local_timestamp = ((time - start_time) as f64 / 1000.0 / 1000.0) as f32;
+        self.current_local_time = local_timestamp * self.speed;
+
+        let mut t = self.current_local_time;
+
+        if !self.looped && t > self.to
+        {
+            self.stop_without_reset();
+            return;
+        }
+
+        let delta = self.to - self.from;
+
+        // animation
+        if !approx_zero(delta)
+        {
+            t = (t % delta) + self.from;
+
+            //if self.reverse { t = self.to - t; }
+            if self.reverse { t = self.to + self.from - t; }
+
+            // easing
+            t = easing(self.easing, t / delta) * delta;
+        }
+        // pose
+        else
+        {
+            t = 0.0;
+        }
+
+        let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
+
+        // ********** reset joints (if needed) **********
+        for channel in &self.channels
+        {
+            let target = channel.target.write().unwrap();
+            let joint = target.find_component::<Joint>();
+            let transformation = target.find_component::<Transformation>();
+
+            if let Some(joint) = joint
             {
-                self.stop_without_reset();
-                return;
+                let joint_clone = joint.clone();
+
+                component_downcast_mut!(joint, Joint);
+
+                let data = joint.get_data_mut().get_mut();
+
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                {
+                    joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
+
+                    joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
+                    joint.get_data_mut().get_mut().animation_weight = 0.0;
+                }
+
+                target_map.insert(joint.id(), TargetMapItem{ component: joint_clone, position: None, rotation_quat: None, scale: None, skip_joint: false });
+            }
+            else if let Some(transformation) = transformation
+            {
+                let transformation_clone = transformation.clone();
+
+                component_downcast_mut!(transformation, Transformation);
+
+                let data = transformation.get_data_mut().get_mut();
+
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                {
+                    transformation.get_data_mut().get_mut().animation_position = None;
+                    transformation.get_data_mut().get_mut().animation_rotation_quat = None;
+                    transformation.get_data_mut().get_mut().animation_scale = None;
+
+                    transformation.get_data_mut().get_mut().animation_update_frame = Some(frame);
+                    transformation.get_data_mut().get_mut().animation_weight = 0.0;
+                }
+
+                target_map.insert(transformation.id(), TargetMapItem{ component: transformation_clone, position: None, rotation_quat: None, scale: None, skip_joint: false });
+            }
+        }
+
+        // ********** calculate animation matrix **********
+        for channel in &self.channels
+        {
+            let mut joint_included_found = false;
+            let mut joint_excluded_found = false;
+
+            for (joint, include) in &self.joint_filter
+            {
+                let node = joint;
+
+                if channel.target.read().unwrap().has_parent_or_is_equal(node.clone())
+                {
+                    if *include
+                    {
+                        joint_included_found = true;
+                    }
+                    else
+                    {
+                        joint_excluded_found = true;
+                    }
+
+                }
             }
 
-            let delta = self.to - self.from;
-
-            // animation
-            if !approx_zero(delta)
+            let mut skip_joint = false;
+            if joint_excluded_found
             {
-                t = (t % delta) + self.from;
-
-                //if self.reverse { t = self.to - t; }
-                if self.reverse { t = self.to + self.from - t; }
-
-                // easing
-                t = easing(self.easing, t / delta) * delta;
+                skip_joint = true;
             }
-            // pose
+
+            if joint_included_found
+            {
+                skip_joint = false;
+            }
+
+            let joint;
+            {
+                let target = channel.target.read().unwrap();
+                joint = target.find_component::<Joint>();
+            }
+
+            let transformation;
+            {
+                let target = channel.target.read().unwrap();
+
+                transformation = target.find_component::<Transformation>();
+            }
+
+            if joint.is_none() && transformation.is_none()
+            {
+                // NOT SUPPORTED
+                dbg!("not supported for now");
+                continue;
+            }
+
+            let mut target_id = 0;
+            if let Some(joint) = &joint
+            {
+                target_id = joint.read().unwrap().id();
+            } else if let Some(transformation) = transformation
+            {
+                target_id = transformation.read().unwrap().id();
+            }
+
+
+            // ********** only one item per channel **********
+            if channel.timestamps.len() <= 1
+            {
+                let mut transform = (None, None, None);
+                if channel.transform_translation.len() > 0
+                {
+                    let t = &channel.transform_translation[0];
+
+                    transform.0 = Some(t.clone());
+                }
+                else if channel.transform_rotation.len() > 0
+                {
+                    let r = &channel.transform_rotation[0];
+                    let quaternion = UnitQuaternion::new_normalize(Quaternion::new(r.w, r.x, r.y, r.z));
+                    transform.1 = Some(quaternion);
+                }
+                else if channel.transform_scale.len() > 0
+                {
+                    let s = &channel.transform_scale[0];
+                    transform.2 = Some(s.clone());
+                }
+                else if channel.transform_morph.len() > 0
+                {
+                    let weights = &channel.transform_morph[0];
+
+                    let target = channel.target.read().unwrap();
+                    let morph_targets = target.find_components::<MorphTarget>();
+
+                    for morph_target in morph_targets
+                    {
+                        component_downcast_mut!(morph_target, MorphTarget);
+
+                        for (target_id, weight) in weights.iter().enumerate()
+                        {
+                            if morph_target.get_data().target_id == target_id as u32
+                            {
+                                let morph_target_data = morph_target.get_data_mut().get_mut();
+                                morph_target_data.weight = *weight * self.weight;
+                            }
+                        }
+                    }
+                }
+
+                apply_transformation_to_target(&mut target_map, target_id, &transform);
+
+                // skip joint flag
+                if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
+                {
+                    let target_item = target_map.get_mut(&target_id).unwrap();
+                    target_item.skip_joint = skip_joint;
+                }
+            }
+            // ********** some items per channel **********
             else
             {
-                t = 0.0;
-            }
+                let min = channel.timestamps[0];
+                let len = channel.timestamps.len();
+                let max = channel.timestamps[len - 1];
 
-            let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
+                let mut t = t;
+                if t < min { t = min; }
+                if t > max { t = max; }
 
-            // ********** reset joints (if needed) **********
-            for channel in &self.channels
-            {
-                let target = channel.target.write().unwrap();
-                let joint = target.find_component::<Joint>();
-                let transformation = target.find_component::<Transformation>();
-
-                if let Some(joint) = joint
+                let mut t0 = 0;
+                let mut t1 = 0;
+                for (i, &start) in channel.timestamps[..len - 1].iter().enumerate()
                 {
-                    let joint_clone = joint.clone();
+                    //TODO: store last value (for optimization?!)
+                    let next = channel.timestamps[i + 1];
 
-                    component_downcast_mut!(joint, Joint);
-
-                    let data = joint.get_data_mut().get_mut();
-
-                    if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                    if t >= start && t <= next
                     {
-                        joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
-
-                        joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
-                        joint.get_data_mut().get_mut().animation_weight = 0.0;
+                        t0 = i;
+                        t1 = i + 1;
+                        break;
                     }
-
-                    target_map.insert(joint.id(), TargetMapItem{ component: joint_clone, position: None, rotation_quat: None, scale: None, skip_joint: false });
                 }
-                else if let Some(transformation) = transformation
+
+                let prev_time = channel.timestamps[t0];
+                let next_time = channel.timestamps[t1];
+                let factor = (t - prev_time) / (next_time - prev_time);
+
+                // ********** translation **********
+                if channel.transform_translation.len() > 0
                 {
-                    let transformation_clone = transformation.clone();
-
-                    component_downcast_mut!(transformation, Transformation);
-
-                    let data = transformation.get_data_mut().get_mut();
-
-                    if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                    let translation = match channel.interpolation
                     {
-                        transformation.get_data_mut().get_mut().animation_position = None;
-                        transformation.get_data_mut().get_mut().animation_rotation_quat = None;
-                        transformation.get_data_mut().get_mut().animation_scale = None;
-
-                        transformation.get_data_mut().get_mut().animation_update_frame = Some(frame);
-                        transformation.get_data_mut().get_mut().animation_weight = 0.0;
-                    }
-
-                    target_map.insert(transformation.id(), TargetMapItem{ component: transformation_clone, position: None, rotation_quat: None, scale: None, skip_joint: false });
-                }
-            }
-
-            // ********** calculate animation matrix **********
-            for channel in &self.channels
-            {
-                let mut joint_included_found = false;
-                let mut joint_excluded_found = false;
-
-                for (joint, include) in &self.joint_filter
-                {
-                    let node = joint;
-
-                    if channel.target.read().unwrap().has_parent_or_is_equal(node.clone())
-                    {
-                        if *include
+                        Interpolation::Linear =>
                         {
-                            joint_included_found = true;
-                        }
-                        else
-                        {
-                            joint_excluded_found = true;
-                        }
+                            let from = &channel.transform_translation[t0];
+                            let to = &channel.transform_translation[t1];
 
+                            interpolate_vec3(&from, &to, factor)
+                        },
+                        Interpolation::Step =>
+                        {
+                            channel.transform_translation[t0].clone()
+                        },
+                        Interpolation::CubicSpline =>
+                        {
+                            let delta_time = next_time - prev_time;
+
+                            let l = t0 * 3;
+
+                            let prev_input_tangent = &channel.transform_translation[l];
+                            let prev_keyframe_value = &channel.transform_translation[l+1];
+                            let prev_output_tangent = &channel.transform_translation[l+2];
+
+                            let r = t1 * 3;
+
+                            let next_input_tangent = &channel.transform_translation[r];
+                            let next_keyframe_value = &channel.transform_translation[r+1];
+                            let next_output_tangent = &channel.transform_translation[r+2];
+
+                            let res = cubic_spline_interpolate_vec3
+                            (
+                                factor,
+                                delta_time,
+                                prev_input_tangent,
+                                prev_keyframe_value,
+                                prev_output_tangent,
+                                next_input_tangent,
+                                next_keyframe_value,
+                                next_output_tangent,
+                            );
+
+                            res
+                        },
+                    };
+
+                    apply_transformation_to_target(&mut target_map, target_id, &(Some(translation), None, None));
+                }
+                // ********** rotation **********
+                else if channel.transform_rotation.len() > 0
+                {
+                    let rotation = match channel.interpolation
+                    {
+                        Interpolation::Linear =>
+                        {
+                            let from = &channel.transform_rotation[t0];
+                            let to = &channel.transform_rotation[t1];
+
+                            let quaternion0 = UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z));
+                            let quaternion1 = UnitQuaternion::new_normalize(Quaternion::new(to.w, to.x, to.y, to.z));
+
+                            quaternion0.slerp(&quaternion1, factor)
+                        },
+                        Interpolation::Step =>
+                        {
+                            let from = &channel.transform_rotation[t0];
+
+                            UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z))
+                        },
+                        Interpolation::CubicSpline =>
+                        {
+                            let delta_time = next_time - prev_time;
+
+                            let l = t0 * 3;
+
+                            let prev_input_tangent = &channel.transform_rotation[l];
+                            let prev_keyframe_value = &channel.transform_rotation[l+1];
+                            let prev_output_tangent = &channel.transform_rotation[l+2];
+
+                            let r = t1 * 3;
+
+                            let next_input_tangent = &channel.transform_rotation[r];
+                            let next_keyframe_value = &channel.transform_rotation[r+1];
+                            let next_output_tangent = &channel.transform_rotation[r+2];
+
+                            let res = cubic_spline_interpolate_vec4
+                            (
+                                factor,
+                                delta_time,
+                                prev_input_tangent,
+                                prev_keyframe_value,
+                                prev_output_tangent,
+                                next_input_tangent,
+                                next_keyframe_value,
+                                next_output_tangent,
+                            );
+
+                            UnitQuaternion::new_normalize(Quaternion::new(res.w, res.x, res.y, res.z))
+                        },
+                    };
+
+                    apply_transformation_to_target(&mut target_map, target_id, &(None, Some(rotation), None));
+                }
+                // ********** scale **********
+                else if channel.transform_scale.len() > 0
+                {
+                    let scale = match channel.interpolation
+                    {
+                        Interpolation::Linear =>
+                        {
+                            let from = &channel.transform_scale[t0];
+                            let to = &channel.transform_scale[t1];
+
+                            interpolate_vec3(&from, &to, factor)
+                        },
+                        Interpolation::Step =>
+                        {
+                            channel.transform_scale[t0].clone()
+                        },
+                        Interpolation::CubicSpline =>
+                        {
+                            let delta_time = next_time - prev_time;
+
+                            let l = t0 * 3;
+
+                            let prev_input_tangent = &channel.transform_scale[l];
+                            let prev_keyframe_value = &channel.transform_scale[l+1];
+                            let prev_output_tangent = &channel.transform_scale[l+2];
+
+                            let r = t1 * 3;
+
+                            let next_input_tangent = &channel.transform_scale[r];
+                            let next_keyframe_value = &channel.transform_scale[r+1];
+                            let next_output_tangent = &channel.transform_scale[r+2];
+
+                            let res = cubic_spline_interpolate_vec3
+                            (
+                                factor,
+                                delta_time,
+                                prev_input_tangent,
+                                prev_keyframe_value,
+                                prev_output_tangent,
+                                next_input_tangent,
+                                next_keyframe_value,
+                                next_output_tangent,
+                            );
+
+                            res
+                        },
+                    };
+
+                    apply_transformation_to_target(&mut target_map, target_id, &(None, None, Some(scale)));
+                }
+                // ********** morph targets **********
+                else if channel.transform_morph.len() > 0
+                {
+                    let weights = match channel.interpolation
+                    {
+                        Interpolation::Linear =>
+                        {
+                            let from = &channel.transform_morph[t0];
+                            let to = &channel.transform_morph[t1];
+
+                            interpolate_vec(&from, &to, factor)
+                        },
+                        Interpolation::Step =>
+                        {
+                            channel.transform_morph[t0].clone()
+                        },
+                        Interpolation::CubicSpline =>
+                        {
+                            let delta_time = next_time - prev_time;
+
+                            let l = t0 * 3;
+
+                            let prev_input_tangent = &channel.transform_morph[l];
+                            let prev_keyframe_value = &channel.transform_morph[l+1];
+                            let prev_output_tangent = &channel.transform_morph[l+2];
+
+                            let r = t1 * 3;
+
+                            let next_input_tangent = &channel.transform_morph[r];
+                            let next_keyframe_value = &channel.transform_morph[r+1];
+                            let next_output_tangent = &channel.transform_morph[r+2];
+
+                            cubic_spline_interpolate_vec
+                            (
+                                factor,
+                                delta_time,
+                                prev_input_tangent,
+                                prev_keyframe_value,
+                                prev_output_tangent,
+                                next_input_tangent,
+                                next_keyframe_value,
+                                next_output_tangent,
+                            )
+                        },
+                    };
+
+                    let target = channel.target.read().unwrap();
+                    let morph_targets = target.find_components::<MorphTarget>();
+
+                    for morph_target in morph_targets
+                    {
+                        component_downcast_mut!(morph_target, MorphTarget);
+
+                        for (target_id, weight) in weights.iter().enumerate()
+                        {
+                            if morph_target.get_data().target_id == target_id as u32
+                            {
+                                let morph_target_data = morph_target.get_data_mut().get_mut();
+                                morph_target_data.weight = *weight * self.weight;
+                            }
+                        }
                     }
                 }
+            }
+        }
 
-                let mut skip_joint = false;
-                if joint_excluded_found
+        // ********** apply animation matrix with weight **********
+        for (_, target_item) in target_map
+        {
+            let target_component_arc = target_item.component.clone();
+            let mut target_component = target_component_arc.write().unwrap();
+
+            // joint
+            if let Some(joint) = target_component.as_any_mut().downcast_mut::<Joint>()
+            {
+                if target_item.skip_joint
                 {
-                    skip_joint = true;
-                }
-
-                if joint_included_found
-                {
-                    skip_joint = false;
-                }
-
-                let joint;
-                {
-                    let target = channel.target.read().unwrap();
-                    joint = target.find_component::<Joint>();
-                }
-
-                let transformation;
-                {
-                    let target = channel.target.read().unwrap();
-
-                    transformation = target.find_component::<Transformation>();
-                }
-
-                if joint.is_none() && transformation.is_none()
-                {
-                    // NOT SUPPORTED
-                    dbg!("not supported for now");
                     continue;
                 }
 
-                let mut target_id = 0;
-                if let Some(joint) = &joint
+                let component_data = joint.get_data_mut().get_mut();
+
+                let animation_trans = component_data.animation_trans.as_mut().unwrap();
+                let transform = get_animation_transform(&target_item);
+
+                // apply if its the first one
+                if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
                 {
-                    target_id = joint.read().unwrap().id();
-                } else if let Some(transformation) = transformation
+                    //*animation_trans = target_item.1 * self.weight;
+                    *animation_trans = transform * self.weight;
+                }
+                // add if its not the first one
+                else if !approx_zero(self.weight)
                 {
-                    target_id = transformation.read().unwrap().id();
+                    // animation blending - blend this animation with the prev one
+                    //*animation_trans = *animation_trans + (target_item.1 * self.weight);
+                    *animation_trans = *animation_trans + (transform * self.weight);
                 }
 
-
-                // ********** only one item per channel **********
-                if channel.timestamps.len() <= 1
-                {
-                    let mut transform = (None, None, None);
-                    if channel.transform_translation.len() > 0
-                    {
-                        let t = &channel.transform_translation[0];
-
-                        transform.0 = Some(t.clone());
-                    }
-                    else if channel.transform_rotation.len() > 0
-                    {
-                        let r = &channel.transform_rotation[0];
-                        let quaternion = UnitQuaternion::new_normalize(Quaternion::new(r.w, r.x, r.y, r.z));
-                        transform.1 = Some(quaternion);
-                    }
-                    else if channel.transform_scale.len() > 0
-                    {
-                        let s = &channel.transform_scale[0];
-                        transform.2 = Some(s.clone());
-                    }
-                    else if channel.transform_morph.len() > 0
-                    {
-                        let weights = &channel.transform_morph[0];
-
-                        let target = channel.target.read().unwrap();
-                        let morph_targets = target.find_components::<MorphTarget>();
-
-                        for morph_target in morph_targets
-                        {
-                            component_downcast_mut!(morph_target, MorphTarget);
-
-                            for (target_id, weight) in weights.iter().enumerate()
-                            {
-                                if morph_target.get_data().target_id == target_id as u32
-                                {
-                                    let morph_target_data = morph_target.get_data_mut().get_mut();
-                                    morph_target_data.weight = *weight * self.weight;
-                                }
-                            }
-                        }
-                    }
-
-                    apply_transformation_to_target(&mut target_map, target_id, &transform);
-
-                    // skip joint flag
-                    if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
-                    {
-                        let target_item = target_map.get_mut(&target_id).unwrap();
-                        target_item.skip_joint = skip_joint;
-                    }
-                }
-                // ********** some items per channel **********
-                else
-                {
-                    let min = channel.timestamps[0];
-                    let len = channel.timestamps.len();
-                    let max = channel.timestamps[len - 1];
-
-                    let mut t = t;
-                    if t < min { t = min; }
-                    if t > max { t = max; }
-
-                    let mut t0 = 0;
-                    let mut t1 = 0;
-                    for (i, &start) in channel.timestamps[..len - 1].iter().enumerate()
-                    {
-                        //TODO: store last value (for optimization?!)
-                        let next = channel.timestamps[i + 1];
-
-                        if t >= start && t <= next
-                        {
-                            t0 = i;
-                            t1 = i + 1;
-                            break;
-                        }
-                    }
-
-                    let prev_time = channel.timestamps[t0];
-                    let next_time = channel.timestamps[t1];
-                    let factor = (t - prev_time) / (next_time - prev_time);
-
-                    // ********** translation **********
-                    if channel.transform_translation.len() > 0
-                    {
-                        let translation = match channel.interpolation
-                        {
-                            Interpolation::Linear =>
-                            {
-                                let from = &channel.transform_translation[t0];
-                                let to = &channel.transform_translation[t1];
-
-                                interpolate_vec3(&from, &to, factor)
-                            },
-                            Interpolation::Step =>
-                            {
-                                channel.transform_translation[t0].clone()
-                            },
-                            Interpolation::CubicSpline =>
-                            {
-                                let delta_time = next_time - prev_time;
-
-                                let l = t0 * 3;
-
-                                let prev_input_tangent = &channel.transform_translation[l];
-                                let prev_keyframe_value = &channel.transform_translation[l+1];
-                                let prev_output_tangent = &channel.transform_translation[l+2];
-
-                                let r = t1 * 3;
-
-                                let next_input_tangent = &channel.transform_translation[r];
-                                let next_keyframe_value = &channel.transform_translation[r+1];
-                                let next_output_tangent = &channel.transform_translation[r+2];
-
-                                let res = cubic_spline_interpolate_vec3
-                                (
-                                    factor,
-                                    delta_time,
-                                    prev_input_tangent,
-                                    prev_keyframe_value,
-                                    prev_output_tangent,
-                                    next_input_tangent,
-                                    next_keyframe_value,
-                                    next_output_tangent,
-                                );
-
-                                res
-                            },
-                        };
-
-                        apply_transformation_to_target(&mut target_map, target_id, &(Some(translation), None, None));
-                    }
-                    // ********** rotation **********
-                    else if channel.transform_rotation.len() > 0
-                    {
-                        let rotation = match channel.interpolation
-                        {
-                            Interpolation::Linear =>
-                            {
-                                let from = &channel.transform_rotation[t0];
-                                let to = &channel.transform_rotation[t1];
-
-                                let quaternion0 = UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z));
-                                let quaternion1 = UnitQuaternion::new_normalize(Quaternion::new(to.w, to.x, to.y, to.z));
-
-                                quaternion0.slerp(&quaternion1, factor)
-                            },
-                            Interpolation::Step =>
-                            {
-                                let from = &channel.transform_rotation[t0];
-
-                                UnitQuaternion::new_normalize(Quaternion::new(from.w, from.x, from.y, from.z))
-                            },
-                            Interpolation::CubicSpline =>
-                            {
-                                let delta_time = next_time - prev_time;
-
-                                let l = t0 * 3;
-
-                                let prev_input_tangent = &channel.transform_rotation[l];
-                                let prev_keyframe_value = &channel.transform_rotation[l+1];
-                                let prev_output_tangent = &channel.transform_rotation[l+2];
-
-                                let r = t1 * 3;
-
-                                let next_input_tangent = &channel.transform_rotation[r];
-                                let next_keyframe_value = &channel.transform_rotation[r+1];
-                                let next_output_tangent = &channel.transform_rotation[r+2];
-
-                                let res = cubic_spline_interpolate_vec4
-                                (
-                                    factor,
-                                    delta_time,
-                                    prev_input_tangent,
-                                    prev_keyframe_value,
-                                    prev_output_tangent,
-                                    next_input_tangent,
-                                    next_keyframe_value,
-                                    next_output_tangent,
-                                );
-
-                                UnitQuaternion::new_normalize(Quaternion::new(res.w, res.x, res.y, res.z))
-                            },
-                        };
-
-                        apply_transformation_to_target(&mut target_map, target_id, &(None, Some(rotation), None));
-                    }
-                    // ********** scale **********
-                    else if channel.transform_scale.len() > 0
-                    {
-                        let scale = match channel.interpolation
-                        {
-                            Interpolation::Linear =>
-                            {
-                                let from = &channel.transform_scale[t0];
-                                let to = &channel.transform_scale[t1];
-
-                                interpolate_vec3(&from, &to, factor)
-                            },
-                            Interpolation::Step =>
-                            {
-                                channel.transform_scale[t0].clone()
-                            },
-                            Interpolation::CubicSpline =>
-                            {
-                                let delta_time = next_time - prev_time;
-
-                                let l = t0 * 3;
-
-                                let prev_input_tangent = &channel.transform_scale[l];
-                                let prev_keyframe_value = &channel.transform_scale[l+1];
-                                let prev_output_tangent = &channel.transform_scale[l+2];
-
-                                let r = t1 * 3;
-
-                                let next_input_tangent = &channel.transform_scale[r];
-                                let next_keyframe_value = &channel.transform_scale[r+1];
-                                let next_output_tangent = &channel.transform_scale[r+2];
-
-                                let res = cubic_spline_interpolate_vec3
-                                (
-                                    factor,
-                                    delta_time,
-                                    prev_input_tangent,
-                                    prev_keyframe_value,
-                                    prev_output_tangent,
-                                    next_input_tangent,
-                                    next_keyframe_value,
-                                    next_output_tangent,
-                                );
-
-                                res
-                            },
-                        };
-
-                        apply_transformation_to_target(&mut target_map, target_id, &(None, None, Some(scale)));
-                    }
-                    // ********** morph targets **********
-                    else if channel.transform_morph.len() > 0
-                    {
-                        let weights = match channel.interpolation
-                        {
-                            Interpolation::Linear =>
-                            {
-                                let from = &channel.transform_morph[t0];
-                                let to = &channel.transform_morph[t1];
-
-                                interpolate_vec(&from, &to, factor)
-                            },
-                            Interpolation::Step =>
-                            {
-                                channel.transform_morph[t0].clone()
-                            },
-                            Interpolation::CubicSpline =>
-                            {
-                                let delta_time = next_time - prev_time;
-
-                                let l = t0 * 3;
-
-                                let prev_input_tangent = &channel.transform_morph[l];
-                                let prev_keyframe_value = &channel.transform_morph[l+1];
-                                let prev_output_tangent = &channel.transform_morph[l+2];
-
-                                let r = t1 * 3;
-
-                                let next_input_tangent = &channel.transform_morph[r];
-                                let next_keyframe_value = &channel.transform_morph[r+1];
-                                let next_output_tangent = &channel.transform_morph[r+2];
-
-                                cubic_spline_interpolate_vec
-                                (
-                                    factor,
-                                    delta_time,
-                                    prev_input_tangent,
-                                    prev_keyframe_value,
-                                    prev_output_tangent,
-                                    next_input_tangent,
-                                    next_keyframe_value,
-                                    next_output_tangent,
-                                )
-                            },
-                        };
-
-                        let target = channel.target.read().unwrap();
-                        let morph_targets = target.find_components::<MorphTarget>();
-
-                        for morph_target in morph_targets
-                        {
-                            component_downcast_mut!(morph_target, MorphTarget);
-
-                            for (target_id, weight) in weights.iter().enumerate()
-                            {
-                                if morph_target.get_data().target_id == target_id as u32
-                                {
-                                    let morph_target_data = morph_target.get_data_mut().get_mut();
-                                    morph_target_data.weight = *weight * self.weight;
-                                }
-                            }
-                        }
-                    }
-                }
+                component_data.animation_weight += self.weight;
             }
-
-            // ********** apply animation matrix with weight **********
-            for (_, target_item) in target_map
+            // transformation
+            else if let Some(transformation) = target_component.as_any_mut().downcast_mut::<Transformation>()
             {
-                let target_component_arc = target_item.component.clone();
-                let mut target_component = target_component_arc.write().unwrap();
+                let component_data = transformation.get_data_mut().get_mut();
 
-                // joint
-                if let Some(joint) = target_component.as_any_mut().downcast_mut::<Joint>()
+                if let Some(position) = target_item.position
                 {
-                    if target_item.skip_joint
+                    if component_data.animation_position.is_none()
                     {
-                        continue;
+                        component_data.animation_position = Some(position * self.weight);
                     }
-
-                    let component_data = joint.get_data_mut().get_mut();
-
-                    let animation_trans = component_data.animation_trans.as_mut().unwrap();
-                    let transform = get_animation_transform(&target_item);
-
-                    // apply if its the first one
-                    if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
+                    else
                     {
-                        //*animation_trans = target_item.1 * self.weight;
-                        *animation_trans = transform * self.weight;
+                        component_data.animation_position = Some(component_data.animation_position.unwrap() + (position * self.weight));
                     }
-                    // add if its not the first one
-                    else if !approx_zero(self.weight)
-                    {
-                        // animation blending - blend this animation with the prev one
-                        //*animation_trans = *animation_trans + (target_item.1 * self.weight);
-                        *animation_trans = *animation_trans + (transform * self.weight);
-                    }
-
-                    component_data.animation_weight += self.weight;
                 }
-                // transformation
-                else if let Some(transformation) = target_component.as_any_mut().downcast_mut::<Transformation>()
+
+                if let Some(rotation_quat) = target_item.rotation_quat
                 {
-                    let component_data = transformation.get_data_mut().get_mut();
-
-                    if let Some(position) = target_item.position
+                    if component_data.animation_rotation_quat.is_none()
                     {
-                        if component_data.animation_position.is_none()
-                        {
-                            component_data.animation_position = Some(position * self.weight);
-                        }
-                        else
-                        {
-                            component_data.animation_position = Some(component_data.animation_position.unwrap() + (position * self.weight));
-                        }
+                        component_data.animation_rotation_quat = Some(Vector4::<f32>::new(rotation_quat.i * self.weight, rotation_quat.j * self.weight, rotation_quat.k * self.weight, rotation_quat.w * self.weight));
                     }
-
-                    if let Some(rotation_quat) = target_item.rotation_quat
+                    else
                     {
-                        if component_data.animation_rotation_quat.is_none()
-                        {
-                            component_data.animation_rotation_quat = Some(Vector4::<f32>::new(rotation_quat.i * self.weight, rotation_quat.j * self.weight, rotation_quat.k * self.weight, rotation_quat.w * self.weight));
-                        }
-                        else
-                        {
-                            let x = component_data.animation_rotation_quat.unwrap().x * rotation_quat.i * self.weight;
-                            let y = component_data.animation_rotation_quat.unwrap().y * rotation_quat.j * self.weight;
-                            let z = component_data.animation_rotation_quat.unwrap().z * rotation_quat.k * self.weight;
-                            let w = component_data.animation_rotation_quat.unwrap().w * rotation_quat.w * self.weight;
-                            component_data.animation_rotation_quat = Some(Vector4::<f32>::new(x, y, z, w));
-                        }
+                        let x = component_data.animation_rotation_quat.unwrap().x * rotation_quat.i * self.weight;
+                        let y = component_data.animation_rotation_quat.unwrap().y * rotation_quat.j * self.weight;
+                        let z = component_data.animation_rotation_quat.unwrap().z * rotation_quat.k * self.weight;
+                        let w = component_data.animation_rotation_quat.unwrap().w * rotation_quat.w * self.weight;
+                        component_data.animation_rotation_quat = Some(Vector4::<f32>::new(x, y, z, w));
                     }
-
-                    if let Some(scale) = target_item.scale
-                    {
-                        if component_data.animation_scale.is_none()
-                        {
-                            component_data.animation_scale = Some(scale * self.weight);
-                        }
-                        else
-                        {
-                            let x = component_data.animation_scale.unwrap().x * scale.x * self.weight;
-                            let y = component_data.animation_scale.unwrap().y * scale.y * self.weight;
-                            let z = component_data.animation_scale.unwrap().z * scale.z * self.weight;
-                            component_data.animation_scale = Some(Vector3::<f32>::new(x, y, z));
-                        }
-                    }
-
-                    component_data.animation_weight += self.weight;
-                    transformation.calc_transform();
                 }
+
+                if let Some(scale) = target_item.scale
+                {
+                    if component_data.animation_scale.is_none()
+                    {
+                        component_data.animation_scale = Some(scale * self.weight);
+                    }
+                    else
+                    {
+                        let x = component_data.animation_scale.unwrap().x * scale.x * self.weight;
+                        let y = component_data.animation_scale.unwrap().y * scale.y * self.weight;
+                        let z = component_data.animation_scale.unwrap().z * scale.z * self.weight;
+                        component_data.animation_scale = Some(Vector3::<f32>::new(x, y, z));
+                    }
+                }
+
+                component_data.animation_weight += self.weight;
+                transformation.calc_transform();
             }
         }
     }

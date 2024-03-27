@@ -3,7 +3,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{ComplexField, Normed, Point3, Rotation3, Vector2, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -493,6 +493,13 @@ impl SceneController for CharacterController
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
     {
+        if self.node.is_none()
+        {
+            return false;
+        }
+
+        let node = self.node.clone().unwrap();
+
         let mut has_change = false;
 
         let all_keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::Escape];
@@ -675,7 +682,7 @@ impl SceneController for CharacterController
                     down = Vector3::new(0.0, -1.0, 0.0);
                 }
 
-                let character_node = self.node.clone().unwrap();
+                let character_node = node.clone();
 
                 let predicate_func = move |node: NodeItem| -> bool
                 {

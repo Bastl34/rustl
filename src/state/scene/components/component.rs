@@ -49,6 +49,8 @@ pub struct ComponentBase
     pub icon: String,
     pub info: Option<String>,
 
+    pub post_update_request: bool,
+
     pub render_item: RenderItemOption
 }
 
@@ -64,7 +66,8 @@ impl ComponentBase
             icon,
             is_enabled: true,
             render_item: None,
-            info: None
+            info: None,
+            post_update_request: false
         }
     }
 }

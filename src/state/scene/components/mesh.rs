@@ -8,7 +8,7 @@ use crate::{component_impl_default, component_impl_no_update, component_impl_set
 use super::component::{Component, ComponentBase};
 
 pub const JOINTS_LIMIT: usize = 4;
-const DEFAULT_SKIN_B_BOX_SCALE: f32 = 5.0; // the skinned mesh bbox is multiplied by this factor -> because a bbox for an animated mesh can not be correctly calculated - just simply is a large factor
+const DEFAULT_SKIN_B_BOX_SCALE: f32 = 2.0; // the skinned mesh bbox is multiplied by this factor -> because a bbox for an animated mesh can not be correctly calculated - just simply is a large factor
 
 pub struct MeshData
 {
@@ -80,6 +80,8 @@ pub struct Mesh
     data: ChangeTracker<MeshData>,
 
     pub morph_target_render_item: RenderItemOption,
+
+    pub update_skin_bbox_on_animation: bool,
 }
 
 impl Mesh
@@ -120,7 +122,9 @@ impl Mesh
             base: ComponentBase::new(id, name.to_string(), "Mesh".to_string(), "◼".to_string()),
             data: ChangeTracker::new(mesh_data),
 
-            morph_target_render_item: None
+            morph_target_render_item: None,
+
+            update_skin_bbox_on_animation: false
         };
 
         mesh.calc_bbox();
@@ -229,14 +233,7 @@ impl Mesh
                 let joints = data.joints[v_i];
                 let weights = data.weights[v_i];
 
-                // TODO: remove?
-                let joint = joints[i] as usize;
-                if joint >= joint_matrices.len()
-                {
-                    continue;
-                }
-
-                let joint_transform = joint_matrices[joint];
+                let joint_transform = joint_matrices[joints[i] as usize];
                 let transformed = joint_transform * pos * weights[i];
 
                 transformed_pos.x += transformed.x;
@@ -256,14 +253,6 @@ impl Mesh
 
         let trans = Isometry3::<f32>::identity();
         data.b_box_skin = Some(mesh.aabb(&trans));
-
-        /*
-        dbg!(data.b_box_skin.unwrap().mins);
-        dbg!(data.b_box_skin.unwrap().maxs);
-
-        dbg!(data.b_box.mins);
-        dbg!(data.b_box.maxs);
-        */
     }
 
     pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
@@ -339,14 +328,7 @@ impl Mesh
                 let joints = data.joints[v_i];
                 let weights = data.weights[v_i];
 
-                // TODO: remove?
-                let joint = joints[i] as usize;
-                if joint >= joint_matrices.len()
-                {
-                    continue;
-                }
-
-                let joint_transform = joint_matrices[joint];
+                let joint_transform = joint_matrices[joints[i] as usize];
                 let transformed = joint_transform * pos * weights[i];
 
                 transformed_pos.x += transformed.x;
@@ -672,6 +654,8 @@ impl Component for Mesh
         }
 
         ui.separator();
+
+        ui.checkbox(&mut self.update_skin_bbox_on_animation, "update skin bbox on animation change");
 
         if self.get_data().b_box_skin.is_some()
         {

@@ -158,7 +158,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
 
             let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
-            scene.add_default_material();
+            scene.add_defaults();
 
             // ********** cam **********
             /*
@@ -492,7 +492,7 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                let nodes = scene_utils::load_object("objects/temp/rpm3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -503,9 +503,9 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -534,11 +534,10 @@ impl MainInterface
                     }
 
                     // add camera controller and run auto setup
-                    /*
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar2");
-                    scene.controller.push(Box::new(controller));
-                    */
+                    scene.pre_controller.push(Box::new(controller));
+
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();

@@ -101,6 +101,7 @@ pub struct EditorState
 
     pub dialog_add_scene_controller: bool,
     pub add_scene_controller_id: usize,
+    pub add_scene_controller_post: bool,
 
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
@@ -148,6 +149,7 @@ impl EditorState
 
             dialog_add_scene_controller: false,
             add_scene_controller_id: 0,
+            add_scene_controller_post: false,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: false,
