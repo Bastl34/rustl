@@ -1,9 +1,9 @@
 use std::f32::consts::PI;
 
-use nalgebra::{Vector2, Vector3, Isometry, Isometry3};
-use parry3d::{shape::Ball, query};
+use nalgebra::{Vector2, Vector3};
+use parry3d::shape::Ball;
 
-use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene::Scene, camera::CameraData, components::mesh::Mesh}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec2, self, approx_zero}}, component_downcast};
+use crate::{camera_controller_impl_default, state::scene::{node::NodeItem, scene::Scene, camera::CameraData}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec2, self}}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -38,6 +38,22 @@ impl FlyController
             move_speed,
             move_speed_shift,
             mouse_sensitivity,
+
+            sphere_shape: Ball::new(DEFAULT_SPHERE_RADIUS)
+        }
+    }
+
+    pub fn default() -> Self
+    {
+        FlyController
+        {
+            base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
+
+            collision: true,
+
+            move_speed: 0.1,
+            move_speed_shift: 0.2,
+            mouse_sensitivity: Vector2::<f32>::new(0.0015, 0.0015),
 
             sphere_shape: Ball::new(DEFAULT_SPHERE_RADIUS)
         }
@@ -93,7 +109,8 @@ impl CameraController for FlyController
             }
         }
 
-        if input_manager.keyboard.is_holding_by_keys([Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C].to_vec()) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
+        if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
         {
             let cam_data = cam_data.get_mut();
             last_eye_pos = Some(cam_data.eye_pos.clone());

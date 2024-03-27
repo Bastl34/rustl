@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{RwLock, Arc}, cell::RefCell, mem::swap};
+use std::{cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}, vec};
 
 use anyhow::Ok;
 use nalgebra::Vector3;
@@ -7,7 +7,7 @@ use parry3d::query::Ray;
 
 use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
 
-use super::{manager::id_manager::IdManager, node::{NodeItem, Node}, camera::{CameraItem, Camera}, loader::wavefront, loader::gltf, texture::{TextureItem, Texture}, components::{material::{MaterialItem, Material, TextureType, TextureState}, mesh::Mesh}, light::{LightItem, Light}};
+use super::{camera::{Camera, CameraItem}, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 
@@ -22,7 +22,7 @@ pub struct SceneData
 
 pub struct Scene
 {
-    pub id_manager: IdManager,
+    pub id_manager: IdManagerItem,
 
     pub id: u64,
     pub name: String,
@@ -36,6 +36,9 @@ pub struct Scene
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
 
+    pub pre_controller: Vec<SceneControllerBox>, // before scene updates
+    pub post_controller: Vec<SceneControllerBox>, // after scene updates
+
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
 }
@@ -46,7 +49,7 @@ impl Scene
     {
         Self
         {
-            id_manager: IdManager::new(),
+            id_manager: Arc::new(RwLock::new(IdManager::new())),
 
             id: id,
             name: name.to_string(),
@@ -66,6 +69,9 @@ impl Scene
             textures: HashMap::new(),
             materials: HashMap::new(),
 
+            pre_controller: vec![],
+            post_controller: vec![],
+
             render_item: None,
             lights_render_item: None,
         }
@@ -81,50 +87,28 @@ impl Scene
         &mut self.data
     }
 
-    /*
-    pub fn load(&mut self, path: &str, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+    pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
-        let extension = Path::new(path).extension();
-
-        if extension.is_none()
+        // update pre controller
+        let mut pre_controller = vec![];
+        swap(&mut self.pre_controller, &mut pre_controller);
+        for controller_item in &mut pre_controller
         {
-            println!("can not load {}", path);
-            return Ok(vec![]);
-        }
-        let extension = extension.unwrap();
-
-        let main_queue = state.main_thread_execution_queue.clone();
-        let create_mipmaps = state.rendering.create_mipmaps;
-
-        let path = path.to_string();
-        let scene_id = self.id;
-
-        spawn_thread(move ||
-        {
-            load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), create_mipmaps).unwrap();
-        });
-
-        if extension == "obj"
-        {
-            //return wavefront::load(path, self, create_mipmaps);
-        }
-        else if extension == "gltf" || extension == "glb"
-        {
-            //return gltf::load(path, self, create_mipmaps);
+            if controller_item.get_base().is_enabled
+            {
+                controller_item.update(self, input_manager, frame_scale);
+            }
         }
 
-        Ok(vec![])
-    }
-     */
+        swap(&mut pre_controller, &mut self.pre_controller);
 
-    pub fn update(&mut self, input_manager: &mut InputManager, frame_scale: f32)
-    {
         // update nodes
         for node in &self.nodes
         {
-            Node::update(node.clone(), input_manager, frame_scale);
+            Node::update(node.clone(), input_manager, time, frame_scale, frame);
         }
 
+        // cameras
         let mut cameras = vec![];
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
@@ -133,6 +117,19 @@ impl Scene
         }
 
         swap(&mut cameras, &mut self.cameras);
+
+        // update post controller
+        let mut post_controller = vec![];
+        swap(&mut self.post_controller, &mut post_controller);
+        for controller_item in &mut post_controller
+        {
+            if controller_item.get_base().is_enabled
+            {
+                controller_item.update(self, input_manager, frame_scale);
+            }
+        }
+
+        swap(&mut post_controller, &mut self.post_controller);
     }
 
     pub fn print(&self)
@@ -170,21 +167,21 @@ impl Scene
         self.nodes.clear();
     }
 
-    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary_async(path).await?;
 
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
     }
 
-    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
     {
         let image_bytes = resources::load_binary(path)?;
 
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension))
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
     }
 
-    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
+    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>, max_tex_res: u32) -> TextureItem
     {
         let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
 
@@ -194,8 +191,8 @@ impl Scene
             return self.textures.get_mut(&hash).unwrap().clone();
         }
 
-        let id = self.id_manager.get_next_texture_id();
-        let texture = Texture::new(id, name, &image_bytes, extension);
+        let id = self.id_manager.write().unwrap().get_next_texture_id();
+        let texture = Texture::new(id, name, &image_bytes, extension, max_tex_res);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
@@ -257,6 +254,15 @@ impl Scene
         }
     }
 
+    pub fn add_defaults(&mut self)
+    {
+        self.add_default_material();
+
+        // post controller
+        let mut controller = GenericController::default();
+        self.post_controller.push(Box::new(controller));
+    }
+
     pub fn clear_empty_nodes(&mut self)
     {
         Self::clear_empty_nodes_recursive(&mut self.nodes);
@@ -269,7 +275,7 @@ impl Scene
 
     pub fn add_default_material(&mut self)
     {
-        let material_id = self.id_manager.get_next_component_id();
+        let material_id = self.id_manager.write().unwrap().get_next_component_id();
         let material = Material::new(material_id, "default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
@@ -414,7 +420,7 @@ impl Scene
 
     pub fn add_camera(&mut self, name: &str) -> &CameraItem
     {
-        let cam = Camera::new(self.id_manager.get_next_camera_id(), name.to_string());
+        let cam = Camera::new(self.id_manager.write().unwrap().get_next_camera_id(), name.to_string());
         self.cameras.push(Box::new(cam));
 
         self.cameras.last().unwrap()
@@ -424,6 +430,18 @@ impl Scene
     pub fn get_active_camera(&self) -> Option<&CameraItem>
     {
         for camera in &self.cameras
+        {
+            if camera.enabled
+            {
+                return Some(camera);
+            }
+        }
+        None
+    }
+
+    pub fn get_active_camera_mut(&mut self) -> Option<&mut CameraItem>
+    {
+        for camera in self.cameras.iter_mut()
         {
             if camera.enabled
             {
@@ -462,7 +480,7 @@ impl Scene
 
     pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_point(self.id_manager.get_next_light_id(), name.to_string(), pos, color, intensity);
+        let light = Light::new_point(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -470,7 +488,7 @@ impl Scene
 
     pub fn add_light_directional(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_directional(self.id_manager.get_next_light_id(), name.to_string(), pos, dir, color, intensity);
+        let light = Light::new_directional(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, dir, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -478,7 +496,7 @@ impl Scene
 
     pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_spot(self.id_manager.get_next_light_id(), name.to_string(), pos, dir, color, max_angle, intensity);
+        let light = Light::new_spot(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, dir, color, max_angle, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -557,6 +575,26 @@ impl Scene
         None
     }
 
+    fn _find_mesh_node_by_name(nodes: &Vec<NodeItem>, name: String) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name && node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Scene::_find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
     pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
     {
         Self::_find_node_by_id(&self.nodes, id)
@@ -565,6 +603,11 @@ impl Scene
     pub fn find_node_by_name(&self, name: &str) -> Option<NodeItem>
     {
         Self::_find_node_by_name(&self.nodes, name.to_string())
+    }
+
+    pub fn find_mesh_node_by_name(&self, name: &str) -> Option<NodeItem>
+    {
+        Self::_find_mesh_node_by_name(&self.nodes, name.to_string())
     }
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
@@ -606,7 +649,7 @@ impl Scene
         false
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         let mut nodes = vec![];
 
@@ -620,22 +663,50 @@ impl Scene
         let child_nodes_with_meshes = Scene::list_all_child_nodes_with_mesh(&node.read().unwrap().nodes);
         nodes.extend(child_nodes_with_meshes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only)
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    {
+        let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
+
+        if hits.len() > 0
+        {
+            return Some(hits.first().unwrap().clone());
+        }
+
+        None
+    }
+
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only)
+        let hits = self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate);
+
+        if hits.len() > 0
+        {
+            return Some(hits.first().unwrap().clone());
+        }
+
+        None
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    {
+        let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
+
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
+    }
+
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
     {
         // find hits (bbox based)
-        let mut hits = vec![];
+        let mut hits_bbox = vec![];
 
-        for node_arc in nodes
+        let mut no_bbox_picking_items = vec![];
+
+        'outer: for node_arc in nodes
         {
             let node = node_arc.read().unwrap();
 
@@ -661,6 +732,15 @@ impl Scene
                 continue;
             }
 
+            //if let Some(ref predicate) = predicate
+            if let Some(predicate) = &predicate
+            {
+                if !predicate(node_arc.clone())
+                {
+                    continue;
+                }
+            }
+
             for instance in node.instances.get_ref()
             {
                 let instance = instance.read().unwrap();
@@ -683,26 +763,59 @@ impl Scene
 
                 let ray_inverse = math::inverse_ray(ray, &transform_inverse);
 
-                let solid = true;
-                let dist = mesh.intersect_b_box(&ray_inverse, solid);
-                if let Some(dist) = dist
+                if !node.pick_bbox_first
                 {
-                    hits.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
+                    no_bbox_picking_items.push((node_arc, instance.id, transform, transform_inverse, ray_inverse));
+                }
+                else
+                {
+                    let solid = true;
+                    let dist = mesh.intersect_b_box(&ray_inverse, solid);
+                    if let Some(dist) = dist
+                    {
+                        hits_bbox.push((node_arc, instance.id, dist, transform, transform_inverse, ray_inverse));
+                    }
+                }
+
+                if stop_on_first_hit && bounding_box_only && hits_bbox.len() > 0
+                {
+                    break 'outer;
                 }
             }
         }
 
-        if hits.len() == 0
+        if hits_bbox.len() == 0 && no_bbox_picking_items.len() == 0
         {
-            return None;
+            return vec![];
         }
 
         // sort bbox dist (to get the nearest)
-        hits.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+        hits_bbox.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
-        if bounding_box_only && hits.len() > 0
+        if bounding_box_only && hits_bbox.len() > 0
         {
-            let first = hits.first().unwrap();
+            let mut res = vec![];
+
+            for hit_bbox in &hits_bbox
+            {
+                let node = hit_bbox.0;
+                let instance = hit_bbox.1;
+                let dist = hit_bbox.2;
+
+                let pos = ray.origin + (ray.dir * dist);
+
+                res.push((dist, pos, None, node.clone(), instance, None));
+
+                if stop_on_first_hit
+                {
+                    return res;
+                }
+            }
+
+            return res;
+
+            /*
+            let first = hits_bbox.first().unwrap();
             let node = first.0;
             let instance = first.1;
             let dist = first.2;
@@ -715,13 +828,28 @@ impl Scene
             dbg!(" intersection 1");
             dbg!(node.read().unwrap().name.clone());
 
-            return Some((dist, pos, None, node.clone(), instance, None));
+            //return Some((dist, pos, None, node.clone(), instance, None));
+            return
+             */
+        }
+
+        // combine bbox hits and nodes without bbox picking
+        let mut ray_intersection_checks = vec![];
+        for (node_arc, instance_id, _dist, transform, transform_inverse, ray_inverse) in hits_bbox
+        {
+            ray_intersection_checks.push((node_arc, instance_id, transform, transform_inverse, ray_inverse));
+        }
+
+        for (node_arc, instance_id, transform, transform_inverse, ray_inverse) in no_bbox_picking_items
+        {
+            ray_intersection_checks.push((node_arc, instance_id, transform, transform_inverse, ray_inverse));
         }
 
         // mesh based intersection
-        let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+        //let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+        let mut hits: Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = Vec::new();
 
-        for (node_arc, instance_id, _dist, transform, transform_inverse, ray_inverse) in hits
+        for (node_arc, instance_id, transform, transform_inverse, ray_inverse) in ray_intersection_checks
         {
             let node = node_arc.read().unwrap();
 
@@ -735,11 +863,27 @@ impl Scene
 
             let solid = !material_data.backface_cullig;
 
-            let intersection = mesh.intersect(ray, &ray_inverse, &transform, &transform_inverse, solid, material_data.smooth_shading);
+            let mut joint_matrices = vec![];
+            if node.skin.len() > 0
+            {
+                let matrices = node.get_joint_transform_vec(true);
+
+                if let Some(matrices) = matrices
+                {
+                    joint_matrices = matrices;
+                }
+            }
+
+            let intersection = mesh.intersect_skinned(ray, &ray_inverse, &transform, &transform_inverse, &joint_matrices, solid, material_data.smooth_shading);
 
             if let Some(intersection) = intersection
             {
+                let pos = ray.origin + (ray.dir * intersection.0);
+
+                hits.push((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
+
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
+                /*
                 if best_hit.is_none()
                 {
                     let pos = ray.origin + (ray.dir * intersection.0);
@@ -765,16 +909,22 @@ impl Scene
                         best_hit = Some((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
                     }
                 }
+                */
             }
 
             //if it should return on first hit
-            if best_hit.is_some() && stop_on_first_hit
+            //if best_hit.is_some() && stop_on_first_hit
+            if hits.len() > 0 && stop_on_first_hit
             {
-                return best_hit;
+                return hits;
             }
         }
 
-        best_hit
+        // sort by distance
+        hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        // best_hit
+        hits
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)

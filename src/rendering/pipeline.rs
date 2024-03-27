@@ -2,7 +2,9 @@ use std::borrow::Cow;
 
 use wgpu::{ShaderModule, Device, BindGroupLayout};
 
-use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance};
+use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
+
+use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance, skeleton::MAX_JOINTS, morph_target::MAX_MORPH_TARGETS};
 
 pub struct Pipeline
 {
@@ -13,6 +15,11 @@ pub struct Pipeline
 
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
+}
+
+impl RenderItem for Pipeline
+{
+    render_item_impl_default!();
 }
 
 impl Pipeline
@@ -50,6 +57,8 @@ impl Pipeline
         let mut shader = shader_source.clone();
 
         shader = shader.replace("[MAX_LIGHTS]", format!("{}", max_lights).as_str());
+        shader = shader.replace("[MAX_JOINTS]", format!("{}", MAX_JOINTS).as_str());
+        shader = shader.replace("[MAX_MORPH_TARGETS]", format!("{}", MAX_MORPH_TARGETS).as_str());
 
         shader
     }

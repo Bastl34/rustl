@@ -651,7 +651,7 @@ impl Component for Material
         false
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         // material settings
         let mut alpha;

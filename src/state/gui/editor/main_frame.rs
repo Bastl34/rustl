@@ -10,7 +10,7 @@ use super::cameras::{build_camera_list, create_camera_settings};
 use super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
-use super::modals::create_component_add_modal;
+use super::modals::create_modals;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
 use super::rendering::create_rendering_settings;
 use super::scenes::create_scene_settings;
@@ -101,8 +101,8 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         //});
     });
 
-    // create component
-    create_component_add_modal(editor_state, state, ctx);
+    // modals
+    create_modals(editor_state, state, ctx);
 }
 
 fn create_file_menu(state: &mut State, ui: &mut Ui)
@@ -342,7 +342,8 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
             });
         }).body(|ui|
         {
-            build_objects_list(editor_state, ui, &scene.nodes, scene.id, true);
+            let nodes = scene.nodes.clone();
+            build_objects_list(editor_state, scene, ui, &nodes, scene.id, true);
         });
     }
 
