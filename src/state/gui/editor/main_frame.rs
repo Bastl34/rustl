@@ -137,6 +137,10 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             }
 
             ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
+
+            let mut playing = !state.pause;
+            ui.toggle_value(&mut playing, RichText::new("⏵").size(icon_size)).on_hover_text("Playing/Pause");
+            state.pause = !playing;
         });
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|

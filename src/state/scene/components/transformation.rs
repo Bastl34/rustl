@@ -439,6 +439,11 @@ impl Transformation
         self.calc_transform();
     }
 
+    pub fn apply_scale_all_axes(&mut self, scale: f32, multiply: bool)
+    {
+        self.apply_scale(Vector3::<f32>::new(scale, scale, scale), multiply);
+    }
+
     pub fn apply_rotation(&mut self, rotation: Vector3<f32>)
     {
         let data = self.data.get_mut();

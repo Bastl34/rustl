@@ -1,10 +1,10 @@
 use std::{sync::{Arc, RwLock}, cell::RefCell, collections::{HashMap, HashSet}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Point3, Matrix, Matrix4x1};
+use nalgebra::{Matrix, Matrix4, Matrix4x1, Point3, Vector4};
 use regex::Regex;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::{components::joint, scene::Scene}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::{components::joint, node, scene::Scene}}};
 
 use super::{components::{alpha::Alpha, animation::{self, Animation}, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}};
 
@@ -96,9 +96,34 @@ impl Node
         }
     }
 
+    pub fn set_parent(node: NodeItem, new_parent: NodeItem)
+    {
+        // remove from old node list
+        if let Some(old_parent) = &node.read().unwrap().parent
+        {
+            let id = node.read().unwrap().id;
+
+            let mut old_parent_write = old_parent.write().unwrap();
+            old_parent_write.nodes.retain(|node|
+            {
+                node.read().unwrap().id != id
+            });
+        }
+
+        // add to new node list
+        new_parent.write().unwrap().nodes.push(node.clone());
+
+        node.write().unwrap().parent = Some(new_parent);
+    }
+
     pub fn add_component(&mut self, component: ComponentItem)
     {
         self.components.push(component);
+    }
+
+    pub fn add_component_front(&mut self, component: ComponentItem)
+    {
+        self.components.insert(0, component);
     }
 
     pub fn find_component<T>(&self) -> Option<ComponentItem> where T: 'static
@@ -160,13 +185,21 @@ impl Node
             for mesh in &meshes
             {
                 component_downcast!(mesh, Mesh);
-                let bbox = mesh.get_data().b_box;
 
-                let transformed_min = transform * Point3::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z).to_homogeneous();
-                let transformed_max = transform * Point3::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z).to_homogeneous();
+                let bbox;
+                if let Some(skin_bbox) = mesh.get_data().b_box_skin
+                {
+                    bbox = skin_bbox;
+                }
+                else
+                {
+                    bbox = mesh.get_data().b_box;
+                }
+
+                let transformed_min = transform * Vector4::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z, 1.0);
+                let transformed_max = transform * Vector4::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z, 1.0);
 
                 // sometimes coordinates are flipped because of the transformation -> check for min and max points
-
                 min.x = min.x.min(transformed_min.x);
                 min.y = min.y.min(transformed_min.y);
                 min.z = min.z.min(transformed_min.z);
@@ -315,11 +348,27 @@ impl Node
         false
     }
 
-    pub fn get_transform(&self) -> (Matrix4<f32>, bool)
+    fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
+        let joint_component = self.find_component::<Joint>();
 
-        if let Some(transform_component) = transform_component
+        if let Some(joint_component) = joint_component
+        {
+            component_downcast!(joint_component, Joint);
+
+            if joint_component.get_base().is_enabled
+            {
+                let joint_transform = joint_component.get_joint_transform();
+
+                return
+                (
+                    joint_transform,
+                    true
+                );
+            }
+        }
+        else if let Some(transform_component) = transform_component
         {
             component_downcast!(transform_component, Transformation);
 
@@ -360,9 +409,65 @@ impl Node
         }
     }
 
-    fn get_joint_transform(node: NodeItem, animated: bool) -> Matrix4<f32>
+    /*
+    pub fn get_full_transform(&self) -> Matrix4<f32>
     {
-        let joint_component = node.read().unwrap().find_component::<Joint>();
+        let mut transform;
+        let node_parent_inheritance;
+        let mut parent = self.parent.clone();
+
+        let joint_component = self.find_component::<Joint>();
+        if let Some(joint_component) = joint_component
+        {
+            transform = self.get_joint_transform(true);
+
+            component_downcast!(joint_component, Joint);
+            transform = transform * joint_component.get_inverse_bind_transform();
+            node_parent_inheritance = true;
+
+            // find non-joint parent
+            while parent.is_some()
+            {
+                let parent_clone = parent.clone();
+
+                if let Some(parent) = &parent
+                {
+                    if parent.read().unwrap().find_component::<Joint>().is_none()
+                    {
+                        break;
+                    }
+                }
+
+                parent = parent_clone.unwrap().read().unwrap().parent.clone();
+            }
+        }
+        else
+        {
+            (transform, node_parent_inheritance) = self.get_transform();
+        }
+
+        let mut parent_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = &parent
+        {
+            let parent_node = parent_node.read().unwrap();
+            parent_trans = parent_node.get_full_transform();
+        }
+
+        if node_parent_inheritance
+        {
+            parent_trans * transform
+        }
+        else
+        {
+            transform
+        }
+    }
+    */
+
+    fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
+    {
+        let joint_component = self.find_component::<Joint>();
 
         if let Some(joint_component) = joint_component
         {
@@ -381,9 +486,9 @@ impl Node
 
             let mut parent_transform = Matrix4::<f32>::identity();
 
-            if let Some(parent) = &node.read().unwrap().parent
+            if let Some(parent) = &self.parent
             {
-                parent_transform = Self::get_joint_transform(parent.clone(), animated);
+                parent_transform = parent.read().unwrap().get_joint_transform(animated);
             }
 
             return parent_transform * local_animation_transform;
@@ -402,15 +507,14 @@ impl Node
         let mut joints = vec![];
         for joint in &self.skin
         {
-            let mut transform = Self::get_joint_transform(joint.clone(), animated);
+            let mut transform = joint.read().unwrap().get_joint_transform(animated);
 
             // inverse bind transform
             let joint_component = joint.read().unwrap().find_component::<Joint>();
             if let Some(joint_component) = joint_component
             {
                 component_downcast!(joint_component, Joint);
-                let joint_data = joint_component.get_data();
-                transform = transform * joint_data.inverse_bind_trans;
+                transform = transform * joint_component.get_inverse_bind_transform();
             }
 
             joints.push(transform);
@@ -442,6 +546,66 @@ impl Node
         let morph_targets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
 
         Some(morph_targets)
+    }
+
+    pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().id == id
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_node_by_id(&node.read().unwrap().nodes, id);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_node_by_name(nodes: &Vec<NodeItem>, name: &str) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_mesh_node_by_name(nodes: &Vec<NodeItem>, name: &str) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name && node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
     }
 
     // find the node which has animations
@@ -826,6 +990,7 @@ impl Node
             Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
         }
     }
+
 
     pub fn merge_mesh(&mut self, node: &NodeItem) -> bool
     {

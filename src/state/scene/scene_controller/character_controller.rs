@@ -44,7 +44,7 @@ enum CharAnimationType
     FallLanding
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum AnimationMixing
 {
     Stop,
@@ -215,7 +215,7 @@ impl CharacterController
                 {
                     let component_id = id_manager.write().unwrap().get_next_component_id();
                     let animation_blending = AnimationBlending::new_empty(component_id, "Animation Blending");
-                    animation_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_blending))));
+                    animation_node.write().unwrap().add_component_front(Arc::new(RwLock::new(Box::new(animation_blending))));
 
                     self.animation_blending = animation_node.read().unwrap().find_component::<AnimationBlending>();
                 }
@@ -270,6 +270,27 @@ impl CharacterController
         }
 
         self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, true, false, false);
+    }
+
+    fn get_animation(&self, animation: CharAnimationType, index: usize) -> Option<ComponentItem>
+    {
+        match animation
+        {
+            CharAnimationType::None => None,
+            CharAnimationType::Idle => self.animation_idle.clone(),
+            CharAnimationType::Walk => self.animation_walk.clone(),
+            CharAnimationType::Run => self.animation_run.clone(),
+            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
+            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
+            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
+            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
+            CharAnimationType::Jump => self.animation_jump.clone(),
+            CharAnimationType::Crouch => self.animation_crouch.clone(),
+            CharAnimationType::Roll => self.animation_roll.clone(),
+            CharAnimationType::Fall => self.animation_fall_idle.clone(),
+            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
+            CharAnimationType::Action => self.animation_actions.get(index).cloned(),
+        }
     }
 
     fn get_animation_duration(&self, animation: CharAnimationType, index: usize) -> f32
@@ -366,6 +387,88 @@ impl CharacterController
         }
 
         false
+    }
+
+    fn get_all_animations_weights(&self) -> f32
+    {
+        let mut animation_items = vec!
+        [
+            self.animation_idle.clone(),
+            self.animation_walk.clone(),
+            self.animation_run.clone(),
+            self.animation_strafe_left_walk.clone(),
+            self.animation_strafe_right_walk.clone(),
+            self.animation_strafe_left_run.clone(),
+            self.animation_strafe_right_run.clone(),
+            self.animation_jump.clone(),
+            self.animation_crouch.clone(),
+            self.animation_roll.clone(),
+            self.animation_fall_idle.clone(),
+            self.animation_fall_landing.clone(),
+        ];
+
+        for action in &self.animation_actions
+        {
+            animation_items.push(Some(action.clone()));
+        }
+
+        let mut weight = 0.0;
+
+        for animation in animation_items
+        {
+            if let Some(animation) = animation
+            {
+                component_downcast!(animation, Animation);
+                if animation.running()
+                {
+                    weight += animation.weight;
+                }
+            }
+        }
+
+        weight
+    }
+
+    fn get_all_running_animations(&self) -> Vec<ComponentItem>
+    {
+        let mut animation_items = vec!
+        [
+            self.animation_idle.clone(),
+            self.animation_walk.clone(),
+            self.animation_run.clone(),
+            self.animation_strafe_left_walk.clone(),
+            self.animation_strafe_right_walk.clone(),
+            self.animation_strafe_left_run.clone(),
+            self.animation_strafe_right_run.clone(),
+            self.animation_jump.clone(),
+            self.animation_crouch.clone(),
+            self.animation_roll.clone(),
+            self.animation_fall_idle.clone(),
+            self.animation_fall_landing.clone(),
+        ];
+
+        for action in &self.animation_actions
+        {
+            animation_items.push(Some(action.clone()));
+        }
+
+        let mut animations = vec![];
+
+        for animation in animation_items
+        {
+            if let Some(animation) = animation
+            {
+                let animation_clone = animation.clone();
+
+                component_downcast!(animation, Animation);
+                if animation.running()
+                {
+                    animations.push(animation_clone.clone());
+                }
+            }
+        }
+
+        animations
     }
 
     fn is_jumping(&self) -> bool
@@ -656,15 +759,31 @@ impl SceneController for CharacterController
         // ********** idle **********
         if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C)
         {
-            if self.is_any_animation_running()
+            self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, true, false, false);
+        }
+
+        /*
+        let weight_combined = self.get_all_animations_weights();
+
+        if weight_combined < 1.0
+        {
+            if let Some(idle) = self.get_animation(CharAnimationType::Idle, 0)
             {
-                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, true, false, false);
-            }
-            else
-            {
-                self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, true, false, false);
+                component_downcast_mut!(idle, Animation);
+                idle.weight += 1.0 - weight_combined;
+                idle.start();
             }
         }
+
+        // ********** check animations **********
+        let running_animations = self.get_all_running_animations();
+        if running_animations.len() == 1
+        {
+            let animation = running_animations.first().unwrap();
+            component_downcast_mut!(animation, Animation);
+            animation.weight = 1.0;
+        }
+         */
 
         // ********** "physics" **********
         if self.physics && (!approx_zero_vec3(&movement) || !self.update_only_on_move)

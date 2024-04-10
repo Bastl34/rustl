@@ -89,6 +89,25 @@ impl Scene
 
     pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
+        // check moved nodes (if a note has a parent -> remove it from scene nodes)
+        // this can happen when a node parent was set via set_parent
+        let mut nodes_to_remove = vec![];
+        for node in &self.nodes
+        {
+            if node.read().unwrap().parent.is_some()
+            {
+                nodes_to_remove.push(node.clone());
+            }
+        }
+
+        for node_to_remove in nodes_to_remove
+        {
+            self.nodes.retain(|node|
+            {
+                node.read().unwrap().id != node_to_remove.read().unwrap().id
+            });
+        }
+
         // update pre controller
         let mut pre_controller = vec![];
         swap(&mut self.pre_controller, &mut pre_controller);
@@ -535,79 +554,19 @@ impl Scene
         all_nodes
     }
 
-    fn _find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
-    {
-        for node in nodes
-        {
-            if node.read().unwrap().id == id
-            {
-                return Some(node.clone());
-            }
-
-            // check child nodes
-            let result = Scene::_find_node_by_id(&node.read().unwrap().nodes, id);
-            if result.is_some()
-            {
-                return result;
-            }
-        }
-
-        None
-    }
-
-    fn _find_node_by_name(nodes: &Vec<NodeItem>, name: String) -> Option<NodeItem>
-    {
-        for node in nodes
-        {
-            if node.read().unwrap().name == name
-            {
-                return Some(node.clone());
-            }
-
-            // check child nodes
-            let result = Scene::_find_node_by_name(&node.read().unwrap().nodes, name.clone());
-            if result.is_some()
-            {
-                return result;
-            }
-        }
-
-        None
-    }
-
-    fn _find_mesh_node_by_name(nodes: &Vec<NodeItem>, name: String) -> Option<NodeItem>
-    {
-        for node in nodes
-        {
-            if node.read().unwrap().name == name && node.read().unwrap().find_component::<Mesh>().is_some()
-            {
-                return Some(node.clone());
-            }
-
-            // check child nodes
-            let result = Scene::_find_node_by_name(&node.read().unwrap().nodes, name.clone());
-            if result.is_some()
-            {
-                return result;
-            }
-        }
-
-        None
-    }
-
     pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
     {
-        Self::_find_node_by_id(&self.nodes, id)
+        Node::find_node_by_id(&self.nodes, id)
     }
 
     pub fn find_node_by_name(&self, name: &str) -> Option<NodeItem>
     {
-        Self::_find_node_by_name(&self.nodes, name.to_string())
+        Node::find_node_by_name(&self.nodes, name)
     }
 
     pub fn find_mesh_node_by_name(&self, name: &str) -> Option<NodeItem>
     {
-        Self::_find_mesh_node_by_name(&self.nodes, name.to_string())
+        Node::find_mesh_node_by_name(&self.nodes, name)
     }
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool

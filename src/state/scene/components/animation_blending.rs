@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::input_manager::InputManager, state::{scene::node::NodeItem, state::REFERENCE_UPDATE_FRAMES}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::approx_zero, input::input_manager::InputManager, state::{scene::node::NodeItem, state::REFERENCE_UPDATE_FRAMES}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
@@ -14,6 +14,8 @@ pub struct AnimationBlending
     pub to: Option<u64>,
 
     pub speed: f32,
+
+    pub normalized: bool,
 }
 
 impl AnimationBlending
@@ -26,7 +28,8 @@ impl AnimationBlending
 
             from,
             to,
-            speed
+            speed,
+            normalized: true,
         };
 
         animation_blending.base.info = Some(INFO_STRING.to_string());
@@ -43,6 +46,7 @@ impl AnimationBlending
             from: None,
             to: None,
             speed: 0.0,
+            normalized: true,
         };
 
         animation_blending.base.info = Some(INFO_STRING.to_string());
@@ -69,7 +73,7 @@ impl Component for AnimationBlending
         }
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, time: u128, frame_scale: f32, _frame: u64)
     {
         //if (self.get_data().from.is_none() && self.get_data().to.is_none()) || !self.base.is_enabled
         if !self.base.is_enabled
@@ -87,11 +91,57 @@ impl Component for AnimationBlending
             return;
         }
 
+        let node = node.read().unwrap();
+
         //let weight_delta = (self.speed * frame_scale);
         let weight_delta = (frame_scale / REFERENCE_UPDATE_FRAMES) / self.speed;
 
+        // animation from
+        let mut animation_weight_from = 0.0;
+        if let Some(from) = self.from
+        {
+            if let Some(animation_from) = node.find_component_by_id(from)
+            {
+                component_downcast_mut!(animation_from, Animation);
+                //animation_from.weight = (1.0 - to_weight).max(0.0);
+                animation_from.weight = (animation_from.weight - weight_delta).max(0.0);
+
+                if approx_zero(animation_from.weight)
+                {
+                    animation_from.stop_without_reset();
+                }
+
+                if animation_from.running() && !animation_from.check_is_over(time)
+                {
+                    animation_weight_from = animation_from.weight;
+                }
+            }
+        }
+        else
+        {
+            let all_animations = node.find_components::<Animation>();
+            for animation in all_animations
+            {
+                component_downcast_mut!(animation, Animation);
+
+                if animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
+                {
+                    animation.weight = (animation.weight - weight_delta).max(0.0);
+
+                    if approx_zero(animation.weight)
+                    {
+                        animation.stop_without_reset();
+                    }
+
+                    if animation.running() && !animation.check_is_over(time)
+                    {
+                        animation_weight_from += animation.weight;
+                    }
+                }
+            }
+        }
+
         // animation to
-        let node = node.read().unwrap();
         if let Some(to) = self.to
         {
             if let Some(animation_to) = node.find_component_by_id(to)
@@ -109,6 +159,12 @@ impl Component for AnimationBlending
 
                     animation_to.weight = (from_weight + weight_delta).min(1.0);
 
+                    if self.normalized && animation_weight_from + animation_to.weight < 1.0
+                    {
+                        let delta = 1.0 - animation_weight_from + animation_to.weight;
+                        animation_to.weight += delta;
+                    }
+
                     if !animation_to.is_over()
                     {
                         animation_to.start();
@@ -124,40 +180,6 @@ impl Component for AnimationBlending
             {
                 component_downcast_mut!(animation, Animation);
                 if animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
-                {
-                    animation.weight = (animation.weight - weight_delta).max(0.0);
-
-                    if approx_zero(animation.weight)
-                    {
-                        animation.stop_without_reset();
-                    }
-                }
-            }
-        }
-
-        // animation from
-        if let Some(from) = self.from
-        {
-            if let Some(animation_from) = node.find_component_by_id(from)
-            {
-                component_downcast_mut!(animation_from, Animation);
-                //animation_from.weight = (1.0 - to_weight).max(0.0);
-                animation_from.weight = (animation_from.weight - weight_delta).max(0.0);
-
-                if approx_zero(animation_from.weight)
-                {
-                    animation_from.stop_without_reset();
-                }
-            }
-        }
-        else
-        {
-            let all_animations = node.find_components::<Animation>();
-            for animation in all_animations
-            {
-                component_downcast_mut!(animation, Animation);
-
-                if animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
                 {
                     animation.weight = (animation.weight - weight_delta).max(0.0);
 
@@ -248,6 +270,7 @@ impl Component for AnimationBlending
             ui.label(" seconds");
         });
 
+        ui.checkbox(&mut self.normalized, "Normalized Blending");
 
         if changed
         {

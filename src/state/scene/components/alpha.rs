@@ -27,7 +27,7 @@ impl Alpha
             alpha
         };
 
-        let mut alpha = Alpha
+        let alpha = Alpha
         {
             base: ComponentBase::new(id, name.to_string(), "Alpha".to_string(), "🌖".to_string()),
             data: ChangeTracker::new(data)

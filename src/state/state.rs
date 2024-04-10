@@ -84,6 +84,7 @@ pub struct State
     pub main_thread_execution_queue: ExecutionQueueItem,
 
     pub running: bool,
+    pub pause: bool,
     pub scenes: Vec<SceneItem>,
 
     pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
@@ -163,6 +164,7 @@ impl State
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
             running: false,
+            pause: false,
             scenes: vec![],
 
             registered_components: components,

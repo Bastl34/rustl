@@ -255,7 +255,7 @@ impl Mesh
         data.b_box_skin = Some(mesh.aabb(&trans));
     }
 
-    pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
+    pub fn get_combined_bbox(&self) -> Aabb
     {
         let data = self.get_data();
 
@@ -268,6 +268,13 @@ impl Mesh
 
             b_box.merge(&b_box_skin);
         }
+
+        b_box
+    }
+
+    pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
+    {
+        let b_box = self.get_combined_bbox();
 
         b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
     }

@@ -221,6 +221,23 @@ impl Animation
         false
     }
 
+    pub fn check_is_over(&self, time: u128) -> bool
+    {
+        if self.is_over()
+        {
+            return true;
+        }
+
+        let t = self.get_local_time(time);
+
+        if !self.looped && t > self.to
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     pub fn reset(&mut self)
     {
         for channel in &self.channels
@@ -255,6 +272,16 @@ impl Animation
         self.pause_time = None;
         self.current_time = 0;
         self.current_local_time = 0.0;
+    }
+
+    pub fn get_local_time(&self, time: u128) -> f32
+    {
+        let start_time = self.start_time.unwrap();
+
+        let local_timestamp = ((time - start_time) as f64 / 1000.0 / 1000.0) as f32;
+        let current_local_time = local_timestamp * self.speed;
+
+        current_local_time
     }
 }
 
@@ -378,11 +405,7 @@ impl Component for Animation
             return;
         }
 
-        let start_time = self.start_time.unwrap();
-
-        let local_timestamp = ((time - start_time) as f64 / 1000.0 / 1000.0) as f32;
-        self.current_local_time = local_timestamp * self.speed;
-
+        self.current_local_time = self.get_local_time(time);
         let mut t = self.current_local_time;
 
         if !self.looped && t > self.to
@@ -841,6 +864,8 @@ impl Component for Animation
                     continue;
                 }
 
+                let joint_id = joint.id();
+
                 let component_data = joint.get_data_mut().get_mut();
 
                 let animation_trans = component_data.animation_trans.as_mut().unwrap();
@@ -849,14 +874,12 @@ impl Component for Animation
                 // apply if its the first one
                 if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
                 {
-                    //*animation_trans = target_item.1 * self.weight;
                     *animation_trans = transform * self.weight;
                 }
                 // add if its not the first one
                 else if !approx_zero(self.weight)
                 {
                     // animation blending - blend this animation with the prev one
-                    //*animation_trans = *animation_trans + (target_item.1 * self.weight);
                     *animation_trans = *animation_trans + (transform * self.weight);
                 }
 

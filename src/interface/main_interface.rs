@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
+use gltf::scene::Transform;
 use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
@@ -23,7 +25,9 @@ use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::animation::Animation;
 use crate::state::scene::components::material::Material;
+use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
+use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
@@ -503,9 +507,12 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -514,6 +521,8 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let id_manager_clone_inner = id_manager_clone.clone();
 
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
@@ -533,11 +542,41 @@ impl MainInterface
                         }
                     }
 
+                    // cone
+                    let cone = scene.find_node_by_name("traffic_cone_game_ready");
+                    //let cone = scene.find_node_by_name("headcrab");
+                    if let Some(cone) = cone
+                    {
+                        /*
+                        {
+                            let mut cone = cone.write().unwrap();
+
+                            if cone.find_component::<Transformation>().is_none()
+                            {
+                                let component_id = id_manager_clone_inner.clone().write().unwrap().get_next_component_id();
+                                cone.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
+                            }
+
+                            if let Some(transform) = cone.find_component::<Transformation>()
+                            {
+                                component_downcast_mut!(transform, Transformation);
+                                transform.apply_scale_all_axes(0.01, true);
+                            }
+                        }
+                        */
+
+                        // set cone as head
+                        let head = scene.find_node_by_name("mixamorig:HeadTop_End");
+                        if let Some(head) = head
+                        {
+                            Node::set_parent(cone.clone(), head);
+                        }
+                    }
+
                     // add camera controller and run auto setup
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar2");
                     scene.pre_controller.push(Box::new(controller));
-
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
@@ -677,6 +716,8 @@ impl MainInterface
         }
 
         // ******************** app update ********************
+
+        if !self.state.borrow().pause
         {
             let now = Instant::now();
             self.app_update();
@@ -693,6 +734,7 @@ impl MainInterface
         }
 
         // ******************** update scene ********************
+        if !self.state.borrow().pause
         {
             let engine_update_time = Instant::now();
 

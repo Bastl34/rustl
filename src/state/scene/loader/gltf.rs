@@ -10,14 +10,6 @@ use serde_json::Value;
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::{Component, ComponentItem}, joint::Joint, animation::{Animation, Channel, Interpolation}, morph_target::MorphTarget}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light, skeleton}, component_downcast_mut, component_downcast};
 
 
-struct JointData
-{
-    index: usize,
-    inverse_bind_matrix: Matrix4<f32>
-}
-
-type Skeletons = HashMap<usize, Vec<JointData>>;
-
 pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     println!("load gltf file {}", path);
