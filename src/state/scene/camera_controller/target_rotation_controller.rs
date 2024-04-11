@@ -33,6 +33,8 @@ pub struct TargetRotationController
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
+    pub object_center_predicate: Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>,
+
     last_manual_move: u64, // time in millis after the last movement
 }
 
@@ -61,6 +63,8 @@ impl TargetRotationController
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
 
+            object_center_predicate: None,
+
             last_manual_move: 0
         }
     }
@@ -86,6 +90,8 @@ impl TargetRotationController
 
             mouse_sensitivity: Vector2::<f32>::new(0.0015, 0.0015),
             mouse_wheel_sensitivity: mouse_wheel_sensivity,
+
+            object_center_predicate: None,
 
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
@@ -188,7 +194,7 @@ impl CameraController for TargetRotationController
             {
                 let node = node.read().unwrap();
 
-                if let Some(center) = node.get_bbox_center(true)
+                if let Some(center) = node.get_bbox_center(true, &self.object_center_predicate)
                 {
                     target_pos = center;
                 }

@@ -3,7 +3,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{ComplexField, Normed, Point3, Rotation3, Vector2, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -189,6 +189,26 @@ impl CharacterController
         target_rotation_controller.data.get_mut().radius = 6.0;
         target_rotation_controller.data.get_mut().offset.y = 1.0;
 
+        // do not include joint attached items to the check (like heads or weapons)
+        target_rotation_controller.object_center_predicate = Some(Box::new(|node: NodeItem| -> bool
+        {
+            let node = node.read().unwrap();
+            let node_has_joint = node.find_component::<Joint>().is_some();
+
+            if let Some(parent) = &node.parent
+            {
+                let parent = parent.read().unwrap();
+                let parent_has_joint = parent.find_component::<Joint>().is_some();
+
+                if !node_has_joint && parent_has_joint
+                {
+                    return false;
+                }
+            }
+
+            true
+        }));
+
         cam.controller = Some(Box::new(target_rotation_controller));
 
 
@@ -245,7 +265,6 @@ impl CharacterController
                 if let Some(animation) = animation
                 {
                     self.animation_actions.push(animation);
-                    dbg!(action);
                 }
             }
         }

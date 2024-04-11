@@ -167,7 +167,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_bounding_info(&self, recursive: bool) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_bounding_info(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -226,8 +226,16 @@ impl Node
         {
             for node in &self.nodes
             {
+                if let Some(predicate) = predicate
+                {
+                    if !predicate(node.clone())
+                    {
+                        continue;
+                    }
+                }
+
                 let node = node.read().unwrap();
-                let child_min_max = node.get_bounding_info(recursive);
+                let child_min_max = node.get_bounding_info(recursive, predicate);
 
                 if let Some(child_min_max) = child_min_max
                 {
@@ -254,9 +262,9 @@ impl Node
         None
     }
 
-    pub fn get_bbox_center(&self, recursive: bool) -> Option<Point3<f32>>
+    pub fn get_bbox_center(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
-        let bounding_info = self.get_bounding_info(recursive);
+        let bounding_info = self.get_bounding_info(recursive, predicate);
 
         if let Some(bounding_info) = bounding_info
         {

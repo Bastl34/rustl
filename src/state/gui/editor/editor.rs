@@ -889,7 +889,7 @@ impl Editor
                         let mut offset = 0.0;
                         {
                             let root_node = root_node.read().unwrap();
-                            let bounding_info = root_node.get_bounding_info(true);
+                            let bounding_info = root_node.get_bounding_info(true, &None);
 
                             if let Some(bounding_info) = bounding_info
                             {
