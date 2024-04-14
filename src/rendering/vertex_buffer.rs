@@ -2,7 +2,7 @@ use crate::{state::{scene::components::mesh::{Mesh, MeshData}, helper::render_it
 
 use super::wgpu::WGpu;
 use gltf::mesh::util::joints;
-use nalgebra::{Point2, Vector3, Vector2};
+use nalgebra::{ComplexField, Point2, Vector2, Vector3};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -89,7 +89,6 @@ impl VertexBuffer
             }
 
             let mut tangent = n.cross(&Vector3::<f32>::new(0.0, 1.0, 0.0));
-
             if tangent.magnitude()  <= 0.0001
             {
                 tangent = n.cross(&Vector3::<f32>::new(0.0, 0.0, 1.0));

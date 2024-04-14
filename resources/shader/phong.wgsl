@@ -248,39 +248,56 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         dot(model_matrix[1].xyz, model_matrix[1].xyz),
         dot(model_matrix[2].xyz, model_matrix[2].xyz)
     );
+    let scale = sqrt(scale_squared);
+
+    //let scale = vec3<f32>(length(model_matrix[0].xyz), length(model_matrix[1].xyz), length(model_matrix[2].xyz));
 
     var normal =
     (
         model_matrix * vec4<f32>
         (
-            world_normal.x / scale_squared.x,
-            world_normal.y / scale_squared.y,
-            world_normal.z / scale_squared.z,
+            world_normal.x / scale.x, // scale_squared
+            world_normal.y / scale.y, // scale_squared
+            world_normal.z / scale.z, // scale_squared
             0.0
         )
     ).xyz;
 
+    /*
     var tangent =
     (
         model_matrix * vec4<f32>
         (
-            world_tangent.x / scale_squared.x,
-            world_tangent.y / scale_squared.y,
-            world_tangent.z / scale_squared.z,
+            world_tangent.x / scale.x, // scale_squared
+            world_tangent.y / scale.y, // scale_squared
+            world_tangent.z / scale.z, // scale_squared
             0.0
         )
     ).xyz;
+
+    //tangent = world_tangent.xyz;
 
     var bitangent =
     (
         model_matrix * vec4<f32>
         (
-            world_bitangent.x / scale_squared.x,
-            world_bitangent.y / scale_squared.y,
-            world_bitangent.z / scale_squared.z,
+            world_bitangent.x / scale.x, // scale_squared
+            world_bitangent.y / scale.y, // scale_squared
+            world_bitangent.z / scale.z, // scale_squared
             0.0
         )
     ).xyz;
+    */
+
+    var tangent = cross(normal, vec3<f32>(0.0, 1.0, 0.0));
+
+    if length(tangent) <= 0.0001
+    {
+        tangent = cross(normal, vec3<f32>(0.0, 0.0, 1.0));
+    }
+
+    var bitangent = cross(normal, tangent);
+
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
@@ -372,13 +389,13 @@ fn sphericalCoords(direction: vec3<f32>) -> vec2<f32>
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    var uvs = in.tex_coords;
+    var uv = in.tex_coords;
 
     // base color
     var object_color = material.base_color;
     if (has_base_texture())
     {
-        let tex_color = textureSample(t_base, s_base, uvs);
+        let tex_color = textureSample(t_base, s_base, uv);
         object_color *= tex_color;
     }
 
@@ -386,7 +403,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var ambient_color = material.ambient_color;
     if (has_ambient_texture())
     {
-        let tex_color = textureSample(t_ambient, s_ambient, uvs);
+        let tex_color = textureSample(t_ambient, s_ambient, uv);
         ambient_color *= tex_color;
     }
 
@@ -398,16 +415,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // normal mapping
     if (has_normal_texture())
     {
-        var normal_map = textureSample(t_normal, s_normal, uvs).xyz;
+        var normal_map = textureSample(t_normal, s_normal, uv).xyz;
         normal_map = normal_map * 2.0 - 1.0;
 
         normal_map.x *= material.normal_map_strength;
         normal_map.y *= material.normal_map_strength;
 
-        // todo: check if normalize is needed here
-        let T = normalize(tangent);
-        let B = normalize(bitangent);
-        let N = normalize(normal);
+        let T = tangent;
+        let B = bitangent;
+        let N = normal;
 
         // https://lettier.github.io/3d-game-shaders-for-beginners/normal-mapping.html
         normal = normalize(T * normal_map.x + B * normal_map.y + N * normal_map.z);
@@ -504,7 +520,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         // ambient occlusion
         if (has_ambient_occlusion_texture())
         {
-            let ambient_occlusion = textureSample(t_ambient_occlusion, s_ambient_occlusion, uvs);
+            let ambient_occlusion = textureSample(t_ambient_occlusion, s_ambient_occlusion, uv);
             color.x *= ambient_occlusion.x;
             color.y *= ambient_occlusion.x;
             color.z *= ambient_occlusion.x;
@@ -516,14 +532,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             var reflectivity = material.reflectivity;
             if (has_reflectivity_texture())
             {
-                let reflectivity_value = textureSample(t_reflectivity, s_reflectivity, uvs);
+                let reflectivity_value = textureSample(t_reflectivity, s_reflectivity, uv);
                 reflectivity *= reflectivity_value.x;
             }
 
             var roughness = material.roughness;
             if (has_roughness_texture())
             {
-                let roughness_value = textureSample(t_roughness, s_roughness, uvs);
+                let roughness_value = textureSample(t_roughness, s_roughness, uv);
                 roughness *= roughness_value.x;
             }
 
@@ -596,13 +612,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         discard;
     }
 
-    //return vec4<f32>(normal, alpha);
+    //return vec4<f32>(normalize(in.tangent.xyz), alpha);
     return vec4<f32>(color, alpha);
     //return vec4<f32>(1.0, 1.0, 1.0, alpha);
     //return vec4<f32>(object_color.r, object_color.g, object_color.b, alpha);
     //return vec4<f32>(in.weights.r, in.weights.g, in.weights.b, alpha);
 
-    //return textureSample(t_diffuse, s_diffuse, uvs);
+    //return textureSample(t_diffuse, s_diffuse, uv);
 
     //return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 
