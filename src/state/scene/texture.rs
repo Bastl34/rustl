@@ -1,6 +1,6 @@
-use std::{sync::{RwLock, Arc}, fmt::format};
+use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops, RgbaImage, GrayImage};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};
 use nalgebra::Vector4;
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};

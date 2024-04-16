@@ -1179,15 +1179,15 @@ impl Node
 }
 
 // ******************** bounding box ********************
-impl Bounded for Node
+impl Bounded<f32, 3> for Node
 {
-    fn aabb(&self) -> bvh::aabb::AABB
+    fn aabb(&self) -> bvh::aabb::Aabb<f32, 3>
     {
         let mesh = self.get_mesh();
 
         if mesh.is_none()
         {
-            return bvh::aabb::AABB::empty();
+            return bvh::aabb::Aabb::empty();
         }
 
         let (trans, _) = self.get_transform();
@@ -1215,14 +1215,14 @@ impl Bounded for Node
             max.z = max.z.max(transformed.z);
         }
 
-        let min = bvh::Point3::new(min.x, min.y, min.z);
-        let max = bvh::Point3::new(max.x, max.y, max.z);
+        let min = Point3::new(min.x, min.y, min.z);
+        let max = Point3::new(max.x, max.y, max.z);
 
-        bvh::aabb::AABB::with_bounds(min, max)
+        bvh::aabb::Aabb::with_bounds(min, max)
     }
 }
 
-impl BHShape for Node
+impl BHShape<f32, 3> for Node
 {
     fn set_bh_node_index(&mut self, index: usize)
     {
