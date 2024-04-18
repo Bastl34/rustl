@@ -114,6 +114,8 @@ impl Node
         new_parent.write().unwrap().nodes.push(node.clone());
 
         node.write().unwrap().parent = Some(new_parent);
+
+        node.write().unwrap().force_instances_update();
     }
 
     pub fn add_component(&mut self, component: ComponentItem)
@@ -1092,6 +1094,18 @@ impl Node
         {
             let mut instance = instance.write().unwrap();
             instance.set_force_update();
+        }
+
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            for instance in node.instances.get_ref()
+            {
+                let mut instance = instance.write().unwrap();
+                instance.set_force_update();
+            }
         }
     }
 

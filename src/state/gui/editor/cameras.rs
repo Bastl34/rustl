@@ -2,7 +2,7 @@ use egui::{Ui, RichText, Color32};
 
 use crate::state::{scene::camera::CameraItem, state::State, gui::helper::generic_items::{collapse_with_title, self}};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u64)
 {
@@ -81,16 +81,16 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                     ui.text_edit_singleline(&mut node_name);
                 });
 
-                let mut toggle_value = if editor_state.pick_mode == SelectionType::Camera { true } else { false };
+                let mut toggle_value = if editor_state.pick_mode == PickType::Camera { true } else { false };
                 if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick mode").changed()
                 {
                     if toggle_value
                     {
-                        editor_state.pick_mode = SelectionType::Camera;
+                        editor_state.pick_mode = PickType::Camera;
                     }
                     else
                     {
-                        editor_state.pick_mode = SelectionType::None;
+                        editor_state.pick_mode = PickType::None;
                     }
                 }
 

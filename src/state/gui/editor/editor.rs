@@ -6,7 +6,7 @@ use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
 use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, scene::Scene, manager::id_manager}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform, math::{approx_equal, approx_equal_vec}}};
 
-use super::{editor_state::{EditorState, SelectionType, SettingsPanel, EditMode, AssetType}, main_frame};
+use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
@@ -124,7 +124,7 @@ impl Editor
 
     pub fn select_object(&mut self, state: &mut State)
     {
-        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != SelectionType::None) && self.editor_state.edit_mode.is_none()
+        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
         {
             let left_mouse_button = state.input_manager.mouse.clicked(MouseButton::Left);
             let right_mouse_button = state.input_manager.mouse.clicked(MouseButton::Right);
@@ -150,7 +150,7 @@ impl Editor
                 if let Some((_t, _point, _normal, hit_item, instance_id,_face_id)) = hit
                 {
                     // pick camera target
-                    if self.editor_state.pick_mode == SelectionType::Camera
+                    if self.editor_state.pick_mode == PickType::Camera
                     {
                         let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
 
@@ -167,6 +167,26 @@ impl Editor
                         if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
                         {
                             camera.node = Some(hit_item.clone());
+                        }
+                    }
+                    // pick parent target
+                    else if self.editor_state.pick_mode == PickType::Parent
+                    {
+                        let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
+
+                        let (node_id, ..) = self.editor_state.get_object_ids();
+
+                        let scene = state.find_scene_by_id(scene_id);
+                        if scene.is_none() { return; }
+
+                        let scene = scene.unwrap();
+
+                        if node_id.is_none() { return; }
+                        let node_id = node_id.unwrap();
+
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            Node::set_parent(node, hit_item.clone());
                         }
                     }
                     // show selection
@@ -257,7 +277,7 @@ impl Editor
                     self.editor_state.de_select_current_item(state);
                 }
 
-                self.editor_state.pick_mode = SelectionType::None;
+                self.editor_state.pick_mode = PickType::None;
             }
         }
     }

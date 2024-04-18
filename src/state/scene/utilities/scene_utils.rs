@@ -311,7 +311,19 @@ pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u
             {
                 func(scene);
             }
-        }))
+        }));
     }
     res.join();
+}
+
+pub fn execute_on_scene_mut(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
+{
+    let mut main_queue = main_queue.write().unwrap();
+    main_queue.add(Box::new(move |state|
+    {
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            func(scene);
+        }
+    }));
 }

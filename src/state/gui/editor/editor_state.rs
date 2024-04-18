@@ -33,6 +33,14 @@ pub enum SelectionType
 }
 
 #[derive(PartialEq, Eq)]
+pub enum PickType
+{
+    Camera,
+    Parent,
+    None
+}
+
+#[derive(PartialEq, Eq)]
 pub enum BottomPanel
 {
     Assets,
@@ -74,7 +82,7 @@ pub struct EditorState
     pub selectable: bool,
     pub fly_camera: bool,
 
-    pub pick_mode: SelectionType,
+    pub pick_mode: PickType,
 
     pub edit_mode: Option<EditMode>,
 
@@ -122,7 +130,7 @@ impl EditorState
             selectable: true,
             fly_camera: true,
 
-            pick_mode: SelectionType::None,
+            pick_mode: PickType::None,
 
             edit_mode: None,
 

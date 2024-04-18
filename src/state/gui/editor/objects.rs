@@ -2,11 +2,11 @@ use std::fmt::format;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material, joint::Joint, animation::Animation}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
+use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, joint::Joint, material::Material, mesh::Mesh}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
-pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
 {
     for node_arc in nodes
     {
@@ -86,7 +86,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
 
                 if toggle.clicked()
                 {
-                    if editor_state.pick_mode == SelectionType::Camera
+                    if editor_state.pick_mode == PickType::Camera
                     {
                         if let Some(node) = scene.find_node_by_id(node_id)
                         {
@@ -97,7 +97,25 @@ pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
                                 camera.node = Some(node.clone());
                             }
                         }
-                        editor_state.pick_mode = SelectionType::None;
+                        editor_state.pick_mode = PickType::None;
+                    }
+                    else if editor_state.pick_mode == PickType::Parent
+                    {
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            let (node_id, ..) = editor_state.get_object_ids();
+                            if let Some(node_id) = node_id
+                            {
+                                let picking_node = scene.find_node_by_id(node_id).unwrap();
+                                let node = node.clone();
+
+                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
+                                {
+                                    Node::set_parent(picking_node.clone(), node.clone());
+                                }));
+                            }
+                        }
+                        editor_state.pick_mode = PickType::None;
                     }
                     else
                     {
@@ -125,7 +143,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
         {
             if child_nodes.len() > 0
             {
-                build_objects_list(editor_state, scene, ui, child_nodes, scene_id, visible);
+                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible);
             }
 
             if node.instances.get_ref().len() > 0
@@ -374,6 +392,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         ui.horizontal(|ui|
         {
             ui.label("name: ");
+            ui.set_max_width(225.0);
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
@@ -396,6 +415,37 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.pick_bbox_first = pick_bbox_first;
             node.name = name;
         }
+
+        // parenting
+        ui.horizontal(|ui|
+        {
+            let parent: Option<std::sync::Arc<std::sync::RwLock<Box<crate::state::scene::node::Node>>>> = node.read().unwrap().parent.clone();
+            let mut parent_name = "".to_string();
+            if let Some(parent) = parent
+            {
+                parent_name = parent.read().unwrap().name.clone();
+            }
+
+            ui.label("Parent:");
+            ui.add_enabled_ui(false, |ui|
+            {
+                ui.set_max_width(225.0);
+                ui.text_edit_singleline(&mut parent_name);
+            });
+
+            let mut toggle_value = if editor_state.pick_mode == PickType::Parent { true } else { false };
+            if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick mode").changed()
+            {
+                if toggle_value
+                {
+                    editor_state.pick_mode = PickType::Parent;
+                }
+                else
+                {
+                    editor_state.pick_mode = PickType::None;
+                }
+            }
+        });
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {

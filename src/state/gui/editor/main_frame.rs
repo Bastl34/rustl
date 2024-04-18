@@ -1,4 +1,5 @@
 
+use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
@@ -272,6 +273,8 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.toggle_value(&mut editor_state.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
     });
 
+    let exec_queue = state.main_thread_execution_queue.clone();
+
     for scene in &mut state.scenes
     {
         let scene_id = scene.id;
@@ -311,12 +314,12 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }).body(|ui|
         {
             //self.build_node_list(ui, &scene.nodes, scene_id, true);
-            create_hierarchy_type_entries(editor_state, scene, ui);
+            create_hierarchy_type_entries(editor_state, exec_queue.clone(), scene, ui);
         });
     }
 }
 
-fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box<Scene>, ui: &mut Ui)
+fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)
 {
     let scene_id = scene.id;
 
@@ -347,7 +350,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, scene: &mut Box
         }).body(|ui|
         {
             let nodes = scene.nodes.clone();
-            build_objects_list(editor_state, scene, ui, &nodes, scene.id, true);
+            build_objects_list(editor_state, exec_queue, scene, ui, &nodes, scene.id, true);
         });
     }
 
