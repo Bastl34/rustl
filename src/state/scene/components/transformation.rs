@@ -266,15 +266,6 @@ impl Transformation
             trans = trans * rotation;
 
             trans = trans * scale;
-
-            /*
-            if let Some(animation_trans) = data.animation_trans
-            {
-                trans = trans * animation_trans;
-                //trans = animation_trans;
-            }
-            */
-
             data.trans = trans;
         }
 

@@ -1,12 +1,12 @@
-use std::{sync::{Arc, RwLock}, cell::RefCell, collections::{HashMap, HashSet}};
+use std::{sync::{Arc, RwLock}, collections::HashMap};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix, Matrix4, Matrix4x1, Point3, Vector4};
+use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::{components::joint, node, scene::Scene}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::Alpha, animation::{self, Animation}, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -418,62 +418,6 @@ impl Node
             node_transform
         }
     }
-
-    /*
-    pub fn get_full_transform(&self) -> Matrix4<f32>
-    {
-        let mut transform;
-        let node_parent_inheritance;
-        let mut parent = self.parent.clone();
-
-        let joint_component = self.find_component::<Joint>();
-        if let Some(joint_component) = joint_component
-        {
-            transform = self.get_joint_transform(true);
-
-            component_downcast!(joint_component, Joint);
-            transform = transform * joint_component.get_inverse_bind_transform();
-            node_parent_inheritance = true;
-
-            // find non-joint parent
-            while parent.is_some()
-            {
-                let parent_clone = parent.clone();
-
-                if let Some(parent) = &parent
-                {
-                    if parent.read().unwrap().find_component::<Joint>().is_none()
-                    {
-                        break;
-                    }
-                }
-
-                parent = parent_clone.unwrap().read().unwrap().parent.clone();
-            }
-        }
-        else
-        {
-            (transform, node_parent_inheritance) = self.get_transform();
-        }
-
-        let mut parent_trans = Matrix4::<f32>::identity();
-
-        if let Some(parent_node) = &parent
-        {
-            let parent_node = parent_node.read().unwrap();
-            parent_trans = parent_node.get_full_transform();
-        }
-
-        if node_parent_inheritance
-        {
-            parent_trans * transform
-        }
-        else
-        {
-            transform
-        }
-    }
-    */
 
     fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
     {

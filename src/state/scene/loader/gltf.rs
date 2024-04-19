@@ -1,13 +1,13 @@
 
-use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap, string};
+use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
 
-use gltf::{Gltf, texture, mesh::util::{weights}, animation::util::ReadOutputs, iter::{Animations, Skins}, json::extras};
+use gltf::{Gltf, texture, animation::util::ReadOutputs, iter::{Animations, Skins}};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
 use serde_json::Value;
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::{Component, ComponentItem}, joint::Joint, animation::{Animation, Channel, Interpolation}, morph_target::MorphTarget}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, rendering::{scene, light, skeleton}, component_downcast_mut, component_downcast};
+use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::{Component, ComponentItem}, joint::Joint, animation::{Animation, Channel, Interpolation}, morph_target::MorphTarget}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, component_downcast_mut, component_downcast};
 
 
 pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -732,29 +732,6 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
             // otherwise use the parent of the found on in the hierarchy
             else
             {
-                // find best item based on parents
-                /*
-                let mut possible_node = parent_of_first.clone();
-                let mut parent_nodes = *parent_nodes;
-                while parent_nodes > 2
-                {
-                    if possible_node.read().unwrap().parent.is_some()
-                    {
-                        let parent;
-                        {
-                            let parent_arc = &possible_node.read().unwrap().parent;
-                            parent = parent_arc.clone().unwrap();
-                        }
-                        possible_node = parent;
-                        parent_nodes -= 1;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-                possible_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
-                */
                 let parent_of_parent_first = &parent_of_first.read().unwrap().parent;
                 let parent_of_parent_first = parent_of_parent_first.clone().unwrap();
 

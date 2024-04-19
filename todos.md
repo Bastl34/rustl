@@ -11,6 +11,7 @@ todo:
  * dead lock while loading an object/scene (just sometimes)
  * optimize shader - do not use empty morph targets or animation weights
  * action management
+ * ortho cam
 
 done:
  * limit texture resolution for load

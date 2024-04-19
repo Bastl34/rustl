@@ -84,14 +84,6 @@ impl Joint
         {
             if joint_data.animation_weight < 1.0
             {
-                // animation blending - blend the animation with the initial pose if weight is smaller as 1.0
-                //(joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
-                //joint_data.full_joint_trans * (joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
-
-                //(animation_trans * joint_data.animation_weight) * (joint_data.local_trans * (1.0 - joint_data.animation_weight))
-
-                //(joint_data.local_trans * (1.0 - joint_data.animation_weight)) + (animation_trans * joint_data.animation_weight)
-
                 let animation_weight = joint_data.animation_weight.clamp(0.0, 1.0);
                 joint_data.local_trans * (1.0 - animation_weight) + animation_trans * animation_weight
             }
@@ -102,65 +94,18 @@ impl Joint
             else
             {
                 //joint_data.local_trans * animation_trans // sometimes this is correct (For some models)
-                //joint_data.full_joint_trans * animation_trans
                 animation_trans
             }
         }
         else
         {
             joint_data.local_trans
-            //joint_data.full_joint_trans * joint_data.local_trans
-            //Matrix4::<f32>::identity()
         }
     }
 
     pub fn get_animation_transform(&self) -> Option<Matrix4<f32>>
     {
         self.get_data().animation_trans
-        /*
-        let data = self.get_data();
-
-        if data.animation_position.is_none() && data.animation_rotation_quat.is_none() && data.animation_scale.is_none()
-        {
-            return None;
-        }
-
-        let mut trans = Matrix4::<f32>::identity();
-
-        // translation
-        if let Some(animation_position) = &data.animation_position
-        {
-            trans = trans * nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
-        }
-
-        // rotation
-        if let Some(data_rotation_quat) = &data.animation_rotation_quat
-        {
-            let quaternion = UnitQuaternion::new_normalize
-            (
-                Quaternion::new
-                (
-                    data_rotation_quat.w,
-                    data_rotation_quat.x,
-                    data_rotation_quat.y,
-                    data_rotation_quat.z,
-                )
-            );
-
-            let rotation: Rotation3<f32> = quaternion.into();
-            let rotation = rotation.to_homogeneous();
-
-            trans = trans * rotation;
-        }
-
-        // scale
-        if let Some(animation_scale) = &data.animation_scale
-        {
-            trans = trans * Matrix4::new_nonuniform_scaling(&animation_scale);
-        }
-
-        Some(trans)
-         */
     }
 
     pub fn get_local_transform(&self) -> Matrix4<f32>
@@ -254,35 +199,8 @@ impl Component for Joint
 
         }
 
-        // TODO REMOVE ME
         //let inverse_bind_transform = Self::get_full_inverse_bind_transform(node.clone());
         //self.get_data_mut().get_mut().inverse_bind_trans_calculated = inverse_bind_transform;
-
-
-        /*
-        let node = node.read().unwrap();
-        let transform_component = node.find_component::<Transformation>();
-
-        if let Some(transform_component) = transform_component
-        {
-            component_downcast!(transform_component, Transformation);
-            if transform_component.get_data_tracker().changed()
-            {
-                let local_trans = transform_component.get_transform().clone();
-                //let local_trans_inverse = local_trans.try_inverse().unwrap();
-
-                if self.get_data().root_joint
-                //{
-                //    self.get_data_mut().get_mut().full_joint_trans = node.get_full_joint_transform();
-                //}
-
-                self.get_data_mut().get_mut().local_trans = local_trans;
-                //self.get_data_mut().get_mut().full_joint_trans = node.get_full_joint_transform();
-
-                //self.get_data_mut().get_mut().inverse_bind_trans_calculated = transform.try_inverse().unwrap();
-            }
-        }
-         */
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
