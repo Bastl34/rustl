@@ -12,6 +12,7 @@ todo:
  * optimize shader - do not use empty morph targets or animation weights
  * action management
  * ortho cam
+ * json based extras
 
 done:
  * limit texture resolution for load

@@ -15,6 +15,12 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let material = material.read().unwrap();
             let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
 
+            let filter = editor_state.hierarchy_filter.to_lowercase();
+            if !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
+            {
+                continue;
+            }
+
             let id = format!("material_{}", material_id);
 
             let heading = RichText::new(headline_name).strong();

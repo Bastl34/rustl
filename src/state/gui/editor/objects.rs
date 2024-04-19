@@ -18,6 +18,28 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         let name = node.name.clone();
         let node_id = node.id;
 
+        let filter = editor_state.hierarchy_filter.to_lowercase();
+
+        let mut child_node_match = false;
+        if !filter.is_empty()
+        {
+            let all_child_nodes = Scene::list_all_child_nodes(&node.nodes);
+            for child_node in all_child_nodes
+            {
+                let child_node_name = child_node.read().unwrap().name.clone().to_lowercase();
+                if child_node_name.find(filter.as_str()).is_some()
+                {
+                    child_node_match = true;
+                    break;
+                }
+            }
+        }
+
+        if !filter.is_empty() && !child_node_match && name.to_lowercase().find(filter.as_str()).is_none()
+        {
+            continue;
+        }
+
         let id = format!("objects_{}", node_id);
         let ui_id = ui.make_persistent_id(id.clone());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|

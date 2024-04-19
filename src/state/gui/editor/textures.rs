@@ -17,6 +17,12 @@ pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std
             let texture = texture.read().unwrap();
             let headline_name = format!("⚫ {}: {}", texture.id, texture.as_ref().name);
 
+            let filter = editor_state.hierarchy_filter.to_lowercase();
+            if !filter.is_empty() && texture.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
+            {
+                continue;
+            }
+
             let id = format!("texture_{}", texture.id);
 
             let heading = RichText::new(headline_name).strong();

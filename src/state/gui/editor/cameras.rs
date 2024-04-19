@@ -14,6 +14,12 @@ pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraIte
 
             let id = format!("camera_{}", camera.id);
 
+            let filter = editor_state.hierarchy_filter.to_lowercase();
+            if !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
+            {
+                continue;
+            }
+
             let mut heading = RichText::new(headline_name).strong();
             if !camera.enabled
             {
