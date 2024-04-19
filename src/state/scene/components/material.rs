@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
+use egui::RichText;
 use nalgebra::{Vector3, Vector4};
 use strum_macros::{Display, EnumIter};
 

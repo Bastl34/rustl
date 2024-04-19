@@ -1,8 +1,6 @@
 todo:
  * everything should be dynamic
  * TODOs
- * normal map: rotation/transformation is not applied correctly
- * screenshot is broken on windows
  * flickering on windows (amd)
  * cleanup is not working (clear scene)
  * better scene statistics graph
@@ -37,3 +35,5 @@ done:
  * update camera/s on resize
  * do not save state on scene (just pass it on update/render)
  * buffer update on model matrix change
+ * screenshot is broken on windows
+ * normal map: rotation/transformation is not applied correctly

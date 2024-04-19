@@ -63,6 +63,14 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     if let Some(material) = scene.get_material_by_id(material_id)
     {
+        collapse_with_title(ui, "material_info", true, "ℹ Material Info", |ui|
+        {
+            let material = material.read().unwrap();
+
+            ui.label(format!("Name: {}", &material.get_base().name));
+            ui.label(format!("Id: {}", material.get_base().id));
+        });
+
         collapse_with_title(ui, "material_settings", true, "🎨 Material Settings", |ui|
         {
             let mut material = material.write().unwrap();
