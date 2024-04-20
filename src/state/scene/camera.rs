@@ -1,10 +1,10 @@
 use std::{mem::swap, f32::consts::PI};
 
 use egui::{RichText, Color32};
-use nalgebra::{Matrix4, Perspective3, Point3, Isometry3, Vector3, Vector2, Point2, Vector4};
-use parry3d::query::Ray;
+use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
+use parry3d::{either::Either::Right, query::Ray};
 
-use crate::{helper::{math::approx_equal, change_tracker::ChangeTracker}, state::helper::render_item::{RenderItemOption}, input::input_manager::InputManager};
+use crate::{helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::{gui::editor::editor_state::BottomPanel, helper::render_item::RenderItemOption}};
 
 use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}};
 
@@ -41,6 +41,13 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
 
 pub type CameraItem = Box<Camera>;
 
+#[derive(PartialEq, Clone, Copy)]
+pub enum CameraProjectionType
+{
+    Perspective,
+    Orthogonal
+}
+
 pub struct CameraData
 {
     pub viewport_x: f32,    // 0.0-1.0
@@ -60,13 +67,20 @@ pub struct CameraData
     pub up: Vector3::<f32>,
     pub dir: Vector3::<f32>,
 
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+
     pub clipping_near: f32,
     pub clipping_far: f32,
 
-    pub projection: Perspective3<f32>,
-    pub view: Matrix4<f32>,
+    pub projection_type: CameraProjectionType,
 
+    pub projection: Matrix4<f32>,
     pub projection_inverse: Matrix4<f32>,
+
+    pub view: Matrix4<f32>,
     pub view_inverse: Matrix4<f32>,
 }
 
@@ -114,13 +128,20 @@ impl Camera
                 up: DEFAULT_CAM_UP,
                 dir: DEFAULT_CAM_DIR,
 
+                left: -1.0,
+                right: 1.0,
+                top: 1.0,
+                bottom: -1.0,
+
                 clipping_near: DEFAULT_CLIPPING_NEAR,
                 clipping_far: DEFAULT_CLIPPING_FAR,
 
-                projection: Perspective3::<f32>::new(1.0f32, 0.0f32, DEFAULT_CLIPPING_NEAR, DEFAULT_CLIPPING_FAR),
-                view: Matrix4::<f32>::identity(),
+                projection_type: CameraProjectionType::Perspective,
 
+                projection: Perspective3::<f32>::new(1.0f32, 0.0f32, DEFAULT_CLIPPING_NEAR, DEFAULT_CLIPPING_FAR).to_homogeneous(),
                 projection_inverse: Matrix4::<f32>::identity(),
+
+                view: Matrix4::<f32>::identity(),
                 view_inverse: Matrix4::<f32>::identity(),
             }),
 
@@ -207,14 +228,21 @@ impl Camera
     {
         let data = self.data.get_mut();
 
-        data.projection = Perspective3::new(data.resolution_aspect_ratio, data.fovy, data.clipping_near, data.clipping_far);
+        if data.projection_type == CameraProjectionType::Perspective
+        {
+            data.projection = Perspective3::new(data.resolution_aspect_ratio, data.fovy, data.clipping_near, data.clipping_far).to_homogeneous();
+        }
+        else
+        {
+            data.projection = Orthographic3::new(data.left, data.right, data.bottom, data.top, data.clipping_near, data.clipping_far).to_homogeneous();
+        }
 
         //let target = Point3::<f32>::new(self.dir.x, self.dir.y, self.dir.z);
         let target = data.eye_pos + data.dir;
 
         data.view = Isometry3::look_at_rh(&data.eye_pos, &target, &data.up).to_homogeneous();
 
-        data.projection_inverse = data.projection.inverse();
+        data.projection_inverse = data.projection.try_inverse().unwrap();
         data.view_inverse = data.view.try_inverse().unwrap();
     }
 
@@ -282,14 +310,14 @@ impl Camera
     {
         let data = self.data.get_ref();
 
-        OPENGL_TO_WGPU_MATRIX * data.projection.to_homogeneous()
+        OPENGL_TO_WGPU_MATRIX * data.projection
     }
 
     pub fn is_point_in_frustum(&self, point: &Point3<f32>) -> bool
     {
         let data = self.data.get_ref();
 
-        let pv = data.projection.to_homogeneous() * data.view;
+        let pv = data.projection * data.view;
         let point_clip = pv * point.to_homogeneous();
 
         // Check if point is inside NDC space (Normalized Device Coordinates Space)
@@ -369,8 +397,15 @@ impl Camera
         let mut up;
         let mut dir;
 
+        let mut left;
+        let mut right;
+        let mut top;
+        let mut bottom;
+
         let mut clipping_near;
         let mut clipping_far;
+
+        let mut projection_type;
 
         {
             let data = self.data.get_ref();
@@ -387,11 +422,25 @@ impl Camera
             up = data.up;
             dir = data.dir;
 
+            left = data.left;
+            right = data.right;
+            top = data.top;
+            bottom = data.bottom;
+
             clipping_near = data.clipping_near;
             clipping_far = data.clipping_far;
+
+            projection_type = data.projection_type;
         }
 
         let mut changed = false;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Projection:");
+            changed = ui.radio_value(&mut projection_type, CameraProjectionType::Perspective, "Perspective").changed() || changed;
+            changed = ui.radio_value(&mut projection_type, CameraProjectionType::Orthogonal, "Orthogonal").changed() || changed;
+        });
 
         ui.horizontal(|ui|
         {
@@ -431,7 +480,21 @@ impl Camera
             changed = ui.add(egui::DragValue::new(&mut up.z).speed(0.1).prefix("z: ")).changed() || changed;
         });
 
-        changed = ui.add(egui::Slider::new(&mut fovy, 0.001..=180.0).suffix(" °").text("Field of view (fov)")).changed() || changed;
+        if self.get_data().projection_type == CameraProjectionType::Perspective
+        {
+            changed = ui.add(egui::Slider::new(&mut fovy, 0.001..=180.0).suffix(" °").text("Field of view (fov)")).changed() || changed;
+        }
+        else
+        {
+            ui.horizontal(|ui|
+            {
+                changed = ui.add(egui::DragValue::new(&mut left).speed(0.01).prefix("left: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut right).speed(0.01).prefix("right: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut top).speed(0.01).prefix("top: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut bottom).speed(0.01).prefix("bottom: ")).changed() || changed;
+            });
+        }
+
         changed = ui.add(egui::Slider::new(&mut clipping_near, 0.001..=1000.0).text("Near clipping plane")).changed() || changed;
         changed = ui.add(egui::Slider::new(&mut clipping_far, 1.0..=100000.0).text("Far clipping plane")).changed() || changed;
 
@@ -450,6 +513,11 @@ impl Camera
             data.up = up;
             data.dir = dir;
 
+            data.left = left;
+            data.right = right;
+            data.top = top;
+            data.bottom = bottom;
+
             data.clipping_near = clipping_near;
             data.clipping_far = clipping_far;
 
@@ -457,6 +525,8 @@ impl Camera
             {
                 data.clipping_near = data.clipping_far - 0.001
             }
+
+            data.projection_type = projection_type;
 
             self.init_matrices();
         }

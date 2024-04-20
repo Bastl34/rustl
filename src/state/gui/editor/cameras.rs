@@ -68,7 +68,9 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
         {
             ui.horizontal(|ui|
             {
-                ui.label("name: ");
+                ui.set_max_width(225.0);
+
+                ui.label("Name: ");
                 ui.text_edit_singleline(&mut camera.name);
             });
 
@@ -84,6 +86,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                 ui.label("Target:");
                 ui.add_enabled_ui(false, |ui|
                 {
+                    ui.set_max_width(225.0);
                     ui.text_edit_singleline(&mut node_name);
                 });
 

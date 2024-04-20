@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{DimRange, Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::{Component, ComponentItem}, joint::Joint, animation::{Animation, Channel, Interpolation}, morph_target::MorphTarget}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, component_downcast_mut, component_downcast};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
 
 
 pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -253,7 +253,35 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             {
                 gltf::camera::Projection::Orthographic(ortho) =>
                 {
-                    //TODO
+                    let znear = ortho.znear();
+                    let zfar = ortho.zfar();
+
+                    let width = ortho.xmag();
+                    let height = ortho.ymag();
+
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+                    {
+                        let mut cam = Camera::new(cam_id, (*name).clone());
+                        let cam_data = cam.get_data_mut().get_mut();
+
+                        cam_data.left = -width;
+                        cam_data.right = width;
+                        cam_data.top = height;
+                        cam_data.bottom = -height;
+
+                        cam_data.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
+                        cam_data.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
+                        cam_data.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
+
+                        cam_data.clipping_near = znear;
+                        cam_data.clipping_far = zfar;
+
+                        cam_data.projection_type = CameraProjectionType::Orthogonal;
+
+                        cam.init_matrices();
+
+                        scene.cameras.push(Box::new(cam));
+                    }));
                 },
                 gltf::camera::Projection::Perspective(pers) =>
                 {
@@ -265,13 +293,19 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     {
                         let mut cam = Camera::new(cam_id, (*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
-                        //cam.fovy = yfov.to_radians();
+
                         cam_data.fovy = yfov;
+
                         cam_data.eye_pos = Point3::<f32>::new(pos.x, pos.y, pos.z);
                         cam_data.dir = Vector3::<f32>::new(-forward.x, -forward.y, -forward.z).normalize();
                         cam_data.up = Vector3::<f32>::new(up.x, up.y, up.z).normalize();
+
                         cam_data.clipping_near = znear;
                         cam_data.clipping_far = zfar.unwrap_or(1000.0);
+
+                        cam_data.projection_type = CameraProjectionType::Perspective;
+
+                        cam.init_matrices();
 
                         scene.cameras.push(Box::new(cam));
                     }));
