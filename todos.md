@@ -12,7 +12,6 @@ todo:
  * optimize shader - do not use empty morph targets or animation weights
  * action management
  * ortho cam
- * json based extras
 
 done:
  * limit texture resolution for load
@@ -39,3 +38,4 @@ done:
  * buffer update on model matrix change
  * screenshot is broken on windows
  * normal map: rotation/transformation is not applied correctly
+ * json based extras

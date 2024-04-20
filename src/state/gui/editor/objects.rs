@@ -342,9 +342,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let node = node.read().unwrap();
 
-            for (key, value) in &node.extras
+            for (key, value) in node.extras.iter()
             {
-                ui.label(format!("⚫ {}: {}", key, value));
+                ui.label(format!("⚫ {}: {:?}", key, value));
             }
         });
     });

@@ -4,7 +4,7 @@ use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collection
 use gltf::{Gltf, texture, animation::util::ReadOutputs, iter::{Animations, Skins}};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use nalgebra::{Vector3, Matrix4, Point3, Point2, UnitQuaternion, Quaternion, Rotation3, Vector4};
+use nalgebra::{DimRange, Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector3, Vector4};
 use serde_json::Value;
 
 use crate::{state::scene::{scene::Scene, components::{material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, transformation::Transformation, component::{Component, ComponentItem}, joint::Joint, animation::{Animation, Channel, Interpolation}, morph_target::MorphTarget}, texture::{Texture, TextureItem, TextureAddressMode, TextureFilterMode}, light::Light, camera::Camera, node::{NodeItem, Node}, utilities::scene_utils::{load_texture_byte_or_reuse, execute_on_scene_mut_and_wait, insert_texture_or_reuse}, manager::id_manager::IdManagerItem}, resources::resources::load_binary, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, approx_one_vec3}, file::get_stem, concurrency::execution_queue::ExecutionQueueItem}, component_downcast_mut, component_downcast};
@@ -519,7 +519,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     scene_node.add_component(component.clone());
                 }
 
-                scene_node.extras.insert("_json_index".to_string(), node_index.to_string());
+                scene_node.extras.insert("_json_index".to_string(), node_index);
 
                 // add material
                 if let Some(material_index) = material_index
@@ -538,7 +538,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 // add skeleton/skin if needed
                 if let Some(skin) = node.skin()
                 {
-                    scene_node.extras.insert("_skeleton_index".to_string(), skin.index().to_string());
+                    scene_node.extras.insert("_skeleton_index".to_string(), skin.index());
                 }
 
                 // add default instance
@@ -548,6 +548,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 // parent
                 scene_node.parent = Some(parent_node.clone());
             }
+
+            // extras
+            read_extras(node_arc.clone(), node);
 
             println!("{} - {} ({}) (mesh)", " ".repeat(level * 2), mesh_name.as_str(), node_index);
             Node::add_node(parent_node.clone(), node_arc.clone());
@@ -573,7 +576,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let node_id = id_manager.write().unwrap().get_next_node_id();
             let scene_node = Node::new(node_id, name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
-            scene_node.write().unwrap().extras.insert("_json_index".to_string(), node_index.to_string());
+            scene_node.write().unwrap().extras.insert("_json_index".to_string(), node_index);
 
             // add transformation
             if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
@@ -581,6 +584,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 let component_id = id_manager.write().unwrap().get_next_component_id();
                 scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
             }
+
+            // extras
+            read_extras(scene_node.clone(), node);
 
             Node::add_node(parent_node.clone(), scene_node.clone());
 
@@ -592,6 +598,52 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     for child in node.children()
     {
         read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), id_manager.clone(), parent_node.clone(), &world_transform, level + 1);
+    }
+}
+
+pub fn read_extras(node: NodeItem, gltf_node: &gltf::Node)
+{
+    let extras: Option<&Box<serde_json::value::RawValue>> = gltf_node.extras().as_ref();
+
+    let mut node = node.write().unwrap();
+
+    if let Some(extras) = extras
+    {
+        if let Ok(json) = serde_json::from_str::<Value>(extras.get())
+        {
+            let json_content = json.as_object();
+
+            if let Some(json_content) = json_content
+            {
+                for (key, value) in json_content
+                {
+                    if value.is_boolean()
+                    {
+                        node.extras.insert::<bool>(key.clone(), value.as_bool().unwrap());
+                    }
+                    else if value.is_f64()
+                    {
+                        node.extras.insert::<f64>(key.clone(), value.as_f64().unwrap());
+                    }
+                    else if value.is_i64()
+                    {
+                        node.extras.insert::<i64>(key.clone(), value.as_i64().unwrap());
+                    }
+                    else if value.is_string()
+                    {
+                        node.extras.insert::<String>(key.clone(), value.as_str().unwrap().to_string());
+                    }
+                    else if value.is_u64()
+                    {
+                        node.extras.insert::<u64>(key.clone(), value.as_u64().unwrap());
+                    }
+                    else
+                    {
+                        println!("extras/JSON type not supported {} {:?}", key, value);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -621,10 +673,9 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
             // find target node
             for node in &all_nodes
             {
-                if let Some(json_index) = node.read().unwrap().extras.get("_json_index")
+                if let Some(json_index) = node.read().unwrap().extras.get::<usize>("_json_index")
                 {
-                    let json_index = json_index.parse::<usize>().unwrap();
-                    if json_index == target_node_index
+                    if *json_index == target_node_index
                     {
                         target_node = Some(node.clone());
                         break;
@@ -791,13 +842,11 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             {
                 let mut node = node_arc.write().unwrap();
 
-                let json_index = node.extras.get("_json_index");
+                let json_index = node.extras.get::<usize>("_json_index");
 
                 if let Some(json_index) = json_index
                 {
-                    let json_index = json_index.parse::<usize>().unwrap();
-
-                    if json_index == joint_index
+                    if *json_index == joint_index
                     {
                         if node.find_component::<Joint>().is_none()
                         {
@@ -833,7 +882,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             let mut skeleton_index = None;
             {
                 let mesh_node = mesh_node.read().unwrap();
-                if let Some(_skeleton_index) = mesh_node.extras.get("_skeleton_index")
+                if let Some(_skeleton_index) = mesh_node.extras.get::<usize>("_skeleton_index")
                 {
                     skeleton_index = Some(_skeleton_index.clone());
                 }
@@ -841,8 +890,6 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
 
             if let Some(skeleton_index) = skeleton_index
             {
-                let skeleton_index = skeleton_index.parse::<usize>().unwrap();
-
                 if skeleton_index == skin_index
                 {
                     let mut mesh_node = mesh_node.write().unwrap();

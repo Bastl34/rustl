@@ -150,7 +150,7 @@ impl Editor
                 if let Some((_t, _point, _normal, hit_item, instance_id,_face_id)) = hit
                 {
                     // pick camera target
-                    if self.editor_state.pick_mode == PickType::Camera
+                    if self.editor_state.pick_mode == PickType::Camera && self.editor_state.selected_scene_id.is_some()
                     {
                         let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
 
@@ -170,7 +170,7 @@ impl Editor
                         }
                     }
                     // pick parent target
-                    else if self.editor_state.pick_mode == PickType::Parent
+                    else if self.editor_state.pick_mode == PickType::Parent && self.editor_state.selected_scene_id.is_some()
                     {
                         let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
 

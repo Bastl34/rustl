@@ -68,6 +68,7 @@ mod state
             pub(crate) mod scene_controller;
             pub(crate) mod generic_controller;
             pub(crate) mod character_controller;
+            mod character_Controller;
         }
 
         pub(crate) mod camera_controller
@@ -81,6 +82,7 @@ mod state
         pub(crate) mod utilities
         {
             pub(crate) mod scene_utils;
+            pub(crate) mod extras;
         }
 
         pub(crate) mod texture;
