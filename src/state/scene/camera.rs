@@ -360,24 +360,20 @@ impl Camera
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
-        //let sensor_y = 1.0 - ((y_f + 0.5) / h) * 2.0;
         let sensor_y = ((y_f + 0.5) / h) * 2.0 - 1.0;
 
-        let half_vertical_fov = data.fovy / 2.0;
-        let tangent_half_vertical_fov = f32::tan(half_vertical_fov);
-        let distance_to_near_clip = (1.0 / tangent_half_vertical_fov) * data.clipping_near;
+        let clip_point_near = Point3::new(sensor_x, sensor_y, -1.0);
+        let clip_point_far = Point3::new(sensor_x, sensor_y, 1.0);
 
-        let mut pixel_pos = Vector4::new(sensor_x, sensor_y, -distance_to_near_clip, 1.0);
-        pixel_pos = data.projection_inverse * pixel_pos;
-        pixel_pos.w = 1.0;
+        let unprojected_near = data.projection_inverse.transform_point(&clip_point_near);
+        let unprojected_far = data.projection_inverse.transform_point(&clip_point_far);
 
-        let mut ray_dir = pixel_pos - DEFAULT_CAM_POS.to_homogeneous();
-        ray_dir.w = 0.0;
+        let near_point = data.view_inverse.transform_point(&unprojected_near);
+        let far_point = data.view_inverse.transform_point(&unprojected_far);
 
-        let origin = data.view_inverse * pixel_pos;
-        let dir = data.view_inverse * ray_dir;
+        let ray_dir = (far_point - near_point).normalize();
 
-        let mut ray = Ray::new(Point3::<f32>::from(origin.xyz()), Vector3::<f32>::from(dir.xyz()));
+        let mut ray = Ray::new(near_point, Vector3::<f32>::from(ray_dir.xyz()));
         ray.dir = ray.dir.normalize();
 
         ray
