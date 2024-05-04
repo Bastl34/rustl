@@ -22,7 +22,9 @@ pub trait Component: Any
 
     fn set_enabled(&mut self, state: bool);
 
-    fn instantiable(&self) -> bool;
+    fn instantiable() -> bool
+    where
+        Self: Sized;
 
     fn id(&self) -> u64
     {

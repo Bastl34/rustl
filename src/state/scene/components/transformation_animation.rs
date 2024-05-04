@@ -157,7 +157,7 @@ impl Component for TransformationAnimation
 {
     component_impl_default!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         true
     }

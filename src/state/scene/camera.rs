@@ -15,6 +15,9 @@ const DEFAULT_CAM_DIR: Vector3::<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 //pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(1.0, 0.0, 2.0);
 pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(-0.5, 0.5, 1.0);
 
+const DEFAULT_LEFT_EAR_POS: Point3<f32> = Point3::<f32>::new(-1.0, 0.0, 0.0);
+const DEFAULT_RIGHT_EAR_POS: Point3<f32> = Point3::<f32>::new(1.0, 0.0, 0.0);
+
 pub const DEFAULT_FOVY: f32 = 90.0f32;
 
 const DEFAULT_CLIPPING_NEAR: f32 = 0.1;
@@ -63,6 +66,8 @@ pub struct CameraData
     pub fovy: f32,
 
     pub eye_pos: Point3::<f32>,
+    pub left_ear_pos: Point3::<f32>,
+    pub right_ear_pos: Point3::<f32>,
 
     pub up: Vector3::<f32>,
     pub dir: Vector3::<f32>,
@@ -124,6 +129,8 @@ impl Camera
                 fovy: DEFAULT_FOVY.to_radians(),
 
                 eye_pos: DEFAULT_CAM_POS,
+                left_ear_pos: DEFAULT_LEFT_EAR_POS,
+                right_ear_pos: DEFAULT_RIGHT_EAR_POS,
 
                 up: DEFAULT_CAM_UP,
                 dir: DEFAULT_CAM_DIR,
@@ -379,6 +386,17 @@ impl Camera
         ray
     }
 
+    pub fn get_left_right_ear_positions(&self) -> (Point3::<f32>, Point3<f32>)
+    {
+        let left = self.get_data().left_ear_pos;
+        let right = self.get_data().right_ear_pos;
+
+        let left = self.get_data().view_inverse.transform_point(&left);
+        let right = self.get_data().view_inverse.transform_point(&right);
+
+        (left, right)
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui)
     {
         let mut viewport_x;
@@ -389,6 +407,8 @@ impl Camera
         let mut fovy;
 
         let mut eye_pos;
+        let mut left_ear_pos;
+        let mut right_ear_pos;
 
         let mut up;
         let mut dir;
@@ -414,6 +434,8 @@ impl Camera
             fovy = data.fovy.to_degrees();
 
             eye_pos = data.eye_pos;
+            left_ear_pos = data.left_ear_pos;
+            right_ear_pos = data.right_ear_pos;
 
             up = data.up;
             dir = data.dir;
@@ -462,6 +484,22 @@ impl Camera
 
         ui.horizontal(|ui|
         {
+            ui.label("Left ear position:");
+            changed = ui.add(egui::DragValue::new(&mut left_ear_pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut left_ear_pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut left_ear_pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Right ear position:");
+            changed = ui.add(egui::DragValue::new(&mut right_ear_pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut right_ear_pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut right_ear_pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("Direction Vector:");
             changed = ui.add(egui::DragValue::new(&mut dir.x).speed(0.1).prefix("x: ")).changed() || changed;
             changed = ui.add(egui::DragValue::new(&mut dir.y).speed(0.1).prefix("y: ")).changed() || changed;
@@ -505,6 +543,8 @@ impl Camera
             data.fovy = fovy.to_radians();
 
             data.eye_pos = eye_pos;
+            data.left_ear_pos = left_ear_pos;
+            data.right_ear_pos = right_ear_pos;
 
             data.up = up;
             data.dir = dir;

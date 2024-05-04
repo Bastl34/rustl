@@ -61,6 +61,7 @@ mod state
             pub(crate) mod morph_target;
             pub(crate) mod morph_target_animation;
             pub(crate) mod animation_blending;
+            pub(crate) mod sound;
         }
 
         pub(crate) mod scene_controller
@@ -85,6 +86,7 @@ mod state
         }
 
         pub(crate) mod texture;
+        pub(crate) mod sound_source;
         pub(crate) mod camera;
         pub(crate) mod light;
         pub(crate) mod instance;
@@ -115,6 +117,7 @@ mod state
             pub(crate) mod scenes;
             pub(crate) mod rendering;
             pub(crate) mod textures;
+            pub(crate) mod sound;
             pub(crate) mod assets;
         }
     }
@@ -129,6 +132,12 @@ pub(crate) mod input
 
     pub(crate) mod keyboard;
     pub(crate) mod mouse;
+    pub(crate) mod gamepad;
+}
+
+pub(crate) mod output
+{
+    pub(crate) mod audio_device;
 }
 
 mod window

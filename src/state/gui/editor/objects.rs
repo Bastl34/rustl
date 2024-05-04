@@ -2,7 +2,7 @@ use std::fmt::format;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, joint::Joint, material::Material, mesh::Mesh}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -624,6 +624,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let name;
             let component_name;
             let is_material;
+            let is_sound;
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
@@ -632,6 +633,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 component_id = component.id();
 
                 is_material = component.as_any().downcast_ref::<Material>().is_some();
+                is_sound = component.as_any().downcast_ref::<Sound>().is_some();
             }
             generic_items::collapse(ui, component_id.to_string(), true, |ui|
             {
@@ -680,6 +682,17 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         editor_state.selected_type = SelectionType::Material;
                         editor_state.settings = SettingsPanel::Material;
                     }
+
+                    // link to the sound setting
+                    if is_sound && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                    {
+                        editor_state.de_select_current_item(state);
+
+                        editor_state.selected_object = format!("sound_{}", component_id);
+                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_type = SelectionType::Sound;
+                        editor_state.settings = SettingsPanel::Sound;
+                    }
                 });
             },
             |ui|
@@ -714,6 +727,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     if let Some(instance_id) = instance_id
     {
         let mut delete_component_id = None;
+        let mut sound_component_id = None;
 
         let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
         let instance = node_read.find_instance_by_id(instance_id);
@@ -728,12 +742,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let component_id;
                     let name;
                     let component_name;
+                    let is_sound;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
                         component_name = format!("{} {}", base.icon, base.component_name);
                         name = base.name.clone();
                         component_id = component.id();
+
+                        is_sound = component.as_any().downcast_ref::<Sound>().is_some();
                     }
                     generic_items::collapse(ui, component_id.to_string(), true, |ui|
                     {
@@ -771,6 +788,12 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                             {
                                 ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
                             }
+
+                            // link to the sound setting
+                            if is_sound && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                            {
+                                sound_component_id = Some(component_id);
+                            }
                         });
                     },
                     |ui|
@@ -788,6 +811,16 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let mut instance = instance.write().unwrap();
                 instance.remove_component_by_id(delete_component_id);
+            }
+
+            if let Some(sound_component_id) = sound_component_id
+            {
+                editor_state.de_select_current_item(state);
+
+                editor_state.selected_object = format!("sound_{}", sound_component_id);
+                editor_state.selected_scene_id = Some(scene_id);
+                editor_state.selected_type = SelectionType::Sound;
+                editor_state.settings = SettingsPanel::Sound;
             }
         }
     }

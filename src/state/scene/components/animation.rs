@@ -369,7 +369,7 @@ impl Component for Animation
     component_impl_default!();
     component_impl_no_update_instance!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         false
     }

@@ -356,7 +356,7 @@ impl Instance
         }
     }
 
-    pub fn get_transform(&self) -> Matrix4::<f32>
+    pub fn get_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
     }

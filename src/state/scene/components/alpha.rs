@@ -67,7 +67,7 @@ impl Component for Alpha
     component_impl_default!();
     component_impl_no_update!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         true
     }

@@ -647,7 +647,7 @@ impl Component for Material
     component_impl_no_update!();
     component_impl_set_enabled!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         false
     }

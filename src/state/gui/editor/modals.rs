@@ -22,6 +22,9 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
 {
     let mut dialog_add_component = editor_state.dialog_add_component;
 
+    let (_, instance_id) = editor_state.get_object_ids();
+    let is_instance = instance_id.is_some();
+
     modal_with_title(ctx, &mut dialog_add_component, "Add component", |ui|
     {
         ui.label("Add your component");
@@ -43,9 +46,12 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
                 ui.style_mut().wrap = Some(false);
                 ui.set_min_width(40.0);
 
-                for (component_id, component) in state.registered_components.iter().enumerate()
+                for (component_id, (component_name, component_instantiable, _)) in state.registered_components.iter().enumerate()
                 {
-                    ui.selectable_value(&mut editor_state.add_component_id, component_id, component.0.clone());
+                    if !is_instance || (is_instance && *component_instantiable)
+                    {
+                        ui.selectable_value(&mut editor_state.add_component_id, component_id, component_name.clone());
+                    }
                 }
             });
         });
@@ -67,13 +73,13 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
                     let node = node.read().unwrap();
                     let instance = node.find_instance_by_id(instance_id).unwrap();
                     let mut instance = instance.write().unwrap();
-                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                    instance.add_component(component.1(id, editor_state.add_component_name.as_str()));
+                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    instance.add_component(component.2(id, editor_state.add_component_name.as_str()));
                 }
                 else
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                    node.write().unwrap().add_component(component.1(id, editor_state.add_component_name.as_str()));
+                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    node.write().unwrap().add_component(component.2(id, editor_state.add_component_name.as_str()));
                 }
             }
 

@@ -8,13 +8,15 @@ use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resour
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
 {
     Components,
     Material,
     Camera,
     Texture,
+    Sound,
+    SoundSource,
     Light,
     Scene,
     Object,
@@ -29,6 +31,8 @@ pub enum SelectionType
     Light,
     Material,
     Texture,
+    Sound,
+    SoundSource,
     None
 }
 

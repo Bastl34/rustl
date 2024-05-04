@@ -1,13 +1,13 @@
-use std::{cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}, vec};
+use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}, vec};
 
 use anyhow::Ok;
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 
-use crate::{resources::resources, helper::{self, change_tracker::ChangeTracker, math::{approx_zero, self}}, state::{helper::render_item::RenderItemOption, scene::components::component::Component}, input::input_manager::InputManager, component_downcast, component_downcast_mut};
+use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::{self, Component}, sound::Sound}}};
 
-use super::{camera::{Camera, CameraItem}, components::{material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh, sound}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{self, SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 
@@ -30,11 +30,14 @@ pub struct Scene
 
     data: ChangeTracker<SceneData>,
 
+    pub audio_device: AudioDeviceItem,
+
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
+    pub sound_sources: HashMap<String, SoundSourceItem>,
 
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
     pub post_controller: Vec<SceneControllerBox>, // after scene updates
@@ -45,7 +48,7 @@ pub struct Scene
 
 impl Scene
 {
-    pub fn new(id: u64, name: &str) -> Scene
+    pub fn new(id: u64, name: &str, audio_device: AudioDeviceItem) -> Scene
     {
         Self
         {
@@ -63,11 +66,14 @@ impl Scene
                 exposure: None,
             }),
 
+            audio_device,
+
             nodes: vec![],
             cameras: vec![],
             lights: ChangeTracker::new(vec![]),
             textures: HashMap::new(),
             materials: HashMap::new(),
+            sound_sources: HashMap::new(),
 
             pre_controller: vec![],
             post_controller: vec![],
@@ -216,6 +222,26 @@ impl Scene
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
         self.textures.insert(hash, arc.clone());
+
+        arc
+    }
+
+    pub fn load_sound_source_byte_or_reuse(&mut self, sound_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> SoundSourceItem
+    {
+        let hash = helper::crypto::get_hash_from_byte_vec(&sound_bytes);
+
+        if self.sound_sources.contains_key(&hash)
+        {
+            println!("reusing sound source {}", name);
+            return self.sound_sources.get_mut(&hash).unwrap().clone();
+        }
+
+        let id = self.id_manager.write().unwrap().get_next_sound_source_id();
+        let texture = SoundSource::new(id, name, self.audio_device.clone(), &sound_bytes, extension);
+
+        let arc = Arc::new(RwLock::new(Box::new(texture)));
+
+        self.sound_sources.insert(hash, arc.clone());
 
         arc
     }
@@ -414,6 +440,111 @@ impl Scene
         });
 
         self.textures.len() != len
+    }
+
+    pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
+    {
+        for sound_arc in self.sound_sources.values()
+        {
+            let sound =  sound_arc.read().unwrap();
+            if sound.id == id
+            {
+                return Some(sound_arc.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+
+        // remove sound component from all nodes
+        for node in all_nodes
+        {
+            let mut node = node.write().unwrap();
+
+            node.components.retain(|component|
+            {
+                let component = component.read().unwrap();
+
+                if let Some(sound) = component.as_any().downcast_ref::<Sound>()
+                {
+                    if let Some(sound_source) = &sound.sound_source
+                    {
+                        let sound_source = sound_source.read().unwrap();
+                        if sound_source.id == id
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                true
+            });
+
+            for instance in node.instances.get_mut()
+            {
+                let mut instance = instance.write().unwrap();
+
+                instance.components.retain(|component|
+                {
+                    let component = component.read().unwrap();
+
+                    if let Some(sound) = component.as_any().downcast_ref::<Sound>()
+                    {
+                        if let Some(sound_source) = &sound.sound_source
+                        {
+                            let sound_source = sound_source.read().unwrap();
+                            if sound_source.id == id
+                            {
+                                return false;
+                            }
+                        }
+                    }
+
+                    true
+                });
+            }
+        }
+
+        // remove sound source
+        let len = self.sound_sources.len();
+        self.sound_sources.retain(|_key, sound|
+        {
+            let sound = sound.read().unwrap();
+            sound.id != id
+        });
+
+        self.sound_sources.len() != len
+    }
+
+    pub fn get_sound_by_id(&self, id: u64) -> Option<ComponentItem>
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+
+            if let Some(component) = node.find_component_by_id(id)
+            {
+                return Some(component.clone());
+            }
+
+            for instance in node.instances.get_ref()
+            {
+                let instance = instance.read().unwrap();
+
+                if let Some(component) = instance.find_component_by_id(id)
+                {
+                    return Some(component.clone());
+                }
+            }
+        }
+
+        None
     }
 
     pub fn get_camera_by_id(&self, id: u64) -> Option<&CameraItem>
@@ -717,7 +848,7 @@ impl Scene
                 }
 
                 // transformation
-                let transform = instance.get_transform();
+                let transform = instance.get_world_transform();
                 let transform_inverse = transform.try_inverse().unwrap();
 
                 let ray_inverse = math::inverse_ray(ray, &transform_inverse);

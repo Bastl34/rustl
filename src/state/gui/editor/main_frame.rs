@@ -15,6 +15,7 @@ use super::modals::create_modals;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
 use super::rendering::create_rendering_settings;
 use super::scenes::create_scene_settings;
+use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
 use super::textures::{create_texture_settings, build_texture_list};
 
@@ -192,6 +193,8 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
     let mut light_settings = false;
     let mut material_settings = false;
     let mut texture_settings = false;
+    let mut sound_source_settings = false;
+    let mut sound_settings = false;
 
     ui.horizontal(|ui|
     {
@@ -231,6 +234,20 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             texture_settings = true;
         }
 
+        if editor_state.selected_type == SelectionType::SoundSource && !editor_state.selected_object.is_empty()
+        {
+            ui.selectable_value(&mut editor_state.settings, SettingsPanel::SoundSource, "🔊 Sound Source");
+
+            sound_source_settings = true;
+        }
+
+        if editor_state.selected_type == SelectionType::Sound && !editor_state.selected_object.is_empty()
+        {
+            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Sound, "🔊 Sound");
+
+            sound_settings = true;
+        }
+
         if editor_state.selected_scene_id.is_some()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
@@ -255,6 +272,8 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Material => if material_settings { create_material_settings(editor_state, state, ui); },
             SettingsPanel::Camera => if camera_settings { create_camera_settings(editor_state, state, ui); },
             SettingsPanel::Texture => if texture_settings { create_texture_settings(editor_state, state, ui);},
+            SettingsPanel::SoundSource => if sound_source_settings { create_sound_source_settings(editor_state, state, ui);},
+            SettingsPanel::Sound => if sound_settings { create_sound_settings(editor_state, state, ui);},
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
             SettingsPanel::Rendering => create_rendering_settings(editor_state, state, ui),
@@ -457,7 +476,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
 
     // textures
     {
-        let id = format!("textures_{}", scene.id);
+        let id = format!("sounds_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
         {
@@ -482,6 +501,36 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
         }).body(|ui|
         {
             build_texture_list(editor_state, &scene.textures, ui, scene_id);
+        });
+    }
+
+    // sounds
+    {
+        let id = format!("textures_{}", scene.id);
+        let ui_id = ui.make_persistent_id(id.clone());
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+            {
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
+                if ui.toggle_value(&mut selection, RichText::new("🔊 Sounds").color(Color32::LIGHT_GRAY).strong()).clicked()
+                {
+                    if selection
+                    {
+                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_object.clear();
+                        editor_state.selected_type = SelectionType::Sound;
+                    }
+                    else
+                    {
+                        editor_state.selected_scene_id = None;
+                        editor_state.selected_type = SelectionType::None;
+                    }
+                }
+            });
+        }).body(|ui|
+        {
+            build_sound_sources_list(editor_state, &scene.sound_sources, ui, scene_id);
         });
     }
 }

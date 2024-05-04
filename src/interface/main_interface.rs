@@ -5,6 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
+use gilrs::Gilrs;
 use gltf::scene::Transform;
 use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
@@ -17,18 +18,22 @@ use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::input::keyboard::{Modifier, Key};
 use crate::interface::winit::winit_map_mouse_button;
+use crate::output::audio_device::{self, AudioDevice};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
+use crate::resources::resources::load_binary;
 use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::animation::Animation;
 use crate::state::scene::components::material::Material;
+use crate::state::scene::components::sound::{Sound, SoundType};
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
+use crate::state::scene::sound_source::SoundSource;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
@@ -48,13 +53,17 @@ pub struct MainInterface
     wgpu: WGpu,
     window: Window,
     egui: EGui,
+
+    gilrs: Option<Gilrs>
 }
 
 impl MainInterface
 {
     pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
     {
-        let state = Rc::new(RefCell::new(State::new()));
+        let audio_device = AudioDevice::default();
+        let state = State::new(Arc::new(RwLock::new(Box::new(audio_device))));
+        let state = Rc::new(RefCell::new(state));
 
         let samlpes;
         let mut wgpu: WGpu;
@@ -79,6 +88,13 @@ impl MainInterface
             editor_gui.init(state, &egui);
         }
 
+        let gilrs_res = Gilrs::new();
+        let mut gilrs = None;
+        if let Ok(gilrs_res) = gilrs_res
+        {
+            gilrs = Some(gilrs_res);
+        }
+
         let mut interface = Self
         {
             state,
@@ -91,6 +107,8 @@ impl MainInterface
             wgpu,
             window,
             egui,
+
+            gilrs
         };
 
         interface.app_init();
@@ -161,7 +179,7 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
+            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene", state.audio_device.clone());
             scene.add_defaults();
 
             // ********** cam **********
@@ -460,6 +478,8 @@ impl MainInterface
             //scene_utils::create_grid(&mut scene, 1, 1.0);
 
             let main_queue_clone = main_queue.clone();
+            let audio_device = state.audio_device.clone();
+
             spawn_thread(move ||
             {
                 let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -587,40 +607,114 @@ impl MainInterface
                     let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                 }));
+
+                // sound
+                {
+                    let main_queue = main_queue_clone.clone();
+                    let audio_device = audio_device.clone();
+                    spawn_thread(move ||
+                    {
+                        let audio_device = audio_device.clone();
+                        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let sound_source_bytes = load_binary("sounds/m16.ogg").unwrap();
+                            let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                            let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
+                            let sound_source_clone = sound_source.clone();
+
+                            let hash = sound_source.read().unwrap().hash.clone();
+                            scene.sound_sources.insert(hash, sound_source);
+
+                            let cube = scene.find_node_by_name("Cube");
+
+                            if let Some(cube) = cube
+                            {
+                                let mut cube = cube.write().unwrap();
+
+                                let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
+                                let mut sound = Sound::new(sound_id, "m16", sound_source_clone, SoundType::Spatial, true);
+                                sound.start();
+
+                                cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                            }
+                        }));
+                    });
+                }
             });
 
             //load default env texture
             state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
-            let editor_state = self.editor_gui.editor_state.loading.clone();
-            spawn_thread(move ||
             {
-                *editor_state.write().unwrap() = true;
-
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
+                let main_queue = main_queue.clone();
+                let editor_state = self.editor_gui.editor_state.loading.clone();
+                spawn_thread(move ||
                 {
-                    //scene.clear_empty_nodes();
+                    *editor_state.write().unwrap() = true;
 
-                    // add camera
-                    if scene.cameras.len() == 0
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
                     {
-                        let id = scene.id_manager.write().unwrap().get_next_camera_id();
-                        let mut cam = Camera::new(id, "Cam".to_string());
+                        //scene.clear_empty_nodes();
 
-                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        // add camera
+                        if scene.cameras.len() == 0
+                        {
+                            let id = scene.id_manager.write().unwrap().get_next_camera_id();
+                            let mut cam = Camera::new(id, "Cam".to_string());
 
-                        let cam_data = cam.get_data_mut().get_mut();
-                        cam_data.fovy = 45.0f32.to_radians();
-                        cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
-                        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
-                        scene.cameras.push(Box::new(cam));
-                    }
-                }));
+                            cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
-                *editor_state.write().unwrap() = false;
-            });
+                            let cam_data = cam.get_data_mut().get_mut();
+                            cam_data.fovy = 45.0f32.to_radians();
+                            cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                            cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                            cam_data.clipping_near = 0.1;
+                            cam_data.clipping_far = 1000.0;
+                            scene.cameras.push(Box::new(cam));
+                        }
+                    }));
+
+                    *editor_state.write().unwrap() = false;
+                });
+            }
+
+
+            // sound debugging
+            /*
+            {
+                let audio_device = state.audio_device.clone();
+                let main_queue = main_queue.clone();
+                spawn_thread(move ||
+                {
+                    let audio_device = audio_device.clone();
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        let sound_bytes = load_binary("sounds/click.ogg").unwrap();
+                        let sound_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                        let sound = SoundSource::new(sound_id, "sound", audio_device.clone(), &sound_bytes, None);
+
+                        scene.sound_sources.insert(sound.hash.clone(),  Arc::new(RwLock::new(Box::new(sound))));
+                    }));
+                });
+            }
+
+            {
+                let audio_device = state.audio_device.clone();
+                let main_queue = main_queue.clone();
+                spawn_thread(move ||
+                {
+                    let audio_device = audio_device.clone();
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        let sound_bytes = load_binary("sounds/infoPopup.ogg").unwrap();
+                        let sound_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                        let sound = SoundSource::new(sound_id, "sound", audio_device.clone(), &sound_bytes, None);
+
+                        scene.sound_sources.insert(sound.hash.clone(),  Arc::new(RwLock::new(Box::new(sound))));
+                    }));
+                });
+            }
+             */
         }
     }
 
@@ -642,6 +736,9 @@ impl MainInterface
 
     pub fn update(&mut self)
     {
+        // ******************** update states ********************
+        self.input_gamepad();
+
         let frame_time = Instant::now();
 
         // ******************** update states ********************
@@ -861,6 +958,12 @@ impl MainInterface
             }
         }
 
+        // ******************** reset global change tracker ********************
+        {
+            let state = &mut *(self.state.borrow_mut());
+            state.audio_device.write().unwrap().data.consume_change();
+        }
+
         // ******************** frame time ********************
         {
             let state = &mut *(self.state.borrow_mut());
@@ -876,6 +979,18 @@ impl MainInterface
     pub fn check_exit(&mut self) -> bool
     {
         self.state.borrow().exit
+    }
+
+    pub fn input_gamepad(&mut self)
+    {
+        if let Some(gilrs) = &self.gilrs
+        {
+            //dbg!("_______ ", gilrs.counter());
+            for (_id, gamepad) in gilrs.gamepads()
+            {
+                println!(" ______ {} is {:?}", gamepad.name(), gamepad.power_info());
+            }
+        }
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)

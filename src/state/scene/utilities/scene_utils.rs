@@ -2,7 +2,7 @@ use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
 
 use nalgebra::Vector3;
 
-use crate::{state::scene::{scene::Scene, instance::Instance, components::{transformation::Transformation, material::{Material, TextureType, TextureState}}, texture::{TextureItem, Texture}, loader::wavefront, manager::id_manager::IdManagerItem}, component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueueItem, file::{get_extension, get_stem, self}, self}, resources::resources::{self, load_binary}};
+use crate::{component_downcast_mut, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::{self, get_extension, get_stem}}, resources::resources::{self, load_binary}, state::scene::{components::{material::{Material, TextureState, TextureType}, sound::Sound, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, scene::Scene, texture::{Texture, TextureItem}}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -295,6 +295,38 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Te
                     scene_data.environment_texture = Some(TextureState::new(tex.clone()));
 
                 }
+            }
+        }
+    }));
+}
+
+pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, scene_id: u64, sound_component_id: Option<u64>)
+{
+    let extension = get_extension(path);
+    let name = get_stem(path);
+
+    let bytes = load_binary(path).unwrap();
+
+    let mut main_queue = main_queue.write().unwrap();
+    main_queue.add(Box::new(move |state|
+    {
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            // sound component specific file
+            if let Some(sound_component_id) = sound_component_id
+            {
+                if let Some(sound_component) = scene.get_sound_by_id(sound_component_id)
+                {
+                    let sound_source = scene.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+                    component_downcast_mut!(sound_component, Sound);
+                    sound_component.set_sound_source(sound_source);
+                }
+            }
+            // load sound source without specific sound component
+            else
+            {
+                scene.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
             }
         }
     }));

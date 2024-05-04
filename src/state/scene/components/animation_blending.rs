@@ -60,9 +60,9 @@ impl Component for AnimationBlending
     component_impl_default!();
     component_impl_no_update_instance!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
-        true
+        false
     }
 
     fn set_enabled(&mut self, state: bool)

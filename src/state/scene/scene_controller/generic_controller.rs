@@ -29,6 +29,8 @@ impl SceneController for GenericController
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, _input_manager: &mut InputManager, _frame_scale: f32) -> bool
     {
+        let mut updated = false;
+
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
 
         for node in all_nodes
@@ -45,19 +47,37 @@ impl SceneController for GenericController
                         if let Some(joint_matrices) = joint_matrices
                         {
                             mesh.calc_bbox_skin(&joint_matrices);
+
+                            updated = true;
                         }
                     }
                 }
             }
         }
 
-        false
+        let cam = scene.cameras.first();
+        if let Some(cam) = cam
+        {
+            if cam.get_data_tracker().changed()
+            {
+                let (left, right) = cam.get_left_right_ear_positions();
+
+                let mut audio_device = scene.audio_device.write().unwrap();
+                audio_device.data.get_mut().left_ear_pos = left;
+                audio_device.data.get_mut().right_ear_pos = right;
+
+                updated = true;
+            }
+        }
+
+        updated
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene)
     {
         ui.label("Features:");
         ui.label(" ⚫ update skin bbox on each animation");
+        ui.label(" ⚫ update spatial sound camera position (based on first)");
 
         warn_box(ui, "Its not recommended to remove or stop this.");
     }

@@ -3,9 +3,9 @@ use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 use instant::Instant;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
 
-use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::ComponentItem, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::{SceneControllerBase, SceneControllerBox}, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::{SceneControllerBase, SceneControllerBox}, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -80,6 +80,7 @@ pub struct State
     pub adapter: AdapterFeatures,
     pub rendering: Rendering,
     pub input_manager: InputManager,
+    pub audio_device: AudioDeviceItem,
 
     pub main_thread_execution_queue: ExecutionQueueItem,
 
@@ -87,7 +88,7 @@ pub struct State
     pub pause: bool,
     pub scenes: Vec<SceneItem>,
 
-    pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
+    pub registered_components: Vec<(String, bool, fn(u64, &str) -> ComponentItem)>,
     pub registered_camera_controller: Vec<(String, fn() -> CameraControllerBox)>,
     pub registered_scene_controller: Vec<(String, fn() -> SceneControllerBox)>,
 
@@ -112,17 +113,18 @@ pub struct State
 
 impl State
 {
-    pub fn new() -> State
+    pub fn new(audio_device: AudioDeviceItem) -> State
     {
-        let mut components: Vec<(String, fn(u64, &str) -> ComponentItem)> = vec![];
+        let mut components: Vec<(String, bool, fn(u64, &str) -> ComponentItem)> = vec![];
 
-        components.push(("Alpha".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
-        components.push(("Material".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
-        //components.push(("Mesh".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
-        components.push(("Transform".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
-        components.push(("Transform Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
-        components.push(("Morph Target Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
-        components.push(("Animation Blending".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
+        components.push(("Alpha".to_string(), crate::state::scene::components::alpha::Alpha::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
+        components.push(("Material".to_string(), crate::state::scene::components::material::Material::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
+        //components.push(("Mesh".to_string(), crate::state::scene::components::mesh::Mesh::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
+        components.push(("Transform".to_string(), crate::state::scene::components::transformation::Transformation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
+        components.push(("Transform Animation".to_string(), crate::state::scene::components::transformation_animation::TransformationAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
+        components.push(("Morph Target Animation".to_string(), crate::state::scene::components::morph_target_animation::MorphTargetAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
+        components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
+        components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(id, name)))) }));
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
@@ -160,6 +162,7 @@ impl State
             },
 
             input_manager: InputManager::new(),
+            audio_device,
 
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
