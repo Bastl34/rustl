@@ -149,6 +149,7 @@ mod interface
 {
     pub(crate) mod main_interface;
     pub(crate) mod winit;
+    pub(crate) mod gilrs;
 }
 
 mod helper

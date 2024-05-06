@@ -17,6 +17,7 @@ use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::input::keyboard::{Modifier, Key};
+use crate::input::gamepad::{Gamepad, GamepadPowerInfo};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::{self, AudioDevice};
 use crate::rendering::egui::EGui;
@@ -37,6 +38,7 @@ use crate::state::scene::sound_source::SoundSource;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
+use super::gilrs::{gilrs_event, gilrs_initialize};
 use super::winit::winit_map_key;
 
 const FPS_CHART_FACTOR: f32 = 25.0;
@@ -133,6 +135,12 @@ impl MainInterface
         }
 
         swap(&mut scenes, &mut state.scenes);
+
+        // gamepad init
+        if let Some(gilrs) = &mut self.gilrs
+        {
+            gilrs_initialize(state, gilrs);
+        }
     }
 
     pub fn window(&self) -> &Window
@@ -617,25 +625,28 @@ impl MainInterface
                         let audio_device = audio_device.clone();
                         execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            let sound_source_bytes = load_binary("sounds/m16.ogg").unwrap();
-                            let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
-                            let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
-                            let sound_source_clone = sound_source.clone();
-
-                            let hash = sound_source.read().unwrap().hash.clone();
-                            scene.sound_sources.insert(hash, sound_source);
-
-                            let cube = scene.find_node_by_name("Cube");
-
-                            if let Some(cube) = cube
+                            let sound_source_bytes = load_binary("sounds/m16.ogg");
+                            if let Ok(sound_source_bytes) = sound_source_bytes
                             {
-                                let mut cube = cube.write().unwrap();
-
-                                let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
-                                let mut sound = Sound::new(sound_id, "m16", sound_source_clone, SoundType::Spatial, true);
-                                sound.start();
-
-                                cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                                let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
+                                let sound_source_clone = sound_source.clone();
+    
+                                let hash = sound_source.read().unwrap().hash.clone();
+                                scene.sound_sources.insert(hash, sound_source);
+    
+                                let cube = scene.find_node_by_name("Cube");
+    
+                                if let Some(cube) = cube
+                                {
+                                    let mut cube = cube.write().unwrap();
+    
+                                    let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
+                                    let mut sound = Sound::new(sound_id, "m16", sound_source_clone, SoundType::Spatial, true);
+                                    sound.start();
+    
+                                    cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                                }
                             }
                         }));
                     });
@@ -737,7 +748,13 @@ impl MainInterface
     pub fn update(&mut self)
     {
         // ******************** update states ********************
-        self.input_gamepad();
+        {
+            let state = &mut *(self.state.borrow_mut());
+            if let Some(gilrs) = &mut self.gilrs
+            {
+                gilrs_event(state, gilrs);
+            }
+        }
 
         let frame_time = Instant::now();
 
@@ -979,18 +996,6 @@ impl MainInterface
     pub fn check_exit(&mut self) -> bool
     {
         self.state.borrow().exit
-    }
-
-    pub fn input_gamepad(&mut self)
-    {
-        if let Some(gilrs) = &self.gilrs
-        {
-            //dbg!("_______ ", gilrs.counter());
-            for (_id, gamepad) in gilrs.gamepads()
-            {
-                println!(" ______ {} is {:?}", gamepad.name(), gamepad.power_info());
-            }
-        }
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)

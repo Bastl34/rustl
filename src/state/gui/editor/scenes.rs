@@ -239,7 +239,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
             }
 
-            generic_items::collapse(ui, format!("scene_controller_{}", i).to_string(), true, |ui|
+            generic_items::collapse(ui, format!("pre_scene_controller_{}", i).to_string(), true, |ui|
             {
                 ui.label(RichText::new(name).heading().strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -312,7 +312,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
             }
 
-            generic_items::collapse(ui, format!("scene_controller_{}", i).to_string(), true, |ui|
+            generic_items::collapse(ui, format!("post_scene_controller_{}", i).to_string(), true, |ui|
             {
                 ui.label(RichText::new(name).heading().strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
