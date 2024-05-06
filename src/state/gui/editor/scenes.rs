@@ -1,3 +1,5 @@
+use std::mem::swap;
+
 use egui::{Ui, RichText, Color32};
 
 use crate::{state::{state::State, scene::{scene::Scene, components::{mesh::Mesh, material::TextureType}}, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, helper::concurrency::thread::spawn_thread};
@@ -14,7 +16,10 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         return;
     }
 
+    let main_queue = state.main_thread_execution_queue.clone();
+
     let scene_id = scene_id.unwrap();
+    let max_tex_res = state.max_texture_resolution();
     let scene = state.find_scene_by_id_mut(scene_id);
 
     if scene.is_none()
@@ -177,11 +182,9 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
             {
                 if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
                 {
-                    let main_queue = state.main_thread_execution_queue.clone();
-
                     spawn_thread(move ||
                     {
-                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None, true);
+                        load_texture_dialog(main_queue.clone(), TextureType::Environment, scene_id, None, true, max_tex_res);
                     });
                 }
             });
@@ -214,4 +217,151 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
             }
         });
     });
+
+
+    // Pre Scene Controller
+    {
+        ui.separator();
+        ui.label(RichText::new("Pre Scene Controller").heading().strong());
+
+        let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+        let mut controller = vec![];
+        swap(&mut scene.pre_controller, &mut controller);
+
+        let mut delete_controller = None;
+
+        for (i, controller) in controller.iter_mut().enumerate()
+        {
+            let mut enabled;
+            let name;
+            {
+                enabled = controller.get_base().is_enabled;
+                name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
+            }
+
+            generic_items::collapse(ui, format!("pre_scene_controller_{}", i).to_string(), true, |ui|
+            {
+                ui.label(RichText::new(name).heading().strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                {
+                    if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                    {
+                        delete_controller = Some(i);
+                    }
+
+                    // enabled toggle
+
+                    let toggle_text;
+                    if enabled
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                    }
+                    else
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::RED);
+                    }
+
+                    ui.toggle_value(&mut enabled, toggle_text)
+                });
+            },
+            |ui|
+            {
+                controller.ui(ui, scene);
+            });
+
+            controller.get_base_mut().is_enabled = enabled;
+        }
+
+        // swap back
+        swap(&mut controller, &mut scene.pre_controller);
+
+        if let Some(delete_controller) = delete_controller
+        {
+            //camera.controller = None;
+            scene.pre_controller.remove(delete_controller);
+        }
+
+        // add scene controller
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Add Controller").heading().strong().color(Color32::WHITE)).clicked()
+            {
+                editor_state.dialog_add_scene_controller = true;
+                editor_state.add_scene_controller_post = false;
+            }
+        });
+    }
+
+    // Post Scene Controller
+    {
+        ui.separator();
+        ui.label(RichText::new("Post Scene Controller").heading().strong());
+
+        let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+        let mut controller = vec![];
+        swap(&mut scene.post_controller, &mut controller);
+
+        let mut delete_controller = None;
+
+        for (i, controller) in controller.iter_mut().enumerate()
+        {
+            let mut enabled;
+            let name;
+            {
+                enabled = controller.get_base().is_enabled;
+                name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
+            }
+
+            generic_items::collapse(ui, format!("post_scene_controller_{}", i).to_string(), true, |ui|
+            {
+                ui.label(RichText::new(name).heading().strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                {
+                    if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                    {
+                        delete_controller = Some(i);
+                    }
+
+                    // enabled toggle
+
+                    let toggle_text;
+                    if enabled
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                    }
+                    else
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::RED);
+                    }
+
+                    ui.toggle_value(&mut enabled, toggle_text)
+                });
+            },
+            |ui|
+            {
+                controller.ui(ui, scene);
+            });
+
+            controller.get_base_mut().is_enabled = enabled;
+        }
+
+        // swap back
+        swap(&mut controller, &mut scene.post_controller);
+
+        if let Some(delete_controller) = delete_controller
+        {
+            //camera.controller = None;
+            scene.post_controller.remove(delete_controller);
+        }
+
+        // add scene controller
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Add Controller").heading().strong().color(Color32::WHITE)).clicked()
+            {
+                editor_state.dialog_add_scene_controller = true;
+                editor_state.add_scene_controller_post = false;
+            }
+        });
+    }
 }

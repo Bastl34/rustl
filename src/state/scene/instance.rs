@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Matrix4, Vector3};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
-use super::{node::{NodeItem, Node, InstanceItemArc}, components::{transformation::{Transformation}, alpha::Alpha, component::{ComponentItem, find_component, Component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}}};
+use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -159,7 +159,7 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> bool
     {
         let node;
         {
@@ -176,11 +176,9 @@ impl Instance
 
         for (component_id, component) in all_components.clone().iter_mut().enumerate()
         {
+            if !component.read().unwrap().is_enabled()
             {
-                if !component.read().unwrap().is_enabled()
-                {
-                    continue;
-                }
+                continue;
             }
 
             // remove the component itself  for the component update
@@ -191,7 +189,7 @@ impl Instance
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.clone(), instance, input_manager, frame_scale);
+            component_write.update_instance(node.clone(), instance, input_manager, time, frame_scale, frame);
         }
 
         // ***** reassign components *****
@@ -272,6 +270,17 @@ impl Instance
             }
         }
 
+        // check joints
+        let joint_component = node_read.find_component::<Joint>();
+        if let Some(joint_component) = joint_component
+        {
+            component_downcast!(joint_component, Joint);
+            if joint_component.get_data_tracker().changed()
+            {
+                return true;
+            }
+        }
+
         // check alpha
         let alpha_component = node_read.find_component::<Alpha>();
         if let Some(alpha_component) = alpha_component
@@ -347,7 +356,7 @@ impl Instance
         }
     }
 
-    pub fn get_transform(&self) -> Matrix4::<f32>
+    pub fn get_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
     }

@@ -25,7 +25,7 @@ pub struct PressState
     pub long_press_time: u64,
 
     pub threshold: f32,
-    pub last_holding_value: f32,
+    pub holding_value: f32,
 
     //times
     first_action_time: u64,
@@ -47,7 +47,7 @@ impl PressState
             long_press_time: KEY_PRESS_DEFAULT_LONG_PRESS_TIME,
 
             threshold: KEY_PRESS_DEFAULT_THRESHOLD,
-            last_holding_value: 0.0,
+            holding_value: 0.0,
 
             first_action_time: 0,
             last_press_time: 0,
@@ -100,7 +100,7 @@ impl PressState
         if status
         {
             self.holding_state = true;
-            self.last_holding_value = 1.0;
+            self.holding_value = 1.0;
 
             if self.first_action_time == 0
             {
@@ -122,7 +122,7 @@ impl PressState
         if value >= self.threshold || value <= -self.threshold
         {
             self.holding_state = true;
-            self.last_holding_value = value;
+            self.holding_value = value;
 
             if self.first_action_time == 0
             {

@@ -5,6 +5,10 @@
 
 
 ## current state
+<img src="history/2023-12-31-2.webp" width="720">
+<sub>model/animation from: https://www.mixamo.com/</sub>
+<br><br>
+
 <img src="history/2023-11-12-2.png" width="720">
 <sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
 <br><br>
@@ -49,7 +53,7 @@ RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 Linux (Ubuntu) Requirements:
 ```bash
-sudo apt-get install pkg-config cmake libglib2.0-dev build-essential librust-atk-dev libgtk-3-dev
+sudo apt-get install pkg-config cmake libglib2.0-dev build-essential librust-atk-dev libgtk-3-dev librust-alsa-sys-dev libasound2-dev libudev-dev
 ```
 
 

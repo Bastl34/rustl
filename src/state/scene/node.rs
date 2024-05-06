@@ -1,11 +1,12 @@
-use std::{sync::{Arc, RwLock}, cell::RefCell};
+use std::{sync::{Arc, RwLock}, collections::HashMap};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Point3};
+use nalgebra::{Matrix4, Point3, Vector4};
+use regex::Regex;
 
-use crate::{state::helper::render_item::RenderItemOption, helper::change_tracker::ChangeTracker, component_downcast, component_downcast_mut, input::input_manager::InputManager};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{component::{ComponentItem, Component, find_component, find_components, remove_component_by_type, remove_component_by_id, find_component_by_id}, mesh::Mesh, transformation::Transformation, alpha::Alpha}, instance::{InstanceItem, Instance}};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -22,7 +23,13 @@ pub struct Node
     pub render_children_first: bool,
     pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
 
+    pub pick_bbox_first: bool,
+
     pub parent: Option<NodeItem>,
+
+    pub skin: Vec<NodeItem>,
+
+    pub extras: NodeExtras,
 
     pub nodes: Vec<NodeItem>,
     //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
@@ -32,6 +39,8 @@ pub struct Node
     pub components: Vec<ComponentItem>,
 
     pub instance_render_item: RenderItemOption,
+    pub skeleton_render_item: RenderItemOption,
+    pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
 
     // bounding box
     b_box_node_index: usize,
@@ -51,13 +60,22 @@ impl Node
             render_children_first: false,
             alpha_index: 0,
 
+            pick_bbox_first: true,
+
             components: vec![],
 
             parent: None,
+
+            skin: vec![],
+
+            extras: NodeExtras::new(),
+
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
 
             instance_render_item: None,
+            skeleton_render_item: None,
+            skeleton_morph_target_bind_group_render_item: None,
 
             b_box_node_index: 0
         };
@@ -78,9 +96,36 @@ impl Node
         }
     }
 
+    pub fn set_parent(node: NodeItem, new_parent: NodeItem)
+    {
+        // remove from old node list
+        if let Some(old_parent) = &node.read().unwrap().parent
+        {
+            let id = node.read().unwrap().id;
+
+            let mut old_parent_write = old_parent.write().unwrap();
+            old_parent_write.nodes.retain(|node|
+            {
+                node.read().unwrap().id != id
+            });
+        }
+
+        // add to new node list
+        new_parent.write().unwrap().nodes.push(node.clone());
+
+        node.write().unwrap().parent = Some(new_parent);
+
+        node.write().unwrap().force_instances_update();
+    }
+
     pub fn add_component(&mut self, component: ComponentItem)
     {
         self.components.push(component);
+    }
+
+    pub fn add_component_front(&mut self, component: ComponentItem)
+    {
+        self.components.insert(0, component);
     }
 
     pub fn find_component<T>(&self) -> Option<ComponentItem> where T: 'static
@@ -124,7 +169,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_bounding_info(&self, recursive: bool) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_bounding_info(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -142,13 +187,21 @@ impl Node
             for mesh in &meshes
             {
                 component_downcast!(mesh, Mesh);
-                let bbox = mesh.get_data().b_box;
 
-                let transformed_min = transform * Point3::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z).to_homogeneous();
-                let transformed_max = transform * Point3::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z).to_homogeneous();
+                let bbox;
+                if let Some(skin_bbox) = mesh.get_data().b_box_skin
+                {
+                    bbox = skin_bbox;
+                }
+                else
+                {
+                    bbox = mesh.get_data().b_box;
+                }
+
+                let transformed_min = transform * Vector4::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z, 1.0);
+                let transformed_max = transform * Vector4::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z, 1.0);
 
                 // sometimes coordinates are flipped because of the transformation -> check for min and max points
-
                 min.x = min.x.min(transformed_min.x);
                 min.y = min.y.min(transformed_min.y);
                 min.z = min.z.min(transformed_min.z);
@@ -175,8 +228,16 @@ impl Node
         {
             for node in &self.nodes
             {
+                if let Some(predicate) = predicate
+                {
+                    if !predicate(node.clone())
+                    {
+                        continue;
+                    }
+                }
+
                 let node = node.read().unwrap();
-                let child_min_max = node.get_bounding_info(recursive);
+                let child_min_max = node.get_bounding_info(recursive, predicate);
 
                 if let Some(child_min_max) = child_min_max
                 {
@@ -203,9 +264,9 @@ impl Node
         None
     }
 
-    pub fn get_center(&self, recursive: bool) -> Option<Point3<f32>>
+    pub fn get_bbox_center(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
-        let bounding_info = self.get_bounding_info(recursive);
+        let bounding_info = self.get_bounding_info(recursive, predicate);
 
         if let Some(bounding_info) = bounding_info
         {
@@ -215,6 +276,51 @@ impl Node
         }
 
         None
+    }
+
+    pub fn parent_amount(&self) -> u32
+    {
+        let mut parent_amount = 0;
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            parent_amount += 1;
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        parent_amount
+    }
+
+    pub fn has_parent(&self, parent_node: NodeItem) -> bool
+    {
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            let parent_clone = parent.clone();
+
+            if let Some(parent) = parent
+            {
+                if parent.read().unwrap().id == parent_node.read().unwrap().id
+                {
+                    return true;
+                }
+            }
+
+            parent = parent_clone.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
+    }
+
+    pub fn has_parent_or_is_equal(&self, node: NodeItem) -> bool
+    {
+        if self.id == node.read().unwrap().id
+        {
+            return true;
+        }
+
+        self.has_parent(node)
     }
 
     pub fn has_changed_instance_data(&self) -> bool
@@ -231,11 +337,48 @@ impl Node
         false
     }
 
-    pub fn get_transform(&self) -> (Matrix4<f32>, bool)
+    pub fn has_changed_data(&self) -> bool
+    {
+        if self.has_changed_instance_data()
+        {
+            return true;
+        }
+
+        // check transformation
+        let transformations = self.find_components::<Transformation>();
+        for transformation in transformations
+        {
+            component_downcast!(transformation, Transformation);
+            if transformation.get_data_tracker().changed()
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
+        let joint_component = self.find_component::<Joint>();
 
-        if let Some(transform_component) = transform_component
+        if let Some(joint_component) = joint_component
+        {
+            component_downcast!(joint_component, Joint);
+
+            if joint_component.get_base().is_enabled
+            {
+                let joint_transform = joint_component.get_joint_transform();
+
+                return
+                (
+                    joint_transform,
+                    true
+                );
+            }
+        }
+        else if let Some(transform_component) = transform_component
         {
             component_downcast!(transform_component, Transformation);
 
@@ -273,6 +416,365 @@ impl Node
         else
         {
             node_transform
+        }
+    }
+
+    fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
+    {
+        let joint_component = self.find_component::<Joint>();
+
+        if let Some(joint_component) = joint_component
+        {
+            component_downcast!(joint_component, Joint);
+
+            // animated transformation or just skinned transformation
+            let local_animation_transform;
+            if animated
+            {
+                local_animation_transform = joint_component.get_joint_transform();
+            }
+            else
+            {
+                local_animation_transform = joint_component.get_local_transform();
+            }
+
+            let mut parent_transform = Matrix4::<f32>::identity();
+
+            if let Some(parent) = &self.parent
+            {
+                parent_transform = parent.read().unwrap().get_joint_transform(animated);
+            }
+
+            return parent_transform * local_animation_transform;
+        }
+
+        Matrix4::<f32>::identity()
+    }
+
+    pub fn get_joint_transform_vec(&self, animated: bool) -> Option<Vec<Matrix4<f32>>>
+    {
+        if self.skin.len() == 0
+        {
+            return None;
+        }
+
+        let mut joints = vec![];
+        for joint in &self.skin
+        {
+            let mut transform = joint.read().unwrap().get_joint_transform(animated);
+
+            // inverse bind transform
+            let joint_component = joint.read().unwrap().find_component::<Joint>();
+            if let Some(joint_component) = joint_component
+            {
+                component_downcast!(joint_component, Joint);
+                transform = transform * joint_component.get_inverse_bind_transform();
+            }
+
+            joints.push(transform);
+        }
+
+        Some(joints)
+    }
+
+    pub fn get_morph_targets_vec(&self) -> Option<Vec<f32>>
+    {
+        let morph_components = self.find_components::<MorphTarget>();
+
+        if morph_components.len() == 0
+        {
+            return None;
+        }
+
+        let mut morph_target_weights: Vec<(u32, f32)> = vec![];
+
+        for morph_target in morph_components
+        {
+            component_downcast!(morph_target, MorphTarget);
+            let morph_data = morph_target.get_data();
+            morph_target_weights.push((morph_data.target_id, morph_data.weight));
+        }
+
+        morph_target_weights.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        let morph_targets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
+
+        Some(morph_targets)
+    }
+
+    pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().id == id
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_node_by_id(&node.read().unwrap().nodes, id);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_node_by_name(nodes: &Vec<NodeItem>, name: &str) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_mesh_node_by_name(nodes: &Vec<NodeItem>, name: &str) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if node.read().unwrap().name == name && node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    // find the node which has animations
+    pub fn find_animation_node(node: NodeItem) -> Option<NodeItem>
+    {
+        let node_read = node.read().unwrap();
+        if node_read.find_component::<Animation>().is_some()
+        {
+            return Some(node.clone());
+        }
+
+        let all_nodes = Scene::list_all_child_nodes(&node_read.nodes);
+        for child_node in all_nodes
+        {
+            let child_node_read = child_node.read().unwrap();
+            if child_node_read.find_component::<Animation>().is_some()
+            {
+                return Some(child_node.clone());
+            }
+        }
+
+        None
+    }
+
+    // find animation by name and return first animation if there is no name set
+    pub fn find_animation_by_name(&self, name: &str) -> Option<ComponentItem>
+    {
+        let name = name.to_string();
+
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone();
+
+            if componen_name == name || name == ""
+            {
+                return Some(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone();
+
+                if componen_name == name || name == ""
+                {
+                    return Some(animation.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn find_animation_by_regex(&self, regex: &str) -> Option<ComponentItem>
+    {
+        let regex = Regex::new(regex).unwrap();
+
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+            if regex.is_match(&componen_name)
+            {
+                return Some(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+                if regex.is_match(&componen_name)
+                {
+                    return Some(animation.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn find_animation_by_include_exclude(&self, include: &Vec<String>, exclude: &Vec<String>) -> Option<ComponentItem>
+    {
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+            if match_by_include_exclude(&componen_name, include, exclude)
+            {
+                return Some(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+                if match_by_include_exclude(&componen_name, include, exclude)
+                {
+                    return Some(animation.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn start_all_animations(&self)
+    {
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.start();
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                component_downcast_mut!(animation, Animation);
+                animation.start();
+            }
+        }
+    }
+
+    pub fn stop_all_animations(&self)
+    {
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.stop();
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                component_downcast_mut!(animation, Animation);
+                animation.stop();
+            }
+        }
+    }
+
+    pub fn get_all_animations(&self) -> Vec<ComponentItem>
+    {
+        // first check on the item itself
+        let mut animations = self.find_components::<Animation>();
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let child_animations = node.find_components::<Animation>();
+
+            animations.extend(child_animations);
+        }
+
+        animations
+    }
+
+    pub fn start_first_animation(&self)
+    {
+        let animations = self.get_all_animations();
+
+        if let Some(first) = animations.first()
+        {
+            component_downcast_mut!(first, Animation);
+            first.start();
         }
     }
 
@@ -359,7 +861,7 @@ impl Node
         self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
     }
 
-    pub fn update(node: NodeItem, input_manager: &mut InputManager, frame_scale: f32)
+    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         // ***** copy all components *****
         let all_components;
@@ -385,7 +887,7 @@ impl Node
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update(node.clone(), input_manager, frame_scale);
+            component_write.update(node.clone(), input_manager, time, frame_scale, frame);
         }
 
         // ***** reassign components *****
@@ -401,7 +903,7 @@ impl Node
                 let node_read = node.read().unwrap();
                 for instance in node_read.instances.get_ref()
                 {
-                    if Instance::update(&instance, input_manager, frame_scale)
+                    if Instance::update(&instance, input_manager, time, frame_scale, frame)
                     {
                         updates += 1;
                     }
@@ -439,9 +941,10 @@ impl Node
         let node_read = node.read().unwrap();
         for child_node in &node_read.nodes
         {
-            Self::update(child_node.clone(), input_manager, frame_scale);
+            Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
         }
     }
+
 
     pub fn merge_mesh(&mut self, node: &NodeItem) -> bool
     {
@@ -536,6 +1039,18 @@ impl Node
             let mut instance = instance.write().unwrap();
             instance.set_force_update();
         }
+
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            for instance in node.instances.get_ref()
+            {
+                let mut instance = instance.write().unwrap();
+                instance.set_force_update();
+            }
+        }
     }
 
     pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemArc>
@@ -622,15 +1137,15 @@ impl Node
 }
 
 // ******************** bounding box ********************
-impl Bounded for Node
+impl Bounded<f32, 3> for Node
 {
-    fn aabb(&self) -> bvh::aabb::AABB
+    fn aabb(&self) -> bvh::aabb::Aabb<f32, 3>
     {
         let mesh = self.get_mesh();
 
         if mesh.is_none()
         {
-            return bvh::aabb::AABB::empty();
+            return bvh::aabb::Aabb::empty();
         }
 
         let (trans, _) = self.get_transform();
@@ -658,14 +1173,14 @@ impl Bounded for Node
             max.z = max.z.max(transformed.z);
         }
 
-        let min = bvh::Point3::new(min.x, min.y, min.z);
-        let max = bvh::Point3::new(max.x, max.y, max.z);
+        let min = Point3::new(min.x, min.y, min.z);
+        let max = Point3::new(max.x, max.y, max.z);
 
-        bvh::aabb::AABB::with_bounds(min, max)
+        bvh::aabb::Aabb::with_bounds(min, max)
     }
 }
 
-impl BHShape for Node
+impl BHShape<f32, 3> for Node
 {
     fn set_bh_node_index(&mut self, index: usize)
     {

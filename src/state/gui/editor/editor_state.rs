@@ -8,13 +8,15 @@ use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resour
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
 {
     Components,
     Material,
     Camera,
     Texture,
+    Sound,
+    SoundSource,
     Light,
     Scene,
     Object,
@@ -29,6 +31,16 @@ pub enum SelectionType
     Light,
     Material,
     Texture,
+    Sound,
+    SoundSource,
+    None
+}
+
+#[derive(PartialEq, Eq)]
+pub enum PickType
+{
+    Camera,
+    Parent,
     None
 }
 
@@ -74,7 +86,7 @@ pub struct EditorState
     pub selectable: bool,
     pub fly_camera: bool,
 
-    pub pick_mode: SelectionType,
+    pub pick_mode: PickType,
 
     pub edit_mode: Option<EditMode>,
 
@@ -96,6 +108,13 @@ pub struct EditorState
     pub add_component_id: usize,
     pub add_component_name: String,
 
+    pub dialog_add_camera_controller: bool,
+    pub add_camera_controller_id: usize,
+
+    pub dialog_add_scene_controller: bool,
+    pub add_scene_controller_id: usize,
+    pub add_scene_controller_post: bool,
+
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
     pub objects: Vec<Asset>,
@@ -115,7 +134,7 @@ impl EditorState
             selectable: true,
             fly_camera: true,
 
-            pick_mode: SelectionType::None,
+            pick_mode: PickType::None,
 
             edit_mode: None,
 
@@ -136,6 +155,13 @@ impl EditorState
             dialog_add_component: false,
             add_component_id: 0,
             add_component_name: "Component".to_string(),
+
+            dialog_add_camera_controller: false,
+            add_camera_controller_id: 0,
+
+            dialog_add_scene_controller: false,
+            add_scene_controller_id: 0,
+            add_scene_controller_post: false,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: false,

@@ -11,6 +11,7 @@ use crate::state::helper::render_item::RenderItem;
 use crate::state::scene::instance::InstanceItem;
 
 use super::helper::buffer::create_empty_buffer;
+use super::vertex_buffer::VERTEX_ATTRIBUTES_AMOUNT;
 use super::wgpu::WGpu;
 
 #[repr(C)]
@@ -24,7 +25,7 @@ pub struct Instance
 
 impl Instance
 {
-    const SHADER_LOCATION_START: u32 = 5; // based on vertex input
+    const SHADER_LOCATION_START: u32 = VERTEX_ATTRIBUTES_AMOUNT as u32; // based on vertex input
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
@@ -114,7 +115,7 @@ impl InstanceBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
     {
-        dbg!("update all instances");
+        //dbg!("update all instances");
 
         self.transformations = Vec::with_capacity(instances.len());
 
@@ -122,7 +123,7 @@ impl InstanceBuffer
         {
             let instance = instance.read().unwrap();
             //let instance = instance.read().unwrap();
-            let transform = instance.get_transform();
+            let transform = instance.get_world_transform();
             let alpha = instance.get_alpha();
             let instance_data = instance.get_data();
 
@@ -151,7 +152,7 @@ impl InstanceBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)
     {
-        dbg!("update instance");
+        //dbg!("update instance");
 
         if index + 1 > self.count as usize
         {
@@ -160,7 +161,7 @@ impl InstanceBuffer
             return;
         }
 
-        let transform = instance.get_transform();
+        let transform = instance.get_world_transform();
         let alpha = instance.get_alpha();
         let instance_data = instance.get_data();
 
@@ -196,7 +197,7 @@ impl InstanceBuffer
         let buffer_data = slice.iter().map(|instance|
         {
             let instance = instance.borrow();
-            let transform = instance.get_transform();
+            let transform = instance.get_world_transform();
             let alpha = instance.get_alpha();
             let instance_data = instance.get_data();
 

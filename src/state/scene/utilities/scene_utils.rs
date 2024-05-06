@@ -2,10 +2,10 @@ use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
 
 use nalgebra::Vector3;
 
-use crate::{state::scene::{scene::Scene, instance::Instance, components::{transformation::Transformation, material::{Material, TextureType, TextureState}}, texture::{TextureItem, Texture}, loader::wavefront}, component_downcast_mut, helper::{concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem, ExecutionQueueResult}}, file::{get_extension, get_stem, self}, self}, resources::{resources::{self, load_binary}}};
+use crate::{component_downcast_mut, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::{self, get_extension, get_stem}}, resources::resources::{self, load_binary}, state::scene::{components::{material::{Material, TextureState, TextureType}, sound::Sound, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, scene::Scene, texture::{Texture, TextureItem}}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, create_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
@@ -18,26 +18,26 @@ pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, cr
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, main_queue, create_root_node, reuse_materials, object_only, create_mipmaps);
+        return wavefront::load(path, scene_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, main_queue, create_root_node, reuse_materials, object_only, create_mipmaps);
+        return gltf::load(path, scene_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
 
     Ok(vec![])
 }
 
-pub fn load_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
+pub fn load_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
 {
     let image_bytes = resources::load_binary(path)?;
     let name = file::get_stem(path);
 
-    Ok(load_texture_byte_or_reuse(scene_id, main_queue, &image_bytes, name.as_str(), extension))
+    Ok(load_texture_byte_or_reuse(scene_id, main_queue, max_tex_res, &image_bytes, name.as_str(), extension))
 }
 
 
-pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
+pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
 {
     let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
     let hash_clone = hash.clone();
@@ -68,7 +68,8 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
                 }
                 else
                 {
-                    *texture_id_clone.write().unwrap() = Some(scene.id_manager.get_next_texture_id());
+                    let id = scene.id_manager.write().unwrap().get_next_texture_id();
+                    *texture_id_clone.write().unwrap() = Some(id);
                 }
             }
         }))
@@ -81,7 +82,7 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
     }
 
     // ***** if not found -> load *****
-    let texture = Texture::new(texture_id.read().unwrap().unwrap(), name, &image_bytes, extension);
+    let texture = Texture::new(texture_id.read().unwrap().unwrap(), name, &image_bytes, extension, max_tex_res);
     let arc = Arc::new(RwLock::new(Box::new(texture)));
 
     // ***** add to scene textures *****
@@ -164,15 +165,15 @@ pub fn insert_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, te
 
 }
 
-pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
+pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
 {
     let amount = amount as i32;
 
-    let loaded_ids = load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), false, true, true, false).unwrap();
+    let loaded_ids = load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), id_manager, true, true, false, 0).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
-        if let Some(grid_arc) = scene.find_node_by_name("grid")
+        if let Some(grid_arc) = scene.find_mesh_node_by_name("grid")
         {
             {
                 let mut grid = grid_arc.write().unwrap();
@@ -185,14 +186,16 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
 
                 // x
                 {
+                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
                     let mut instance = Instance::new
                     (
-                        scene.id_manager.get_next_instance_id(),
+                        id,
                         format!("grid_x_{}", pos),
                         grid_arc.clone()
                     );
 
-                    let mut transformation = Transformation::identity(scene.id_manager.get_next_component_id(), "Transform");
+                    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let mut transformation = Transformation::identity(component_id, "Transform");
                     transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, pos as f32 * spacing));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, 1.0, 1.0), true);
 
@@ -204,14 +207,16 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
 
                 // y
                 {
+                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
                     let mut instance = Instance::new
                     (
-                        scene.id_manager.get_next_instance_id(),
+                        id,
                         format!("grid_y_{}", pos),
                         grid_arc.clone()
                     );
 
-                    let mut transformation = Transformation::identity(scene.id_manager.get_next_component_id(), "Transform");
+                    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let mut transformation = Transformation::identity(component_id, "Transform");
                     transformation.apply_translation(Vector3::<f32>::new(pos as f32 * spacing, 0.0, 0.0));
                     transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, 1.0, 1.0), true);
@@ -243,13 +248,17 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, amount: u32, s
                 node.merge_instances();
 
                 let instance = node.instances.get_mut().first();
-                instance.unwrap().write().unwrap().pickable = false;
+
+                if let Some(instance) = instance
+                {
+                    instance.write().unwrap().pickable = false;
+                }
             }
         }
     }));
 }
 
-pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: TextureType, scene_id: u64, material_id: Option<u64>, mipmapping: bool)
+pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: TextureType, scene_id: u64, material_id: Option<u64>, mipmapping: bool, max_tex_res: u32)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
@@ -266,7 +275,7 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Te
             {
                 if let Some(material) = scene.get_material_by_id(material_id)
                 {
-                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
                     tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
 
                     component_downcast_mut!(material, Material);
@@ -278,7 +287,7 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Te
             {
                 if texture_type == TextureType::Environment
                 {
-                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
                     tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
 
                     let scene_data = scene.get_data_mut();
@@ -286,6 +295,38 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Te
                     scene_data.environment_texture = Some(TextureState::new(tex.clone()));
 
                 }
+            }
+        }
+    }));
+}
+
+pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, scene_id: u64, sound_component_id: Option<u64>)
+{
+    let extension = get_extension(path);
+    let name = get_stem(path);
+
+    let bytes = load_binary(path).unwrap();
+
+    let mut main_queue = main_queue.write().unwrap();
+    main_queue.add(Box::new(move |state|
+    {
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            // sound component specific file
+            if let Some(sound_component_id) = sound_component_id
+            {
+                if let Some(sound_component) = scene.get_sound_by_id(sound_component_id)
+                {
+                    let sound_source = scene.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+                    component_downcast_mut!(sound_component, Sound);
+                    sound_component.set_sound_source(sound_source);
+                }
+            }
+            // load sound source without specific sound component
+            else
+            {
+                scene.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
             }
         }
     }));
@@ -302,91 +343,19 @@ pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u
             {
                 func(scene);
             }
-        }))
+        }));
     }
     res.join();
 }
 
-pub fn get_new_tex_id(main_queue: ExecutionQueueItem, scene_id: u64) -> u64
+pub fn execute_on_scene_mut(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
 {
-    let id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let id_clone = id.clone();
-
-    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene: &mut Scene|
+    let mut main_queue = main_queue.write().unwrap();
+    main_queue.add(Box::new(move |state|
     {
-        *id_clone.write().unwrap() = Some(scene.id_manager.get_next_texture_id());
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            func(scene);
+        }
     }));
-
-    let id = id.read().unwrap();
-    id.unwrap()
-}
-
-pub fn get_new_component_id(main_queue: ExecutionQueueItem, scene_id: u64) -> u64
-{
-    let id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let id_clone = id.clone();
-
-    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene: &mut Scene|
-    {
-        *id_clone.write().unwrap() = Some(scene.id_manager.get_next_component_id());
-    }));
-
-    let id = id.read().unwrap();
-    id.unwrap()
-}
-
-pub fn get_new_light_id(main_queue: ExecutionQueueItem, scene_id: u64) -> u64
-{
-    let id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let id_clone = id.clone();
-
-    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene: &mut Scene|
-    {
-        *id_clone.write().unwrap() = Some(scene.id_manager.get_next_light_id());
-    }));
-
-    let id = id.read().unwrap();
-    id.unwrap()
-}
-
-pub fn get_new_camera_id(main_queue: ExecutionQueueItem, scene_id: u64) -> u64
-{
-    let id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let id_clone = id.clone();
-
-    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene: &mut Scene|
-    {
-        *id_clone.write().unwrap() = Some(scene.id_manager.get_next_light_id());
-    }));
-
-    let id = id.read().unwrap();
-    id.unwrap()
-}
-
-pub fn get_new_node_id(main_queue: ExecutionQueueItem, scene_id: u64) -> u64
-{
-    let id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let id_clone = id.clone();
-
-    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene: &mut Scene|
-    {
-        *id_clone.write().unwrap() = Some(scene.id_manager.get_next_node_id());
-    }));
-
-    let id = id.read().unwrap();
-    id.unwrap()
-}
-
-pub fn get_new_instance_id(main_queue: ExecutionQueueItem, scene_id: u64) -> u64
-{
-    let id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let id_clone = id.clone();
-
-    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene: &mut Scene|
-    {
-        *id_clone.write().unwrap() = Some(scene.id_manager.get_next_instance_id());
-    }));
-
-    let id = id.read().unwrap();
-    id.unwrap()
 }

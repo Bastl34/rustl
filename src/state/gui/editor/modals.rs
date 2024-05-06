@@ -2,9 +2,28 @@ use crate::state::{state::State, gui::helper::generic_items::modal_with_title};
 
 use super::editor_state::EditorState;
 
+pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    if editor_state.dialog_add_component
+    {
+        create_component_add_modal(editor_state, state, ctx);
+    }
+    else if editor_state.dialog_add_camera_controller
+    {
+        create_camera_controller_modal(editor_state, state, ctx);
+    }
+    else if editor_state.dialog_add_scene_controller
+    {
+        create_scene_controller_modal(editor_state, state, ctx);
+    }
+}
+
 pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_add_component = editor_state.dialog_add_component;
+
+    let (_, instance_id) = editor_state.get_object_ids();
+    let is_instance = instance_id.is_some();
 
     modal_with_title(ctx, &mut dialog_add_component, "Add component", |ui|
     {
@@ -27,12 +46,16 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
                 ui.style_mut().wrap = Some(false);
                 ui.set_min_width(40.0);
 
-                for (component_id, component) in state.registered_components.iter().enumerate()
+                for (component_id, (component_name, component_instantiable, _)) in state.registered_components.iter().enumerate()
                 {
-                    ui.selectable_value(&mut editor_state.add_component_id, component_id, component.0.clone());
+                    if !is_instance || (is_instance && *component_instantiable)
+                    {
+                        ui.selectable_value(&mut editor_state.add_component_id, component_id, component_name.clone());
+                    }
                 }
             });
         });
+
         if ui.button("Add").clicked()
         {
             let (node_id, instance_id) = editor_state.get_object_ids();
@@ -50,11 +73,13 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
                     let node = node.read().unwrap();
                     let instance = node.find_instance_by_id(instance_id).unwrap();
                     let mut instance = instance.write().unwrap();
-                    instance.add_component(component.1(scene.id_manager.get_next_instance_id(), editor_state.add_component_name.as_str()));
+                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    instance.add_component(component.2(id, editor_state.add_component_name.as_str()));
                 }
                 else
                 {
-                    node.write().unwrap().add_component(component.1(scene.id_manager.get_next_instance_id(), editor_state.add_component_name.as_str()));
+                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    node.write().unwrap().add_component(component.2(id, editor_state.add_component_name.as_str()));
                 }
             }
 
@@ -66,5 +91,110 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
     if !dialog_add_component
     {
         editor_state.dialog_add_component = dialog_add_component;
+    }
+}
+
+pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    let mut dialog_add_camera_controller = editor_state.dialog_add_camera_controller;
+
+    modal_with_title(ctx, &mut dialog_add_camera_controller, "Add Controller", |ui|
+    {
+        ui.label("Add Camera Controller");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Controller: ");
+
+            let current_component_name = state.registered_camera_controller.get(editor_state.add_camera_controller_id).unwrap().0.clone();
+
+            egui::ComboBox::from_label("").selected_text(current_component_name).width(180.0).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap = Some(false);
+                ui.set_min_width(40.0);
+
+                for (id, controller) in state.registered_camera_controller.iter().enumerate()
+                {
+                    ui.selectable_value(&mut editor_state.add_camera_controller_id, id, controller.0.clone());
+                }
+            });
+        });
+
+        if ui.button("Add").clicked()
+        {
+            let (camera_id, ..) = editor_state.get_object_ids();
+
+            if let (Some(scene_id), Some(camera_id)) = (editor_state.selected_scene_id, camera_id)
+            {
+                let cam_controller = state.registered_camera_controller.get(editor_state.add_camera_controller_id).unwrap().clone();
+
+                let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
+
+                camera.controller = Some(cam_controller.1());
+            }
+
+            editor_state.dialog_add_camera_controller = false;
+        }
+    });
+
+    if !dialog_add_camera_controller
+    {
+        editor_state.dialog_add_camera_controller = dialog_add_camera_controller;
+    }
+}
+
+pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    let mut dialog_add_scene_controller = editor_state.dialog_add_scene_controller;
+    let mut post_controller = editor_state.add_scene_controller_post;
+
+    modal_with_title(ctx, &mut dialog_add_scene_controller, "Add Controller", |ui|
+    {
+        ui.label("Add Scene Controller");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Controller: ");
+
+            let current_component_name = state.registered_scene_controller.get(editor_state.add_scene_controller_id).unwrap().0.clone();
+
+            egui::ComboBox::from_label("").selected_text(current_component_name).width(180.0).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap = Some(false);
+                ui.set_min_width(40.0);
+
+                for (id, controller) in state.registered_scene_controller.iter().enumerate()
+                {
+                    ui.selectable_value(&mut editor_state.add_scene_controller_id, id, controller.0.clone());
+                }
+            });
+        });
+
+        if ui.button("Add").clicked()
+        {
+            if let Some(scene_id) = editor_state.selected_scene_id
+            {
+                let scene_controller = state.registered_scene_controller.get(editor_state.add_scene_controller_id).unwrap().clone();
+
+                let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+
+                if post_controller
+                {
+                    scene.post_controller.push(scene_controller.1());
+                }
+                else
+                {
+                    scene.pre_controller.push(scene_controller.1());
+                }
+            }
+
+            editor_state.dialog_add_scene_controller = false;
+        }
+    });
+
+    if !dialog_add_scene_controller
+    {
+        editor_state.dialog_add_scene_controller = dialog_add_scene_controller;
     }
 }

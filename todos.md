@@ -1,8 +1,6 @@
 todo:
  * everything should be dynamic
  * TODOs
- * normal map: rotation/transformation is not applied correctly
- * screenshot is broken on windows
  * flickering on windows (amd)
  * cleanup is not working (clear scene)
  * better scene statistics graph
@@ -11,9 +9,13 @@ todo:
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
  * memory leak
  * dead lock while loading an object/scene (just sometimes)
- * rework id manager to use arc rwlock (to prevent the need of execute_on_scene_mut_and_wait)
+ * optimize shader - do not use empty morph targets or animation weights
+ * action management
+ * controller support
 
 done:
+ * limit texture resolution for load
+ * rework id manager to use arc rwlock (to prevent the need of execute_on_scene_mut_and_wait)
  * get rid of async stuff -> use exec queue
  * set camera resolution per default (otherwise target rotation controller is not working correctly)
  * camera target not working correctly (maybe: get_center wrong?)
@@ -34,3 +36,7 @@ done:
  * update camera/s on resize
  * do not save state on scene (just pass it on update/render)
  * buffer update on model matrix change
+ * screenshot is broken on windows
+ * normal map: rotation/transformation is not applied correctly
+ * json based extras
+ * ortho cam

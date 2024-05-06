@@ -78,6 +78,42 @@ pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut Sta
                 state.rendering.msaa.set(msaa)
             }
         });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Max Texture Res:");
+
+            let max = state.adapter.max_texture_resolution;
+            let mut current = if let Some(max_texture_resolution) = state.rendering.max_texture_resolution { max_texture_resolution } else { max };
+
+            let mut possibilities = vec![];
+
+            let mut item = max;
+            while item > 0
+            {
+                possibilities.push(item);
+                item /= 2;
+            }
+
+            let mut changed = false;
+            egui::ComboBox::from_label("px").selected_text(format!("{current:?}")).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap = Some(false);
+                //ui.set_min_width(60.0);
+
+                for item in possibilities
+                {
+                    changed = ui.selectable_value(&mut current, item, format!("{item:?}")).changed() || changed;
+                }
+            });
+
+            ui.label("ℹ").on_hover_text("larger textures will be scaled down");
+
+            if changed
+            {
+                state.rendering.max_texture_resolution = Some(current);
+            }
+        ui.end_row();
+        });
     });
-//});
 }

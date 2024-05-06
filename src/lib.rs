@@ -11,10 +11,13 @@ mod rendering
     pub(crate) mod uniform;
     pub(crate) mod light;
     pub(crate) mod material;
+    pub(crate) mod skeleton;
+    pub(crate) mod morph_target;
 
     pub(crate) mod bind_groups
     {
         pub(crate) mod light_cam_scene;
+        pub(crate) mod skeleton_morph_target;
     }
 
     pub(crate) mod helper
@@ -53,6 +56,19 @@ mod state
             pub(crate) mod material;
             pub(crate) mod alpha;
             pub(crate) mod transformation_animation;
+            pub(crate) mod joint;
+            pub(crate) mod animation;
+            pub(crate) mod morph_target;
+            pub(crate) mod morph_target_animation;
+            pub(crate) mod animation_blending;
+            pub(crate) mod sound;
+        }
+
+        pub(crate) mod scene_controller
+        {
+            pub(crate) mod scene_controller;
+            pub(crate) mod generic_controller;
+            pub(crate) mod character_controller;
         }
 
         pub(crate) mod camera_controller
@@ -60,14 +76,17 @@ mod state
             pub(crate) mod camera_controller;
             pub(crate) mod fly_controller;
             pub(crate) mod target_rotation_controller;
+            pub(crate) mod follow_controller;
         }
 
         pub(crate) mod utilities
         {
             pub(crate) mod scene_utils;
+            pub(crate) mod extras;
         }
 
         pub(crate) mod texture;
+        pub(crate) mod sound_source;
         pub(crate) mod camera;
         pub(crate) mod light;
         pub(crate) mod instance;
@@ -98,6 +117,7 @@ mod state
             pub(crate) mod scenes;
             pub(crate) mod rendering;
             pub(crate) mod textures;
+            pub(crate) mod sound;
             pub(crate) mod assets;
         }
     }
@@ -112,7 +132,12 @@ pub(crate) mod input
 
     pub(crate) mod keyboard;
     pub(crate) mod mouse;
+    pub(crate) mod gamepad;
+}
 
+pub(crate) mod output
+{
+    pub(crate) mod audio_device;
 }
 
 mod window
@@ -124,6 +149,7 @@ mod interface
 {
     pub(crate) mod main_interface;
     pub(crate) mod winit;
+    pub(crate) mod gilrs;
 }
 
 mod helper
@@ -142,7 +168,7 @@ mod helper
     pub(crate) mod consumable;
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
-
+    pub(crate) mod easing;
 }
 
 mod resources

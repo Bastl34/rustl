@@ -113,6 +113,9 @@ impl WGpu
 
         let msaa_samples = *state.rendering.msaa.get_ref();
 
+        state.adapter.max_texture_resolution = device.limits().max_texture_dimension_2d;
+        state.adapter.max_supported_texture_resolution = device.limits().max_texture_dimension_2d;
+
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
         state.adapter.storage_buffer_array_support = supports_storage_resources;
@@ -286,7 +289,7 @@ impl WGpu
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             label: None,
             view_formats: &[],
@@ -302,7 +305,7 @@ impl WGpu
                 mip_level_count: 1,
                 sample_count: self.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 label: None,
                 view_formats: &[],
@@ -359,7 +362,8 @@ impl WGpu
         output_buffer.unmap();
 
         let img = DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(buffer_dimensions.width as u32, buffer_dimensions.height as u32, data).unwrap());
-        brga_to_rgba(img)
+        //brga_to_rgba(img)
+        img
     }
 
 }

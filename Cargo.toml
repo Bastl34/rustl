@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-simple_logger = "4.3.0"
+simple_logger = "5.0.0"
 log = "0.4"
 cfg-if = "1"
 wgpu = "0.18.0"
@@ -18,17 +18,24 @@ anyhow = "1.0"
 nalgebra = "0.32.3"
 sha256 = "1.4.0"
 colored = "2.1.0"
-base64 = "0.21"
-strum = "0.25"
-strum_macros = "0.25"
-rfd = "0.12.1"
+base64 = "0.22"
+strum = "0.26"
+strum_macros = "0.26"
+rfd = "0.14.1"
+serde_json = "1.0"
+regex = "1.10.3"
+rodio = "0.18.0"
+gilrs = { version = "0.10", features = ["wgi"]}
 
-parry3d = "0.13"
-bvh = "0.7"
+parry3d = "0.14.0"
+bvh = "0.9.0"
+
+arboard = "3.3"
 
 tobj = { version = "4.0", features = ["async"]}
 
-gltf = { version = "1.4.0", features = [
+#gltf = { version = "1.4.0", features = [
+gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
@@ -38,7 +45,7 @@ gltf = { version = "1.4.0", features = [
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
-image = { version = "0.24.7", default-features = false, features = [ "png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = [ "png", "jpeg"] }
 # image = "0.24.5"
 
 egui = "0.24.1"
@@ -56,7 +63,7 @@ pollster = "0.3.0"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
-reqwest = "0.11"
+reqwest = "0.12"
 wgpu = { version = "0.18", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -66,7 +73,7 @@ web-sys = { version = "0.3", features = [
     "Element",
     "Location",
 ]}
-wasm_thread = { version = "0.2.0", features = ["es_modules"]}
+wasm_thread = { version = "0.3.0", features = ["es_modules"]}
 
 egui-winit = { version = "0.24.1", default-features = false, features = [
 #egui-winit = { git ="https://github.com/emilk/egui", version = "0.22.0", default-features = false, features = [

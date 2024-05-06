@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
+use egui::RichText;
 use nalgebra::{Vector3, Vector4};
 use strum_macros::{Display, EnumIter};
 
@@ -646,12 +647,12 @@ impl Component for Material
     component_impl_no_update!();
     component_impl_set_enabled!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         false
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         // material settings
         let mut alpha;

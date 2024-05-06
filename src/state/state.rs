@@ -3,13 +3,17 @@ use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 use instant::Instant;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
 
-use super::scene::{scene::SceneItem, components::{component::ComponentItem, material::TextureType}, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::{SceneControllerBase, SceneControllerBox}, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
 pub const FPS_CHART_VALUES: usize = 100;
+pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
+pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
+
+pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
 pub struct AdapterFeatures
 {
@@ -19,7 +23,9 @@ pub struct AdapterFeatures
     pub backend: String,
 
     pub storage_buffer_array_support: bool,
-    pub max_msaa_samples: u32
+    pub max_msaa_samples: u32,
+    pub max_texture_resolution: u32,
+    pub max_supported_texture_resolution: u32
 }
 
 pub struct Rendering
@@ -32,6 +38,7 @@ pub struct Rendering
 
     pub distance_sorting: bool,
     pub create_mipmaps: bool,
+    pub max_texture_resolution: Option<u32>,
 }
 
 pub struct SupportedFileTypes
@@ -40,32 +47,8 @@ pub struct SupportedFileTypes
     pub textures: Vec<String>
 }
 
-pub struct State
+pub struct Statistics
 {
-    pub adapter: AdapterFeatures,
-    pub rendering: Rendering,
-    pub input_manager: InputManager,
-
-    pub main_thread_execution_queue: ExecutionQueueItem,
-
-    pub running: bool,
-    pub scenes: Vec<SceneItem>,
-
-    pub registered_components: Vec<(String, fn(u64, &str) -> ComponentItem)>,
-    pub supported_file_types: SupportedFileTypes,
-
-    pub in_focus: bool,
-
-    pub width: u32,
-    pub height: u32,
-    pub scale_factor: f32,
-
-    pub save_image: bool,
-    pub save_depth_pass_image: bool,
-    pub save_depth_buffer_image: bool,
-
-    pub save_screenshot: bool,
-
     pub draw_calls: u32,
     pub fps_timer: Instant,
     pub last_time: u128,
@@ -90,21 +73,66 @@ pub struct State
     pub egui_render_time: f32,
 
     pub frame: u64,
+}
+
+pub struct State
+{
+    pub adapter: AdapterFeatures,
+    pub rendering: Rendering,
+    pub input_manager: InputManager,
+    pub audio_device: AudioDeviceItem,
+
+    pub main_thread_execution_queue: ExecutionQueueItem,
+
+    pub running: bool,
+    pub pause: bool,
+    pub scenes: Vec<SceneItem>,
+
+    pub registered_components: Vec<(String, bool, fn(u64, &str) -> ComponentItem)>,
+    pub registered_camera_controller: Vec<(String, fn() -> CameraControllerBox)>,
+    pub registered_scene_controller: Vec<(String, fn() -> SceneControllerBox)>,
+
+    pub supported_file_types: SupportedFileTypes,
+
+    pub in_focus: bool,
+
+    pub width: u32,
+    pub height: u32,
+    pub scale_factor: f32,
+
+    pub save_image: bool,
+    pub save_depth_pass_image: bool,
+    pub save_depth_buffer_image: bool,
+
+    pub save_screenshot: bool,
+
+    pub stats: Statistics,
 
     pub exit: bool,
 }
 
 impl State
 {
-    pub fn new() -> State
+    pub fn new(audio_device: AudioDeviceItem) -> State
     {
-        let mut components: Vec<(String, fn(u64, &str) -> ComponentItem)> = vec![];
+        let mut components: Vec<(String, bool, fn(u64, &str) -> ComponentItem)> = vec![];
 
-        components.push(("Alpha".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
-        components.push(("Material".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
-        //components.push(("Mesh".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
-        components.push(("Transform".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
-        components.push(("Transform Animation".to_string(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
+        components.push(("Alpha".to_string(), crate::state::scene::components::alpha::Alpha::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
+        components.push(("Material".to_string(), crate::state::scene::components::material::Material::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
+        //components.push(("Mesh".to_string(), crate::state::scene::components::mesh::Mesh::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
+        components.push(("Transform".to_string(), crate::state::scene::components::transformation::Transformation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
+        components.push(("Transform Animation".to_string(), crate::state::scene::components::transformation_animation::TransformationAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
+        components.push(("Morph Target Animation".to_string(), crate::state::scene::components::morph_target_animation::MorphTargetAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
+        components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
+        components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(id, name)))) }));
+
+        let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
+        cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
+        cam_controller.push(("Target Rotation Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController::default()) }));
+
+        let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];
+        scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::character_controller::CharacterController::default()) }));
+        scene_controller.push(("Generic Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::generic_controller::GenericController::default()) }));
 
         Self
         {
@@ -115,7 +143,9 @@ impl State
                 driver_info: String::new(),
                 backend: String::new(),
                 storage_buffer_array_support: false,
-                max_msaa_samples: 1
+                max_msaa_samples: 1,
+                max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION,
+                max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
             },
 
             rendering: Rendering
@@ -127,17 +157,22 @@ impl State
                 msaa: ChangeTracker::new(8),
 
                 distance_sorting: true,
-                create_mipmaps: false
+                create_mipmaps: false,
+                max_texture_resolution: None
             },
 
             input_manager: InputManager::new(),
+            audio_device,
 
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
             running: false,
+            pause: false,
             scenes: vec![],
 
             registered_components: components,
+            registered_camera_controller: cam_controller,
+            registered_scene_controller: scene_controller,
 
             supported_file_types: SupportedFileTypes
             {
@@ -156,30 +191,33 @@ impl State
             save_depth_buffer_image: false,
             save_screenshot: false,
 
-            draw_calls: 0,
-            fps_timer: Instant::now(),
-            last_time: 0,
-            fps: 0,
-            last_fps: 0,
-            fps_absolute: 0,
-            fps_chart: vec![0; 100],
+            stats: Statistics
+            {
+                draw_calls: 0,
+                fps_timer: Instant::now(),
+                last_time: 0,
+                fps: 0,
+                last_fps: 0,
+                fps_absolute: 0,
+                fps_chart: vec![0; 100],
 
-            frame_update_time: 0,
-            frame_scale: 0.0,
+                frame_update_time: 0,
+                frame_scale: 0.0,
 
-            frame_time: 0.0,
+                frame_time: 0.0,
 
-            engine_update_time: 0.0,
-            engine_render_time: 0.0,
+                engine_update_time: 0.0,
+                engine_render_time: 0.0,
 
-            app_update_time: 0.0,
+                app_update_time: 0.0,
 
-            editor_update_time: 0.0,
+                editor_update_time: 0.0,
 
-            egui_update_time: 0.0,
-            egui_render_time: 0.0,
+                egui_update_time: 0.0,
+                egui_render_time: 0.0,
 
-            frame: 0,
+                frame: 0,
+            },
 
             exit: false
         }
@@ -191,9 +229,10 @@ impl State
 
         //load default env texture
         let main_queue = self.main_thread_execution_queue.clone();
+        let max_res = self.max_texture_resolution();
         spawn_thread(move ||
         {
-            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None, true);
+            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None, true, max_res);
         });
     }
 
@@ -223,12 +262,22 @@ impl State
         None
     }
 
-    pub fn update(&mut self, time_delta: f32)
+    pub fn max_texture_resolution(&self) -> u32
+    {
+        if let Some(max_tex_resolution) = self.rendering.max_texture_resolution
+        {
+            return max_tex_resolution;
+        }
+
+        self.adapter.max_texture_resolution
+    }
+
+    pub fn update(&mut self, time: u128, time_delta: f32, frame: u64)
     {
         // update scenes
         for scene in &mut self.scenes
         {
-            scene.update(&mut self.input_manager, time_delta);
+            scene.update(&mut self.input_manager, time, time_delta, frame);
         }
     }
 

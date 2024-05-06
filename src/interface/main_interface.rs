@@ -1,33 +1,47 @@
 use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{vec, cmp};
 
+use gilrs::Gilrs;
+use gltf::scene::Transform;
 use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
+use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
-use crate::helper::platform;
 use crate::input::keyboard::{Modifier, Key};
+use crate::input::gamepad::{Gamepad, GamepadPowerInfo};
 use crate::interface::winit::winit_map_mouse_button;
+use crate::output::audio_device::{self, AudioDevice};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
+use crate::resources::resources::load_binary;
 use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
-use crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController;
+use crate::state::scene::components::animation::Animation;
+use crate::state::scene::components::material::Material;
+use crate::state::scene::components::sound::{Sound, SoundType};
+use crate::state::scene::components::transformation::Transformation;
+use crate::state::scene::light::Light;
+use crate::state::scene::node::Node;
+use crate::state::scene::scene_controller::character_controller::CharacterController;
+use crate::state::scene::sound_source::SoundSource;
 use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
-use crate::state::state::{State, StateItem, FPS_CHART_VALUES};
+use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
+use super::gilrs::{gilrs_event, gilrs_initialize};
 use super::winit::winit_map_key;
 
-const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
+const FPS_CHART_FACTOR: f32 = 25.0;
 
 pub struct MainInterface
 {
@@ -41,13 +55,17 @@ pub struct MainInterface
     wgpu: WGpu,
     window: Window,
     egui: EGui,
+
+    gilrs: Option<Gilrs>
 }
 
 impl MainInterface
 {
     pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
     {
-        let state = Rc::new(RefCell::new(State::new()));
+        let audio_device = AudioDevice::default();
+        let state = State::new(Arc::new(RwLock::new(Box::new(audio_device))));
+        let state = Rc::new(RefCell::new(state));
 
         let samlpes;
         let mut wgpu: WGpu;
@@ -72,6 +90,13 @@ impl MainInterface
             editor_gui.init(state, &egui);
         }
 
+        let gilrs_res = Gilrs::new();
+        let mut gilrs = None;
+        if let Ok(gilrs_res) = gilrs_res
+        {
+            gilrs = Some(gilrs_res);
+        }
+
         let mut interface = Self
         {
             state,
@@ -84,6 +109,8 @@ impl MainInterface
             wgpu,
             window,
             egui,
+
+            gilrs
         };
 
         interface.app_init();
@@ -108,6 +135,12 @@ impl MainInterface
         }
 
         swap(&mut scenes, &mut state.scenes);
+
+        // gamepad init
+        if let Some(gilrs) = &mut self.gilrs
+        {
+            gilrs_initialize(state, gilrs);
+        }
     }
 
     pub fn window(&self) -> &Window
@@ -154,8 +187,8 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene");
-            scene.add_default_material();
+            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene", state.audio_device.clone());
+            scene.add_defaults();
 
             // ********** cam **********
             /*
@@ -437,6 +470,9 @@ impl MainInterface
 
             // ********** scene add **********
             let scene_id = scene.id.clone();
+            let id_manager = scene.id_manager.clone();
+            let id_manager_clone = scene.id_manager.clone();
+            let id_manager_thread = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
             //scene.update(&mut state.input_manager, state.frame_scale);
@@ -445,41 +481,251 @@ impl MainInterface
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), 500, 1.0);
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager.clone(), 500, 1.0);
             });
             //scene_utils::create_grid(&mut scene, 1, 1.0);
+
+            let main_queue_clone = main_queue.clone();
+            let audio_device = state.audio_device.clone();
+
+            spawn_thread(move ||
+            {
+                let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    if let Ok(gizmo_nodes) = &gizmo_nodes
+                    {
+                        for node_id in gizmo_nodes
+                        {
+                            if let Some(node) = scene.find_node_by_id(*node_id)
+                            {
+                                if let Some(material) = node.read().unwrap().find_component::<Material>()
+                                {
+                                    component_downcast_mut!(material, Material);
+                                    material.get_data_mut().get_mut().unlit_shading = true;
+                                }
+                            }
+                        }
+                    }
+                }));
+
+                //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move_2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                scene_utils::load_object("objects/temp/extras.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/sofa.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let id_manager_clone_inner = id_manager_clone.clone();
+
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    // start first animation
+                    if let Ok(nodes) = &nodes
+                    {
+                        for node_id in nodes
+                        {
+                            if let Some(node) = scene.find_node_by_id(*node_id)
+                            {
+                                if let Some(animation) = node.read().unwrap().find_animation_by_name("")
+                                {
+                                    component_downcast_mut!(animation, Animation);
+                                    animation.start();
+                                }
+                            }
+                        }
+                    }
+
+                    // cone
+                    let cone = scene.find_node_by_name("traffic_cone_game_ready");
+                    //let cone = scene.find_node_by_name("headcrab");
+                    if let Some(cone) = cone
+                    {
+                        /*
+                        {
+                            let mut cone = cone.write().unwrap();
+
+                            if cone.find_component::<Transformation>().is_none()
+                            {
+                                let component_id = id_manager_clone_inner.clone().write().unwrap().get_next_component_id();
+                                cone.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
+                            }
+
+                            if let Some(transform) = cone.find_component::<Transformation>()
+                            {
+                                component_downcast_mut!(transform, Transformation);
+                                transform.apply_scale_all_axes(0.01, true);
+                            }
+                        }
+                        */
+
+                        // set cone as head
+                        let head = scene.find_node_by_name("mixamorig:HeadTop_End");
+                        if let Some(head) = head
+                        {
+                            Node::set_parent(cone.clone(), head);
+                        }
+                    }
+
+                    // add camera controller and run auto setup
+                    let mut controller = CharacterController::default();
+                    controller.auto_setup(scene, "avatar2");
+                    scene.pre_controller.push(Box::new(controller));
+                }));
+
+                let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                }));
+
+                // sound
+                {
+                    let main_queue = main_queue_clone.clone();
+                    let audio_device = audio_device.clone();
+                    spawn_thread(move ||
+                    {
+                        let audio_device = audio_device.clone();
+                        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let sound_source_bytes = load_binary("sounds/m16.ogg");
+                            if let Ok(sound_source_bytes) = sound_source_bytes
+                            {
+                                let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
+                                let sound_source_clone = sound_source.clone();
+    
+                                let hash = sound_source.read().unwrap().hash.clone();
+                                scene.sound_sources.insert(hash, sound_source);
+    
+                                let cube = scene.find_node_by_name("Cube");
+    
+                                if let Some(cube) = cube
+                                {
+                                    let mut cube = cube.write().unwrap();
+    
+                                    let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
+                                    let mut sound = Sound::new(sound_id, "m16", sound_source_clone, SoundType::Spatial, true);
+                                    sound.start();
+    
+                                    cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                                }
+                            }
+                        }));
+                    });
+                }
+            });
 
             //load default env texture
             state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
-            let editor_state = self.editor_gui.editor_state.loading.clone();
-            spawn_thread(move ||
             {
-                *editor_state.write().unwrap() = true;
-
-                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
+                let main_queue = main_queue.clone();
+                let editor_state = self.editor_gui.editor_state.loading.clone();
+                spawn_thread(move ||
                 {
-                    scene.clear_empty_nodes();
+                    *editor_state.write().unwrap() = true;
 
-                    // add camera
-                    if scene.cameras.len() == 0
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
                     {
-                        let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                        //scene.clear_empty_nodes();
 
-                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        // add camera
+                        if scene.cameras.len() == 0
+                        {
+                            let id = scene.id_manager.write().unwrap().get_next_camera_id();
+                            let mut cam = Camera::new(id, "Cam".to_string());
 
-                        let cam_data = cam.get_data_mut().get_mut();
-                        cam_data.fovy = 45.0f32.to_radians();
-                        cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
-                        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
-                        scene.cameras.push(Box::new(cam));
-                    }
-                }));
+                            cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
-                *editor_state.write().unwrap() = false;
-            });
+                            let cam_data = cam.get_data_mut().get_mut();
+                            cam_data.fovy = 45.0f32.to_radians();
+                            cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                            cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                            cam_data.clipping_near = 0.1;
+                            cam_data.clipping_far = 1000.0;
+                            scene.cameras.push(Box::new(cam));
+                        }
+                    }));
+
+                    *editor_state.write().unwrap() = false;
+                });
+            }
+
+
+            // sound debugging
+            /*
+            {
+                let audio_device = state.audio_device.clone();
+                let main_queue = main_queue.clone();
+                spawn_thread(move ||
+                {
+                    let audio_device = audio_device.clone();
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        let sound_bytes = load_binary("sounds/click.ogg").unwrap();
+                        let sound_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                        let sound = SoundSource::new(sound_id, "sound", audio_device.clone(), &sound_bytes, None);
+
+                        scene.sound_sources.insert(sound.hash.clone(),  Arc::new(RwLock::new(Box::new(sound))));
+                    }));
+                });
+            }
+
+            {
+                let audio_device = state.audio_device.clone();
+                let main_queue = main_queue.clone();
+                spawn_thread(move ||
+                {
+                    let audio_device = audio_device.clone();
+                    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        let sound_bytes = load_binary("sounds/infoPopup.ogg").unwrap();
+                        let sound_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                        let sound = SoundSource::new(sound_id, "sound", audio_device.clone(), &sound_bytes, None);
+
+                        scene.sound_sources.insert(sound.hash.clone(),  Arc::new(RwLock::new(Box::new(sound))));
+                    }));
+                });
+            }
+             */
         }
     }
 
@@ -501,9 +747,18 @@ impl MainInterface
 
     pub fn update(&mut self)
     {
+        // ******************** update states ********************
+        {
+            let state = &mut *(self.state.borrow_mut());
+            if let Some(gilrs) = &mut self.gilrs
+            {
+                gilrs_event(state, gilrs);
+            }
+        }
+
         let frame_time = Instant::now();
 
-        // update states
+        // ******************** update states ********************
         {
             let state = &mut *(self.state.borrow_mut());
 
@@ -524,49 +779,46 @@ impl MainInterface
             }
 
             // fps
-            let current_time = state.fps_timer.elapsed().as_millis();
+            let current_time = state.stats.fps_timer.elapsed().as_millis();
+            state.stats.fps += 1;
 
-            if current_time / 1000 > state.last_time / 1000
+            if current_time / 1000 > state.stats.last_time / 1000
             {
-                state.last_time = state.fps_timer.elapsed().as_millis();
+                state.stats.last_time = state.stats.fps_timer.elapsed().as_millis();
 
-                state.last_fps = state.fps;
-                state.fps_chart.push(state.last_fps);
-                if state.fps_chart.len() > FPS_CHART_VALUES
+                state.stats.last_fps = state.stats.fps;
+                state.stats.fps_chart.push(state.stats.last_fps);
+                if state.stats.fps_chart.len() > FPS_CHART_VALUES
                 {
-                    state.fps_chart.remove(0);
+                    state.stats.fps_chart.remove(0);
                 }
 
-                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.last_fps).as_str());
-                state.fps = 0;
-            }
-            else
-            {
-                state.fps += 1;
+                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.stats.last_fps).as_str());
+                state.stats.fps = 0;
             }
 
             // frame scale
             let elapsed = self.start_time.elapsed();
             let now = elapsed.as_micros();
 
-            if state.frame_update_time > 0 && now - state.frame_update_time > 0
+            if state.stats.frame_update_time > 0 && now - state.stats.frame_update_time > 0
             {
-                state.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.frame_update_time) as f32);
+                state.stats.frame_scale = REFERENCE_UPDATE_FRAMES / (1000000.0 / (now - state.stats.frame_update_time) as f32);
             }
 
-            state.frame_update_time = now;
+            state.stats.frame_update_time = now;
         }
 
-        // editor/ui update
+        // ******************** editor/ui update ********************
         {
             let now = Instant::now();
             let state = &mut *(self.state.borrow_mut());
             self.editor_gui.update(state);
 
-            state.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // build ui
+        // ******************** build ui ********************
         if self.editor_gui.editor_state.visible
         {
             let now = Instant::now();
@@ -576,26 +828,29 @@ impl MainInterface
             self.egui.output = Some(gui_output);
 
             //self.gui.request_repaint();
-            state.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // app update
+        // ******************** app update ********************
+
+        if !self.state.borrow().pause
         {
             let now = Instant::now();
             self.app_update();
 
             let state = &mut *(self.state.borrow_mut());
-            state.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // update main thread queue
+        // ******************** update main thread queue ********************
         {
             let state = &mut *(self.state.borrow_mut());
             let main_queue = state.main_thread_execution_queue.clone();
             ExecutionQueue::run_all(main_queue, state);
         }
 
-        // update scene
+        // ******************** update scene ********************
+        if !self.state.borrow().pause
         {
             let engine_update_time = Instant::now();
 
@@ -609,7 +864,7 @@ impl MainInterface
                 self.wgpu.create_msaa_texture(msaa_samples);
             }
 
-            state.update(state.frame_scale);
+            state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
@@ -632,10 +887,10 @@ impl MainInterface
 
             swap(&mut scenes, &mut state.scenes);
 
-            state.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // render
+        // ******************** render ********************
         let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
         {
             let state = &mut *(self.state.borrow_mut());
@@ -644,7 +899,7 @@ impl MainInterface
             {
                 let engine_render_time = Instant::now();
 
-                state.draw_calls = 0;
+                state.stats.draw_calls = 0;
 
                 for scene in &mut state.scenes
                 {
@@ -657,12 +912,12 @@ impl MainInterface
 
                     let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
                     render_scene.distance_sorting = state.rendering.distance_sorting;
-                    state.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                    state.stats.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                     scene.render_item = render_item;
                 }
 
-                state.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
+                state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
             }
 
             // render egui
@@ -671,12 +926,12 @@ impl MainInterface
                 let now = Instant::now();
                 self.egui.render(&mut self.wgpu, &view, &mut encoder);
 
-                state.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
         }
         self.wgpu.end_render(output, encoder);
 
-        // screenshot
+        // ******************** screenshot ********************
         {
             let state = &mut *(self.state.borrow_mut());
 
@@ -704,12 +959,13 @@ impl MainInterface
             }
         }
 
-        // update inputs
+        // ******************** update inputs ********************
         {
             let state = &mut *(self.state.borrow_mut());
             state.input_manager.update();
         }
 
+        // ******************** mouse visibility ********************
         {
             let state = &mut *(self.state.borrow_mut());
             let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
@@ -719,15 +975,21 @@ impl MainInterface
             }
         }
 
-        // frame time
+        // ******************** reset global change tracker ********************
         {
             let state = &mut *(self.state.borrow_mut());
-            state.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+            state.audio_device.write().unwrap().data.consume_change();
+        }
 
-            state.fps_absolute = (1000.0 / (state.engine_render_time + state.engine_update_time)) as u32;
+        // ******************** frame time ********************
+        {
+            let state = &mut *(self.state.borrow_mut());
+            state.stats.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+
+            state.stats.fps_absolute = (1000.0 / (state.stats.engine_render_time + state.stats.engine_update_time)) as u32;
 
             // frame update
-            state.frame += 1;
+            state.stats.frame += 1;
         }
     }
 
@@ -807,7 +1069,7 @@ impl MainInterface
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
-                    global_state.input_manager.mouse.set_pos(pos, global_state.frame, global_state.width, global_state.height);
+                    global_state.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {

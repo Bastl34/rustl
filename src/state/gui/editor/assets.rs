@@ -48,11 +48,14 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
     {
         ui.horizontal(|ui|
         {
-            if editor_state.asset_type == AssetType::Object
+            if editor_state.asset_type == AssetType::Object || editor_state.asset_type == AssetType::Scene
             {
                 ui.label("🔍");
                 ui.add(egui::TextEdit::singleline(&mut editor_state.asset_filter).desired_width(100.0));
+            }
 
+            if editor_state.asset_type == AssetType::Object
+            {
                 ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
             }
         });

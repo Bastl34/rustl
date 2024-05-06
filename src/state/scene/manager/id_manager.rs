@@ -1,12 +1,15 @@
 pub struct IdManager
 {
     texture_id: u64,
+    sound_source_id: u64,
     node_id: u64,
     instance_id: u64,
     camera_id: u64,
     light_id: u64,
     component_id: u64,
 }
+
+pub type IdManagerItem = std::sync::Arc<std::sync::RwLock<IdManager>>;
 
 impl IdManager
 {
@@ -15,6 +18,7 @@ impl IdManager
         Self
         {
             texture_id: 0,
+            sound_source_id: 0,
             node_id: 0,
             instance_id: 0,
             camera_id: 0,
@@ -28,6 +32,13 @@ impl IdManager
         self.texture_id = self.texture_id + 1;
 
         self.texture_id
+    }
+
+    pub fn get_next_sound_source_id(&mut self) -> u64
+    {
+        self.sound_source_id = self.sound_source_id + 1;
+
+        self.sound_source_id
     }
 
     pub fn get_next_node_id(&mut self) -> u64

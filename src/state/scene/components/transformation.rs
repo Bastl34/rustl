@@ -1,8 +1,9 @@
 use std::any::Any;
 
-use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3};
+use egui::RichText;
+use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math}, state::{scene::node::NodeItem}, component_impl_no_update};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem, gui::helper::info_box::info_box_with_body}, component_impl_no_update};
 
 use super::component::{Component, ComponentBase};
 
@@ -13,7 +14,16 @@ pub struct TransformationData
 
     pub position: Vector3<f32>,
     pub rotation: Vector3<f32>,
+    pub rotation_quat: Option<Vector4<f32>>,
     pub scale: Vector3<f32>,
+
+    pub animation_weight: f32,
+    pub animation_update_frame: Option<u64>,
+
+     // only supported with transform_vectors
+    pub animation_position: Option<Vector3<f32>>,
+    pub animation_rotation_quat: Option<Vector4<f32>>,
+    pub animation_scale: Option<Vector3<f32>>,
 
     trans: Matrix4<f32>,
     tran_inverse: Matrix4<f32>
@@ -22,7 +32,12 @@ pub struct TransformationData
 pub struct Transformation
 {
     base: ComponentBase,
-    data: ChangeTracker<TransformationData>
+    data: ChangeTracker<TransformationData>,
+
+    ui_lock_translation: bool,
+    ui_lock_rotation: bool,
+    ui_lock_rotation_quat: bool,
+    ui_lock_scale: bool,
 }
 
 impl Transformation
@@ -36,7 +51,16 @@ impl Transformation
 
             position,
             rotation,
+            rotation_quat: None,
             scale,
+
+            animation_weight: 0.0,
+            animation_update_frame: None,
+
+            // animation transformation is overwriting position/rotaion/rotation_quat/scale
+            animation_position: None,
+            animation_rotation_quat: None,
+            animation_scale: None,
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity()
@@ -45,7 +69,12 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
         };
         transform.calc_transform();
 
@@ -61,7 +90,15 @@ impl Transformation
 
             position: Vector3::<f32>::zeros(),
             rotation: Vector3::<f32>::zeros(),
+            rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
+
+            animation_weight: 0.0,
+            animation_update_frame: None,
+
+            animation_position: None,
+            animation_rotation_quat: None,
+            animation_scale: None,
 
             trans: trans,
             tran_inverse: Matrix4::<f32>::identity()
@@ -70,7 +107,12 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
         };
         transform.calc_transform();
 
@@ -86,7 +128,15 @@ impl Transformation
 
             position: Vector3::<f32>::new(0.0, 0.0, 0.0),
             rotation: Vector3::<f32>::new(0.0, 0.0, 0.0),
+            rotation_quat: None,
             scale: Vector3::<f32>::new(1.0, 1.0, 1.0),
+
+            animation_weight: 0.0,
+            animation_update_frame: None,
+
+            animation_position: None,
+            animation_rotation_quat: None,
+            animation_scale: None,
 
             trans: Matrix4::<f32>::identity(),
             tran_inverse: Matrix4::<f32>::identity()
@@ -95,7 +145,12 @@ impl Transformation
         let mut transform = Transformation
         {
             base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
-            data: ChangeTracker::new(data)
+            data: ChangeTracker::new(data),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
         };
         transform.calc_transform();
 
@@ -128,23 +183,89 @@ impl Transformation
 
         if data.transform_vectors
         {
-            let translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
+            // ********** translation **********
+            let translation;
 
-            let scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            if let Some(animation_position) = &data.animation_position
+            {
+                //translation = translation * nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
+                translation = nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
+            }
+            else
+            {
+                translation = nalgebra::Isometry3::translation(data.position.x, data.position.y, data.position.z).to_homogeneous();
+            }
 
-            let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
-            let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
-            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
+            // ********** scale **********
+            let scale;
 
-            let mut rotation = rotation_z;
-            rotation = rotation * rotation_y;
-            rotation = rotation * rotation_x;
+            if let Some(animation_scale) = &data.animation_scale
+            {
+                //scale = scale * Matrix4::new_nonuniform_scaling(&animation_scale);
+                scale = Matrix4::new_nonuniform_scaling(&animation_scale);
+            }
+            else
+            {
+                scale = Matrix4::new_nonuniform_scaling(&data.scale);
+            }
 
+            // ********** rotation **********
+            let mut rotation: Matrix4<f32>;
+            if let Some(animation_rotation_quat) = &data.animation_rotation_quat
+            {
+                let quaternion = UnitQuaternion::new_normalize
+                (
+                    Quaternion::new
+                    (
+                        animation_rotation_quat.w,
+                        animation_rotation_quat.x,
+                        animation_rotation_quat.y,
+                        animation_rotation_quat.z,
+                    )
+                );
+
+                let rotation_quat: Rotation3<f32> = quaternion.into();
+                let rotation_quat = rotation_quat.to_homogeneous();
+
+                rotation = rotation_quat;
+            }
+            else
+            {
+                let rotation_x  = Rotation3::from_euler_angles(data.rotation.x, 0.0, 0.0).to_homogeneous();
+                let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
+                let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
+
+                rotation = rotation_z;
+                rotation = rotation * rotation_y;
+                rotation = rotation * rotation_x;
+
+                // ********** quaternion rotation **********
+                if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+                {
+                    let quaternion = UnitQuaternion::new_normalize
+                    (
+                        Quaternion::new
+                        (
+                            data_rotation_quat.w,
+                            data_rotation_quat.x,
+                            data_rotation_quat.y,
+                            data_rotation_quat.z,
+                        )
+                    );
+
+                    let rotation_quat: Rotation3<f32> = quaternion.into();
+                    let rotation_quat = rotation_quat.to_homogeneous();
+
+                    rotation = rotation * rotation_quat;
+                }
+            }
+
+            // ********** combine **********
             let mut trans = Matrix4::<f32>::identity();
             trans = trans * translation;
             trans = trans * rotation;
-            trans = trans * scale;
 
+            trans = trans * scale;
             data.trans = trans;
         }
 
@@ -309,6 +430,11 @@ impl Transformation
         self.calc_transform();
     }
 
+    pub fn apply_scale_all_axes(&mut self, scale: f32, multiply: bool)
+    {
+        self.apply_scale(Vector3::<f32>::new(scale, scale, scale), multiply);
+    }
+
     pub fn apply_rotation(&mut self, rotation: Vector3<f32>)
     {
         let data = self.data.get_mut();
@@ -330,6 +456,54 @@ impl Transformation
 
         self.calc_transform();
     }
+
+    pub fn apply_rotation_quaternion(&mut self, rotation: Vector4<f32>)
+    {
+        let data = self.data.get_mut();
+
+        if data.rotation_quat.is_none()
+        {
+            data.rotation_quat = Some(rotation)
+        }
+        else
+        {
+            let data_rot_quat = data.rotation_quat.as_mut().unwrap();
+            data_rot_quat.x += rotation.x;
+            data_rot_quat.y += rotation.y;
+            data_rot_quat.z += rotation.z;
+            data_rot_quat.w += rotation.w;
+        }
+
+        if approx_zero_vec4(data.rotation_quat.as_ref().unwrap())
+        {
+            // quaterion = 0 is not supported / working -> otherwise a inverse transform can not be created
+            data.rotation_quat.as_mut().unwrap().w = 0.00000001;
+        }
+
+        if !data.transform_vectors
+        {
+            if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+            {
+                let quaternion = UnitQuaternion::new_normalize
+                (
+                    Quaternion::new
+                    (
+                        data_rotation_quat.w,
+                        data_rotation_quat.x,
+                        data_rotation_quat.y,
+                        data_rotation_quat.z,
+                    )
+                );
+
+                let rotation: Rotation3<f32> = quaternion.into();
+                let rotation = rotation.to_homogeneous();
+
+                data.trans = data.trans * rotation;
+            }
+        }
+
+        self.calc_transform();
+    }
 }
 
 impl Component for Transformation
@@ -337,7 +511,7 @@ impl Component for Transformation
     component_impl_default!();
     component_impl_no_update!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         true
     }
@@ -353,53 +527,114 @@ impl Component for Transformation
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         let mut changed = false;
 
         let mut pos;
         let mut rot;
+        let mut rot_quat;
         let mut scale;
         let mut inheritance;
+        let mut transform_vectors;
 
         {
             let data = self.get_data();
 
             pos = data.position;
             rot = data.rotation;
+            rot_quat = data.rotation_quat;
             scale = data.scale;
             inheritance = data.parent_inheritance;
+            transform_vectors = data.transform_vectors;
 
             ui.vertical(|ui|
             {
                 changed = ui.checkbox(&mut inheritance, "parent transformation inheritance").changed() || changed;
+                changed = ui.checkbox(&mut transform_vectors, "use vectors").changed() || changed;
 
                 ui.horizontal(|ui|
                 {
                     ui.label("Position: ");
-                    changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    let changed_x = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed();
+                    let changed_y = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed();
+                    let changed_z = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed();
+                    ui.toggle_value(&mut self.ui_lock_translation, "🔒").on_hover_text("same position value for all coordinates");
+
+                    if self.ui_lock_translation  && changed_x { pos.y = pos.x; pos.z = pos.x; }
+                    if self.ui_lock_translation  && changed_y { pos.x = pos.y; pos.z = pos.y; }
+                    if self.ui_lock_translation  && changed_z { pos.x = pos.z; pos.y = pos.z; }
+
+                    changed = changed_x || changed_y || changed_z || changed;
                 });
                 ui.horizontal(|ui|
                 {
-                    ui.label("Rotation: ");
-                    changed = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    ui.label("Rotation\n(Euler): ");
+                    let changed_x = ui.add(egui::DragValue::new(&mut rot.x).speed(0.1).prefix("x: ")).changed();
+                    let changed_y = ui.add(egui::DragValue::new(&mut rot.y).speed(0.1).prefix("y: ")).changed();
+                    let changed_z = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed();
+                    ui.toggle_value(&mut self.ui_lock_rotation, "🔒").on_hover_text("same rotation value for all coordinates");
+
+                    if self.ui_lock_rotation  && changed_x { rot.y = rot.x; rot.z = rot.x; }
+                    if self.ui_lock_rotation  && changed_y { rot.x = rot.y; rot.z = rot.y; }
+                    if self.ui_lock_rotation  && changed_z { rot.x = rot.z; rot.y = rot.z; }
+
+                    changed = changed_x || changed_y || changed_z || changed;
                 });
+
+                if let Some(rot_quat) = rot_quat.as_mut()
+                {
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Rotation\n(Quaternion): ");
+                        let changed_x = ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: ")).changed();
+                        let changed_y = ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: ")).changed();
+                        let changed_z = ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: ")).changed();
+                        let changed_w = ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: ")).changed();
+                        ui.toggle_value(&mut self.ui_lock_rotation_quat, "🔒").on_hover_text("same rotation value for all coordinates (x, y, z)");
+
+                        if self.ui_lock_rotation_quat  && changed_x { rot_quat.y = rot_quat.x; rot_quat.z = rot_quat.x; }
+                        if self.ui_lock_rotation_quat  && changed_y { rot_quat.x = rot_quat.y; rot_quat.z = rot_quat.y; }
+                        if self.ui_lock_rotation_quat  && changed_z { rot_quat.x = rot_quat.z; rot_quat.y = rot_quat.z; }
+
+                        changed = changed_x || changed_y || changed_z || changed_w || changed;
+
+                        if changed && approx_zero_vec4(rot_quat)
+                        {
+                            // quaterion = 0 is not supported / working -> otherwise a inverse transform can not be created
+                            rot_quat.w = 0.00000001;
+                        }
+                    });
+                }
+
                 ui.horizontal(|ui|
                 {
                     ui.label("Scale: ");
-                    changed = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed() || changed;
-                    changed = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed() || changed;
+                    let changed_x = ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: ")).changed();
+                    let changed_y = ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: ")).changed();
+                    let changed_z = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed();
+                    ui.toggle_value(&mut self.ui_lock_scale, "🔒").on_hover_text("same scaling value for all coordinates");
+
+                    if self.ui_lock_scale  && changed_x { scale.y = scale.x; scale.z = scale.x; }
+                    if self.ui_lock_scale  && changed_y { scale.x = scale.y; scale.z = scale.y; }
+                    if self.ui_lock_scale  && changed_z { scale.x = scale.z; scale.y = scale.z; }
+
+                    changed = changed_x || changed_y || changed_z || changed;
 
                     // scale = 0 is not supported / working -> otherwise a inverse transform can not be created
                     if scale.x == 0.0 { scale.x = 0.00000001; }
                     if scale.y == 0.0 { scale.y = 0.00000001; }
                     if scale.z == 0.0 { scale.z = 0.00000001; }
                 });
+
+                if rot_quat.is_none()
+                {
+                    if ui.button("add Quaternion Rotation").clicked()
+                    {
+                        rot_quat = Some(Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0));
+                        changed = true;
+                    }
+                }
             });
         }
 
@@ -408,9 +643,59 @@ impl Component for Transformation
             let data = self.get_data_mut();
             data.get_mut().position = pos;
             data.get_mut().rotation = rot;
+            data.get_mut().rotation_quat = rot_quat;
             data.get_mut().scale = scale;
             data.get_mut().parent_inheritance = inheritance;
+            data.get_mut().transform_vectors = transform_vectors;
             self.calc_transform();
+        }
+
+        let data = self.get_data();
+
+        if data.animation_position.is_some() || data.animation_rotation_quat.is_some() || data.animation_scale.is_some()
+        {
+            ui.separator();
+            ui.label(RichText::new("Animation Transformation:").strong());
+
+            ui.add_enabled_ui(false, |ui|
+            {
+                if let Some(animation_position) = data.animation_position.clone()
+                {
+                    let mut pos = animation_position;
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Position: ");
+                        ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: "));
+                        ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: "));
+                        ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: "));
+                    });
+                }
+
+                if let Some(animation_rotation_quat) = data.animation_rotation_quat.clone()
+                {
+                    let mut rot_quat = animation_rotation_quat;
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Rotation\n(Quaternion): ");
+                        ui.add(egui::DragValue::new(&mut rot_quat.x).speed(0.1).prefix("x: "));
+                        ui.add(egui::DragValue::new(&mut rot_quat.y).speed(0.1).prefix("y: "));
+                        ui.add(egui::DragValue::new(&mut rot_quat.z).speed(0.1).prefix("z: "));
+                        ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: "));
+                    });
+                }
+
+                if let Some(animation_scale) = data.animation_scale.clone()
+                {
+                    let mut scale = animation_scale;
+                    ui.horizontal(|ui|
+                    {
+                        ui.label("Scale: ");
+                        ui.add(egui::DragValue::new(&mut scale.x).speed(0.1).prefix("x: "));
+                        ui.add(egui::DragValue::new(&mut scale.y).speed(0.1).prefix("y: "));
+                        ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: "));
+                    });
+                }
+            });
         }
     }
 }

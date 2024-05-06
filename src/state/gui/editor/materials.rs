@@ -15,6 +15,12 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let material = material.read().unwrap();
             let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
 
+            let filter = editor_state.hierarchy_filter.to_lowercase();
+            if !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
+            {
+                continue;
+            }
+
             let id = format!("material_{}", material_id);
 
             let heading = RichText::new(headline_name).strong();
@@ -51,6 +57,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     let main_queue = state.main_thread_execution_queue.clone();
     let mipmapping = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
 
     let scene = state.find_scene_by_id_mut(scene_id);
     if scene.is_none() { return; }
@@ -62,10 +69,18 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     if let Some(material) = scene.get_material_by_id(material_id)
     {
+        collapse_with_title(ui, "material_info", true, "ℹ Material Info", |ui|
+        {
+            let material = material.read().unwrap();
+
+            ui.label(format!("Name: {}", &material.get_base().name));
+            ui.label(format!("Id: {}", material.get_base().id));
+        });
+
         collapse_with_title(ui, "material_settings", true, "🎨 Material Settings", |ui|
         {
             let mut material = material.write().unwrap();
-            material.ui(ui);
+            material.ui(ui, None);
         });
 
         collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", |ui|
@@ -196,7 +211,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                                 let main_queue = main_queue.clone();
                                 spawn_thread(move ||
                                 {
-                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping);
+                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping, max_tex_res);
                                 });
                             }
                         });

@@ -27,7 +27,7 @@ impl Alpha
             alpha
         };
 
-        let mut alpha = Alpha
+        let alpha = Alpha
         {
             base: ComponentBase::new(id, name.to_string(), "Alpha".to_string(), "🌖".to_string()),
             data: ChangeTracker::new(data)
@@ -67,7 +67,7 @@ impl Component for Alpha
     component_impl_default!();
     component_impl_no_update!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         true
     }
@@ -83,7 +83,7 @@ impl Component for Alpha
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         let mut changed = false;
 

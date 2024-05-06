@@ -1,10 +1,12 @@
+use std::fmt::format;
+
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{node::NodeItem, components::{mesh::Mesh, material::Material}, scene::Scene}, state::State, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast};
+use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
-pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
 {
     for node_arc in nodes
     {
@@ -16,6 +18,28 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
         let name = node.name.clone();
         let node_id = node.id;
 
+        let filter = editor_state.hierarchy_filter.to_lowercase();
+
+        let mut child_node_match = false;
+        if !filter.is_empty()
+        {
+            let all_child_nodes = Scene::list_all_child_nodes(&node.nodes);
+            for child_node in all_child_nodes
+            {
+                let child_node_name = child_node.read().unwrap().name.clone().to_lowercase();
+                if child_node_name.find(filter.as_str()).is_some()
+                {
+                    child_node_match = true;
+                    break;
+                }
+            }
+        }
+
+        if !filter.is_empty() && !child_node_match && name.to_lowercase().find(filter.as_str()).is_none()
+        {
+            continue;
+        }
+
         let id = format!("objects_{}", node_id);
         let ui_id = ui.make_persistent_id(id.clone());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
@@ -23,7 +47,15 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let headline_name: String;
-                if node.is_empty()
+                if node.find_component::<Animation>().is_some()
+                {
+                    headline_name = format!("🎞 {}: {}", node_id, name.clone());
+                }
+                else if node.find_component::<Joint>().is_some()
+                {
+                    headline_name = format!("🕱 {}: {}", node_id, name.clone());
+                }
+                else if node.is_empty()
                 {
                     headline_name = format!("👻 {}: {}", node_id, name.clone());
                 }
@@ -47,23 +79,84 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
                 }
 
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, heading).clicked()
-                {
-                    if editor_state.selected_object != id
-                    {
-                        editor_state.selected_object = id;
-                        editor_state.selected_scene_id = Some(scene_id);
-                        editor_state.selected_type = SelectionType::Object;
 
-                        if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                let mut toggle = ui.toggle_value(&mut selection, heading);
+
+                if node.find_component::<Animation>().is_some()
+                {
+                    toggle = toggle.context_menu(|ui|
+                    {
+                        if ui.button("⏵ Start all animations").clicked()
                         {
-                            editor_state.settings = SettingsPanel::Components;
+                            ui.close_menu();
+                            node.start_all_animations();
                         }
+
+                        if ui.button("⏵ Start first animation").clicked()
+                        {
+                            ui.close_menu();
+                            node.start_first_animation();
+                        }
+
+                        if ui.button("⏹ Stop all animations").clicked()
+                        {
+                            ui.close_menu();
+                            node.stop_all_animations();
+                        }
+                    });
+                }
+
+                if toggle.clicked()
+                {
+                    if editor_state.pick_mode == PickType::Camera
+                    {
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            let (camera_id, ..) = editor_state.get_object_ids();
+                            if let Some(camera_id) = camera_id
+                            {
+                                let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
+                                camera.node = Some(node.clone());
+                            }
+                        }
+                        editor_state.pick_mode = PickType::None;
+                    }
+                    else if editor_state.pick_mode == PickType::Parent
+                    {
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            let (node_id, ..) = editor_state.get_object_ids();
+                            if let Some(node_id) = node_id
+                            {
+                                let picking_node = scene.find_node_by_id(node_id).unwrap();
+                                let node = node.clone();
+
+                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
+                                {
+                                    Node::set_parent(picking_node.clone(), node.clone());
+                                }));
+                            }
+                        }
+                        editor_state.pick_mode = PickType::None;
                     }
                     else
                     {
-                        editor_state.selected_object.clear();
-                        editor_state.selected_scene_id = None;
+                        if editor_state.selected_object != id
+                        {
+                            editor_state.selected_object = id;
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.selected_type = SelectionType::Object;
+
+                            if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                            {
+                                editor_state.settings = SettingsPanel::Components;
+                            }
+                        }
+                        else
+                        {
+                            editor_state.selected_object.clear();
+                            editor_state.selected_scene_id = None;
+                        }
                     }
                 }
             });
@@ -72,7 +165,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, ui: &mut Ui, nodes: &V
         {
             if child_nodes.len() > 0
             {
-                build_objects_list(editor_state, ui, child_nodes, scene_id, visible);
+                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible);
             }
 
             if node.instances.get_ref().len() > 0
@@ -173,14 +266,14 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     let mut direct_instances_amout = 0;
     let mut direct_meshes_amout = 0;
     let mut direct_vertices_amout = 0;
-    let mut direct_indices_amout = 0;
-    let mut direct_childs_amount = 0;
+    let mut direct_faces_amout = 0;
+    let direct_childs_amount;
 
     let mut all_instances_amout = 0;
     let mut all_meshes_amout = 0;
     let mut all_vertices_amout = 0;
-    let mut all_indices_amout = 0;
-    let mut all_childs_amount = 0;
+    let mut all_faces_amout = 0;
+    let all_childs_amount;
 
     {
         let node = node.read().unwrap();
@@ -196,7 +289,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
                 direct_meshes_amout += 1;
                 direct_vertices_amout += mesh.get_data().vertices.len();
-                direct_indices_amout += mesh.get_data().indices.len();
+                direct_faces_amout += mesh.get_data().indices.len();
             }
         }
 
@@ -218,12 +311,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
                 all_meshes_amout += 1;
                 all_vertices_amout += mesh.get_data().vertices.len();
-                all_indices_amout += mesh.get_data().indices.len();
+                all_faces_amout += mesh.get_data().indices.len();
             }
         }
     }
 
-    let bounding_box_info = node.read().unwrap().get_bounding_info(true);
+    let bounding_box_info = node.read().unwrap().get_bounding_info(true, &None);
 
     // General
     collapse_with_title(ui, "object_data", true, "ℹ Object Data", |ui|
@@ -231,17 +324,51 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let node = node.read().unwrap();
 
-            ui.label(format!("name: {}", node.name));
-            ui.label(format!("id: {}", node.id));
+            ui.label(format!("Name: {}", node.name));
+            ui.label(format!("Id: {}", node.id));
 
             if let Some(bounding_box_info) = bounding_box_info
             {
-                ui.label(format!("bbox min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
-                ui.label(format!("bbox max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
+                ui.label(format!("B-Box min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
+                ui.label(format!("B-Box max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
             }
         }
     });
 
+    // Extras
+    collapse_with_title(ui, "object_extras", true, "⊞ Extras", |ui|
+    {
+        ui.scope(|ui|
+        {
+            let node = node.read().unwrap();
+
+            for (key, value) in node.extras.iter()
+            {
+                ui.label(format!("⚫ {}: {:?}", key, value));
+            }
+        });
+    });
+
+    // Skeleton
+    if let Some(skin_node) = node.read().unwrap().skin.first()
+    {
+        collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", |ui|
+        {
+            ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
+            ui.horizontal(|ui|
+            {
+                ui.label("Link to Skeleton: ");
+                if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
+                {
+                    editor_state.de_select_current_item(state);
+
+                    editor_state.selected_object = format!("objects_{}", skin_node.read().unwrap().id);
+                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_type = SelectionType::Object;
+                }
+            });
+        });
+    }
 
     // statistics
     collapse_with_title(ui, "object_info", true, "📈 Object Info", |ui|
@@ -251,14 +378,16 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         ui.label(format!(" ⚫ nodes: {}", direct_childs_amount));
         ui.label(format!(" ⚫ meshes: {}", direct_meshes_amout));
         ui.label(format!(" ⚫ vertices: {}", direct_vertices_amout));
-        ui.label(format!(" ⚫ indices: {}", direct_indices_amout));
+        ui.label(format!(" ⚫ faces: {}", direct_faces_amout));
+        ui.label(format!(" ⚫ indices: {}", direct_faces_amout * 3));
 
         ui.label(RichText::new("👪 all descendants").strong());
         ui.label(format!(" ⚫ instances: {}", all_instances_amout));
         ui.label(format!(" ⚫ nodes: {}", all_childs_amount));
         ui.label(format!(" ⚫ meshes: {}", all_meshes_amout));
         ui.label(format!(" ⚫ vertices: {}", all_vertices_amout));
-        ui.label(format!(" ⚫ indices: {}", all_indices_amout));
+        ui.label(format!(" ⚫ faces: {}", all_faces_amout));
+        ui.label(format!(" ⚫ indices: {}", all_faces_amout * 3));
     });
 
     // Settings
@@ -270,6 +399,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut root_node: bool;
         let mut render_children_first;
         let mut alpha_index;
+        let mut pick_bbox_first;
         let mut name;
         {
             let node = node.read().unwrap();
@@ -277,12 +407,14 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             root_node = node.root_node;
             render_children_first = node.render_children_first;
             alpha_index = node.alpha_index;
+            pick_bbox_first = node.pick_bbox_first;
             name = node.name.clone();
         }
 
         ui.horizontal(|ui|
         {
             ui.label("name: ");
+            ui.set_max_width(225.0);
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
@@ -293,6 +425,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             ui.label("alpha index: ");
             changed = ui.add(egui::DragValue::new(&mut alpha_index).speed(1)).changed() || changed;
         });
+        changed = ui.checkbox(&mut pick_bbox_first, "pick bbox first").changed() || changed;
 
         if changed
         {
@@ -301,15 +434,48 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.root_node = root_node;
             node.render_children_first = render_children_first;
             node.alpha_index = alpha_index;
+            node.pick_bbox_first = pick_bbox_first;
             node.name = name;
         }
+
+        // parenting
+        ui.horizontal(|ui|
+        {
+            let parent: Option<std::sync::Arc<std::sync::RwLock<Box<crate::state::scene::node::Node>>>> = node.read().unwrap().parent.clone();
+            let mut parent_name = "".to_string();
+            if let Some(parent) = parent
+            {
+                parent_name = parent.read().unwrap().name.clone();
+            }
+
+            ui.label("Parent:");
+            ui.add_enabled_ui(false, |ui|
+            {
+                ui.set_max_width(225.0);
+                ui.text_edit_singleline(&mut parent_name);
+            });
+
+            let mut toggle_value = if editor_state.pick_mode == PickType::Parent { true } else { false };
+            if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick mode").changed()
+            {
+                if toggle_value
+                {
+                    editor_state.pick_mode = PickType::Parent;
+                }
+                else
+                {
+                    editor_state.pick_mode = PickType::None;
+                }
+            }
+        });
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                node.write().unwrap().create_default_instance(node.clone(), scene.id_manager.get_next_instance_id());
+                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                node.write().unwrap().create_default_instance(node.clone(), id);
             }
 
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()
@@ -444,13 +610,21 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     {
         let mut delete_component_id = None;
 
-        let node_read = node.read().unwrap();
-        for component in &node_read.components
+        let all_components;
+        let all_components_clone;
+        {
+            let node_read = node.read().unwrap();
+            all_components = node_read.components.clone();
+            all_components_clone = node_read.components.clone();
+        }
+
+        for (component_i, component) in all_components.iter().enumerate()
         {
             let component_id;
             let name;
             let component_name;
             let is_material;
+            let is_sound;
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
@@ -459,6 +633,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 component_id = component.id();
 
                 is_material = component.as_any().downcast_ref::<Material>().is_some();
+                is_sound = component.as_any().downcast_ref::<Sound>().is_some();
             }
             generic_items::collapse(ui, component_id.to_string(), true, |ui|
             {
@@ -507,6 +682,17 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         editor_state.selected_type = SelectionType::Material;
                         editor_state.settings = SettingsPanel::Material;
                     }
+
+                    // link to the sound setting
+                    if is_sound && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                    {
+                        editor_state.de_select_current_item(state);
+
+                        editor_state.selected_object = format!("sound_{}", component_id);
+                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_type = SelectionType::Sound;
+                        editor_state.settings = SettingsPanel::Sound;
+                    }
                 });
             },
             |ui|
@@ -514,12 +700,23 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 ui.label(format!("Id: {}", component_id));
                 ui.label(format!("Name: {}", name));
 
+                // filter out current component
+                {
+                    let mut node: std::sync::RwLockWriteGuard<'_, Box<crate::state::scene::node::Node>> = node.write().unwrap();
+                    node.components = all_components_clone.clone();
+                    node.components.remove(component_i);
+                }
+
                 let mut component = component.write().unwrap();
-                component.ui(ui);
+                component.ui(ui, Some(node.clone()));
+
+                // re-add current component
+                {
+                    let mut node = node.write().unwrap();
+                    node.components = all_components_clone.clone();
+                }
             });
         }
-
-        drop(node_read);
 
         if let Some(delete_component_id) = delete_component_id
         {
@@ -530,6 +727,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     if let Some(instance_id) = instance_id
     {
         let mut delete_component_id = None;
+        let mut sound_component_id = None;
 
         let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
         let instance = node_read.find_instance_by_id(instance_id);
@@ -544,12 +742,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let component_id;
                     let name;
                     let component_name;
+                    let is_sound;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
                         component_name = format!("{} {}", base.icon, base.component_name);
                         name = base.name.clone();
                         component_id = component.id();
+
+                        is_sound = component.as_any().downcast_ref::<Sound>().is_some();
                     }
                     generic_items::collapse(ui, component_id.to_string(), true, |ui|
                     {
@@ -587,6 +788,12 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                             {
                                 ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
                             }
+
+                            // link to the sound setting
+                            if is_sound && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                            {
+                                sound_component_id = Some(component_id);
+                            }
                         });
                     },
                     |ui|
@@ -595,7 +802,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         ui.label(format!("Name: {}", name));
 
                         let mut component = component.write().unwrap();
-                        component.ui(ui);
+                        component.ui(ui, None);
                     });
                 }
             }
@@ -604,6 +811,16 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let mut instance = instance.write().unwrap();
                 instance.remove_component_by_id(delete_component_id);
+            }
+
+            if let Some(sound_component_id) = sound_component_id
+            {
+                editor_state.de_select_current_item(state);
+
+                editor_state.selected_object = format!("sound_{}", sound_component_id);
+                editor_state.selected_scene_id = Some(scene_id);
+                editor_state.selected_type = SelectionType::Sound;
+                editor_state.settings = SettingsPanel::Sound;
             }
         }
     }

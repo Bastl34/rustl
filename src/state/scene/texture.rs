@@ -1,6 +1,6 @@
-use std::{sync::{RwLock, Arc}, fmt::format};
+use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, Rgba, ImageBuffer, imageops, RgbaImage, GrayImage};
+use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};
 use nalgebra::Vector4;
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
@@ -109,7 +109,7 @@ impl Texture
         }
     }
 
-    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>, extension: Option<String>) -> Texture
+    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
     {
         let image;
 
@@ -130,7 +130,15 @@ impl Texture
 
         let has_transparency = rgba.enumerate_pixels().find(|pixel| { pixel.2[3] < 255 }).is_some();
 
-        let image = image::DynamicImage::ImageRgba8(rgba);
+        let mut image = image::DynamicImage::ImageRgba8(rgba);
+
+        if max_resolution > 0
+        {
+            if let Some(resized) = Self::resize_based_on_max_resolution(&image, max_resolution)
+            {
+                image = resized;
+            }
+        }
 
         let data: TextureData = TextureData
         {
@@ -167,7 +175,7 @@ impl Texture
         }
     }
 
-    pub fn new_from_image_channel(id: u64, name: &str, texture: &Texture, channel: usize) -> Texture
+    pub fn new_from_image_channel(id: u64, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
     {
         let width = texture.width();
         let height = texture.height();
@@ -186,7 +194,15 @@ impl Texture
         let bytes = &image.to_vec();
         let hash = helper::crypto::get_hash_from_byte_vec(&bytes);
 
-        let image = image::DynamicImage::ImageLuma8(image);
+        let mut image = image::DynamicImage::ImageLuma8(image);
+
+        if max_resolution > 0
+        {
+            if let Some(resized) = Self::resize_based_on_max_resolution(&image, max_resolution)
+            {
+                image = resized;
+            }
+        }
 
         let data: TextureData = TextureData
         {
@@ -256,6 +272,28 @@ impl Texture
         }
 
         mipmaps
+    }
+
+    pub fn resize_based_on_max_resolution(image: &DynamicImage, max_resolution: u32) -> Option<DynamicImage>
+    {
+        if image.width() < max_resolution && image.height() < max_resolution
+        {
+            return None;
+        }
+
+        let mut factor = max_resolution as f32 / image.width() as f32;
+        if image.height() > image.width()
+        {
+            factor = max_resolution as f32 / image.height() as f32;
+        }
+
+        let width = (image.width() as f32 * factor).round() as u32;
+        let height = (image.height() as f32 * factor).round() as u32;
+
+        let filter = imageops::FilterType::Triangle;
+        let resized = image.resize(width, height, filter);
+
+        Some(resized)
     }
 
     pub fn get_mipmap_levels_amount(&self) -> usize

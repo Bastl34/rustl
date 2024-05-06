@@ -1,9 +1,10 @@
-use std::{collections::HashMap, sync::Arc, f32::consts::E};
+use std::collections::HashMap;
 
+use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{state::{state::State, gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{texture::TextureItem, components::{material::Material, component::Component}}}, rendering::material, component_downcast};
+use crate::{state::{state::State, gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{texture::TextureItem, components::{material::Material, component::Component}}}, component_downcast};
 
 use super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -15,6 +16,12 @@ pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std
         {
             let texture = texture.read().unwrap();
             let headline_name = format!("⚫ {}: {}", texture.id, texture.as_ref().name);
+
+            let filter = editor_state.hierarchy_filter.to_lowercase();
+            if !filter.is_empty() && texture.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
+            {
+                continue;
+            }
 
             let id = format!("texture_{}", texture.id);
 
@@ -131,13 +138,32 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
-            if ui.button(RichText::new("Save Texture").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
+            if ui.button(RichText::new("💾 Save Texture").heading().strong().color(Color32::WHITE)).clicked()
             {
                 let name = format!("{}.png", texture.read().unwrap().name.clone());
                 if let Some(path) = FileDialog::new().add_filter("Image", &["png"]).set_directory("/").set_file_name(name).save_file()
                 {
                     _ = texture.read().unwrap().get_data().image.save(path);
                 }
+            }
+
+            if ui.button(RichText::new("📋 Copy to Clipboard").heading().strong().color(Color32::WHITE)).clicked()
+            {
+                let texture = texture.read().unwrap();
+                let image = &texture.get_data().image;
+                let image = image.to_rgba8();
+                let image = image::DynamicImage::ImageRgba8(image);
+                let bytes = image.as_bytes();
+
+                let mut clipboard = Clipboard::new().unwrap();
+
+                let img_data = arboard::ImageData
+                {
+                    width: image.width() as usize,
+                    height: image.height() as usize,
+                    bytes: bytes.into()
+                };
+                clipboard.set_image(img_data).unwrap();
             }
         });
 

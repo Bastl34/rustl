@@ -15,14 +15,16 @@ pub trait Component: Any
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn ui(&mut self, ui: &mut egui::Ui);
+    fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, frame_scale: f32);
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, frame_scale: f32);
+    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
+    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
     fn set_enabled(&mut self, state: bool);
 
-    fn instantiable(&self) -> bool;
+    fn instantiable() -> bool
+    where
+        Self: Sized;
 
     fn id(&self) -> u64
     {
@@ -49,6 +51,8 @@ pub struct ComponentBase
     pub icon: String,
     pub info: Option<String>,
 
+    pub post_update_request: bool,
+
     pub render_item: RenderItemOption
 }
 
@@ -64,7 +68,8 @@ impl ComponentBase
             icon,
             is_enabled: true,
             render_item: None,
-            info: None
+            info: None,
+            post_update_request: false
         }
     }
 }
@@ -104,11 +109,22 @@ macro_rules! component_impl_no_update
 {
     () =>
     {
-        fn update(&mut self, _node: NodeItem, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
+        fn update(&mut self, _node: NodeItem, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
 
-        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _frame_scale: f32)
+        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        {
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component_impl_no_update_instance
+{
+    () =>
+    {
+        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };

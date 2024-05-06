@@ -2,7 +2,7 @@ use egui::{Ui, RichText, Color32};
 
 use crate::state::{scene::camera::CameraItem, state::State, gui::helper::generic_items::{collapse_with_title, self}};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u64)
 {
@@ -13,6 +13,12 @@ pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraIte
             let headline_name = format!("⚫ {}: {}", camera.id, camera.name);
 
             let id = format!("camera_{}", camera.id);
+
+            let filter = editor_state.hierarchy_filter.to_lowercase();
+            if !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
+            {
+                continue;
+            }
 
             let mut heading = RichText::new(headline_name).strong();
             if !camera.enabled
@@ -62,7 +68,9 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
         {
             ui.horizontal(|ui|
             {
-                ui.label("name: ");
+                ui.set_max_width(225.0);
+
+                ui.label("Name: ");
                 ui.text_edit_singleline(&mut camera.name);
             });
 
@@ -78,19 +86,20 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                 ui.label("Target:");
                 ui.add_enabled_ui(false, |ui|
                 {
+                    ui.set_max_width(225.0);
                     ui.text_edit_singleline(&mut node_name);
                 });
 
-                let mut toggle_value = if editor_state.pick_mode == SelectionType::Camera { true } else { false };
+                let mut toggle_value = if editor_state.pick_mode == PickType::Camera { true } else { false };
                 if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick mode").changed()
                 {
                     if toggle_value
                     {
-                        editor_state.pick_mode = SelectionType::Camera;
+                        editor_state.pick_mode = PickType::Camera;
                     }
                     else
                     {
-                        editor_state.pick_mode = SelectionType::None;
+                        editor_state.pick_mode = PickType::None;
                     }
                 }
 
@@ -167,14 +176,23 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                 camera.controller = None;
             }
         }
-    }
 
-    // delete camera
-    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
-    {
-        if ui.button(RichText::new("Dispose Camera").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+        // add camera controller
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
-            scene.delete_camera_by_id(camera_id);
-        }
-    });
+            if ui.button(RichText::new("Add Cam Controller").heading().strong().color(Color32::WHITE)).clicked()
+            {
+                editor_state.dialog_add_camera_controller = true;
+            }
+        });
+
+        // delete camera
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
+        {
+            if ui.button(RichText::new("Dispose Camera").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                scene.delete_camera_by_id(camera_id);
+            }
+        });
+    }
 }

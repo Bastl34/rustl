@@ -1,9 +1,14 @@
-use nalgebra::{Point2, Point3, Isometry3, Vector3, Matrix4};
-use parry3d::{shape::{TriMesh, FeatureId}, bounding_volume::Aabb, query::{Ray, RayCast}};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem, component_impl_no_update, component_impl_set_enabled};
+use egui::RichText;
+use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
+use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
+
+use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
 
 use super::component::{Component, ComponentBase};
+
+pub const JOINTS_LIMIT: usize = 4;
+const DEFAULT_SKIN_B_BOX_SCALE: f32 = 2.0; // the skinned mesh bbox is multiplied by this factor -> because a bbox for an animated mesh can not be correctly calculated - just simply is a large factor
 
 pub struct MeshData
 {
@@ -20,8 +25,18 @@ pub struct MeshData
     pub normals: Vec<Vector3<f32>>,
     pub normals_indices: Vec<[u32; 3]>,
 
+    pub joints: Vec<[u32; JOINTS_LIMIT]>,
+    pub weights: Vec<[f32; JOINTS_LIMIT]>,
+
+    pub morph_target_positions: Vec<Vec<Point3<f32>>>,
+    pub morph_target_normals: Vec<Vec<Vector3<f32>>>,
+    pub morph_target_tangents: Vec<Vec<Vector3<f32>>>,
+
     pub flip_normals: bool,
+
     pub b_box: Aabb,
+    pub b_box_skin: Option<Aabb>,
+    pub b_box_skin_multiplier: f32,
 }
 
 impl MeshData
@@ -39,13 +54,23 @@ impl MeshData
         self.normals.clear();
         self.normals_indices.clear();
 
+        self.joints.clear();
+        self.weights.clear();
+
+        self.morph_target_positions.clear();
+        self.morph_target_normals.clear();
+        self.morph_target_tangents.clear();
+
         // "empty" triangle
-        let triangle = [ Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0) ];
+        let triangle = [Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0)];
         let indices: [u32; 3] = [0, 1, 2];
 
         self.mesh = TriMesh::new(triangle.to_vec(), [indices].to_vec());
 
         self.b_box = Aabb::new_invalid();
+
+        self.b_box_skin = None;
+        self.b_box_skin_multiplier = DEFAULT_SKIN_B_BOX_SCALE;
     }
 }
 
@@ -53,6 +78,10 @@ pub struct Mesh
 {
     base: ComponentBase,
     data: ChangeTracker<MeshData>,
+
+    pub morph_target_render_item: RenderItemOption,
+
+    pub update_skin_bbox_on_animation: bool,
 }
 
 impl Mesh
@@ -65,25 +94,46 @@ impl Mesh
 
             vertices: vertices,
             indices: indices,
-            normals: normals,
-            normals_indices: normals_indices,
 
             uvs_1: uvs,
             uvs_2: vec![],
             uvs_3: vec![],
             uv_indices: uv_indices,
 
+            normals: normals,
+            normals_indices: normals_indices,
+
+            joints: vec![],
+            weights: vec![],
+
+            morph_target_positions: vec![],
+            morph_target_normals: vec![],
+            morph_target_tangents: vec![],
+
             flip_normals: false,
+
             b_box: Aabb::new_invalid(),
+            b_box_skin: None,
+            b_box_skin_multiplier: DEFAULT_SKIN_B_BOX_SCALE
         };
 
         let mut mesh = Mesh
         {
             base: ComponentBase::new(id, name.to_string(), "Mesh".to_string(), "◼".to_string()),
-            data: ChangeTracker::new(mesh_data)
+            data: ChangeTracker::new(mesh_data),
+
+            morph_target_render_item: None,
+
+            update_skin_bbox_on_animation: false
         };
 
         mesh.calc_bbox();
+
+        // create normals if needed
+        if mesh.get_data().vertices.len() > 0 && mesh.get_data().normals.len() == 0 && mesh.get_data().indices.len() > 0
+        {
+            mesh.create_normals();
+        }
 
         mesh
     }
@@ -107,6 +157,12 @@ impl Mesh
 
         mesh.calc_bbox();
 
+        // create normals if needed
+        if mesh.get_data().vertices.len() > 0 && mesh.get_data().normals.len() == 0 && mesh.get_data().indices.len() > 0
+        {
+            mesh.create_normals();
+        }
+
         mesh
     }
 
@@ -129,17 +185,98 @@ impl Mesh
         &mut self.data
     }
 
+    pub fn create_normals(&mut self)
+    {
+        let mesh_data = self.get_data_mut().get_mut();
+        mesh_data.normals.clear();
+        mesh_data.normals_indices.clear();
+
+        //for i in (0..mesh_data.vertices.len()).step_by(3)
+        for face in &mesh_data.indices
+        {
+            let i0 = face[0];
+            let i1 = face[1];
+            let i2 = face[2];
+
+            let v0 = mesh_data.vertices.get(i0 as usize).unwrap();
+            let v1 = mesh_data.vertices.get(i1 as usize).unwrap();
+            let v2 = mesh_data.vertices.get(i2 as usize).unwrap();
+
+            let normal = calculate_normal(v0, v1, v2);
+            mesh_data.normals.push(normal);
+            mesh_data.normals.push(normal);
+            mesh_data.normals.push(normal);
+
+            mesh_data.normals_indices.push([i0, i1, i2]);
+        }
+    }
+
     fn calc_bbox(&mut self)
     {
         let trans = Isometry3::<f32>::identity();
-        let mut data = self.data.get_mut();
+        let data = self.data.get_mut();
         data.b_box = data.mesh.aabb(&trans);
+    }
+
+    pub fn calc_bbox_skin(&mut self, joint_matrices: &Vec<Matrix4<f32>>)
+    {
+        let data = self.data.get_mut();
+
+        // transform by skin
+        let vertices = data.vertices.iter().enumerate().map(|(v_i, v)|
+        {
+            let pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
+            let mut transformed_pos = Point4::<f32>::new(0.0, 0.0, 0.0, 0.0);
+
+            for i in 0..4
+            {
+                let joints = data.joints[v_i];
+                let weights = data.weights[v_i];
+
+                let joint_transform = joint_matrices[joints[i] as usize];
+                let transformed = joint_transform * pos * weights[i];
+
+                transformed_pos.x += transformed.x;
+                transformed_pos.y += transformed.y;
+                transformed_pos.z += transformed.z;
+                transformed_pos.w += transformed.w;
+            }
+
+            transformed_pos.x /= transformed_pos.w;
+            transformed_pos.y /= transformed_pos.w;
+            transformed_pos.z /= transformed_pos.w;
+
+            Point3::<f32>::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
+        }).collect::<Vec<Point3<f32>>>();
+
+        let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
+
+        let trans = Isometry3::<f32>::identity();
+        data.b_box_skin = Some(mesh.aabb(&trans));
+    }
+
+    pub fn get_combined_bbox(&self) -> Aabb
+    {
+        let data = self.get_data();
+
+        let mut b_box = data.b_box;
+
+        if let Some(b_box_skin) = data.b_box_skin
+        {
+            let s = data.b_box_skin_multiplier;
+            let b_box_skin = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
+
+            b_box.merge(&b_box_skin);
+        }
+
+        b_box
     }
 
     pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
     {
-        let data = self.get_data();
-        data.b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
+        let b_box = self.get_combined_bbox();
+
+        b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
     }
 
     pub fn intersect(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
@@ -161,7 +298,7 @@ impl Mesh
             if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
             {
                 let hit = ray.origin + (ray.dir * res.toi);
-                normal = self.get_normal(hit, face_id, trans_inverse);
+                normal = self.get_normal(hit, face_id, trans_inverse, &data.vertices);
                 normal = (trans * normal.to_homogeneous()).xyz().normalize();
 
                 if data.mesh.is_backface(res.feature)
@@ -179,9 +316,80 @@ impl Mesh
         None
     }
 
+    pub fn intersect_skinned(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, joint_matrices: &Vec<Matrix4<f32>>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
+    {
+        if self.get_data().joints.len() == 0 || self.get_data().weights.len() == 0 || joint_matrices.len() == 0
+        {
+            return self.intersect(ray, ray_inverse, trans, trans_inverse, solid, smooth_shading);
+        }
+
+        let data = self.get_data();
+
+        // transform by skin
+        let vertices = self.get_data().vertices.iter().enumerate().map(|(v_i, v)|
+        {
+            let pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
+            let mut transformed_pos = Point4::<f32>::new(0.0, 0.0, 0.0, 0.0);
+            for i in 0..4
+            {
+                let joints = data.joints[v_i];
+                let weights = data.weights[v_i];
+
+                let joint_transform = joint_matrices[joints[i] as usize];
+                let transformed = joint_transform * pos * weights[i];
+
+                transformed_pos.x += transformed.x;
+                transformed_pos.y += transformed.y;
+                transformed_pos.z += transformed.z;
+                transformed_pos.w += transformed.w;
+            }
+
+            transformed_pos.x /= transformed_pos.w;
+            transformed_pos.y /= transformed_pos.w;
+            transformed_pos.z /= transformed_pos.w;
+
+            Point3::<f32>::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
+        }).collect::<Vec<Point3<f32>>>();
+
+        let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
+
+        // run intersection test
+        let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
+        if let Some(res) = res
+        {
+            let mut face_id = 0;
+            if let FeatureId::Face(i) = res.feature
+            {
+                face_id = i;
+            }
+
+            let mut normal;
+
+            // use normal based on loaded normal (not on computed normal by parry -- for smooth shading)
+            if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
+            {
+                let hit = ray.origin + (ray.dir * res.toi);
+                normal = self.get_normal(hit, face_id, trans_inverse, &vertices);
+                normal = (trans * normal.to_homogeneous()).xyz().normalize();
+
+                if mesh.is_backface(res.feature)
+                {
+                    normal = -normal;
+                }
+            }
+            else
+            {
+                normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
+            }
+
+            return Some((res.toi, normal, face_id))
+        }
+        None
+    }
+
     fn apply_transform(&mut self, transform: &Matrix4<f32>)
     {
-        let mut data = self.data.get_mut();
+        let data = self.data.get_mut();
 
         for v in &mut data.vertices
         {
@@ -347,7 +555,7 @@ impl Mesh
         self.calc_bbox();
     }
 
-    pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>) -> Vector3<f32>
+    pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>, vertices: &Vec<Point3<f32>>) -> Vector3<f32>
     {
         let data = self.data.get_ref();
 
@@ -371,9 +579,9 @@ impl Mesh
         let i_normal_1 = normal_face[1] as usize;
         let i_normal_2 = normal_face[2] as usize;
 
-        let a = data.mesh.vertices()[i0].to_homogeneous();
-        let b = data.mesh.vertices()[i1].to_homogeneous();
-        let c = data.mesh.vertices()[i2].to_homogeneous();
+        let a = vertices[i0].to_homogeneous();
+        let b = vertices[i1].to_homogeneous();
+        let c = vertices[i2].to_homogeneous();
 
         let a_t = data.normals[i_normal_0];
         let b_t = data.normals[i_normal_1];
@@ -413,13 +621,75 @@ impl Component for Mesh
     component_impl_no_update!();
     component_impl_set_enabled!();
 
-    fn instantiable(&self) -> bool
+    fn instantiable() -> bool
     {
         false
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui)
+    fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
+        {
+            let data = self.get_data();
+            ui.label(format!(" ⚫ vertices: {}", data.vertices.len()));
+            ui.label(format!(" ⚫ indices: {}", data.indices.len()));
 
+            ui.label(format!(" ⚫ uvs_1: {}", data.uvs_1.len()));
+            ui.label(format!(" ⚫ uvs_2: {}", data.uvs_2.len()));
+            ui.label(format!(" ⚫ uvs_3: {}", data.uvs_3.len()));
+            ui.label(format!(" ⚫ uv_indices: {}", data.uv_indices.len()));
+
+            ui.label(format!(" ⚫ normals: {}", data.normals.len()));
+            ui.label(format!(" ⚫ normals_indices: {}", data.normals_indices.len()));
+
+            ui.label(format!(" ⚫ joints: {}", data.joints.len()));
+            ui.label(format!(" ⚫ weights: {}", data.weights.len()));
+
+            ui.label(format!(" ⚫ morph target positions: {}", data.morph_target_positions.len()));
+            ui.label(format!(" ⚫ morph target normals: {}", data.morph_target_normals.len()));
+            ui.label(format!(" ⚫ morph target tangents: {}", data.morph_target_tangents.len()));
+
+            ui.label(format!(" ⚫ flip_normals: {}", data.flip_normals));
+
+            ui.label(format!(" ⚫ bbox min: [{:.3}, {:.3}, {:.3}]", data.b_box.mins.x, data.b_box.mins.z, data.b_box.mins.z));
+            ui.label(format!(" ⚫ bbox max: [{:.3}, {:.3}, {:.3}]", data.b_box.maxs.x, data.b_box.maxs.z, data.b_box.maxs.z));
+
+            if let Some(b_box_skin) = data.b_box_skin
+            {
+                ui.label(format!(" ⚫ bbox skin min: [{:.3}, {:.3}, {:.3}]", b_box_skin.mins.x, b_box_skin.mins.z, b_box_skin.mins.z));
+                ui.label(format!(" ⚫ bbox skin max: [{:.3}, {:.3}, {:.3}]", b_box_skin.maxs.x, b_box_skin.maxs.z, b_box_skin.maxs.z));
+            }
+        }
+
+        ui.separator();
+
+        ui.checkbox(&mut self.update_skin_bbox_on_animation, "update skin bbox on animation change");
+
+        if self.get_data().b_box_skin.is_some()
+        {
+            info_box_with_body(ui, |ui|
+            {
+                ui.label(RichText::new("Skined Mesh BBox Factor").strong());
+                ui.label("This is used to be able to check ray intersections more performant.");
+                ui.label("Its based on the Skinned mesh with out animation multiplied by this factor.");
+            });
+
+            let mut changed = false;
+            let mut b_box_skin_multiplier;
+            {
+                b_box_skin_multiplier = self.get_data().b_box_skin_multiplier;
+            }
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Factor: ");
+                changed = ui.add(egui::Slider::new(&mut b_box_skin_multiplier, 1.0..=100.0).fixed_decimals(2)).changed() || changed;
+            });
+
+            if changed
+            {
+                let data = self.get_data_mut().get_mut();
+                data.b_box_skin_multiplier = b_box_skin_multiplier;
+            }
+        }
     }
 }
