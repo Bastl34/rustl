@@ -5,10 +5,16 @@ use crate::state::{state::State, gui::helper::generic_items::collapse_with_title
 
 use super::editor_state::EditorState;
 
+pub fn create_general_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    create_rendering_settings(editor_state, state, ui);
+    create_audio_settings(editor_state, state, ui);
+}
+
 pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // general rendering settings
-    collapse_with_title(ui, "render_settings", true, "General Settings", |ui|
+    collapse_with_title(ui, "render_settings", true, "📷 Rendering Settings", |ui|
     {
         ui.horizontal(|ui|
         {
@@ -113,7 +119,35 @@ pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 state.rendering.max_texture_resolution = Some(current);
             }
-        ui.end_row();
+            ui.end_row();
         });
+    });
+}
+
+pub fn create_audio_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    // general rendering settings
+    collapse_with_title(ui, "audio_settings", true, "🔊 Audio Settings", |ui|
+    {
+        let mut volume;
+
+        {
+            let audio_device = state.audio_device.read().unwrap();
+            let audio_device_data = audio_device.data.get_ref();
+
+            volume = audio_device_data.volume;
+        }
+
+        let mut changed = false;
+
+        changed = ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).text("Global Volume")).changed() || changed;
+
+        if changed
+        {
+            let mut audio_device = state.audio_device.write().unwrap();
+            let audio_device_data = audio_device.data.get_mut();
+
+            audio_device_data.volume = volume;
+        }
     });
 }

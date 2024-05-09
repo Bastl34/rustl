@@ -20,7 +20,7 @@ pub enum SettingsPanel
     Light,
     Scene,
     Object,
-    Rendering
+    General
 }
 
 #[derive(PartialEq, Eq)]
@@ -141,7 +141,7 @@ impl EditorState
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
 
-            settings: SettingsPanel::Rendering,
+            settings: SettingsPanel::General,
 
             hierarchy_expand_all: true,
             hierarchy_filter: String::new(),

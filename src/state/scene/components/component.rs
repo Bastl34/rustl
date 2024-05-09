@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
@@ -51,7 +52,7 @@ pub struct ComponentBase
     pub icon: String,
     pub info: Option<String>,
 
-    pub post_update_request: bool,
+    pub delete_later_request: bool,
 
     pub render_item: RenderItemOption
 }
@@ -69,8 +70,13 @@ impl ComponentBase
             is_enabled: true,
             render_item: None,
             info: None,
-            post_update_request: false
+            delete_later_request: false
         }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 }
 
@@ -257,6 +263,20 @@ pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> b
     }
 
     false
+}
+
+pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u64>) -> bool
+{
+    let set: HashSet<u64> = ids.iter().cloned().collect();
+    let prev_len = components.len();
+
+    components.retain(|component|
+    {
+        let component = component.read().unwrap();
+        !set.contains(&component.id())
+    });
+
+    components.len() != prev_len
 }
 
 // ******************** macros ********************

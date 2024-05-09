@@ -1,4 +1,4 @@
-use std::{sync::{Arc, RwLock}, collections::HashMap};
+use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Point3, Vector4};
@@ -6,7 +6,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -154,6 +154,14 @@ impl Node
     pub fn remove_component_by_id(&mut self, id: u64)
     {
         if remove_component_by_id(&mut self.components, id)
+        {
+            self.force_instances_update();
+        }
+    }
+
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u64>)
+    {
+        if remove_components_by_ids(&mut self.components, &ids)
         {
             self.force_instances_update();
         }
@@ -870,8 +878,15 @@ impl Node
             all_components = node.components.clone();
         }
 
+        let mut delete_components = vec![];
+
         for (component_id, component) in all_components.clone().iter_mut().enumerate()
         {
+            if component.read().unwrap().get_base().delete_later_request
+            {
+                delete_components.push(component.read().unwrap().id());
+            }
+
             {
                 if !component.read().unwrap().is_enabled()
                 {
@@ -894,6 +909,12 @@ impl Node
         {
             let mut node = node.write().unwrap();
             node.components = all_components;
+        }
+
+        // ***** delete components *****
+        {
+            let mut node = node.write().unwrap();
+            node.remove_components_by_ids(&delete_components);
         }
 
         // ***** update instances *****

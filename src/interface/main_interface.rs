@@ -539,7 +539,7 @@ impl MainInterface
 
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                let nodes = scene_utils::load_object("objects/temp/avatar2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
@@ -605,7 +605,7 @@ impl MainInterface
 
                     // add camera controller and run auto setup
                     let mut controller = CharacterController::default();
-                    controller.auto_setup(scene, "avatar2");
+                    controller.auto_setup(scene, "avatar3");
                     scene.pre_controller.push(Box::new(controller));
                 }));
 
@@ -631,20 +631,20 @@ impl MainInterface
                                 let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
                                 let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
                                 let sound_source_clone = sound_source.clone();
-    
+
                                 let hash = sound_source.read().unwrap().hash.clone();
                                 scene.sound_sources.insert(hash, sound_source);
-    
+
                                 let cube = scene.find_node_by_name("Cube");
-    
+
                                 if let Some(cube) = cube
                                 {
                                     let mut cube = cube.write().unwrap();
-    
+
                                     let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
                                     let mut sound = Sound::new(sound_id, "m16", sound_source_clone, SoundType::Spatial, true);
                                     sound.start();
-    
+
                                     cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
                                 }
                             }

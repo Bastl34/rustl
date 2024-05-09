@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Matrix4, Vector3};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
-use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem}};
+use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -159,6 +159,14 @@ impl Instance
         }
     }
 
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u64>)
+    {
+        if remove_components_by_ids(&mut self.components, &ids)
+        {
+            self.force_update = true;
+        }
+    }
+
     pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> bool
     {
         let node;
@@ -174,8 +182,15 @@ impl Instance
             all_components = instance.components.clone();
         }
 
+        let mut delete_components = vec![];
+
         for (component_id, component) in all_components.clone().iter_mut().enumerate()
         {
+            if component.read().unwrap().get_base().delete_later_request
+            {
+                delete_components.push(component.read().unwrap().id());
+            }
+
             if !component.read().unwrap().is_enabled()
             {
                 continue;
@@ -196,6 +211,12 @@ impl Instance
         {
             let mut instance = instance.write().unwrap();
             instance.components = all_components;
+        }
+
+        // ***** delete components *****
+        {
+            let mut instance = instance.write().unwrap();
+            instance.remove_components_by_ids(&delete_components);
         }
 
         // ***** update computed data *****

@@ -13,7 +13,7 @@ use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
-use super::rendering::create_rendering_settings;
+use super::general::{create_general_settings};
 use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
@@ -253,7 +253,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
         }
 
-        ui.selectable_value(&mut editor_state.settings, SettingsPanel::Rendering, "📷 Rendering");
+        ui.selectable_value(&mut editor_state.settings, SettingsPanel::General, "📷 Rendering");
     });
     ui.separator();
 
@@ -276,7 +276,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Sound => if sound_settings { create_sound_settings(editor_state, state, ui);},
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
-            SettingsPanel::Rendering => create_rendering_settings(editor_state, state, ui),
+            SettingsPanel::General => create_general_settings(editor_state, state, ui),
         }
     });
 }
@@ -326,7 +326,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     else
                     {
                         editor_state.selected_scene_id = None;
-                        editor_state.settings = SettingsPanel::Rendering;
+                        editor_state.settings = SettingsPanel::General;
                     }
                 }
             });

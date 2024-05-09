@@ -22,7 +22,9 @@ pub struct SoundData
     pub volume: f32,
     pub speed: f32,
 
-    pub spatial_distance_scale: f32
+    pub spatial_distance_scale: f32,
+
+    pub delete_after_playback: bool
 }
 
 pub struct Sound
@@ -56,7 +58,9 @@ impl Sound
                 volume: 1.0,
                 speed: 1.0,
 
-                spatial_distance_scale: 1.0
+                spatial_distance_scale: 1.0,
+
+                delete_after_playback: false,
             }),
 
             audio_device: None,
@@ -85,7 +89,9 @@ impl Sound
                 volume: 1.0,
                 speed: 1.0,
 
-                spatial_distance_scale: 1.0
+                spatial_distance_scale: 1.0,
+
+                delete_after_playback: false
             }),
 
             audio_device: None,
@@ -259,6 +265,11 @@ impl Sound
 
     fn _update(&mut self, node: Option<NodeItem>, instance: Option<&InstanceItemArc>, force: bool)
     {
+        if self.get_data().delete_after_playback && self.stopped()
+        {
+            self.get_base_mut().delete_later();
+        }
+
         if self.audio_device.is_none()
         {
             return;
@@ -427,6 +438,7 @@ impl Component for Sound
         let mut looped;
         let mut sound_type;
         let mut spatial_distance_scale;
+        let mut delete_after_playback;
 
         {
             let data = self.data.get_ref();
@@ -436,6 +448,7 @@ impl Component for Sound
             looped = data.looped;
             sound_type = data.sound_type;
             spatial_distance_scale = data.spatial_distance_scale;
+            delete_after_playback = data.delete_after_playback;
         }
 
         changed = ui.checkbox(&mut looped, "Loop").changed() || changed;
@@ -451,6 +464,8 @@ impl Component for Sound
             changed = ui.radio_value(&mut sound_type, SoundType::Spatial, "Spatial").changed() || changed;
         });
 
+        changed = ui.checkbox(&mut delete_after_playback, "Delete after playback").changed() || changed;
+
         if changed
         {
             let data = self.data.get_mut();
@@ -463,6 +478,7 @@ impl Component for Sound
             data.speed = speed;
             data.sound_type = sound_type;
             data.spatial_distance_scale = spatial_distance_scale;
+            data.delete_after_playback = delete_after_playback;
 
             if major_change
             {

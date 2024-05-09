@@ -115,7 +115,7 @@ mod state
             pub(crate) mod materials;
             pub(crate) mod lights;
             pub(crate) mod scenes;
-            pub(crate) mod rendering;
+            pub(crate) mod general;
             pub(crate) mod textures;
             pub(crate) mod sound;
             pub(crate) mod assets;

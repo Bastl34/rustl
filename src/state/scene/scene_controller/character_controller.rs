@@ -15,7 +15,7 @@ const MOVEMENT_SPEED_FAST: f32 = 0.12;
 
 const ROTATION_SPEED: f32 = 0.06;
 
-const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, 1.0);
+const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 
 const GRAVITY: f32 = 0.3;
 //const GRAVITY: f32 = 0.981;
@@ -184,7 +184,7 @@ impl CharacterController
         cam.node = Some(node_arc.clone());
 
         let mut target_rotation_controller = TargetRotationController::default();
-        target_rotation_controller.data.get_mut().alpha = PI;
+        target_rotation_controller.data.get_mut().alpha = 0.0;
         target_rotation_controller.data.get_mut().beta = PI / 7.0;
         target_rotation_controller.data.get_mut().radius = 6.0;
         target_rotation_controller.data.get_mut().offset.y = 1.0;
