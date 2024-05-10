@@ -27,7 +27,7 @@ regex = "1.10.3"
 rodio = "0.18.0"
 gilrs = { version = "0.10", features = ["wgi"]}
 
-parry3d = "0.14.0"
+parry3d = "0.15.1"
 bvh = "0.9.0"
 
 arboard = "3.3"
