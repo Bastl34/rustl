@@ -297,7 +297,7 @@ impl Mesh
             // use normal based on loaded normal (not on computed normal by parry -- for smooth shading)
             if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
             {
-                let hit = ray.origin + (ray.dir * res.toi);
+                let hit = ray.origin + (ray.dir * res.time_of_impact);
                 normal = self.get_normal(hit, face_id, trans_inverse, &data.vertices);
                 normal = (trans * normal.to_homogeneous()).xyz().normalize();
 
@@ -311,7 +311,7 @@ impl Mesh
                 normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
             }
 
-            return Some((res.toi, normal, face_id))
+            return Some((res.time_of_impact, normal, face_id))
         }
         None
     }
@@ -368,7 +368,7 @@ impl Mesh
             // use normal based on loaded normal (not on computed normal by parry -- for smooth shading)
             if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
             {
-                let hit = ray.origin + (ray.dir * res.toi);
+                let hit = ray.origin + (ray.dir * res.time_of_impact);
                 normal = self.get_normal(hit, face_id, trans_inverse, &vertices);
                 normal = (trans * normal.to_homogeneous()).xyz().normalize();
 
@@ -382,7 +382,7 @@ impl Mesh
                 normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
             }
 
-            return Some((res.toi, normal, face_id))
+            return Some((res.time_of_impact, normal, face_id))
         }
         None
     }
