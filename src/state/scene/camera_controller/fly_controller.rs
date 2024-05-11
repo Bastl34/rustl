@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use nalgebra::{Vector2, Vector3};
-use parry3d::shape::Ball;
+use parry3d::{query::Ray, shape::Ball};
 
 use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
@@ -10,7 +10,7 @@ use super::camera_controller::{CameraController, CameraControllerBase};
 const ANGLE_OFFSET_UP: f32 = 0.01;
 const ANGLE_OFFSET_DOWN: f32 = 0.1;
 
-const DEFAULT_SPHERE_RADIUS: f32 = 2.0;
+const DEFAULT_COLLISION_DISTANCE: f32 = 0.5;
 const DEFAULT_MOUSE_SENSIVITY: f32 = 0.0015;
 const DEFAULT_GAMEPAD_SENSIVITY: f32 = 0.03;
 
@@ -19,13 +19,12 @@ pub struct FlyController
     base: CameraControllerBase,
 
     collision: bool,
+    collision_distance: f32,
 
     move_speed: f32,
     move_speed_shift: f32,
     mouse_sensitivity: Vector2::<f32>,
     gamepad_sensitivity: f32,
-
-    sphere_shape: Ball
 }
 
 impl FlyController
@@ -37,14 +36,13 @@ impl FlyController
             base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
 
             collision,
+            collision_distance: DEFAULT_COLLISION_DISTANCE,
 
             move_speed,
             move_speed_shift,
             mouse_sensitivity,
 
             gamepad_sensitivity: DEFAULT_GAMEPAD_SENSIVITY,
-
-            sphere_shape: Ball::new(DEFAULT_SPHERE_RADIUS)
         }
     }
 
@@ -55,14 +53,13 @@ impl FlyController
             base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
 
             collision: true,
+            collision_distance: DEFAULT_COLLISION_DISTANCE,
 
             move_speed: 0.1,
             move_speed_shift: 0.2,
             mouse_sensitivity: Vector2::<f32>::new(DEFAULT_MOUSE_SENSIVITY, DEFAULT_MOUSE_SENSIVITY),
 
             gamepad_sensitivity: DEFAULT_GAMEPAD_SENSIVITY,
-
-            sphere_shape: Ball::new(DEFAULT_SPHERE_RADIUS)
         }
     }
 }
@@ -218,16 +215,16 @@ impl CameraController for FlyController
         }
 
         // update movement
+        let mut movement_vec = Vector3::<f32>::zeros();
+
         if !approx_zero_vec3(&movement)
         {
-            let cam_data = cam_data.get_mut();
+            let cam_data = cam_data.get_ref();
             last_eye_pos = Some(cam_data.eye_pos.clone());
 
             let dir = cam_data.dir.normalize();
             let up = cam_data.up.normalize();
             let right = up.cross(&dir);
-
-            let mut vec = Vector3::<f32>::zeros();
 
             let mut factor = self.move_speed;
             if fast_movement
@@ -237,106 +234,44 @@ impl CameraController for FlyController
 
             let sensitivity = frame_scale * factor;
 
-            vec += movement.z * dir * sensitivity;
-            vec += movement.x * right * sensitivity;
-            vec += movement.y * up * sensitivity;
+            movement_vec += movement.z * dir * sensitivity;
+            movement_vec += movement.x * right * sensitivity;
+            movement_vec += movement.y * up * sensitivity;
 
-            cam_data.eye_pos += vec;
-
-            change = true;
         }
 
-        /*
-        let cam_data = cam_data.get_mut();
-            last_eye_pos = Some(cam_data.eye_pos.clone());
-
-            let dir = cam_data.dir.normalize();
-            let up = cam_data.up.normalize();
-            let right = up.cross(&dir);
-
-            let mut vec = Vector3::<f32>::zeros();
-
-            let mut factor = self.move_speed;
-            if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-            {
-                factor = self.move_speed_shift;
-            }
-
-            let sensitivity = frame_scale * factor;
-
-            if input_manager.keyboard.is_holding(Key::W)
-            {
-                vec += dir * sensitivity;
-            }
-            if input_manager.keyboard.is_holding(Key::S)
-            {
-                vec -= dir * sensitivity;
-            }
-            if input_manager.keyboard.is_holding(Key::D)
-            {
-                vec -= right * sensitivity;
-            }
-            if input_manager.keyboard.is_holding(Key::A)
-            {
-                vec += right * sensitivity;
-            }
-            if input_manager.keyboard.is_holding(Key::Space)
-            {
-                vec += up * sensitivity;
-            }
-            //if input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
-            if input_manager.keyboard.is_holding(Key::C)
-            {
-                vec -= up * sensitivity;
-            }
-
-            cam_data.eye_pos += vec;
-
-            change = true;
-         */
-
         // collision check
-
-        /*
-        if change
+        if self.collision && !approx_zero_vec3(&movement_vec)
         {
-            let nodes = Scene::list_all_child_nodes_with_mesh(&scene.nodes);
+            let cam_data = cam_data.get_ref();
 
-            for node_arc in &nodes
+            let origin = cam_data.eye_pos;
+            let dir = movement_vec.normalize();
+
+            let ray = Ray::new(origin, dir);
+
+            let hit = scene.pick(&ray, false, false, None);
+
+            if let Some(hit) = hit
             {
-                let node = node_arc.read().unwrap();
+                let movement_len = movement_vec.magnitude();
 
-                for instance in node.instances.get_ref()
+                if hit.time_of_impact < self.collision_distance
                 {
-                    let instance = instance.borrow();
-                    let instance = instance.get_ref();
-
-                    let alpha = instance.get_alpha();
-
-                    if approx_zero(alpha)
-                    {
-                        continue;
-                    }
-
-                    let transform = instance.get_transform();
-
-                    let mesh = node.find_component::<Mesh>().unwrap();
-                    component_downcast!(mesh, Mesh);
-
-                    let mesh_data = mesh.get_data();
-
-                    Isometry3::from_parts(translation, rotation)
-
-                    //mesh_data.mesh.coll
-
-                    //parry3d::
-                    //query::contact(pos1, g1, pos2, g2, prediction)
-                    //mesh_data.mesh.
-
+                    let delta = self.collision_distance - hit.time_of_impact;
+                    movement_vec = (dir * -1.0) * delta;
                 }
             }
         }
-         */
+
+        if !approx_zero_vec3(&movement_vec)
+        {
+            let cam_data = cam_data.get_mut();
+
+            cam_data.eye_pos += movement_vec;
+
+            change = true;
+        }
 
         change
     }
@@ -344,6 +279,12 @@ impl CameraController for FlyController
     fn ui(&mut self, ui: &mut egui::Ui)
     {
         ui.checkbox(&mut self.collision, "collision");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Collision distance: ");
+            ui.add(egui::DragValue::new(&mut self.collision_distance).speed(0.01));
+        });
 
         ui.horizontal(|ui|
         {
@@ -357,7 +298,6 @@ impl CameraController for FlyController
             ui.label("Gamepad sensitivity (rad): ");
             ui.add(egui::DragValue::new(&mut self.gamepad_sensitivity).speed(0.01));
         });
-    
 
         ui.horizontal(|ui|
         {

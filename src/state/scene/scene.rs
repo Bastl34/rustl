@@ -11,6 +11,33 @@ use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem,
 
 pub type SceneItem = Box<Scene>;
 
+#[derive(Clone)]
+pub struct ScenePickRes
+{
+    pub time_of_impact: f32,
+    pub point: Point3<f32>,
+    pub normal: Option<Vector3<f32>>,
+    pub node: NodeItem,
+    pub instance_id: u64,
+    pub face_id: Option<u32>,
+}
+
+impl ScenePickRes
+{
+    pub fn new(time_of_impact: f32, point: Point3<f32>, normal: Option<Vector3<f32>>, node: NodeItem, instance_id: u64, face_id: Option<u32>) -> ScenePickRes
+    {
+        Self
+        {
+            time_of_impact,
+            point,
+            normal,
+            node,
+            instance_id,
+            face_id
+        }
+    }
+}
+
 
 pub struct SceneData
 {
@@ -739,7 +766,7 @@ impl Scene
         false
     }
 
-    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
     {
         let mut nodes = vec![];
 
@@ -756,7 +783,7 @@ impl Scene
         self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<ScenePickRes>
     {
         let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
 
@@ -768,7 +795,7 @@ impl Scene
         None
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
@@ -782,14 +809,14 @@ impl Scene
         None
     }
 
-    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
         self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)>
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
     {
         // find hits (bbox based)
         let mut hits_bbox = vec![];
@@ -894,7 +921,7 @@ impl Scene
 
                 let pos = ray.origin + (ray.dir * dist);
 
-                res.push((dist, pos, None, node.clone(), instance, None));
+                res.push(ScenePickRes::new(dist, pos, None, node.clone(), instance, None));
 
                 if stop_on_first_hit
                 {
@@ -936,8 +963,7 @@ impl Scene
         }
 
         // mesh based intersection
-        //let mut best_hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
-        let mut hits: Vec<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = Vec::new();
+        let mut hits: Vec<ScenePickRes> = Vec::new();
 
         for (node_arc, instance_id, transform, transform_inverse, ray_inverse) in ray_intersection_checks
         {
@@ -970,7 +996,7 @@ impl Scene
             {
                 let pos = ray.origin + (ray.dir * intersection.0);
 
-                hits.push((intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
+                hits.push(ScenePickRes::new(intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
 
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
                 /*
@@ -1011,7 +1037,7 @@ impl Scene
         }
 
         // sort by distance
-        hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        hits.sort_by(|a, b| a.time_of_impact.partial_cmp(&b.time_of_impact).unwrap());
 
         // best_hit
         hits

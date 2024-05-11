@@ -4,7 +4,7 @@ use egui::FullOutput;
 
 use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
-use crate::{state::{state::State, scene::{components::{transformation::Transformation, component::ComponentItem, transformation_animation::TransformationAnimation, alpha::Alpha}, node::{NodeItem, Node}, utilities::scene_utils::{load_object, execute_on_scene_mut_and_wait, self}, light::Light, camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, scene::Scene, manager::id_manager}}, rendering::egui::EGui, input::{mouse::MouseButton, keyboard::{Key, Modifier}}, component_downcast_mut, helper::{concurrency::thread::spawn_thread, change_tracker::ChangeTracker, platform, math::{approx_equal, approx_equal_vec}}};
+use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, components::{alpha::Alpha, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
@@ -133,7 +133,7 @@ impl Editor
             {
                 let pos = state.input_manager.mouse.point.pos;
 
-                let mut hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+                let mut hit: Option<ScenePickRes> = None;
                 let mut scene_id: u64 = 0;
 
                 if let Some(pos) = pos
@@ -147,7 +147,7 @@ impl Editor
                     }
                 }
 
-                if let Some((_t, _point, _normal, hit_item, instance_id,_face_id)) = hit
+                if let Some(hit) = hit
                 {
                     // pick camera target
                     if self.editor_state.pick_mode == PickType::Camera && self.editor_state.selected_scene_id.is_some()
@@ -166,7 +166,7 @@ impl Editor
 
                         if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
                         {
-                            camera.node = Some(hit_item.clone());
+                            camera.node = Some(hit.node.clone());
                         }
                     }
                     // pick parent target
@@ -186,13 +186,13 @@ impl Editor
 
                         if let Some(node) = scene.find_node_by_id(node_id)
                         {
-                            Node::set_parent(node, hit_item.clone());
+                            Node::set_parent(node, hit.node.clone());
                         }
                     }
                     // show selection
                     else
                     {
-                        let mut node_arc = hit_item;
+                        let mut node_arc = hit.node;
                         let mut use_root_node = false;
 
                         if left_mouse_button
@@ -215,7 +215,7 @@ impl Editor
                             }
                             else
                             {
-                                id_string = format!("objects_{}_{}", node.id, instance_id);
+                                id_string = format!("objects_{}_{}", node.id, hit.instance_id);
                             }
                         }
 
@@ -244,7 +244,7 @@ impl Editor
                             {
                                 let node = node_arc.read().unwrap();
 
-                                if let Some(instance) = node.find_instance_by_id(instance_id)
+                                if let Some(instance) = node.find_instance_by_id(hit.instance_id)
                                 {
                                     let mut instance = instance.write().unwrap();
                                     let instance_data = instance.get_data_mut().get_mut();
@@ -358,13 +358,13 @@ impl Editor
         }
     }
 
-    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool) -> Option<(u64, (f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>))>
+    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool) -> Option<(u64, ScenePickRes)>
     {
         let scenes = &state.scenes;
         let width = state.width;
         let height = state.height;
 
-        let mut hit: Option<(f32, Point3<f32>, Option<Vector3<f32>>, NodeItem, u64, Option<u32>)> = None;
+        let mut hit: Option<ScenePickRes> = None;
         let mut scene_id: u64 = 0;
 
         for scene in scenes
@@ -422,7 +422,7 @@ impl Editor
                     {
                         if let Some(new_hit_ref) = new_hit.as_ref()
                         {
-                            if scene_hit_ref.0 < new_hit_ref.0
+                            if scene_hit_ref.time_of_impact < new_hit_ref.time_of_impact
                             {
                                 new_hit = scene_hit;
                             }
@@ -442,7 +442,7 @@ impl Editor
                         if let Some(hit) = hit.as_ref()
                         {
                             // check if the new hit is near
-                            if new_hit.0 < hit.0
+                            if new_hit.time_of_impact < hit.time_of_impact
                             {
                                 save_hit = true;
                             }
@@ -858,7 +858,7 @@ impl Editor
         let mut pos = None;
         if let Some(pick_res) = pick_res
         {
-            pos = Some(pick_res.1.1);
+            pos = Some(pick_res.1.point);
         }
 
         let create_mipmaps = state.rendering.create_mipmaps;

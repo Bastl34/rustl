@@ -836,7 +836,7 @@ impl SceneController for CharacterController
 
                 if let Some(first_pick) = pick_res.first()
                 {
-                    let distance = first_pick.0 - self.body_offset;
+                    let distance = first_pick.time_of_impact - self.body_offset;
 
                     //if self.falling && approx_zero(distance)
                     if self.falling && distance.abs() <= 0.1
