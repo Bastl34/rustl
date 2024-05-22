@@ -613,6 +613,31 @@ impl SceneController for CharacterController
 {
     scene_controller_impl_default!();
 
+    fn cleanup(&mut self)
+    {
+        self.node = None;
+        self.animation_node = None;
+
+        self.animation_idle = None;
+        self.animation_walk = None;
+        self.animation_run = None;
+        self.animation_jump = None;
+        self.animation_crouch = None;
+        self.animation_roll = None;
+        self.animation_strafe_left_walk = None;
+        self.animation_strafe_right_walk = None;
+        self.animation_strafe_left_run = None;
+        self.animation_strafe_right_run = None;
+        self.animation_fall_idle = None;
+        self.animation_fall_landing = None;
+
+        self.animation_actions.clear();
+
+        self.animation_blending = None;
+
+        self.transformation = None;
+    }
+
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
     {
         if self.node.is_none()
