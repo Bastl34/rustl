@@ -358,7 +358,7 @@ impl Drop for Sound
 {
     fn drop(&mut self)
     {
-        dbg!("droppinggggggggggggggggggggggg");
+        dbg!("droppinggggggggggggggggggggggg sound");
         self.stop();
     }
 }

@@ -214,6 +214,24 @@ impl Scene
         self.nodes.push(node);
     }
 
+    pub fn add_empty_node(&mut self, name: &str, parent: Option<NodeItem>) -> NodeItem
+    {
+        let id = self.id_manager.write().unwrap().get_next_node_id();
+        let node = Node::new(id, name);
+
+        if let Some(parent) = parent
+        {
+            let mut parent = parent.write().unwrap();
+            parent.nodes.push(node.clone());
+        }
+        else
+        {
+            self.nodes.push(node.clone());
+        }
+
+        node
+    }
+
     pub fn clear_nodes(&mut self)
     {
         self.nodes.clear();
@@ -595,7 +613,7 @@ impl Scene
         self.cameras.len() != len
     }
 
-    pub fn add_camera(&mut self, name: &str) -> &CameraItem
+    pub fn add_empty_camera(&mut self, name: &str) -> &CameraItem
     {
         let cam = Camera::new(self.id_manager.write().unwrap().get_next_camera_id(), name.to_string());
         self.cameras.push(Box::new(cam));
@@ -744,6 +762,12 @@ impl Scene
         let len = self.nodes.len();
         self.nodes.retain(|node|
         {
+            if node.read().unwrap().id == id
+            {
+                dbg!(".......... OK DELETE INSTANCES");
+                node.write().unwrap().clear_instances();
+            }
+
             node.read().unwrap().id != id
         });
 

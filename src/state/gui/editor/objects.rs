@@ -81,10 +81,20 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
-
-                if node.find_component::<Animation>().is_some()
+                toggle = toggle.context_menu(|ui|
                 {
-                    toggle = toggle.context_menu(|ui|
+                    if ui.button("⊞ Add empty node").clicked()
+                    {
+                        ui.close_menu();
+
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.add_empty_node("Node", Some(node_arc.clone()));
+                        }));
+                    }
+
+                    if node.find_component::<Animation>().is_some()
                     {
                         if ui.button("⏵ Start all animations").clicked()
                         {
@@ -103,8 +113,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             ui.close_menu();
                             node.stop_all_animations();
                         }
-                    });
-                }
+                    }
+                });
 
                 if toggle.clicked()
                 {

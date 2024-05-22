@@ -351,7 +351,17 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong());
+                let toggle = toggle.context_menu(|ui|
+                {
+                    if ui.button("⊞ Add New Node").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_node("Node", None);
+                    }
+                });
+
+                if toggle.clicked()
                 {
                     if selection
                     {
@@ -389,7 +399,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                     if ui.button("Add New Camera").clicked()
                     {
                         ui.close_menu();
-                        scene.add_camera("Camera");
+                        scene.add_empty_camera("Camera");
                     }
                 });
 
