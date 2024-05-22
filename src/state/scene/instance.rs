@@ -39,6 +39,14 @@ pub struct Instance
     data: ChangeTracker<InstanceData>
 }
 
+impl Drop for Instance
+{
+    fn drop(&mut self)
+    {
+        //dbg!("droppinggggggggggggggggggggggg Instance", self.name.clone());
+    }
+}
+
 impl Instance
 {
     pub fn new(id: u64, name: String, node: NodeItem) -> Instance

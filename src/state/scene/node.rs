@@ -46,6 +46,14 @@ pub struct Node
     b_box_node_index: usize,
 }
 
+impl Drop for Node
+{
+    fn drop(&mut self)
+    {
+        dbg!("droppinggggggggggggggggggggggg NODE", self.name.clone());
+    }
+}
+
 impl Node
 {
     pub fn new(id: u64, name: &str) -> NodeItem
@@ -81,6 +89,20 @@ impl Node
         };
 
         Arc::new(RwLock::new(Box::new(node)))
+    }
+
+    pub fn cleanup_cyclic_references(nodes: &Vec<NodeItem>)
+    {
+        // clear instances and // clear parents
+        for child_node in nodes
+        {
+            // remove cyclic reference nodes in instances
+            let mut node = child_node.write().unwrap();
+            node.clear_instances();
+
+            // remove cyclic reference to parent
+            node.parent = None;
+        }
     }
 
     pub fn add_node(node: NodeItem, child_node: NodeItem)
@@ -1105,6 +1127,20 @@ impl Node
 
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
     {
+        {
+            let node = Node::find_node_by_id(&self.nodes, id);
+            if let Some(node_arc) = node
+            {
+                let mut all_nodes;
+                {
+                    let node = node_arc.read().unwrap();
+                    all_nodes = Scene::list_all_child_nodes(&node.nodes);
+                    all_nodes.push(node_arc.clone());
+                }
+                Node::cleanup_cyclic_references(&all_nodes);
+            }
+        }
+
         let len = self.nodes.len();
         self.nodes.retain(|node|
         {

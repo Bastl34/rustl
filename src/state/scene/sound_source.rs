@@ -45,6 +45,14 @@ impl Decodable for SoundSource
     }
 }
 
+impl Drop for SoundSource
+{
+    fn drop(&mut self)
+    {
+        dbg!("droppinggggggggggggggggggggggg SoundSource", self.name.clone());
+    }
+}
+
 impl SoundSource
 {
     pub fn new(id: u64, name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource

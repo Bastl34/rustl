@@ -70,6 +70,14 @@ pub struct Texture
     pub render_item: RenderItemOption
 }
 
+impl Drop for Texture
+{
+    fn drop(&mut self)
+    {
+        dbg!("droppinggggggggggggggggggggggg Texture", self.name.clone());
+    }
+}
+
 impl Texture
 {
     pub fn empty() -> Texture

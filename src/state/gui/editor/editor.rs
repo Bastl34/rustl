@@ -304,7 +304,8 @@ impl Editor
                         }
                         else
                         {
-                            scene.delete_node_by_id(node.read().unwrap().id);
+                            let id = node.read().unwrap().id;
+                            scene.delete_node_by_id(id);
                         }
 
                         self.editor_state.de_select_current_item(state);

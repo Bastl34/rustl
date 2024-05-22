@@ -27,6 +27,10 @@ impl SceneController for GenericController
 {
     scene_controller_impl_default!();
 
+    fn cleanup(&mut self)
+    {
+    }
+
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, _input_manager: &mut InputManager, _frame_scale: f32) -> bool
     {
         let mut updated = false;

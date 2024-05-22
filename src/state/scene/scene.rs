@@ -327,15 +327,20 @@ impl Scene
 
     pub fn clear(&mut self)
     {
+        self.cleanup_cyclic_references(None);
+
         self.nodes.clear();
         self.lights.get_mut().clear();
         self.cameras.clear();
 
-        self.textures.clear();
         self.materials.clear();
+        self.textures.clear();
+
+        self.pre_controller.clear();
+        self.post_controller.clear();
 
         // re-add defaults
-        self.add_default_material();
+        self.add_defaults();
 
         if let Some(env_texture) = &self.get_data().environment_texture
         {
@@ -344,12 +349,73 @@ impl Scene
         }
     }
 
+    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>)
+    {
+        // check camera targets and remove
+        for camera in &mut self.cameras
+        {
+            if let Some(cam_node) = camera.node.clone()
+            {
+                if from_node_id.is_none()
+                {
+                    camera.node = None;
+                }
+
+                if let Some(node_id) = from_node_id
+                {
+                    if cam_node.read().unwrap().id == node_id
+                    {
+                        camera.node = None;
+                    }
+                }
+            }
+        }
+
+        // controller
+        for controller in &mut self.pre_controller
+        {
+            controller.cleanup();
+        }
+
+        for controller in &mut self.post_controller
+        {
+            controller.cleanup();
+        }
+
+
+        // clean up cyclic references in nodes
+        {
+
+            let mut all_nodes: Option<Vec<Arc<RwLock<Box<Node>>>>> = None;
+
+            if let Some(node_id) = from_node_id
+            {
+                let node = self.find_node_by_id(node_id);
+                if let Some(node) = &node
+                {
+                    let node = node.read().unwrap();
+                    all_nodes = Some(Scene::list_all_child_nodes(&node.nodes));
+                }
+            }
+            else
+            {
+                all_nodes = Some(Scene::list_all_child_nodes(&self.nodes));
+            }
+
+            // clear instances and / clear parents
+            if let Some(all_nodes) = &all_nodes
+            {
+                Node::cleanup_cyclic_references(&all_nodes);
+            }
+        }
+    }
+
     pub fn add_defaults(&mut self)
     {
         self.add_default_material();
 
         // post controller
-        let mut controller = GenericController::default();
+        let controller = GenericController::default();
         self.post_controller.push(Box::new(controller));
     }
 
@@ -744,20 +810,9 @@ impl Scene
     {
         Node::find_mesh_node_by_name(&self.nodes, name)
     }
-
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
     {
-        // check camera targets and remove
-        for camera in &mut self.cameras
-        {
-            if let Some(cam_node) = camera.node.clone()
-            {
-                if cam_node.read().unwrap().id == id
-                {
-                    camera.node = None;
-                }
-            }
-        }
+        self.cleanup_cyclic_references(Some(id));
 
         let len = self.nodes.len();
         self.nodes.retain(|node|
