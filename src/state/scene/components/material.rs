@@ -136,14 +136,6 @@ pub struct Material
     data: ChangeTracker<MaterialData>,
 }
 
-impl Drop for Material
-{
-    fn drop(&mut self)
-    {
-        dbg!("droppinggggggggggggggggggggggg Material", self.get_base().name.clone());
-    }
-}
-
 impl Material
 {
     pub fn new(id: u64, name: &str) -> Material

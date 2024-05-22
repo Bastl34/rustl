@@ -2,18 +2,18 @@ todo:
  * everything should be dynamic
  * TODOs
  * flickering on windows (amd)
- * cleanup is not working (clear scene)
  * better scene statistics graph
  * winit + wgpu update
  * deadlock while asset loading
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
- * memory leak
  * dead lock while loading an object/scene (just sometimes)
  * optimize shader - do not use empty morph targets or animation weights
  * action management
- * controller support
 
 done:
+ * controller support
+ * memory leak
+ * cleanup is not working (clear scene)
  * limit texture resolution for load
  * rework id manager to use arc rwlock (to prevent the need of execute_on_scene_mut_and_wait)
  * get rid of async stuff -> use exec queue

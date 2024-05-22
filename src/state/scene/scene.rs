@@ -819,7 +819,6 @@ impl Scene
         {
             if node.read().unwrap().id == id
             {
-                dbg!(".......... OK DELETE INSTANCES");
                 node.write().unwrap().clear_instances();
             }
 

@@ -46,14 +46,6 @@ pub struct Node
     b_box_node_index: usize,
 }
 
-impl Drop for Node
-{
-    fn drop(&mut self)
-    {
-        dbg!("droppinggggggggggggggggggggggg NODE", self.name.clone());
-    }
-}
-
 impl Node
 {
     pub fn new(id: u64, name: &str) -> NodeItem
