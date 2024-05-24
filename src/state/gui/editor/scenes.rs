@@ -66,7 +66,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     gpu_memory_usage = gpu_memory_usage / 1024.0 / 1024.0;
 
     // statistics
-    collapse_with_title(ui, "scene_info", true, "📈 Info", |ui|
+    collapse_with_title(ui, "scene_info", true, "📈 Info", None, |ui|
     {
         ui.label(RichText::new("🎬 scene").strong());
         ui.label(format!(" ⚫ nodes: {}", all_nodes.len()));
@@ -90,7 +90,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     });
 
     // Settings
-    collapse_with_title(ui, "scene_settings", true, "⛭ Scene Settings", |ui|
+    collapse_with_title(ui, "scene_settings", true, "⛭ Scene Settings", None, |ui|
     {
         scene.ui(ui);
     });
@@ -108,7 +108,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         let mut remove_texture = false;
         let mut changed = false;
 
-        generic_items::collapse(ui, id, true, |ui|
+        generic_items::collapse(ui, id, true, None, |ui|
         {
             ui.label(RichText::new(title).heading().strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -161,7 +161,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         let title = format!("🖼 {} Texture", TextureType::Environment.to_string());
         let id = format!("texture_{}", TextureType::Environment.to_string());
 
-        generic_items::collapse(ui, id, true, |ui|
+        generic_items::collapse(ui, id, true, None, |ui|
         {
             ui.label(RichText::new(title).heading().strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -192,7 +192,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     }
 
     // Debugging
-    collapse_with_title(ui, "scene_debugging", true, "🐛 Debugging Settings", |ui|
+    collapse_with_title(ui, "scene_debugging", true, "🐛 Debugging Settings", None, |ui|
     {
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
         {
@@ -239,7 +239,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
             }
 
-            generic_items::collapse(ui, format!("pre_scene_controller_{}", i).to_string(), true, |ui|
+            generic_items::collapse(ui, format!("pre_scene_controller_{}", i).to_string(), true, None, |ui|
             {
                 ui.label(RichText::new(name).heading().strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -312,7 +312,7 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
             }
 
-            generic_items::collapse(ui, format!("post_scene_controller_{}", i).to_string(), true, |ui|
+            generic_items::collapse(ui, format!("post_scene_controller_{}", i).to_string(), true, None, |ui|
             {
                 ui.label(RichText::new(name).heading().strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|

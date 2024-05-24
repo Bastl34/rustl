@@ -104,6 +104,7 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
 
     let root_node = Node::new(node_id, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
+    root_node.write().unwrap().source = Some(path.to_string());
 
     println!("reading nodes...");
     for gltf_scene in gltf.scenes()
@@ -137,6 +138,20 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     // ********** calculate skin bounding boxes **********
     println!("calc bbox skin...");
     calc_bbox_skin(&nodes);
+
+    // ********** mark components **********
+    {
+        let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
+
+        for node in all_nodes
+        {
+            for component in &node.read().unwrap().components
+            {
+                let mut component = component.write().unwrap();
+                component.get_base_mut().from_file = true;
+            }
+        }
+    }
 
     // ********** add to scene **********
     println!("adding nodes to scene...");
@@ -523,7 +538,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     let component_id = id_manager.write().unwrap().get_next_component_id();
                     //let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
-                    let morph_target = MorphTarget::new(component_id, name, i as u32);
+                    let mut morph_target = MorphTarget::new(component_id, name, i as u32);
 
                     let mesh_component_data = mesh_component.get_data_mut().get_mut();
                     mesh_component_data.morph_target_positions.push(target.0.clone());

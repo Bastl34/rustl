@@ -64,7 +64,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
 
     if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
     {
-        collapse_with_title(ui, "camera_general_settings", true, "⛭ General Settings", |ui|
+        collapse_with_title(ui, "camera_general_settings", true, "⛭ General Settings", None, |ui|
         {
             ui.horizontal(|ui|
             {
@@ -123,7 +123,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
             ui.checkbox(&mut camera.enabled, "enabled");
         });
 
-        collapse_with_title(ui, "camera_settings", true, "📷 Camera Settings", |ui|
+        collapse_with_title(ui, "camera_settings", true, "📷 Camera Settings", None, |ui|
         {
             camera.ui(ui);
         });
@@ -139,7 +139,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                 name = format!("{} {}",controller.get_base().icon.clone(), controller.get_base().name.clone());
             }
 
-            generic_items::collapse(ui, "camera_controller".to_string(), true, |ui|
+            generic_items::collapse(ui, "camera_controller".to_string(), true, None, |ui|
             {
                 ui.label(RichText::new(name).heading().strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|

@@ -47,10 +47,13 @@ pub struct ComponentBase
 {
     pub id: u64,
     pub is_enabled: bool,
+
     pub name: String,
     pub component_name: String,
     pub icon: String,
     pub info: Option<String>,
+
+    pub from_file: bool,
 
     pub delete_later_request: bool,
 
@@ -64,13 +67,18 @@ impl ComponentBase
         ComponentBase
         {
             id,
+            is_enabled: true,
+
             name,
             component_name,
             icon,
-            is_enabled: true,
-            render_item: None,
             info: None,
-            delete_later_request: false
+
+            from_file: false,
+
+            delete_later_request: false,
+
+            render_item: None,
         }
     }
 

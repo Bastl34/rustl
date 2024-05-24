@@ -13,17 +13,23 @@ pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
+pub struct NodeSettings
+{
+    pub render_children_first: bool,
+    pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
+
+    pub pick_bbox_first: bool,
+}
+
 pub struct Node
 {
     pub id: u64,
     pub name: String,
     pub visible: bool,
     pub root_node: bool,
+    pub source: Option<String>,
 
-    pub render_children_first: bool,
-    pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
-
-    pub pick_bbox_first: bool,
+    pub settings: NodeSettings,
 
     pub parent: Option<NodeItem>,
 
@@ -56,11 +62,15 @@ impl Node
             name: name.to_string(),
             visible: true,
             root_node: false,
+            source: None,
 
-            render_children_first: false,
-            alpha_index: 0,
+            settings: NodeSettings
+            {
+                render_children_first: false,
+                alpha_index: 0,
 
-            pick_bbox_first: true,
+                pick_bbox_first: true,
+            },
 
             components: vec![],
 

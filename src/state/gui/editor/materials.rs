@@ -69,7 +69,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 
     if let Some(material) = scene.get_material_by_id(material_id)
     {
-        collapse_with_title(ui, "material_info", true, "ℹ Material Info", |ui|
+        collapse_with_title(ui, "material_info", true, "ℹ Material Info", None, |ui|
         {
             let material = material.read().unwrap();
 
@@ -77,13 +77,13 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             ui.label(format!("Id: {}", material.get_base().id));
         });
 
-        collapse_with_title(ui, "material_settings", true, "🎨 Material Settings", |ui|
+        collapse_with_title(ui, "material_settings", true, "🎨 Material Settings", None, |ui|
         {
             let mut material = material.write().unwrap();
             material.ui(ui, None);
         });
 
-        collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", |ui|
+        collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", None, |ui|
         {
             let mut used = false;
             //Scene::list_all_child_nodes(nodes)
@@ -138,7 +138,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                     let mut remove_texture = false;
                     let mut changed = false;
 
-                    generic_items::collapse(ui, id, true, |ui|
+                    generic_items::collapse(ui, id, true, None, |ui|
                     {
                         ui.label(RichText::new(title).heading().strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -187,7 +187,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                     let title = format!("🖼 {}", texture_type.to_string());
                     let id = format!("texture_{}", texture_type.to_string());
 
-                    generic_items::collapse(ui, id, true, |ui|
+                    generic_items::collapse(ui, id, true, None, |ui|
                     {
                         ui.label(RichText::new(title).heading().strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|

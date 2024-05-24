@@ -850,7 +850,7 @@ impl Scene
 
             let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes, check_visibility);
 
-            if node.read().unwrap().render_children_first
+            if node.read().unwrap().settings.render_children_first
             {
                 all_nodes.extend(child_nodes);
                 all_nodes.push(node.clone());
@@ -998,7 +998,7 @@ impl Scene
                     meshes: meshes,
 
                     has_transparency: has_transparency,
-                    alpha_index: node.alpha_index,
+                    alpha_index: node.settings.alpha_index,
                     middle: item_middle
                 }
             );

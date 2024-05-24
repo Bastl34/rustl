@@ -70,7 +70,7 @@ pub fn create_light_settings(editor_state: &mut EditorState, state: &mut State, 
 
     if let Some(light) = scene.get_light_by_id(light_id)
     {
-        collapse_with_title(ui, "light_general_settings", true, "⛭ General Settings", |ui|
+        collapse_with_title(ui, "light_general_settings", true, "⛭ General Settings", None, |ui|
         {
             let mut changed = false;
 
@@ -101,7 +101,7 @@ pub fn create_light_settings(editor_state: &mut EditorState, state: &mut State, 
             }
         });
 
-        collapse_with_title(ui, "light_settings", true, "💡 Light Settings", |ui|
+        collapse_with_title(ui, "light_settings", true, "💡 Light Settings", None, |ui|
         {
             Light::ui(light, ui);
         });

@@ -958,7 +958,7 @@ impl Scene
 
                 let ray_inverse = math::inverse_ray(ray, &transform_inverse);
 
-                if !node.pick_bbox_first
+                if !node.settings.pick_bbox_first
                 {
                     no_bbox_picking_items.push((node_arc, instance.id, transform, transform_inverse, ray_inverse));
                 }

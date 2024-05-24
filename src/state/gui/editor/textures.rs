@@ -66,7 +66,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
 
     if let Some(texture) = scene.get_texture_by_id(texture_id)
     {
-        collapse_with_title(ui, "texture_info", true, "🖼 Texture Info", |ui|
+        collapse_with_title(ui, "texture_info", true, "🖼 Texture Info", None, |ui|
         {
             {
                 let mut texture = texture.write().unwrap();
@@ -74,7 +74,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
             }
         });
 
-        collapse_with_title(ui, "texture_settings", true, "🖼 Texture Settings", |ui|
+        collapse_with_title(ui, "texture_settings", true, "🖼 Texture Settings", None, |ui|
         {
             let mut changed = false;
 
@@ -104,7 +104,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
             }
         });
 
-        collapse_with_title(ui, "texture_usage", true, "👆 Texture used by Materials", |ui|
+        collapse_with_title(ui, "texture_usage", true, "👆 Texture used by Materials", None, |ui|
         {
             let mut used = false;
             for (material_id, material) in &scene.materials

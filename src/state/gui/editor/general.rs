@@ -14,7 +14,7 @@ pub fn create_general_settings(editor_state: &mut EditorState, state: &mut State
 pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // general rendering settings
-    collapse_with_title(ui, "render_settings", true, "📷 Rendering Settings", |ui|
+    collapse_with_title(ui, "render_settings", true, "📷 Rendering Settings", None, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -127,7 +127,7 @@ pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut Sta
 pub fn create_audio_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // general rendering settings
-    collapse_with_title(ui, "audio_settings", true, "🔊 Audio Settings", |ui|
+    collapse_with_title(ui, "audio_settings", true, "🔊 Audio Settings", None, |ui|
     {
         let mut volume;
 

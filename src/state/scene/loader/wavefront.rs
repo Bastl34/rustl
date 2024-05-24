@@ -357,13 +357,28 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
         }
     }
 
-    // ********** add to scene **********
     let node_id = id_manager.write().unwrap().get_next_node_id();
     loaded_ids.push(node_id);
 
     let root_node = Node::new(node_id, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
+    root_node.write().unwrap().source = Some(path.to_string());
 
+    // ********** mark components **********
+    {
+        let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
+
+        for node in all_nodes
+        {
+            for component in &node.read().unwrap().components
+            {
+                let mut component = component.write().unwrap();
+                component.get_base_mut().from_file = true;
+            }
+        }
+    }
+
+    // ********** add to scene **********
     let root_node_clone = root_node.clone();
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {

@@ -165,19 +165,19 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // statistics
-    collapse_with_title(ui, "chart", true, "📈 Chart", |ui|
+    collapse_with_title(ui, "chart", true, "📈 Chart", None, |ui|
     {
         create_chart(editor_state, state, ui);
     });
 
     // statistics
-    collapse_with_title(ui, "statistic", true, "ℹ Statistics", |ui|
+    collapse_with_title(ui, "statistic", true, "ℹ Statistics", None, |ui|
     {
         create_statistic(editor_state, state, ui);
     });
 
     // hierarchy
-    collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", |ui|
+    collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", None, |ui|
     {
         ScrollArea::vertical().show(ui, |ui|
         {
@@ -253,7 +253,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
         }
 
-        ui.selectable_value(&mut editor_state.settings, SettingsPanel::General, "📷 Rendering");
+        ui.selectable_value(&mut editor_state.settings, SettingsPanel::General, "⛭ General");
     });
     ui.separator();
 

@@ -1,10 +1,19 @@
 use egui::{Ui, Color32, RichText, Align2, Id};
 
-pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
+pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
-    let bg_color = Color32::from_white_alpha(3);
 
-    let mut frame = egui::Frame::group(ui.style()).fill(bg_color);
+    let background_color;
+    if let Some(color) = bg_color
+    {
+        background_color = color;
+    }
+    else
+    {
+        background_color = Color32::from_white_alpha(3);
+    }
+
+    let mut frame = egui::Frame::group(ui.style()).fill(background_color);
     frame.inner_margin = egui::Margin::same(2.0);
 
     frame.show(ui, |ui|
@@ -23,9 +32,9 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, header: impl FnOnce(&mut
     });
 }
 
-pub fn collapse_with_title<R>(ui: &mut Ui, id: &str, open: bool, title: &str, body: impl FnOnce(&mut Ui) -> R)
+pub fn collapse_with_title<R>(ui: &mut Ui, id: &str, open: bool, title: &str, bg_color: Option<Color32>, body: impl FnOnce(&mut Ui) -> R)
 {
-    collapse(ui, id.to_string(), open, |ui|
+    collapse(ui, id.to_string(), open, bg_color, |ui|
     {
         ui.label(RichText::new(title).heading().strong());
 

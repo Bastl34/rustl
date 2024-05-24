@@ -65,7 +65,7 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
 
     if let Some(sound_source) = scene.get_sound_source_by_id(sound_source_id)
     {
-        collapse_with_title(ui, "sound_source_info", true, "🔊 Sound Info", |ui|
+        collapse_with_title(ui, "sound_source_info", true, "🔊 Sound Info", None, |ui|
         {
             {
                 let sound_source = sound_source.write().unwrap();
@@ -73,7 +73,7 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
             }
         });
 
-        collapse_with_title(ui, "sound_source_settings", true, "🔊 Sound Source Settings", |ui|
+        collapse_with_title(ui, "sound_source_settings", true, "🔊 Sound Source Settings", None, |ui|
         {
             let mut changed = false;
 
@@ -103,7 +103,7 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
             }
         });
 
-        collapse_with_title(ui, "sound_source_usage", true, "👆 Sound used by Components", |ui|
+        collapse_with_title(ui, "sound_source_usage", true, "👆 Sound used by Components", None, |ui|
         {
             let mut used = false;
 
@@ -185,7 +185,7 @@ pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, 
 
     if let Some(sound) = scene.get_sound_by_id(sound_id)
     {
-        collapse_with_title(ui, "sound_settings", true, "🔊 Sound Settings", |ui|
+        collapse_with_title(ui, "sound_settings", true, "🔊 Sound Settings", None, |ui|
         {
             let mut sound = sound.write().unwrap();
             sound.ui(ui, None);

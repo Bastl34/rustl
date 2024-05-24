@@ -6,6 +6,8 @@ use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQ
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
+const FROM_FILE_COLOR: Color32 = Color32::from_rgb(80, 20, 20);
+
 pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
 {
     for node_arc in nodes
@@ -94,8 +96,26 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }));
                     }
 
+                    ui.separator();
+
+                    let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
+                    if ui.button(hide_show_text).clicked()
+                    {
+                        ui.close_menu();
+
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let mut node = node_arc.write().unwrap();
+                            node.visible = !node.visible;
+                        }));
+
+                    }
+
                     if node.find_component::<Animation>().is_some()
                     {
+                        ui.separator();
+
                         if ui.button("⏵ Start all animations").clicked()
                         {
                             ui.close_menu();
@@ -329,13 +349,14 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     let bounding_box_info = node.read().unwrap().get_bounding_info(true, &None);
 
     // General
-    collapse_with_title(ui, "object_data", true, "ℹ Object Data", |ui|
+    collapse_with_title(ui, "object_data", true, "ℹ Object Data", None, |ui|
     {
         {
             let node = node.read().unwrap();
 
             ui.label(format!("Name: {}", node.name));
             ui.label(format!("Id: {}", node.id));
+            ui.label(format!("Source: {:?}", node.source));
 
             if let Some(bounding_box_info) = bounding_box_info
             {
@@ -346,7 +367,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     });
 
     // Extras
-    collapse_with_title(ui, "object_extras", true, "⊞ Extras", |ui|
+    collapse_with_title(ui, "object_extras", true, "⊞ Extras", None, |ui|
     {
         ui.scope(|ui|
         {
@@ -362,7 +383,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     // Skeleton
     if let Some(skin_node) = node.read().unwrap().skin.first()
     {
-        collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", |ui|
+        collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", None, |ui|
         {
             ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
             ui.horizontal(|ui|
@@ -381,7 +402,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     }
 
     // statistics
-    collapse_with_title(ui, "object_info", true, "📈 Object Info", |ui|
+    collapse_with_title(ui, "object_info", true, "📈 Object Info", None, |ui|
     {
         ui.label(RichText::new("👤 own").strong());
         ui.label(format!(" ⚫ instances: {}", direct_instances_amout));
@@ -401,7 +422,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     });
 
     // Settings
-    collapse_with_title(ui, "object_settings", true, "⛭ Object Settings", |ui|
+    collapse_with_title(ui, "object_settings", true, "⛭ Object Settings", None, |ui|
     {
         let mut changed = false;
 
@@ -415,9 +436,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             let node = node.read().unwrap();
             visible = node.visible;
             root_node = node.root_node;
-            render_children_first = node.render_children_first;
-            alpha_index = node.alpha_index;
-            pick_bbox_first = node.pick_bbox_first;
+            render_children_first = node.settings.render_children_first;
+            alpha_index = node.settings.alpha_index;
+            pick_bbox_first = node.settings.pick_bbox_first;
             name = node.name.clone();
         }
 
@@ -442,9 +463,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             let mut node = node.write().unwrap();
             node.visible = visible;
             node.root_node = root_node;
-            node.render_children_first = render_children_first;
-            node.alpha_index = alpha_index;
-            node.pick_bbox_first = pick_bbox_first;
+            node.settings.render_children_first = render_children_first;
+            node.settings.alpha_index = alpha_index;
+            node.settings.pick_bbox_first = pick_bbox_first;
             node.name = name;
         }
 
@@ -517,7 +538,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
     let instance = instance.unwrap();
 
     // General
-    collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", |ui|
+    collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", None, |ui|
     {
         let instance = instance.read().unwrap();
 
@@ -527,7 +548,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
     // Settings
     let mut delete_instance = false;
-    collapse_with_title(ui, "instance_settings", true, "⛭ Instance Settings", |ui|
+    collapse_with_title(ui, "instance_settings", true, "⛭ Instance Settings", None, |ui|
     {
         let mut changed = false;
 
@@ -635,17 +656,23 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let component_name;
             let is_material;
             let is_sound;
+            let from_file;
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
                 component_name = format!("{} {}", base.icon, base.component_name);
                 name = base.name.clone();
                 component_id = component.id();
+                from_file = base.from_file;
 
                 is_material = component.as_any().downcast_ref::<Material>().is_some();
                 is_sound = component.as_any().downcast_ref::<Sound>().is_some();
             }
-            generic_items::collapse(ui, component_id.to_string(), true, |ui|
+
+            //let bg_color = if from_file { Some(FROM_FILE_COLOR) } else { None };
+            let bg_color = None;
+
+            generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
             {
                 ui.label(RichText::new(component_name).heading().strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -677,11 +704,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         component.write().unwrap().set_enabled(enabled);
                     }
 
-                    if let Some(info) = &component.read().unwrap().get_base().info
-                    {
-                        ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
-                    }
-
                     // link to the texture setting
                     if is_material && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to material").clicked()
                     {
@@ -702,6 +724,16 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_type = SelectionType::Sound;
                         editor_state.settings = SettingsPanel::Sound;
+                    }
+
+                    if let Some(info) = &component.read().unwrap().get_base().info
+                    {
+                        ui.label(RichText::new("ℹ").color(Color32::WHITE)).on_hover_text(info);
+                    }
+
+                    if from_file
+                    {
+                        ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
                     }
                 });
             },
@@ -753,16 +785,22 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let name;
                     let component_name;
                     let is_sound;
+                    let from_file;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
                         component_name = format!("{} {}", base.icon, base.component_name);
                         name = base.name.clone();
                         component_id = component.id();
+                        from_file = base.from_file;
 
                         is_sound = component.as_any().downcast_ref::<Sound>().is_some();
                     }
-                    generic_items::collapse(ui, component_id.to_string(), true, |ui|
+
+                    //let bg_color = if from_file { Some(FROM_FILE_COLOR) } else { None };
+                    let bg_color = None;
+
+                    generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
                     {
                         ui.label(RichText::new(component_name).heading().strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -803,6 +841,11 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                             if is_sound && ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
                             {
                                 sound_component_id = Some(component_id);
+                            }
+
+                            if from_file
+                            {
+                                ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
                             }
                         });
                     },
