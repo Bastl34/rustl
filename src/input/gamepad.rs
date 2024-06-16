@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use nalgebra::ComplexField;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 

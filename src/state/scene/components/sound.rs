@@ -14,6 +14,7 @@ pub enum SoundType
     Stereo
 }
 
+#[derive( Copy, Clone)]
 pub struct SoundData
 {
     pub sound_type: SoundType,
@@ -99,6 +100,30 @@ impl Sound
             sink: None,
             sink_spatial: None,
         };
+
+        sound
+    }
+
+    pub fn duplicate(id: u64, source: &Sound) -> Sound
+    {
+        let mut sound = Sound
+        {
+            base: ComponentBase::new(id, source.get_base().name.clone(), source.get_base().component_name.clone(), "🔊".to_string()),
+
+            sound_source: source.sound_source.clone(),
+
+            data: ChangeTracker::new(source.get_data().clone()),
+
+            audio_device: None,
+
+            sink: None,
+            sink_spatial: None,
+        };
+
+        if let Some(sound_source) = &source.sound_source
+        {
+            sound.set_sound_source(sound_source.clone());
+        }
 
         sound
     }
@@ -371,6 +396,11 @@ impl Component for Sound
         true
     }
 
+    fn duplicatable(&self) -> bool
+    {
+        true
+    }
+
     fn set_enabled(&mut self, state: bool)
     {
         if self.base.is_enabled != state
@@ -481,7 +511,13 @@ impl Component for Sound
 
             if major_change
             {
+                let running = self.running();
                 self.set_sound_source(self.sound_source.clone().unwrap());
+
+                if running
+                {
+                    self.start();
+                }
             }
         }
     }

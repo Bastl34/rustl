@@ -2,7 +2,7 @@ use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
 
 use nalgebra::Vector3;
 
-use crate::{component_downcast_mut, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::{self, get_extension, get_stem}}, resources::resources::{self, load_binary}, state::scene::{components::{material::{Material, TextureState, TextureType}, sound::Sound, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, scene::Scene, texture::{Texture, TextureItem}}};
+use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::scene::{components::{material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -330,6 +330,47 @@ pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, scene_id: u64, sou
             }
         }
     }));
+}
+
+pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType,  main_queue: ExecutionQueueItem, scene_id: u64, audio_device: Arc<RwLock<Box<AudioDevice>>>)
+{
+    let path: String = path.to_string();
+    let node_name = node_name.to_string();
+
+    let audio_device = audio_device.clone();
+    spawn_thread(move ||
+    {
+        let audio_device = audio_device.clone();
+        let path = path.clone();
+        let node_name = node_name.clone();
+
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+        {
+            let sound_source_bytes = load_binary(path.as_str());
+            if let Ok(sound_source_bytes) = sound_source_bytes
+            {
+                let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
+                let sound_source_clone = sound_source.clone();
+
+                let hash = sound_source.read().unwrap().hash.clone();
+                scene.sound_sources.insert(hash, sound_source);
+
+                let cube = scene.find_node_by_name(node_name.as_str());
+
+                if let Some(cube) = cube
+                {
+                    let mut cube = cube.write().unwrap();
+
+                    let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let mut sound = Sound::new(sound_id, "m16", sound_source_clone, spund_type, true);
+                    sound.start();
+
+                    cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                }
+            }
+        }));
+    });
 }
 
 pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)

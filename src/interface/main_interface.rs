@@ -35,7 +35,7 @@ use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::sound_source::SoundSource;
-use crate::state::scene::utilities::scene_utils::{self, load_object, execute_on_scene_mut_and_wait};
+use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, execute_on_scene_mut_and_wait, load_object};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::gilrs::{gilrs_event, gilrs_initialize};
@@ -541,7 +541,7 @@ impl MainInterface
 
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
@@ -618,40 +618,7 @@ impl MainInterface
                 }));
 
                 // sound
-                {
-                    let main_queue = main_queue_clone.clone();
-                    let audio_device = audio_device.clone();
-                    spawn_thread(move ||
-                    {
-                        let audio_device = audio_device.clone();
-                        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
-                        {
-                            let sound_source_bytes = load_binary("sounds/m16.ogg");
-                            if let Ok(sound_source_bytes) = sound_source_bytes
-                            {
-                                let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
-                                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
-                                let sound_source_clone = sound_source.clone();
-
-                                let hash = sound_source.read().unwrap().hash.clone();
-                                scene.sound_sources.insert(hash, sound_source);
-
-                                let cube = scene.find_node_by_name("Cube");
-
-                                if let Some(cube) = cube
-                                {
-                                    let mut cube = cube.write().unwrap();
-
-                                    let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
-                                    let mut sound = Sound::new(sound_id, "m16", sound_source_clone, SoundType::Spatial, true);
-                                    sound.start();
-
-                                    cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
-                                }
-                            }
-                        }));
-                    });
-                }
+                attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
             });
 
             //load default env texture

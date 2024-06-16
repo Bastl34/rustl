@@ -72,6 +72,11 @@ impl Component for Alpha
         true
     }
 
+    fn duplicatable(&self) -> bool
+    {
+        false
+    }
+
     fn set_enabled(&mut self, state: bool)
     {
         if self.base.is_enabled != state

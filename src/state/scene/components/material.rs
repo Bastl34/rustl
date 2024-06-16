@@ -652,6 +652,11 @@ impl Component for Material
         false
     }
 
+    fn duplicatable(&self) -> bool
+    {
+        false
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         // material settings

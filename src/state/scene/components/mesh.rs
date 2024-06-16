@@ -626,6 +626,11 @@ impl Component for Mesh
         false
     }
 
+    fn duplicatable(&self) -> bool
+    {
+        false
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         {

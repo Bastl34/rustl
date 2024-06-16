@@ -80,7 +80,7 @@ impl SoundSource
         ui.label(format!("Size {:.2} MB", sound_size));
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui)
+    pub fn ui(&mut self, _ui: &mut egui::Ui)
     {
 
     }
