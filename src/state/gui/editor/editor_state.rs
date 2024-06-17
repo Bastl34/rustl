@@ -98,6 +98,8 @@ pub struct EditorState
     pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
 
+    pub component_filter: String,
+
     pub selected_scene_id: Option<u64>,
     pub selected_type: SelectionType,
     pub selected_object: String,
@@ -145,6 +147,8 @@ impl EditorState
 
             hierarchy_expand_all: true,
             hierarchy_filter: String::new(),
+
+            component_filter: String::new(),
 
             selected_scene_id: None,
             selected_type: SelectionType::None,

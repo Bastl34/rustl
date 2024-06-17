@@ -1,9 +1,10 @@
-use std::any::Any;
+use std::{any::Any, sync::{Arc, RwLock}};
 
 use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemArc}, component_impl_no_update};
 
 use super::component::{ComponentBase, Component};
 
+#[derive( Copy, Clone)]
 pub struct AlphaData
 {
     pub alpha_inheritance: bool,
@@ -74,7 +75,7 @@ impl Component for Alpha
 
     fn duplicatable(&self) -> bool
     {
-        false
+        true
     }
 
     fn set_enabled(&mut self, state: bool)
@@ -86,6 +87,29 @@ impl Component for Alpha
             // force update
             self.data.force_change();
         }
+    }
+
+    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        let source = self.as_any().downcast_ref::<Alpha>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let mut alpha = Alpha
+        {
+            base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
+
+            data: ChangeTracker::new(source.get_data().clone()),
+        };
+
+        alpha.data.force_change();
+
+        Some(Arc::new(RwLock::new(Box::new(alpha))))
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)

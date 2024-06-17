@@ -1,8 +1,9 @@
 use std::{fmt::format, sync::{Arc, RwLock}};
 
 use egui::{Ui, RichText, Color32};
+use nalgebra::DimName;
 
-use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -606,6 +607,39 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
     }
 }
 
+pub fn match_component_filter(component_filter: &String, component: ComponentItem) -> bool
+{
+    if component_filter.is_empty()
+    {
+        return true;
+    }
+
+    let filter = component_filter.to_lowercase();
+
+    let component = component.read().unwrap();
+
+    let component_name = component.get_base().component_name.to_lowercase();
+    let component_id = component.id().to_string();
+    let name = component.get_base().name.to_lowercase();
+
+    if component_name.find(filter.as_str()).is_some()
+    {
+        return true;
+    }
+
+    if component_id.find(filter.as_str()).is_some()
+    {
+        return true;
+    }
+
+    if name.find(filter.as_str()).is_some()
+    {
+        return true;
+    }
+
+    return false;
+}
+
 pub fn create_component_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let (node_id, instance_id) = editor_state.get_object_ids();
@@ -638,6 +672,18 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
     let node = node.unwrap();
 
+    // filter
+    ui.horizontal(|ui|
+    {
+        ui.label("🔍");
+        ui.add(egui::TextEdit::singleline(&mut editor_state.component_filter));
+
+        if ui.button("⟳").clicked()
+        {
+            editor_state.component_filter.clear();
+        }
+    });
+
     // components
     if instance_id.is_none()
     {
@@ -654,6 +700,11 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
         for (component_i, component) in all_components.iter().enumerate()
         {
+            if !match_component_filter(&editor_state.component_filter, component.clone())
+            {
+                continue;
+            }
+
             let component_id;
             let name;
             let component_name;
@@ -714,15 +765,10 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     {
                         if ui.button(RichText::new("🗐").color(Color32::WHITE)).on_hover_text("duplicate").clicked()
                         {
-                            // TODO: find a dynamic way to duplicate
                             let component = component.read().unwrap();
-                            if let Some(sound) = component.as_any().downcast_ref::<Sound>()
-                            {
-                                let id = id_manager.write().unwrap().get_next_component_id();
-                                let sound = Sound::duplicate(id, sound);
 
-                                duplicate_component = Some(Arc::new(RwLock::new(Box::new(sound))));
-                            }
+                            let id = id_manager.write().unwrap().get_next_component_id();
+                            duplicate_component = component.duplicate(id);
                         }
                     }
 
@@ -796,6 +842,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     if let Some(instance_id) = instance_id
     {
         let mut delete_component_id = None;
+        let mut duplicate_component: Option<ComponentItem> = None;
         let mut sound_component_id = None;
 
         let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
@@ -808,11 +855,17 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                 for component in &instance.components
                 {
+                    if !match_component_filter(&editor_state.component_filter, component.clone())
+                    {
+                        continue;
+                    }
+
                     let component_id;
                     let name;
                     let component_name;
                     let is_sound;
                     let from_file;
+                    let duplicatable;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
@@ -820,6 +873,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         name = base.name.clone();
                         component_id = component.id();
                         from_file = base.from_file;
+                        duplicatable = component.duplicatable();
 
                         is_sound = component.as_any().downcast_ref::<Sound>().is_some();
                     }
@@ -853,10 +907,20 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                                 toggle_text = RichText::new("⏺").color(Color32::RED);
                             }
 
-
                             if ui.toggle_value(&mut enabled, toggle_text).clicked()
                             {
                                 component.write().unwrap().set_enabled(enabled);
+                            }
+
+                            if duplicatable
+                            {
+                                if ui.button(RichText::new("🗐").color(Color32::WHITE)).on_hover_text("duplicate").clicked()
+                                {
+                                    let component = component.read().unwrap();
+
+                                    let id = id_manager.write().unwrap().get_next_component_id();
+                                    duplicate_component = component.duplicate(id);
+                                }
                             }
 
                             if let Some(info) = &component.read().unwrap().get_base().info
@@ -891,6 +955,12 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let mut instance = instance.write().unwrap();
                 instance.remove_component_by_id(delete_component_id);
+            }
+
+            if let Some(duplicate_component) = duplicate_component
+            {
+                let mut instance = instance.write().unwrap();
+                instance.add_component(duplicate_component);
             }
 
             if let Some(sound_component_id) = sound_component_id

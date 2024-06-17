@@ -83,6 +83,11 @@ impl Component for MorphTarget
         }
     }
 
+    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        None
+    }
+
     fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
     {
 
@@ -99,6 +104,11 @@ impl Component for MorphTarget
             if ui.add(egui::Slider::new(&mut weight, 0.0..=1.0).fixed_decimals(2)).changed()
             {
                 self.get_data_mut().get_mut().weight = weight;
+            }
+
+            if ui.button("reset").clicked()
+            {
+                self.get_data_mut().get_mut().weight = 0.0;
             }
         });
     }

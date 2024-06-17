@@ -23,6 +23,8 @@ pub trait Component: Any
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
     fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
+    fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>;
+
     fn set_enabled(&mut self, state: bool);
 
     fn instantiable() -> bool

@@ -387,6 +387,11 @@ impl Component for Animation
         }
     }
 
+    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        None
+    }
+
     fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, frame: u64)
     {
         self.current_time = time;

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::sync::{Arc, RwLock};
+
 use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::approx_equal, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::NodeItem};
 use crate::helper::easing::{Easing, easing, get_easing_as_string_vec};
 
@@ -108,7 +110,7 @@ impl Component for MorphTargetAnimation
 
     fn duplicatable(&self) -> bool
     {
-        false
+        true
     }
 
     fn set_enabled(&mut self, state: bool)
@@ -117,6 +119,44 @@ impl Component for MorphTargetAnimation
         {
             self.base.is_enabled = state;
         }
+    }
+
+    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        let source = self.as_any().downcast_ref::<MorphTargetAnimation>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let mut animation = MorphTargetAnimation
+        {
+            base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
+
+            target_id: source.target_id.clone(),
+
+            easing: source.easing,
+
+            from: source.from,
+            to: source.to,
+
+            looped: source.looped,
+            ping_pong: source.ping_pong,
+
+            speed: source.speed,
+            direction: source.direction,
+
+            weight: source.weight,
+
+            keyboard_key: source.keyboard_key.clone(),
+        };
+
+        animation.base.info = Some(INFO_STRING.to_string());
+
+        Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, _time: u128, frame_scale: f32, _frame: u64)

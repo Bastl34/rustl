@@ -6,7 +6,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
+use super::{components::{alpha::{self, Alpha}, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -812,23 +812,27 @@ impl Node
 
     pub fn get_alpha(&self) -> (f32, bool)
     {
-        let alpha_component = self.find_component::<Alpha>();
+        let alpha_components = self.find_components::<Alpha>();
 
-        if let Some(alpha_component) = alpha_component
+        let mut alpha = 1.0;
+        let mut inheritance = true;
+
+        for alpha_component in alpha_components
         {
             component_downcast!(alpha_component, Alpha);
 
             if alpha_component.get_base().is_enabled
             {
-                return
-                (
-                    alpha_component.get_alpha(),
-                    alpha_component.has_alpha_inheritance()
-                );
+                if !alpha_component.has_alpha_inheritance()
+                {
+                    inheritance = false;
+                }
+
+                alpha *= alpha_component.get_alpha();
             }
         }
 
-        (1.0, true)
+        (alpha, inheritance)
     }
 
     pub fn get_full_alpha(node: NodeItem) -> f32

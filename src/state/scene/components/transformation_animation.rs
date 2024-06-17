@@ -178,6 +178,11 @@ impl Component for TransformationAnimation
         }
     }
 
+    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        None
+    }
+
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         let node = node.write().unwrap();

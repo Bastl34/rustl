@@ -194,6 +194,11 @@ impl Component for Joint
         }
     }
 
+    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        None
+    }
+
     fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
     {
         let local_trans = self.get_changed_local_transform(node.clone());

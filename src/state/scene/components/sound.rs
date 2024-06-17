@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use egui::RichText;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
@@ -5,7 +7,7 @@ use rodio::{Sink, Source, SpatialSink};
 use crate::{component_impl_default, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
 use crate::state::scene::sound_source::Decodable;
 
-use super::component::{ComponentBase, Component};
+use super::component::{Component, ComponentBase, ComponentItem};
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum SoundType
@@ -100,30 +102,6 @@ impl Sound
             sink: None,
             sink_spatial: None,
         };
-
-        sound
-    }
-
-    pub fn duplicate(id: u64, source: &Sound) -> Sound
-    {
-        let mut sound = Sound
-        {
-            base: ComponentBase::new(id, source.get_base().name.clone(), source.get_base().component_name.clone(), "🔊".to_string()),
-
-            sound_source: source.sound_source.clone(),
-
-            data: ChangeTracker::new(source.get_data().clone()),
-
-            audio_device: None,
-
-            sink: None,
-            sink_spatial: None,
-        };
-
-        if let Some(sound_source) = &source.sound_source
-        {
-            sound.set_sound_source(sound_source.clone());
-        }
 
         sound
     }
@@ -407,6 +385,39 @@ impl Component for Sound
         {
             self.base.is_enabled = state;
         }
+    }
+
+    fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>
+    {
+        let source = self.as_any().downcast_ref::<Sound>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let mut sound = Sound
+        {
+            base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
+
+            sound_source: source.sound_source.clone(),
+
+            data: ChangeTracker::new(source.get_data().clone()),
+
+            audio_device: None,
+
+            sink: None,
+            sink_spatial: None,
+        };
+
+        if let Some(sound_source) = &source.sound_source
+        {
+            sound.set_sound_source(sound_source.clone());
+        }
+
+        Some(Arc::new(RwLock::new(Box::new(sound))))
     }
 
     fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)

@@ -657,6 +657,11 @@ impl Component for Material
         false
     }
 
+    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        None
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         // material settings

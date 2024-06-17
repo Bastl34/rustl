@@ -248,6 +248,8 @@ impl Instance
 
     pub fn find_changed_data(&self) -> bool
     {
+        let mut changed = false;
+
         // ********** check self **********
         // transformation check
         let trans_component = self.find_component::<Transformation>();
@@ -256,24 +258,26 @@ impl Instance
             component_downcast_mut!(trans_component, Transformation);
             if trans_component.get_data_mut().consume_change()
             {
-                return true;
+                changed = true;
             }
         }
 
         // alpha check
-        let alpha_component = self.find_component::<Alpha>();
-        if let Some(alpha_component) = alpha_component
+        let alpha_components = self.find_components::<Alpha>();
+        for alpha_component in alpha_components
         {
             component_downcast_mut!(alpha_component, Alpha);
 
             if alpha_component.get_data_mut().consume_change()
             {
-                return true;
+                changed = true;
             }
         }
 
         // ********** check node and parents **********
-        Instance::find_changed_parent_data(self.node.clone())
+        changed = Instance::find_changed_parent_data(self.node.clone()) || changed;
+
+        changed
     }
 
     pub fn find_changed_parent_data(node: Arc<RwLock<Box<Node>>>) -> bool
@@ -303,8 +307,8 @@ impl Instance
         }
 
         // check alpha
-        let alpha_component = node_read.find_component::<Alpha>();
-        if let Some(alpha_component) = alpha_component
+        let alpha_components = node_read.find_components::<Alpha>();
+        for alpha_component in alpha_components
         {
             component_downcast!(alpha_component, Alpha);
 
@@ -356,24 +360,30 @@ impl Instance
     {
         let node_alpha = Node::get_full_alpha(self.node.clone());
 
-        let alpha_component = self.find_component::<Alpha>();
+        let alpha_components = self.find_components::<Alpha>();
 
-        if let Some(alpha_component) = alpha_component
+        if alpha_components.len() == 0
+        {
+            return node_alpha;
+        }
+
+        let mut alpha = 1.0;
+        let mut inheritance = true;
+        for alpha_component in alpha_components
         {
             component_downcast!(alpha_component, Alpha);
 
-            if alpha_component.has_alpha_inheritance()
-            {
-                alpha_component.get_alpha() * node_alpha
-            }
-            else
-            {
-                alpha_component.get_alpha()
-            }
+            inheritance = alpha_component.has_alpha_inheritance();
+            alpha *= alpha_component.get_alpha();
+        }
+
+        if inheritance
+        {
+            alpha * node_alpha
         }
         else
         {
-            node_alpha
+            alpha
         }
     }
 
