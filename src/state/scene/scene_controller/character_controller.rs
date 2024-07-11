@@ -190,7 +190,7 @@ impl CharacterController
         target_rotation_controller.data.get_mut().offset.y = 1.0;
 
         // do not include joint attached items to the check (like heads or weapons)
-        target_rotation_controller.object_center_predicate = Some(Box::new(|node: NodeItem| -> bool
+        target_rotation_controller.object_center_predicate = Some(Arc::new(|node: NodeItem| -> bool
         {
             let node = node.read().unwrap();
             let node_has_joint = node.find_component::<Joint>().is_some();
@@ -847,7 +847,7 @@ impl SceneController for CharacterController
 
                 let character_node = node.clone();
 
-                let predicate_func = move |node: NodeItem| -> bool
+                let predicate_func = move |node: NodeItem, _instance_id: Option<u64>| -> bool
                 {
                     let check_node = node.read().unwrap();
 
@@ -857,7 +857,7 @@ impl SceneController for CharacterController
                 };
 
                 let ray = Ray::new(pos, down);
-                let pick_res = scene.multi_pick(&ray, false, false, Some(Box::new(predicate_func)));
+                let pick_res = scene.multi_pick(&ray, false, false, Some(Arc::new(predicate_func)));
 
                 if let Some(first_pick) = pick_res.first()
                 {

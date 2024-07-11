@@ -4,7 +4,7 @@ use nalgebra::{Vector2, Point2};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
-use crate::{helper::{generic, math, change_tracker::ChangeTracker}, input::input_point::PointState};
+use crate::{helper::{change_tracker::ChangeTracker, generic, math::{self, approx_zero_vec2}}, input::input_point::PointState};
 
 use super::{press_state::{PressState, is_pressed_by_state}, input_point::InputPoint};
 
@@ -76,9 +76,9 @@ impl Mouse
         false
     }
 
-    pub fn set_button(&mut self, button: MouseButton, status: bool)
+    pub fn set_button(&mut self, button: MouseButton, status: bool, engine_frame: u64)
     {
-        self.buttons[button as usize].update(status);
+        self.buttons[button as usize].update(status, engine_frame);
 
         if self.point.first_action == 0
         {
@@ -109,7 +109,6 @@ impl Mouse
         {
             self.point.velocity += pos - Point2::<f32>::new(window_width as f32 / 2.0, window_height as f32 / 2.0);
         }
-
 
         if self.point.start_pos.is_none()
         {
@@ -221,5 +220,17 @@ impl Mouse
     pub fn has_input(&self) -> bool
     {
         math::approx_zero_vec2(&self.point.velocity) || self.is_any_button_holding()
+    }
+
+    pub fn has_velocity(&self) -> bool
+    {
+        !approx_zero_vec2(&self.point.velocity)
+    }
+
+    pub fn is_first_action(&self, button: MouseButton, current_engine_frame: u64) -> bool
+    {
+        let state = &self.buttons[button as usize];
+
+        state.first_action_frame == current_engine_frame && state.holding()
     }
 }

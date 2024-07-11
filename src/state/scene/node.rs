@@ -26,6 +26,7 @@ pub struct Node
     pub id: u64,
     pub name: String,
     pub visible: bool,
+    pub locked: bool,
     pub root_node: bool,
     pub source: Option<String>,
 
@@ -61,6 +62,7 @@ impl Node
             id: id,
             name: name.to_string(),
             visible: true,
+            locked: false,
             root_node: false,
             source: None,
 
@@ -191,6 +193,11 @@ impl Node
         }
     }
 
+    pub fn has_mesh(&self) -> bool
+    {
+        self.find_component::<Mesh>().is_some()
+    }
+
     pub fn get_mesh(&self) -> Option<ComponentItem>
     {
         self.find_component::<Mesh>()
@@ -201,7 +208,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_bounding_info(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -214,6 +221,16 @@ impl Node
         for instance in self.instances.get_ref()
         {
             let instance = instance.read().unwrap();
+
+            // check for matching instance id
+            if let Some(instance_id) = instance_id
+            {
+                if instance_id != instance.id
+                {
+                    continue;
+                }
+            }
+
             let transform = instance.calculate_transform();
 
             for mesh in &meshes
@@ -260,7 +277,7 @@ impl Node
         {
             for node in &self.nodes
             {
-                if let Some(predicate) = predicate
+                if let Some(predicate) = &predicate
                 {
                     if !predicate(node.clone())
                     {
@@ -269,7 +286,7 @@ impl Node
                 }
 
                 let node = node.read().unwrap();
-                let child_min_max = node.get_bounding_info(recursive, predicate);
+                let child_min_max = node.get_bounding_info(instance_id, recursive, predicate.clone());
 
                 if let Some(child_min_max) = child_min_max
                 {
@@ -296,9 +313,9 @@ impl Node
         None
     }
 
-    pub fn get_bbox_center(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
+    pub fn get_bbox_center(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
-        let bounding_info = self.get_bounding_info(recursive, predicate);
+        let bounding_info = self.get_bounding_info(instance_id, recursive, predicate);
 
         if let Some(bounding_info) = bounding_info
         {
@@ -353,6 +370,30 @@ impl Node
         }
 
         self.has_parent(node)
+    }
+
+    pub fn is_locked(&self) -> bool
+    {
+        if self.locked
+        {
+            return true;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if parent.read().unwrap().locked
+                {
+                    return true;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
     }
 
     pub fn has_changed_instance_data(&self) -> bool

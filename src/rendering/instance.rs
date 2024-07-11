@@ -21,6 +21,7 @@ pub struct Instance
     pub transform: [[f32; 4]; 4],
     pub alpha: f32,
     pub highlight: f32,
+    pub locked: f32,
 }
 
 impl Instance
@@ -77,6 +78,14 @@ impl Instance
                     shader_location: Self::SHADER_LOCATION_START + 5,
                     format: wgpu::VertexFormat::Float32,
                 },
+
+                // ***** locked *****
+                wgpu::VertexAttribute
+                {
+                    offset: mem::size_of::<[f32; 18]>() as wgpu::BufferAddress,
+                    shader_location: Self::SHADER_LOCATION_START + 6,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
@@ -125,6 +134,7 @@ impl InstanceBuffer
             //let instance = instance.read().unwrap();
             let transform = instance.get_world_transform();
             let alpha = instance.get_alpha();
+            let locked = instance.get_is_locked();
             let instance_data = instance.get_data();
 
             self.transformations.push(transform);
@@ -133,7 +143,8 @@ impl InstanceBuffer
             {
                 transform: transform.into(),
                 alpha: alpha,
-                highlight: f32::from(instance_data.highlight)
+                highlight: f32::from(instance_data.highlight),
+                locked: f32::from(locked),
             }
         }).collect::<Vec<_>>();
 
@@ -163,13 +174,15 @@ impl InstanceBuffer
 
         let transform = instance.get_world_transform();
         let alpha = instance.get_alpha();
+        let locked = instance.get_is_locked();
         let instance_data = instance.get_data();
 
         let data = Instance
         {
             transform: transform.into(),
             alpha: alpha,
-            highlight: f32::from(instance_data.highlight)
+            highlight: f32::from(instance_data.highlight),
+            locked: f32::from(locked),
         };
 
         self.transformations[index] = transform;
@@ -199,6 +212,7 @@ impl InstanceBuffer
             let instance = instance.borrow();
             let transform = instance.get_world_transform();
             let alpha = instance.get_alpha();
+            let locked = instance.get_is_locked();
             let instance_data = instance.get_data();
 
             self.transformations[i] = transform;
@@ -209,7 +223,8 @@ impl InstanceBuffer
             {
                 transform: transform.into(),
                 alpha: alpha,
-                highlight: f32::from(instance_data.highlight)
+                highlight: f32::from(instance_data.highlight),
+                locked: f32::from(locked),
             }
         }).collect::<Vec<_>>();
 

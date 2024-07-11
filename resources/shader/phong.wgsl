@@ -52,6 +52,7 @@ struct MaterialUniform
     base_color: vec4<f32>,
     specular_color: vec4<f32>,
     highlight_color: vec4<f32>,
+    locked_color: vec4<f32>,
 
     alpha: f32,
     shininess: f32,
@@ -89,6 +90,7 @@ struct InstanceInput
 
     @location(11) alpha: f32,
     @location(12) highlight: f32,
+    @location(13) locked: f32,
 };
 
 struct VertexOutput
@@ -104,8 +106,9 @@ struct VertexOutput
 
     @location(6) alpha: f32,
     @location(7) highlight: f32,
+    @location(8) locked: f32,
 
-    @location(8) weights: vec4<f32>, // just for debugging
+    @location(9) weights: vec4<f32>, // just for debugging
 };
 
 // ****************************** inputs / bindings ******************************
@@ -311,6 +314,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     out.alpha = instance.alpha;
     out.highlight = instance.highlight;
+    out.locked = instance.locked;
 
     out.weights = model.weights;
 
@@ -599,8 +603,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color.z = mapped.z;
     }
 
+    // locked color
+    if (in.highlight > 0.0001 && in.locked > 0.0001)
+    {
+        color = (color * 0.5) + (material.locked_color.rgb * 0.5);
+    }
     // highlight color
-    if (in.highlight > 0.0001)
+    else if (in.highlight > 0.0001)
     {
         color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
     }

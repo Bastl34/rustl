@@ -475,13 +475,16 @@ impl MainInterface
             let id_manager_thread = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
+            let grid_size = self.editor_gui.editor_state.grid_size;
+            let grid_amount = self.editor_gui.editor_state.grid_amount;
+
             //scene.update(&mut state.input_manager, state.frame_scale);
             state.scenes.push(Box::new(scene));
 
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager.clone(), 500, 1.0);
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager.clone(), grid_amount, grid_size);
             });
             //scene_utils::create_grid(&mut scene, 1, 1.0);
 
@@ -541,7 +544,7 @@ impl MainInterface
 
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
@@ -618,7 +621,7 @@ impl MainInterface
                 }));
 
                 // sound
-                attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
+                //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
             });
 
             //load default env texture
@@ -720,7 +723,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
             if let Some(gilrs) = &mut self.gilrs
             {
-                gilrs_event(state, gilrs);
+                gilrs_event(state, gilrs, state.stats.frame);
             }
         }
 
@@ -985,20 +988,20 @@ impl MainInterface
                         let key = winit_map_key(key);
                         if input.state == ElementState::Pressed
                         {
-                            global_state.input_manager.keyboard.set_key(key, true);
+                            global_state.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
                         }
                         else
                         {
-                            global_state.input_manager.keyboard.set_key(key, false);
+                            global_state.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
                         }
                     }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift());
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt(), global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl(), global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo(), global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift(), global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
                 {
@@ -1011,7 +1014,7 @@ impl MainInterface
 
                     let button = winit_map_mouse_button(button);
 
-                    global_state.input_manager.mouse.set_button(button, pressed);
+                    global_state.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseWheel { device_id: _, delta, phase: _, ..} =>
                 {

@@ -3,10 +3,13 @@ use std::{sync::{RwLock, Arc}, fmt::format};
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::Point2;
 
-use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resources::resources::{read_files_recursive, exists, load_binary}, helper::file::{get_extension, get_stem}, rendering::egui::EGui};
+use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{camera_controller::fly_controller::FlyController, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
+
+const DEFAULT_GRID_SIZE: f32 = 1.0;
+const DEFAULT_GRID_AMOUNT: u32 = 500;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
@@ -88,7 +91,12 @@ pub struct EditorState
 
     pub pick_mode: PickType,
 
+    pub grid_size: f32,
+    pub grid_amount: u32,
+    pub grid_recreate: bool,
+
     pub edit_mode: Option<EditMode>,
+    pub edit_moving: bool,
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
@@ -138,7 +146,12 @@ impl EditorState
 
             pick_mode: PickType::None,
 
+            grid_size: DEFAULT_GRID_SIZE,
+            grid_amount: DEFAULT_GRID_AMOUNT,
+            grid_recreate: false,
+
             edit_mode: None,
+            edit_moving: false,
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
@@ -173,6 +186,21 @@ impl EditorState
             scenes: vec![],
         }
     }
+
+    pub fn set_grid_size(&mut self, size: f32)
+    {
+        if approx_equal(self.grid_size, size)
+        {
+            return;
+        }
+
+        let new_amount = (DEFAULT_GRID_SIZE / size) * DEFAULT_GRID_AMOUNT as f32;
+        self.grid_size = size;
+        self.grid_amount = new_amount.round() as u32;
+
+        self.grid_recreate = true;
+    }
+
     pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
         // no scene selected

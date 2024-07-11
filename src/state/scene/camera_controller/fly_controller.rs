@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use nalgebra::{Vector2, Vector3};
 use parry3d::{query::Ray, shape::Ball};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -17,6 +17,10 @@ const DEFAULT_GAMEPAD_SENSIVITY: f32 = 0.03;
 pub struct FlyController
 {
     base: CameraControllerBase,
+
+    pub mouse_movement: bool,
+    pub keyboard_movement: bool,
+    pub gamepad_movement: bool,
 
     collision: bool,
     collision_distance: f32,
@@ -35,6 +39,10 @@ impl FlyController
         {
             base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
 
+            mouse_movement: true,
+            keyboard_movement: true,
+            gamepad_movement: true,
+
             collision,
             collision_distance: DEFAULT_COLLISION_DISTANCE,
 
@@ -51,6 +59,10 @@ impl FlyController
         FlyController
         {
             base: CameraControllerBase::new("Fly Controller".to_string(), "✈".to_string()),
+
+            mouse_movement: true,
+            keyboard_movement: true,
+            gamepad_movement: true,
 
             collision: true,
             collision_distance: DEFAULT_COLLISION_DISTANCE,
@@ -77,28 +89,34 @@ impl CameraController for FlyController
         let mut angle_velocity = Vector2::<f32>::zeros();
 
         // mouse
-        if
-        (
-            input_manager.mouse.is_any_button_holding() && *input_manager.mouse.visible.get_ref()
-        )
-        ||
-            !*input_manager.mouse.visible.get_ref()
+        if self.mouse_movement
         {
-            angle_velocity = input_manager.mouse.point.velocity;
-            angle_velocity.x *= self.mouse_sensitivity.x;
-            angle_velocity.y *= self.mouse_sensitivity.y;
+            if
+            (
+                input_manager.mouse.is_any_button_holding() && *input_manager.mouse.visible.get_ref()
+            )
+            ||
+                !*input_manager.mouse.visible.get_ref()
+            {
+                angle_velocity = input_manager.mouse.point.velocity;
+                angle_velocity.x *= self.mouse_sensitivity.x;
+                angle_velocity.y *= self.mouse_sensitivity.y;
+            }
         }
 
         // gamepad
-        for (_, gamepad) in &mut input_manager.gamepads
+        if self.gamepad_movement
         {
-            if gamepad.is_axis_active(GamepadAxis::RightStickX)
+            for (_, gamepad) in &mut input_manager.gamepads
             {
-                angle_velocity.x = gamepad.get_axis_value(GamepadAxis::RightStickX) * self.gamepad_sensitivity;
-            }
-            if gamepad.is_axis_active(GamepadAxis::RightStickY)
-            {
-                angle_velocity.y = gamepad.get_axis_value(GamepadAxis::RightStickY) * self.gamepad_sensitivity;
+                if gamepad.is_axis_active(GamepadAxis::RightStickX)
+                {
+                    angle_velocity.x = gamepad.get_axis_value(GamepadAxis::RightStickX) * self.gamepad_sensitivity;
+                }
+                if gamepad.is_axis_active(GamepadAxis::RightStickY)
+                {
+                    angle_velocity.y = gamepad.get_axis_value(GamepadAxis::RightStickY) * self.gamepad_sensitivity;
+                }
             }
         }
 
@@ -139,78 +157,84 @@ impl CameraController for FlyController
         let mut fast_movement = false;
 
         // keyboard
-        let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
-        if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+        if self.keyboard_movement
         {
-            if input_manager.keyboard.is_holding(Key::W)
+            let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
+            if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
             {
-                movement.z = 1.0;
-            }
-            if input_manager.keyboard.is_holding(Key::S)
-            {
-                movement.z = -1.0;
-            }
-            if input_manager.keyboard.is_holding(Key::D)
-            {
-                movement.x = -1.0;
-            }
-            if input_manager.keyboard.is_holding(Key::A)
-            {
-                movement.x = 1.0;
-            }
-            if input_manager.keyboard.is_holding(Key::Space)
-            {
-                movement.y = 1.0;
-            }
-            //if input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
-            if input_manager.keyboard.is_holding(Key::C)
-            {
-                movement.y = -1.0;
-            }
-            if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-            {
-                fast_movement = true;
+                if input_manager.keyboard.is_holding(Key::W)
+                {
+                    movement.z = 1.0;
+                }
+                if input_manager.keyboard.is_holding(Key::S)
+                {
+                    movement.z = -1.0;
+                }
+                if input_manager.keyboard.is_holding(Key::D)
+                {
+                    movement.x = -1.0;
+                }
+                if input_manager.keyboard.is_holding(Key::A)
+                {
+                    movement.x = 1.0;
+                }
+                if input_manager.keyboard.is_holding(Key::Space)
+                {
+                    movement.y = 1.0;
+                }
+                //if input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+                if input_manager.keyboard.is_holding(Key::C)
+                {
+                    movement.y = -1.0;
+                }
+                if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                {
+                    fast_movement = true;
+                }
             }
         }
 
         // gamepad
-        for (_, gamepad) in &mut input_manager.gamepads
+        if self.gamepad_movement
         {
-            if gamepad.is_holding(GamepadButton::DPadLeft)
+            for (_, gamepad) in &mut input_manager.gamepads
             {
-                movement.x = 1.0;
-            }
-            if gamepad.is_holding(GamepadButton::DPadRight)
-            {
-                movement.x = -1.0;
-            }
-            if gamepad.is_holding(GamepadButton::DPadUp)
-            {
-                movement.z = 1.0;
-            }
-            if gamepad.is_holding(GamepadButton::DPadDown)
-            {
-                movement.z = -1.0;
-            }
-            if gamepad.is_axis_active(GamepadAxis::LeftStickX)
-            {
-                movement.x -= gamepad.get_axis_value(GamepadAxis::LeftStickX);
-            }
-            if gamepad.is_axis_active(GamepadAxis::LeftStickY)
-            {
-                movement.z = gamepad.get_axis_value(GamepadAxis::LeftStickY);
-            }
-            if gamepad.is_holding(GamepadButton::South)
-            {
-                movement.y = 1.0;
-            }
-            if gamepad.is_holding(GamepadButton::East)
-            {
-                movement.y = -1.0;
-            }
-            if gamepad.is_holding(GamepadButton::LeftThumb)
-            {
-                fast_movement = true;
+                if gamepad.is_holding(GamepadButton::DPadLeft)
+                {
+                    movement.x = 1.0;
+                }
+                if gamepad.is_holding(GamepadButton::DPadRight)
+                {
+                    movement.x = -1.0;
+                }
+                if gamepad.is_holding(GamepadButton::DPadUp)
+                {
+                    movement.z = 1.0;
+                }
+                if gamepad.is_holding(GamepadButton::DPadDown)
+                {
+                    movement.z = -1.0;
+                }
+                if gamepad.is_axis_active(GamepadAxis::LeftStickX)
+                {
+                    movement.x -= gamepad.get_axis_value(GamepadAxis::LeftStickX);
+                }
+                if gamepad.is_axis_active(GamepadAxis::LeftStickY)
+                {
+                    movement.z = gamepad.get_axis_value(GamepadAxis::LeftStickY);
+                }
+                if gamepad.is_holding(GamepadButton::South)
+                {
+                    movement.y = 1.0;
+                }
+                if gamepad.is_holding(GamepadButton::East)
+                {
+                    movement.y = -1.0;
+                }
+                if gamepad.is_holding(GamepadButton::LeftThumb)
+                {
+                    fast_movement = true;
+                }
             }
         }
 
@@ -237,7 +261,6 @@ impl CameraController for FlyController
             movement_vec += movement.z * dir * sensitivity;
             movement_vec += movement.x * right * sensitivity;
             movement_vec += movement.y * up * sensitivity;
-
         }
 
         // collision check
@@ -254,12 +277,14 @@ impl CameraController for FlyController
 
             if let Some(hit) = hit
             {
-                let movement_len = movement_vec.magnitude();
-
                 if hit.time_of_impact < self.collision_distance
                 {
                     let delta = self.collision_distance - hit.time_of_impact;
                     movement_vec = (dir * -1.0) * delta;
+                }
+                else if approx_equal(self.collision_distance, hit.time_of_impact)
+                {
+                    movement_vec = Vector3::<f32>::zeros();
                 }
             }
         }
@@ -278,6 +303,10 @@ impl CameraController for FlyController
 
     fn ui(&mut self, ui: &mut egui::Ui)
     {
+        ui.checkbox(&mut self.mouse_movement, "Mouse movement");
+        ui.checkbox(&mut self.keyboard_movement, "Keyboard movement");
+        ui.checkbox(&mut self.gamepad_movement, "Gamepad movement");
+
         ui.checkbox(&mut self.collision, "collision");
 
         ui.horizontal(|ui|

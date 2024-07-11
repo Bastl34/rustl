@@ -235,3 +235,40 @@ pub fn calculate_normal(v1: &Point3<f32>, v2: &Point3<f32>, v3: &Point3<f32>) ->
     let normal = vec_1.cross(&vec_2);
     normal.normalize()
 }
+
+pub fn snap_to_grid(value: f32, grid_size: f32) -> f32
+{
+    let lower_bound = (value / grid_size).floor() * grid_size;
+    let upper_bound = (value / grid_size).ceil() * grid_size;
+
+    let lower_distance = (value - lower_bound).abs();
+    let upper_distance = (value - upper_bound).abs();
+
+    if lower_distance < upper_distance
+    {
+        lower_bound
+    }
+    else
+    {
+        upper_bound
+    }
+}
+
+pub fn snap_to_grid_vec2(value: Vector2<f32>, grid_size: f32) -> Vector2<f32>
+{
+    let mut vec = value.clone();
+    vec.x = snap_to_grid(vec.x, grid_size);
+    vec.y = snap_to_grid(vec.y, grid_size);
+
+    vec
+}
+
+pub fn snap_to_grid_vec3(value: Vector3<f32>, grid_size: f32) -> Vector3<f32>
+{
+    let mut vec = value.clone();
+    vec.x = snap_to_grid(vec.x, grid_size);
+    vec.y = snap_to_grid(vec.y, grid_size);
+    vec.z = snap_to_grid(vec.z, grid_size);
+
+    vec
+}

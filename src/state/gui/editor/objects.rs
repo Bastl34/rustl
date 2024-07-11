@@ -3,20 +3,24 @@ use std::{fmt::format, sync::{Arc, RwLock}};
 use egui::{Ui, RichText, Color32};
 use nalgebra::DimName;
 
-use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 const FROM_FILE_COLOR: Color32 = Color32::from_rgb(80, 20, 20);
 
-pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
     for node_arc in nodes
     {
         let node = node_arc.read().unwrap();
         let child_nodes = &node.nodes.clone();
 
-        let visible = node.visible && parent_visible;
+        let node_visible = node.visible;
+        let visible = node_visible && parent_visible;
+
+        let node_locked = node.locked;
+        let locked = node_locked || parent_locked;
 
         let name = node.name.clone();
         let node_id = node.id;
@@ -49,7 +53,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let headline_name: String;
+                let mut headline_name: String;
                 if node.find_component::<Animation>().is_some()
                 {
                     headline_name = format!("🎞 {}: {}", node_id, name.clone());
@@ -71,7 +75,12 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     headline_name = format!("◻ {}: {}", node_id, name.clone());
                 }
 
-                let heading;
+                if locked
+                {
+                    headline_name += " 🔒";
+                }
+
+                let mut heading;
                 if visible
                 {
                     heading = RichText::new(headline_name).strong()
@@ -79,6 +88,11 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 else
                 {
                     heading = RichText::new(headline_name).strikethrough();
+                }
+
+                if locked
+                {
+                    heading = heading.color(Color32::LIGHT_RED);
                 }
 
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
@@ -99,7 +113,25 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                     ui.separator();
 
-                    let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
+                    if node.has_mesh()
+                    {
+                        if ui.button("🖹 Add default instance").clicked()
+                        {
+                            ui.close_menu();
+
+                            let node_arc = node_arc.clone();
+                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                            {
+                                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), id);
+                            }));
+                        }
+
+                        ui.separator();
+                    }
+
+                    // hide/show
+                    let hide_show_text = if node_visible { "👁 Hide" } else { "👁 Show" };
                     if ui.button(hide_show_text).clicked()
                     {
                         ui.close_menu();
@@ -110,7 +142,20 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             let mut node = node_arc.write().unwrap();
                             node.visible = !node.visible;
                         }));
+                    }
 
+                    // lock/unlock
+                    let lock_unlock_text = if node_locked { "🔓 Unlock" } else { "🔒 Lock" };
+                    if ui.button(lock_unlock_text).clicked()
+                    {
+                        ui.close_menu();
+
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let mut node = node_arc.write().unwrap();
+                            node.locked = !node.locked;
+                        }));
                     }
 
                     if node.find_component::<Animation>().is_some()
@@ -134,6 +179,18 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             ui.close_menu();
                             node.stop_all_animations();
                         }
+                    }
+
+                    // delete
+                    ui.separator();
+                    if ui.button("🗑 Delete").clicked()
+                    {
+                        ui.close_menu();
+
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.delete_node_by_id(node_id);
+                        }));
                     }
                 });
 
@@ -196,54 +253,117 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         {
             if child_nodes.len() > 0
             {
-                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible);
+                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible, locked);
             }
 
             if node.instances.get_ref().len() > 0
             {
-                build_instances_list(editor_state, ui, node_arc.clone(), scene_id, visible);
+                build_instances_list(editor_state, ui, node_arc.clone(), scene_id, visible, locked);
             }
         });
     }
 }
 
-pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: NodeItem, scene_id: u64, parent_visible: bool)
+pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: NodeItem, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
+    let node_arc = node.clone();
     let node = node.read().unwrap();
 
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
         for instance in node.instances.get_ref()
         {
-            let instance = instance.read().unwrap();
-            let instance_id = instance.id;
-            let instance_data = instance.get_data();
+            let mut toggle;
+            let visible;
+            let locked;
+            let instance_id;
+            let ui_id;
 
-            let id = format!("objects_{}_{}", node.id, instance_id);
-            let headline_name = format!("⚫ {}: {}", instance_id, instance.name);
-
-            let mut heading = RichText::new(headline_name);
-
-            if instance_data.visible && parent_visible
             {
-                heading = heading.strong()
-            }
-            else
-            {
-                heading = heading.strikethrough();
-            }
+                let instance = instance.read().unwrap();
+                instance_id = instance.id;
+                let instance_data = instance.get_data();
 
-            if instance_data.highlight
-            {
-                heading = heading.color(Color32::from_rgb(255, 175, 175));
-            }
+                visible = instance_data.visible;
+                locked = instance_data.locked;
 
-            let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
-            {
-                if editor_state.selected_object != id
+                ui_id = format!("objects_{}_{}", node.id, instance_id);
+                let mut headline_name = format!("⚫ {}: {}", instance_id, instance.name);
+
+                if parent_locked
                 {
-                    editor_state.selected_object = id;
+                    headline_name += " 🔒";
+                }
+
+                let mut heading = RichText::new(headline_name);
+
+                if visible && parent_visible
+                {
+                    heading = heading.strong()
+                }
+                else
+                {
+                    heading = heading.strikethrough();
+                }
+
+                if locked || parent_locked
+                {
+                    heading = heading.color(Color32::LIGHT_RED);
+                }
+
+                if instance_data.highlight
+                {
+                    //heading = heading.color(Color32::from_rgb(255, 175, 175));
+                    heading = heading.italics();
+                }
+
+                let mut selection; if editor_state.selected_object == ui_id { selection = true; } else { selection = false; }
+                toggle = ui.toggle_value(&mut selection, heading);
+            }
+
+            // context menu
+            let node_arc = node_arc.clone();
+            toggle = toggle.context_menu(|ui|
+            {
+                // hide/show
+                let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
+                if ui.button(hide_show_text).clicked()
+                {
+                    ui.close_menu();
+
+                    let mut instance = instance.write().unwrap();
+                    instance.get_data_mut().get_mut().visible = !visible;
+                }
+
+                // lock/unlock
+                let lock_unlock_text = if locked { "🔓 Unlock" } else { "🔒 Lock" };
+                if ui.button(lock_unlock_text).clicked()
+                {
+                    ui.close_menu();
+
+                    let mut instance = instance.write().unwrap();
+                    instance.get_data_mut().get_mut().locked = !locked;
+                }
+
+                // delete
+                ui.separator();
+                if ui.button("🗑 Delete").clicked()
+                {
+                    ui.close_menu();
+
+                    spawn_thread(move ||
+                    {
+                        let mut node = node_arc.write().unwrap();
+                        node.delete_instance_by_id(instance_id);
+                    });
+                }
+            });
+
+            if toggle.clicked()
+            {
+                if editor_state.selected_object != ui_id
+                {
+                    editor_state.selected_object = ui_id;
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Object;
 
@@ -347,7 +467,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         }
     }
 
-    let bounding_box_info = node.read().unwrap().get_bounding_info(true, &None);
+    let bounding_box_info = node.read().unwrap().get_bounding_info(None, true, None);
 
     // General
     collapse_with_title(ui, "object_data", true, "ℹ Object Data", None, |ui|
@@ -428,6 +548,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut changed = false;
 
         let mut visible;
+        let mut locked: bool;
         let mut root_node: bool;
         let mut render_children_first;
         let mut alpha_index;
@@ -436,6 +557,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let node = node.read().unwrap();
             visible = node.visible;
+            locked = node.locked;
             root_node = node.root_node;
             render_children_first = node.settings.render_children_first;
             alpha_index = node.settings.alpha_index;
@@ -450,6 +572,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
         changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
         ui.horizontal(|ui|
@@ -463,6 +586,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let mut node = node.write().unwrap();
             node.visible = visible;
+            node.locked = locked;
             node.root_node = root_node;
             node.settings.render_children_first = render_children_first;
             node.settings.alpha_index = alpha_index;
@@ -554,6 +678,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
         let mut changed = false;
 
         let mut visible;
+        let mut locked;
         let mut collision;
         let mut highlight;
         let mut name;
@@ -562,6 +687,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
             let instance = instance.read().unwrap();
             let instance_data = instance.get_data();
             visible = instance_data.visible;
+            locked = instance_data.locked;
             collision = instance_data.collision;
             highlight = instance_data.highlight;
             name = instance.name.clone();
@@ -574,6 +700,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut collision, "collision").changed() || changed;
         changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
         changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
@@ -754,7 +881,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     {
                         toggle_text = RichText::new("⏺").color(Color32::RED);
                     }
-
 
                     if ui.toggle_value(&mut enabled, toggle_text).clicked()
                     {

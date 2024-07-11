@@ -222,14 +222,14 @@ impl Keyboard
         }
     }
 
-    pub fn set_key(&mut self, key: Key, status: bool)
+    pub fn set_key(&mut self, key: Key, status: bool, engine_frame: u64)
     {
-        self.keys[key as usize].update(status);
+        self.keys[key as usize].update(status, engine_frame);
     }
 
-    pub fn set_modifier(&mut self, modifier: Modifier, status: bool)
+    pub fn set_modifier(&mut self, modifier: Modifier, status: bool, engine_frame: u64)
     {
-        self.modifiers[modifier as usize].update(status);
+        self.modifiers[modifier as usize].update(status, engine_frame);
     }
 
     pub fn update_states(&mut self)

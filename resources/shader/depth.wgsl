@@ -61,6 +61,7 @@ struct InstanceInput
 
     @location(11) alpha: f32,
     @location(12) highlight: f32,
+    @location(13) locked: f32,
 };
 
 struct VertexOutput

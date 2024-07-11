@@ -1,10 +1,10 @@
-use std::{sync::{Arc, RwLock}, f32::consts::PI, cell::RefCell};
+use std::{cell::RefCell, f32::consts::PI, f64::consts::E, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
 use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
-use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::target_rotation_controller::TargetRotationController, components::{alpha::Alpha, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
@@ -32,7 +32,49 @@ impl Editor
         self.editor_state.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui);
     }
 
+    pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
+    {
+        let raw_input = egui.ui_state.take_egui_input(window);
+
+        let full_output = egui.ctx.run(raw_input, |ctx|
+        {
+            main_frame::create_frame(ctx, &mut self.editor_state, state);
+        });
+
+        self.apply_asset_drag(state, &egui.ctx);
+
+        // stop text input when the user wants to move/navigate in 3d space
+        if state.input_manager.mouse.is_any_button_holding()
+        {
+            egui.ctx.memory_mut(|mem| { mem.stop_text_input() });
+        }
+
+        let platform_output = full_output.platform_output.clone();
+
+        egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
+
+        full_output
+    }
+
     pub fn update(&mut self, state: &mut State)
+    {
+        // update modes
+        self.update_modes(state);
+
+        // update grid based on camera pos
+        self.update_grid(state);
+
+        // select/pick objects
+        self.select_object(state);
+
+        // delete objects
+        self.delete_objct(state);
+
+        // edit mode
+        self.move_object(state);
+    }
+
+    pub fn update_modes(&mut self, state: &mut State)
     {
         // start try out mde
         if !self.editor_state.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)) && state.input_manager.keyboard.is_pressed(Key::R)
@@ -70,26 +112,39 @@ impl Editor
                 self.editor_state.de_select_current_item(state);
             }
         }
-
-        // update grid based on camera pos
-        self.update_grid(state);
-
-        // select/pick objects
-        self.select_object(state);
-
-        // delete objects
-        self.delete_objct(state);
-
-        // edit mode
-        self.move_object(state);
-
     }
 
-    pub fn update_grid(&self, state: &mut State)
+    pub fn update_grid(&mut self, state: &mut State)
     {
+        let grid_size = self.editor_state.grid_size;
+
         for scene in &mut state.scenes
         {
+            let scene_id = scene.id;
+
             let grid = scene.find_node_by_name("grid");
+
+            // recreate grid
+            if grid.is_some() && self.editor_state.grid_recreate
+            {
+                // delte first
+                scene.delete_node_by_name("grid");
+
+                let grid_size = self.editor_state.grid_size;
+                let grid_amount = self.editor_state.grid_amount;
+
+                let main_queue_clone = state.main_thread_execution_queue.clone();
+                let id_manager_clone = scene.id_manager.clone();
+
+                spawn_thread(move ||
+                {
+                    scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                });
+
+                self.editor_state.grid_recreate = false;
+            }
+
+            // update grid position
             if let Some(grid) = grid
             {
                 let mut grid = grid.write().unwrap();
@@ -108,7 +163,8 @@ impl Editor
                     let camera_data = camera.get_data();
 
                     let pos = &camera_data.eye_pos;
-                    let pos = Vector3::<f32>::new(pos.x.round(), 0.0, pos.z.round());
+                    let mut pos = Vector3::<f32>::new(pos.x.round(), 0.0, pos.z.round());
+                    pos = snap_to_grid_vec3(pos, grid_size);
 
                     let transformation = transformation.unwrap();
                     component_downcast_mut!(transformation, Transformation);
@@ -138,7 +194,7 @@ impl Editor
 
                 if let Some(pos) = pos
                 {
-                    let pick_res = self.pick(state, pos, false);
+                    let pick_res = self.pick(state, pos, false, None);
 
                     if let Some(pick_res) = pick_res
                     {
@@ -359,7 +415,7 @@ impl Editor
         }
     }
 
-    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool) -> Option<(u64, ScenePickRes)>
+    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool, predicate: Option<PickPredicate>) -> Option<(u64, ScenePickRes)>
     {
         let scenes = &state.scenes;
         let width = state.width;
@@ -407,12 +463,12 @@ impl Editor
                         if let Some(grid) = grid
                         {
                             set_grid_picking(scene, true);
-                            grid_hit = scene.pick_node(grid, &ray, false, true, None);
+                            grid_hit = scene.pick_node(grid, &ray, false, true, predicate.clone());
                             set_grid_picking(scene, false);
                         }
                     }
 
-                    let scene_hit = scene.pick(&ray, false, false, None);
+                    let scene_hit = scene.pick(&ray, false, false, predicate.clone());
 
                     //dbg!(scene_hit.is_some());
                     //dbg!(grid_hit.is_some());
@@ -478,7 +534,34 @@ impl Editor
         None
     }
 
-    pub fn apply_drag(&mut self, state: &mut State, ctx: &egui::Context)
+    pub fn pick_node(&self, state: &State, node: NodeItem, pos: Point2::<f32>) -> Option<(u64, ScenePickRes)>
+    {
+        let scenes = &state.scenes;
+        let width = state.width;
+        let height = state.height;
+
+        for scene in scenes
+        {
+            for camera in &scene.cameras
+            {
+                // check if click is insight
+                if camera.is_point_in_viewport(&pos)
+                {
+                    let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
+                    let hit = scene.pick_node(node.clone(), &ray, false, false, None);
+
+                    if let Some(hit) = hit
+                    {
+                        return Some((scene.id, hit));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn apply_asset_drag(&mut self, state: &mut State, ctx: &egui::Context)
     {
         if let Some(drag_id) = &self.editor_state.drag_id
         {
@@ -506,314 +589,696 @@ impl Editor
         }
     }
 
+    pub fn apply_fly_camera_move_state(scene: &mut Scene, state: bool)
+    {
+        for camera in &mut scene.cameras
+        {
+            if !camera.enabled
+            {
+                continue;
+            }
+
+            if let Some(controller) = &mut camera.controller
+            {
+                if let Some(controller) = controller.as_any_mut().downcast_mut::<FlyController>()
+                {
+                    controller.mouse_movement = state;
+                }
+            }
+        }
+    }
+
     pub fn move_object(&mut self, state: &mut State)
     {
+        let width = state.width;
+        let height = state.height;
+
         let step_size = 1.0;
         let angle_steps = PI / 8.0;
         let factor = 0.01;
 
-        if !self.editor_state.selected_object.is_empty() && self.editor_state.selected_type == SelectionType::Object && state.input_manager.mouse.point.pos.is_some()
+        let grid_size = self.editor_state.grid_size;
+
+
+        // ********** enable movement if nothing is selected **********
+        if self.editor_state.selected_object.is_empty() || self.editor_state.selected_type != SelectionType::Object || state.input_manager.mouse.point.pos.is_none()
         {
-            if state.input_manager.keyboard.is_pressed(Key::G)
+            self.editor_state.edit_moving = false;
+
+            // re-allow fly camera state
+            for scene in &mut state.scenes
             {
-                let start_pos = state.input_manager.mouse.point.pos.unwrap();
-                self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, false, true));
-            }
-            if state.input_manager.keyboard.is_pressed(Key::R)
-            {
-                let start_pos = state.input_manager.mouse.point.pos.unwrap();
-                self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+                Self::apply_fly_camera_move_state(scene, true);
             }
 
-            if self.editor_state.edit_mode.is_some() && state.input_manager.mouse.is_pressed(MouseButton::Left)
+            return;
+        }
+
+
+        let pos = state.input_manager.mouse.point.pos;
+        if pos.is_none()
+        {
+            return;
+        }
+
+        //let pos = pos.unwrap();
+        //let old_pos = pos - state.input_manager.mouse.point.velocity;
+
+        let pos_new = pos.unwrap();
+        let pos = pos_new - state.input_manager.mouse.point.velocity;
+
+
+
+
+        // ********** get selection **********
+        let mut selected_scene_id = None;
+        let mut selected_node = None;
+        {
+            let (scene, node, _) = self.editor_state.get_selected_node(state);
+
+            if scene.is_none() || node.is_none()
             {
-                self.editor_state.edit_mode = None;
+                return;
             }
 
-            if self.editor_state.edit_mode.is_some()
+            selected_scene_id = Some(scene.unwrap().id);
+            selected_node = Some(node.unwrap().clone());
+        }
+
+
+        let selected_scene_id = selected_scene_id.unwrap();
+        let selected_node = selected_node.unwrap();
+
+
+        // ********** check locked **********
+        if selected_node.read().unwrap().is_locked()
+        {
+            return;
+        }
+
+
+        // ********** check that first interaction (after selection) was on the selected object **********
+        let engine_frame = state.stats.frame;
+
+        if !self.editor_state.edit_moving && (state.input_manager.mouse.is_first_action(MouseButton::Left, engine_frame) || state.input_manager.mouse.is_first_action(MouseButton::Right, engine_frame))
+        {
+            let pick_res = self.pick(state, pos, false, None);
+
+            if let Some(pick_res) = pick_res
             {
-                let moving;
-                let start_pos;
-                match self.editor_state.edit_mode.as_ref().unwrap()
+                let scene_id = pick_res.0;
+                let node = &pick_res.1.node.read().unwrap();
+
+                let has_currect_parent = node.has_parent_or_is_equal(selected_node.clone());
+
+                if selected_scene_id == scene_id && has_currect_parent
                 {
-                    EditMode::Movement(pos, _, _, _) => { moving = true; start_pos = pos.clone(); },
-                    EditMode::Rotate(pos, _, _, _) => { moving = false; start_pos = pos.clone(); },
-                }
-
-                if state.input_manager.keyboard.is_pressed(Key::X)
-                {
-                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-                    {
-                        if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos.clone(), true, false, false)); }
-                        else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos.clone(), true, false, false)); }
-                    }
-                    else
-                    {
-                        if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, true)); }
-                        else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, true)); }
-                    }
-                }
-
-                if state.input_manager.keyboard.is_pressed(Key::Y)
-                {
-                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-                    {
-                        if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, false)); }
-                        else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, false)); }
-                    }
-                    else
-                    {
-                        if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, false, true)); }
-                        else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, true, false, true)); }
-                    }
-                }
-
-                if state.input_manager.keyboard.is_pressed(Key::Z)
-                {
-                    if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
-                    {
-                        if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, false, true)); }
-                        else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, false, true)); }
-                    }
-                    else
-                    {
-                        if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, false)); }
-                        else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, true, true, false)); }
-                    }
-                }
-
-                let edit_mode = self.editor_state.edit_mode.unwrap();
-
-                let mouse_pos = state.input_manager.mouse.point.pos.unwrap();
-                let movement = (mouse_pos - start_pos) * factor;
-                let mut movement = Vector3::<f32>::new(movement.x, 0.0, movement.y);
-
-                if let (Some(scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
-                {
-                    // get camera transform
-                    // TODO: if based on multiple cameras -> pick the correct one (check viewerport and mouse coordinates)
-                    let mut cam_inverse = Matrix4::<f32>::identity();
-                    for camera in &scene.cameras
-                    {
-                        if camera.enabled
-                        {
-                            let cam_data = camera.get_data();
-                            cam_inverse = cam_data.view_inverse.clone();
-                            break;
-                        }
-                    }
-
-                    // transform by inverse camera matrix
-                    movement = (cam_inverse * movement.to_homogeneous()).xyz();
-
-                    let edit_transformation: ComponentItem;
-                    let node_transform;
-                    let mut instance_transform = None;
-                    let instances_amount;
-
-                    {
-                        let node = node.read().unwrap();
-                        instances_amount = node.instances.get_ref().len();
-                        node_transform = node.find_component::<Transformation>();
-                    }
-
-                    if let Some(instance_id) = instance_id
-                    {
-                        let node = node.read().unwrap();
-                        let instance = node.find_instance_by_id(instance_id).unwrap() ;
-
-                        let instance = instance.write().unwrap();
-                        instance_transform = instance.find_component::<Transformation>();
-                    }
-
-                    // if there are multiple instances in the node -> use instance transform
-                    if instances_amount > 1 && instance_id.is_some()
-                    {
-                        if let Some(instance_transform) = instance_transform
-                        {
-                            edit_transformation = instance_transform.clone();
-                        }
-                        else
-                        {
-                            let node = node.read().unwrap();
-                            let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
-                            let mut instance = instance.write().unwrap();
-                            let id = scene.id_manager.write().unwrap().get_next_component_id();
-
-                            instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
-
-                            let transformation = node.find_component::<Transformation>().unwrap();
-                            edit_transformation = transformation.clone();
-                        }
-                    }
-                    // if there is no node and instance transform -> use node transform
-                    else if instance_transform.is_none() && node_transform.is_none()
-                    {
-                        let mut node = node.write().unwrap();
-                        let id = scene.id_manager.write().unwrap().get_next_component_id();
-                        node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
-
-                        let transformation = node.find_component::<Transformation>().unwrap();
-                        edit_transformation = transformation.clone();
-                    }
-                    // if there is already a transform on the instance -> use it
-                    else if let Some(instance_transform) = instance_transform
-                    {
-                        edit_transformation = instance_transform.clone();
-                    }
-                    // otherwise use node transform
-                    else
-                    {
-                        let node_transform = node_transform.unwrap();
-                        edit_transformation = node_transform.clone();
-                    }
-
-                    component_downcast_mut!(edit_transformation, Transformation);
-
-                    match edit_mode
-                    {
-                        EditMode::Movement(_, x, y, z) =>
-                        {
-                            let mut applied = false;
-
-                            let mut vec = Vector3::<f32>::zeros();
-                            if x
-                            {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-                                {
-                                    let sign = movement.x.signum();
-                                    if movement.x.abs() >= step_size
-                                    {
-                                        vec.x = step_size * sign;
-                                        applied = true;
-                                    }
-                                }
-                                else
-                                {
-                                    vec.x = movement.x;
-                                    applied = true;
-                                }
-                            }
-
-                            if y
-                            {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-                                {
-                                    let sign = movement.z.signum();
-                                    if movement.z.abs() >= step_size
-                                    {
-                                        vec.y = -step_size * sign;
-                                        applied = true;
-                                    }
-                                }
-                                else
-                                {
-                                    vec.y = -movement.z;
-                                    applied = true;
-                                }
-                            }
-
-                            if z
-                            {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-                                {
-                                    let sign = -movement.z.signum();
-                                    if movement.z.abs() >= step_size
-                                    {
-                                        vec.z = -step_size * sign;
-                                        applied = true;
-                                    }
-                                }
-                                else
-                                {
-                                    vec.z = -movement.z;
-                                    applied = true;
-                                }
-                            }
-
-                            if applied
-                            {
-                                edit_transformation.apply_translation(vec);
-                            }
-
-                            if applied
-                            {
-                                self.editor_state.edit_mode = Some(EditMode::Movement(mouse_pos, x, y, z));
-                            }
-                        },
-                        EditMode::Rotate(_, x, y, z) =>
-                        {
-                            let mut applied = false;
-
-                            let mut vec = Vector3::<f32>::zeros();
-                            if x
-                            {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-                                {
-                                    let sign = movement.z.signum();
-                                    if movement.z.abs() >= angle_steps
-                                    {
-                                        vec.x = angle_steps * sign;
-                                        applied = true;
-                                    }
-                                }
-                                else
-                                {
-                                    vec.x = movement.z;
-                                    applied = true;
-                                }
-                            }
-
-                            if y
-                            {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-                                {
-                                    let sign = movement.x.signum();
-                                    if movement.x.abs() >= angle_steps
-                                    {
-                                        vec.y = angle_steps * sign;
-                                        applied = true;
-                                    }
-                                }
-                                else
-                                {
-                                    vec.y = movement.x;
-                                    applied = true;
-                                }
-                            }
-
-                            if z
-                            {
-                                if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-                                {
-                                    let sign = movement.x.signum();
-                                    if movement.x.abs() >= angle_steps
-                                    {
-                                        vec.z = -angle_steps * sign;
-                                        applied = true;
-                                    }
-                                }
-                                else
-                                {
-                                    vec.z = -movement.x;
-                                    applied = true;
-                                }
-                            }
-
-                            if applied
-                            {
-                                edit_transformation.apply_rotation(vec);
-                            }
-
-                            if applied
-                            {
-                                self.editor_state.edit_mode = Some(EditMode::Rotate(mouse_pos, x, y, z));
-                            }
-                        },
-                    }
+                    self.editor_state.edit_moving = true;
                 }
             }
         }
+
+        else if self.editor_state.edit_moving && !state.input_manager.mouse.is_holding(MouseButton::Left) && !state.input_manager.mouse.is_holding(MouseButton::Right)
+        {
+            self.editor_state.edit_moving = false;
+        }
+
+        if !self.editor_state.edit_moving
+        {
+            let (scene, _, _) = self.editor_state.get_selected_node(state);
+            Self::apply_fly_camera_move_state(scene.unwrap(), true);
+
+            return;
+        }
+
+
+        // ********** check mouse movement **********
+        if !state.input_manager.mouse.has_velocity()
+        {
+            return;
+        }
+
+
+        // ********** disable camera movement **********
+        let instance_id;
+        {
+            let (scene, node, instance) = self.editor_state.get_selected_node(state);
+            let scene = scene.unwrap();
+
+            // stop fly camera from moving
+            Self::apply_fly_camera_move_state(scene, false);
+
+            instance_id = instance;
+        }
+
+
+        // ********** get pick info **********
+        //let mut object_pos = None;
+        let mut pick_pos = None;
+        let mut pick_distance = None;
+        let mut bounding_min = None;
+        let mut bounding_center = None;
+
+        {
+            // ***** pick info without node itself *****
+            let selected_node_clone = selected_node.clone();
+            let pick_predicate = move |node: NodeItem, check_instance_id: Option<u64>| -> bool
+            {
+                let node = node.read().unwrap();
+                let has_currect_parent = node.has_parent_or_is_equal(selected_node_clone.clone());
+
+                if let Some(instance_id) = instance_id
+                {
+                    if let Some(check_instance_id) = check_instance_id
+                    {
+                        return instance_id != check_instance_id;
+                    }
+                }
+                else
+                {
+                    return !has_currect_parent;
+                }
+
+                true
+            };
+
+            //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, Some(Arc::new(pick_predicate)));
+            let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, None);
+            if let Some(pick_res) = pick_res
+            {
+                let node = pick_res.1.node.read().unwrap();
+                //dbg!(&node.name);
+
+                pick_pos = Some(pick_res.1.point);
+                pick_distance = Some(pick_res.1.time_of_impact);
+            }
+
+
+            // ***** pick on node *****
+            //let pick_node_res = self.pick_node(state, selected_node.clone(), pos);
+
+            // ***** bounding info *****
+            let selected_node = selected_node.read().unwrap();
+            let bounding_info = selected_node.get_bounding_info(instance_id, true, None);
+
+            if let Some((min, max)) = bounding_info
+            {
+                bounding_min = Some(min);
+                bounding_center = Some(min + (max - min) / 2.0);
+
+                /*
+                let center_x = min.x + (max.x - min.x) / 2.0;
+                let center_z = min.z + (max.z - min.z) / 2.0;
+
+                let p_down = Point3::<f32>::new(pick_pos.x, min.y, pick_pos.z);
+                let ray_down = p_down - pick_pos;
+                */
+
+                /*
+                if let Some(pick_node_res) = pick_node_res
+                {
+                    // pick point buttom
+                    let delta_x = pick_node_res.1.point.x - center_x;
+                    let delta_z = pick_node_res.1.point.z - center_z;
+
+                    object_pos = Some(Point3::<f32>::new(center_x + delta_x, min.y, center_z + delta_z));
+                }
+                else
+                {
+                 */
+                    // bottom center
+                    //object_pos = Some(Point3::<f32>::new(center_x, min.y, center_z));
+                //}
+            }
+        }
+
+        if pick_pos.is_none() || pick_distance.is_none() || bounding_min.is_none()
+        {
+            return;
+        }
+
+        let pick_pos = pick_pos.unwrap();
+        let pick_distance = pick_distance.unwrap();
+        let bounding_min = bounding_min.unwrap();
+        let bounding_center = bounding_center.unwrap();
+
+        let p_down = Point3::<f32>::new(pick_pos.x, bounding_min.y, pick_pos.z);
+        //let ray_down = p_down - pick_pos;
+        let ray_down = pick_pos - p_down;
+
+
+        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
+        let scene = scene.unwrap();
+
+        let mut new_cam_pick_ray = None;
+        for camera in &scene.cameras
+        {
+            // check if click is insight
+            if camera.is_point_in_viewport(&pos_new)
+            {
+                new_cam_pick_ray = Some(camera.get_ray_from_viewport_coordinates(&pos_new, width, height));
+                break;
+            }
+        }
+
+        if new_cam_pick_ray.is_none()
+        {
+            return;
+        }
+
+        let new_cam_pick_ray = new_cam_pick_ray.unwrap();
+
+        let origin = new_cam_pick_ray.origin;
+        let dir = new_cam_pick_ray.dir.normalize();
+
+        let new_pos = origin + (dir * pick_distance);
+
+        let delta = new_pos - pick_pos;
+
+        let pick_offset = pick_pos - bounding_center;
+        let result_pos = new_pos + pick_offset;
+        let result_pos = Vector3::<f32>::new(result_pos.x, result_pos.y, result_pos.z);
+
+
+
+        /*
+        let bottom_point = origin + (dir * pick_distance) + ray_down;
+        let bottom_offset = bounding_min - bounding_center;
+
+
+        let delta = bottom_point - pick_pos;
+
+        let new_pos = bottom_point - bottom_offset;
+        let new_pos = Vector3::<f32>::new(new_pos.x, new_pos.y, new_pos.z);
+
+         */
+
+        //dbg!(delta);
+
+        /*
+        let object_pos = object_pos.unwrap();
+        let pick_pos = pick_pos.unwrap();
+
+        let delta = pick_pos - object_pos;
+        */
+
+        //dbg!(delta);
+
+        // TODO map to "local" object coordinates
+
+
+
+        // ********** find transform component for node/instance **********
+        let edit_transformation: ComponentItem;
+        let node_transform;
+        let mut instance_transform = None;
+        let instances_amount;
+
+        {
+            let node = selected_node.read().unwrap();
+            instances_amount = node.instances.get_ref().len();
+            node_transform = node.find_component::<Transformation>();
+        }
+
+        if let Some(instance_id) = instance_id
+        {
+            let node = selected_node.read().unwrap();
+            let instance = node.find_instance_by_id(instance_id).unwrap();
+
+            let instance = instance.write().unwrap();
+            instance_transform = instance.find_component::<Transformation>();
+        }
+
+        // if there are multiple instances in the node -> use instance transform
+        if instances_amount > 1 && instance_id.is_some()
+        {
+            if let Some(instance_transform) = instance_transform
+            {
+                edit_transformation = instance_transform.clone();
+            }
+            else
+            {
+                let node = selected_node.read().unwrap();
+                let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
+                let mut instance = instance.write().unwrap();
+                let id = scene.id_manager.write().unwrap().get_next_component_id();
+
+                instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+
+                let transformation = instance.find_component::<Transformation>().unwrap();
+                edit_transformation = transformation.clone();
+            }
+        }
+        // if there is no node and instance transform -> use node transform
+        else if instance_transform.is_none() && node_transform.is_none()
+        {
+            let mut node = selected_node.write().unwrap();
+            let id = scene.id_manager.write().unwrap().get_next_component_id();
+            node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+
+            let transformation = node.find_component::<Transformation>().unwrap();
+            edit_transformation = transformation.clone();
+        }
+        // if there is already a transform on the instance -> use it
+        else if let Some(instance_transform) = instance_transform
+        {
+            edit_transformation = instance_transform.clone();
+        }
+        // otherwise use node transform
+        else
+        {
+            let node_transform = node_transform.unwrap();
+            edit_transformation = node_transform.clone();
+        }
+
+        component_downcast_mut!(edit_transformation, Transformation);
+
+
+        //edit_transformation.apply_translation(delta);
+        //edit_transformation.set_translation(new_pos);
+        edit_transformation.set_translation(result_pos);
+
+        // snap to grid
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Shift) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+        {
+            let mut pos = edit_transformation.get_data().position;
+            pos.x = snap_to_grid(pos.x, grid_size);
+            pos.z = snap_to_grid(pos.z, grid_size);
+
+            edit_transformation.set_translation(pos);
+        }
+
+        //let delta = edit_transformation.get_data().position
+
+
+
+
+        /*
+        // ********** mode change **********
+        if state.input_manager.keyboard.is_pressed(Key::G)
+        {
+            let start_pos = state.input_manager.mouse.point.pos.unwrap();
+            self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, false, true));
+        }
+        if state.input_manager.keyboard.is_pressed(Key::R)
+        {
+            let start_pos = state.input_manager.mouse.point.pos.unwrap();
+            self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+        }
+
+        if self.editor_state.edit_mode.is_some() && state.input_manager.mouse.is_pressed(MouseButton::Left)
+        {
+            self.editor_state.edit_mode = None;
+        }
+
+        if self.editor_state.edit_mode.is_some()
+        {
+            let moving;
+            let start_pos;
+            match self.editor_state.edit_mode.as_ref().unwrap()
+            {
+                EditMode::Movement(pos, _, _, _) => { moving = true; start_pos = pos.clone(); },
+                EditMode::Rotate(pos, _, _, _) => { moving = false; start_pos = pos.clone(); },
+            }
+
+            if state.input_manager.keyboard.is_pressed(Key::X)
+            {
+                if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                {
+                    if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos.clone(), true, false, false)); }
+                    else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos.clone(), true, false, false)); }
+                }
+                else
+                {
+                    if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, true)); }
+                    else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, true)); }
+                }
+            }
+
+            if state.input_manager.keyboard.is_pressed(Key::Y)
+            {
+                if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                {
+                    if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, false)); }
+                    else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, false)); }
+                }
+                else
+                {
+                    if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, false, true)); }
+                    else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, true, false, true)); }
+                }
+            }
+
+            if state.input_manager.keyboard.is_pressed(Key::Z)
+            {
+                if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                {
+                    if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, false, true)); }
+                    else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, false, true)); }
+                }
+                else
+                {
+                    if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, false)); }
+                    else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, true, true, false)); }
+                }
+            }
+
+            let edit_mode = self.editor_state.edit_mode.unwrap();
+
+            dbg!(start_pos);
+            */
+
+            /*
+            let mouse_pos = state.input_manager.mouse.point.pos.unwrap();
+            let movement = (mouse_pos - start_pos) * factor;
+            let mut movement = Vector3::<f32>::new(movement.x, 0.0, movement.y);
+
+            dbg!(&mouse_pos);
+
+
+            // get camera transform
+            // TODO: if based on multiple cameras -> pick the correct one (check view port and mouse coordinates)
+            let mut cam_inverse = Matrix4::<f32>::identity();
+            for camera in &scene.cameras
+            {
+                if camera.enabled
+                {
+                    let cam_data = camera.get_data();
+                    cam_inverse = cam_data.view_inverse.clone();
+                    break;
+                }
+            }
+
+            // transform by inverse camera matrix
+            movement = (cam_inverse * movement.to_homogeneous()).xyz();
+
+            let edit_transformation: ComponentItem;
+            let node_transform;
+            let mut instance_transform = None;
+            let instances_amount;
+
+            {
+                let node = node.read().unwrap();
+                instances_amount = node.instances.get_ref().len();
+                node_transform = node.find_component::<Transformation>();
+            }
+
+            if let Some(instance_id) = instance_id
+            {
+                let node = node.read().unwrap();
+                let instance = node.find_instance_by_id(instance_id).unwrap() ;
+
+                let instance = instance.write().unwrap();
+                instance_transform = instance.find_component::<Transformation>();
+            }
+
+            // if there are multiple instances in the node -> use instance transform
+            if instances_amount > 1 && instance_id.is_some()
+            {
+                if let Some(instance_transform) = instance_transform
+                {
+                    edit_transformation = instance_transform.clone();
+                }
+                else
+                {
+                    let node = node.read().unwrap();
+                    let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
+                    let mut instance = instance.write().unwrap();
+                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+
+                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+
+                    let transformation = node.find_component::<Transformation>().unwrap();
+                    edit_transformation = transformation.clone();
+                }
+            }
+            // if there is no node and instance transform -> use node transform
+            else if instance_transform.is_none() && node_transform.is_none()
+            {
+                let mut node = node.write().unwrap();
+                let id = scene.id_manager.write().unwrap().get_next_component_id();
+                node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+
+                let transformation = node.find_component::<Transformation>().unwrap();
+                edit_transformation = transformation.clone();
+            }
+            // if there is already a transform on the instance -> use it
+            else if let Some(instance_transform) = instance_transform
+            {
+                edit_transformation = instance_transform.clone();
+            }
+            // otherwise use node transform
+            else
+            {
+                let node_transform = node_transform.unwrap();
+                edit_transformation = node_transform.clone();
+            }
+
+            component_downcast_mut!(edit_transformation, Transformation);
+
+            match edit_mode
+            {
+                EditMode::Movement(_, x, y, z) =>
+                {
+                    let mut applied = false;
+
+                    let mut vec = Vector3::<f32>::zeros();
+                    if x
+                    {
+                        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                        {
+                            let sign = movement.x.signum();
+                            if movement.x.abs() >= step_size
+                            {
+                                vec.x = step_size * sign;
+                                applied = true;
+                            }
+                        }
+                        else
+                        {
+                            vec.x = movement.x;
+                            applied = true;
+                        }
+                    }
+
+                    if y
+                    {
+                        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                        {
+                            let sign = movement.z.signum();
+                            if movement.z.abs() >= step_size
+                            {
+                                vec.y = -step_size * sign;
+                                applied = true;
+                            }
+                        }
+                        else
+                        {
+                            vec.y = -movement.z;
+                            applied = true;
+                        }
+                    }
+
+                    if z
+                    {
+                        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                        {
+                            let sign = -movement.z.signum();
+                            if movement.z.abs() >= step_size
+                            {
+                                vec.z = -step_size * sign;
+                                applied = true;
+                            }
+                        }
+                        else
+                        {
+                            vec.z = -movement.z;
+                            applied = true;
+                        }
+                    }
+
+                    if applied
+                    {
+                        edit_transformation.apply_translation(vec);
+                    }
+
+                    if applied
+                    {
+                        self.editor_state.edit_mode = Some(EditMode::Movement(mouse_pos, x, y, z));
+                    }
+                },
+                EditMode::Rotate(_, x, y, z) =>
+                {
+                    let mut applied = false;
+
+                    let mut vec = Vector3::<f32>::zeros();
+                    if x
+                    {
+                        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                        {
+                            let sign = movement.z.signum();
+                            if movement.z.abs() >= angle_steps
+                            {
+                                vec.x = angle_steps * sign;
+                                applied = true;
+                            }
+                        }
+                        else
+                        {
+                            vec.x = movement.z;
+                            applied = true;
+                        }
+                    }
+
+                    if y
+                    {
+                        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                        {
+                            let sign = movement.x.signum();
+                            if movement.x.abs() >= angle_steps
+                            {
+                                vec.y = angle_steps * sign;
+                                applied = true;
+                            }
+                        }
+                        else
+                        {
+                            vec.y = movement.x;
+                            applied = true;
+                        }
+                    }
+
+                    if z
+                    {
+                        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                        {
+                            let sign = movement.x.signum();
+                            if movement.x.abs() >= angle_steps
+                            {
+                                vec.z = -angle_steps * sign;
+                                applied = true;
+                            }
+                        }
+                        else
+                        {
+                            vec.z = -movement.x;
+                            applied = true;
+                        }
+                    }
+
+                    if applied
+                    {
+                        edit_transformation.apply_rotation(vec);
+                    }
+
+                    if applied
+                    {
+                        self.editor_state.edit_mode = Some(EditMode::Rotate(mouse_pos, x, y, z));
+                    }
+                },
+            }
+        }
+        */
     }
 
     pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>)
@@ -843,18 +1308,21 @@ impl Editor
         let scene_id = scene_id.unwrap();
         let id_manager = id_manager.unwrap();
 
+        let grid_size = self.editor_state.grid_size;
+        let grid_amount = self.editor_state.grid_amount;
+
         let main_queue_clone = main_queue.clone();
         let id_manager_clone = id_manager.clone();
         if self.editor_state.asset_type == AssetType::Scene
         {
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager_clone.clone(), 500, 1.0);
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
             });
         };
 
         // pick
-        let pick_res = self.pick(state, pos, true);
+        let pick_res = self.pick(state, pos, true, None);
 
         let mut pos = None;
         if let Some(pick_res) = pick_res
@@ -910,7 +1378,7 @@ impl Editor
                         let mut offset = 0.0;
                         {
                             let root_node = root_node.read().unwrap();
-                            let bounding_info = root_node.get_bounding_info(true, &None);
+                            let bounding_info = root_node.get_bounding_info(None, true, None);
 
                             if let Some(bounding_info) = bounding_info
                             {
@@ -992,29 +1460,5 @@ impl Editor
 
             dbg!("loading DONE");
         });
-    }
-
-    pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
-    {
-        let raw_input = egui.ui_state.take_egui_input(window);
-
-        let full_output = egui.ctx.run(raw_input, |ctx|
-        {
-            main_frame::create_frame(ctx, &mut self.editor_state, state);
-        });
-
-        self.apply_drag(state, &egui.ctx);
-
-        // stop textinput when the user wants to move/navigate in 3d space
-        if state.input_manager.mouse.is_any_button_holding()
-        {
-            egui.ctx.memory_mut(|mem| { mem.stop_text_input() });
-        }
-
-        let platform_output = full_output.platform_output.clone();
-
-        egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
-
-        full_output
     }
 }

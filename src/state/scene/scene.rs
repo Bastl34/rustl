@@ -10,6 +10,7 @@ use crate::{component_downcast, component_downcast_mut, helper::{self, change_tr
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh, sound}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{self, SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
+pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
 
 #[derive(Clone)]
 pub struct ScenePickRes
@@ -810,6 +811,7 @@ impl Scene
     {
         Node::find_mesh_node_by_name(&self.nodes, name)
     }
+
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
     {
         self.cleanup_cyclic_references(Some(id));
@@ -844,7 +846,54 @@ impl Scene
         false
     }
 
-    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
+    pub fn delete_node_by_name(&mut self, name: &str) -> bool
+    {
+        let node = self.find_node_by_name(name);
+
+        if node.is_none()
+        {
+            return false;
+        }
+
+        let id;
+        {
+            let node = node.unwrap();
+            id = node.read().unwrap().id;
+        }
+
+        self.cleanup_cyclic_references(Some(id));
+
+        let len = self.nodes.len();
+        self.nodes.retain(|node|
+        {
+            if node.read().unwrap().id == id
+            {
+                node.write().unwrap().clear_instances();
+            }
+
+            node.read().unwrap().id != id
+        });
+
+        if self.nodes.len() != len
+        {
+            return true;
+        }
+
+        // if not found -> check children
+        for node in &self.nodes
+        {
+            let deleted = node.write().unwrap().delete_node_by_id(id);
+
+            if deleted
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let mut nodes = vec![];
 
@@ -861,7 +910,7 @@ impl Scene
         self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<ScenePickRes>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
         let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
 
@@ -873,7 +922,7 @@ impl Scene
         None
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<ScenePickRes>
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
@@ -887,14 +936,14 @@ impl Scene
         None
     }
 
-    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
         self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         // find hits (bbox based)
         let mut hits_bbox = vec![];
@@ -927,10 +976,9 @@ impl Scene
                 continue;
             }
 
-            //if let Some(ref predicate) = predicate
             if let Some(predicate) = &predicate
             {
-                if !predicate(node_arc.clone())
+                if !predicate(node_arc.clone(), None)
                 {
                     continue;
                 }
@@ -938,8 +986,21 @@ impl Scene
 
             for instance in node.instances.get_ref()
             {
-                let instance = instance.read().unwrap();
+                let instance_id;
+                {
+                    let instance = instance.read().unwrap();
+                    instance_id = instance.id;
+                }
 
+                if let Some(predicate) = &predicate
+                {
+                    if !predicate(node_arc.clone(), Some(instance_id))
+                    {
+                        continue;
+                    }
+                }
+
+                let instance = instance.read().unwrap();
                 if !instance.pickable
                 {
                     continue;

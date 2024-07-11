@@ -13,6 +13,7 @@ pub struct ComputedInstanceData
 {
     pub world_matrix: Matrix4::<f32>,
     pub alpha: f32,
+    pub locked: bool,
 }
 
 pub struct InstanceData
@@ -22,6 +23,7 @@ pub struct InstanceData
     pub visible: bool,
     pub highlight: bool,
     pub collision: bool,
+    pub locked: bool,
 }
 
 
@@ -60,11 +62,13 @@ impl Instance
                 {
                     world_matrix: Matrix4::<f32>::identity(),
                     alpha: 1.0,
+                    locked: false
                 },
 
                 visible: true,
                 highlight: false,
-                collision: true
+                collision: true,
+                locked: false,
             })
         };
 
@@ -90,11 +94,13 @@ impl Instance
                 {
                     world_matrix: Matrix4::<f32>::identity(),
                     alpha: 1.0,
+                    locked: false
                 },
 
                 visible: true,
                 highlight: false,
-                collision: true
+                collision: true,
+                locked: false,
             })
         };
 
@@ -232,10 +238,12 @@ impl Instance
 
             let world_matrix = instance.calculate_transform();
             let alpha = instance.calculate_alpha();
+            let locked = instance.accumulate_locked();
 
             let data = instance.get_data_mut().get_mut();
             data.computed.world_matrix = world_matrix;
             data.computed.alpha = alpha;
+            data.computed.locked = locked;
         }
 
         {
@@ -272,6 +280,12 @@ impl Instance
             {
                 changed = true;
             }
+        }
+
+        // locked check
+        if self.accumulate_locked() != self.get_data().computed.locked
+        {
+            changed = true;
         }
 
         // ********** check node and parents **********
@@ -387,6 +401,17 @@ impl Instance
         }
     }
 
+    pub fn accumulate_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        let node = self.node.read().unwrap();
+        node.is_locked()
+    }
+
     pub fn get_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
@@ -400,6 +425,16 @@ impl Instance
         }
 
         self.get_data().computed.alpha
+    }
+
+    pub fn get_is_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        self.get_data().computed.locked
     }
 
     pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)

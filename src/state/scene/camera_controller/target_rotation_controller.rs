@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, sync::Arc};
 
 use nalgebra::{Vector2, Vector3, Point3};
 
@@ -33,7 +33,7 @@ pub struct TargetRotationController
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
-    pub object_center_predicate: Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>,
+    pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>,
 
     last_manual_move: u64, // time in millis after the last movement
 }
@@ -194,7 +194,7 @@ impl CameraController for TargetRotationController
             {
                 let node = node.read().unwrap();
 
-                if let Some(center) = node.get_bbox_center(true, &self.object_center_predicate)
+                if let Some(center) = node.get_bbox_center(None, true, self.object_center_predicate.clone())
                 {
                     target_pos = center;
                 }

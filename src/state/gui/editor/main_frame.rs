@@ -129,20 +129,29 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
-            // selectable
-            if ui.toggle_value(&mut editor_state.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects").changed()
+            // grid size
+            let mut changed = false;
+            let mut grid_size = editor_state.grid_size;
+
+            ui.label("▓").on_hover_text("Grid");
+            egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
             {
-                if !editor_state.selectable
-                {
-                    editor_state.de_select_current_item(state);
-                }
+                ui.style_mut().wrap = Some(false);
+
+                changed = ui.selectable_value(&mut grid_size, 0.0625, "0.0625").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 1.0, "1.0").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 2.5, "2.5").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 5.0, "5.0").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 10.0, "10.0").changed() || changed;
+            });
+
+            if changed
+            {
+                editor_state.set_grid_size(grid_size);
             }
-
-            ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
-
-            let mut playing = !state.pause;
-            ui.toggle_value(&mut playing, RichText::new("⏵").size(icon_size)).on_hover_text("Playing/Pause");
-            state.pause = !playing;
         });
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -158,6 +167,59 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             {
                 editor_state.set_try_out(state, try_out);
             };
+
+            ui.separator();
+
+            // fly camera
+            ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
+
+            // selectable
+            if ui.toggle_value(&mut editor_state.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects").changed()
+            {
+                if !editor_state.selectable
+                {
+                    editor_state.de_select_current_item(state);
+                }
+            }
+
+            ui.separator();
+
+            // play
+            let mut playing = !state.pause;
+            ui.toggle_value(&mut playing, RichText::new("⏵").size(icon_size)).on_hover_text("Playing/Pause");
+            state.pause = !playing;
+        });
+    });
+}
+
+fn create_editor_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    ui.horizontal(|ui|
+    {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+        {
+            // grid size
+            let mut changed = false;
+            let mut grid_size = editor_state.grid_size;
+
+            ui.label("Grid: ");
+            egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap = Some(false);
+
+                changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 1.0, "1.0").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 2.5, "2.5").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 5.0, "5.0").changed() || changed;
+                changed = ui.selectable_value(&mut grid_size, 10.0, "10.0").changed() || changed;
+            });
+
+            if changed
+            {
+                editor_state.set_grid_size(grid_size);
+            }
         });
     });
 }
@@ -379,7 +441,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
         }).body(|ui|
         {
             let nodes = scene.nodes.clone();
-            build_objects_list(editor_state, exec_queue, scene, ui, &nodes, scene.id, true);
+            build_objects_list(editor_state, exec_queue, scene, ui, &nodes, scene.id, true, false);
         });
     }
 
