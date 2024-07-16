@@ -208,7 +208,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_world_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -286,7 +286,7 @@ impl Node
                 }
 
                 let node = node.read().unwrap();
-                let child_min_max = node.get_bounding_info(instance_id, recursive, predicate.clone());
+                let child_min_max = node.get_world_bounding_info(instance_id, recursive, predicate.clone());
 
                 if let Some(child_min_max) = child_min_max
                 {
@@ -313,9 +313,9 @@ impl Node
         None
     }
 
-    pub fn get_bbox_center(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
+    pub fn get_world_bbox_center(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
-        let bounding_info = self.get_bounding_info(instance_id, recursive, predicate);
+        let bounding_info = self.get_world_bounding_info(instance_id, recursive, predicate);
 
         if let Some(bounding_info) = bounding_info
         {

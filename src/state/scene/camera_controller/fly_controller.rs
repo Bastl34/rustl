@@ -64,7 +64,7 @@ impl FlyController
             keyboard_movement: true,
             gamepad_movement: true,
 
-            collision: true,
+            collision: false,
             collision_distance: DEFAULT_COLLISION_DISTANCE,
 
             move_speed: 0.1,

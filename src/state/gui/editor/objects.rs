@@ -467,7 +467,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         }
     }
 
-    let bounding_box_info = node.read().unwrap().get_bounding_info(None, true, None);
+    let bounding_box_info = node.read().unwrap().get_world_bounding_info(None, true, None);
 
     // General
     collapse_with_title(ui, "object_data", true, "ℹ Object Data", None, |ui|

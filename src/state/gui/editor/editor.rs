@@ -646,6 +646,7 @@ impl Editor
 
         let pos_new = pos.unwrap();
         let pos = pos_new - state.input_manager.mouse.point.velocity;
+        let pos_delta = state.input_manager.mouse.point.velocity;
 
 
 
@@ -740,6 +741,17 @@ impl Editor
         let mut bounding_center = None;
 
         {
+            // ***** map the mouse pos to the bottom center of the object *****
+            {
+                let selected_node = selected_node.read().unwrap();
+                let bounding_info = selected_node.get_world_bounding_info(instance_id, true, None);
+                if let Some((min, max)) = bounding_info
+                {
+                    bounding_min = Some(min);
+                    bounding_center = Some(min + (max - min) / 2.0);
+                }
+            }
+
             // ***** pick info without node itself *****
             let selected_node_clone = selected_node.clone();
             let pick_predicate = move |node: NodeItem, check_instance_id: Option<u64>| -> bool
@@ -762,8 +774,38 @@ impl Editor
                 true
             };
 
+            if bounding_center.is_none() { return; }
+            let bounding_center = bounding_center.unwrap();
+            let bounding_min = bounding_min.unwrap();
+
+            let bottom_center = Point3::<f32>::new(bounding_center.x, bounding_min.y, bounding_center.z);
+
+            let mut bottom_center_screen_space = None;
+
+            let (scene, node, instance) = self.editor_state.get_selected_node(state);
+            let scene = scene.unwrap();
+            for camera in &scene.cameras
+            {
+                // check if click is insight
+                if camera.is_point_in_viewport(&pos_new)
+                {
+                    bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center, width, height));
+
+                    break;
+                }
+            }
+
+            if bottom_center_screen_space.is_none() { return; }
+            let bottom_center_screen_space = bottom_center_screen_space.unwrap();
+            let new_bottom_center = bottom_center_screen_space + pos_delta;
+
+            //dbg!(bottom_center_screen_space);
+            //dbg!(new_bottom_center);
+
             //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, Some(Arc::new(pick_predicate)));
-            let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, None);
+            //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, None);
+            let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate)));
+            //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, bottom_center_screen_space, true, Some(Arc::new(pick_predicate)));
             if let Some(pick_res) = pick_res
             {
                 let node = pick_res.1.node.read().unwrap();
@@ -778,38 +820,16 @@ impl Editor
             //let pick_node_res = self.pick_node(state, selected_node.clone(), pos);
 
             // ***** bounding info *****
+            /*
             let selected_node = selected_node.read().unwrap();
-            let bounding_info = selected_node.get_bounding_info(instance_id, true, None);
+            let bounding_info = selected_node.get_world_bounding_info(instance_id, true, None);
 
             if let Some((min, max)) = bounding_info
             {
                 bounding_min = Some(min);
                 bounding_center = Some(min + (max - min) / 2.0);
-
-                /*
-                let center_x = min.x + (max.x - min.x) / 2.0;
-                let center_z = min.z + (max.z - min.z) / 2.0;
-
-                let p_down = Point3::<f32>::new(pick_pos.x, min.y, pick_pos.z);
-                let ray_down = p_down - pick_pos;
-                */
-
-                /*
-                if let Some(pick_node_res) = pick_node_res
-                {
-                    // pick point buttom
-                    let delta_x = pick_node_res.1.point.x - center_x;
-                    let delta_z = pick_node_res.1.point.z - center_z;
-
-                    object_pos = Some(Point3::<f32>::new(center_x + delta_x, min.y, center_z + delta_z));
-                }
-                else
-                {
-                 */
-                    // bottom center
-                    //object_pos = Some(Point3::<f32>::new(center_x, min.y, center_z));
-                //}
             }
+             */
         }
 
         if pick_pos.is_none() || pick_distance.is_none() || bounding_min.is_none()
@@ -822,6 +842,23 @@ impl Editor
         let bounding_min = bounding_min.unwrap();
         let bounding_center = bounding_center.unwrap();
 
+        let bottom_center = Point3::<f32>::new(bounding_center.x, bounding_min.y, bounding_center.z);
+
+        let bottom_offset = bottom_center - bounding_center;
+        //let delta = (pick_pos - bottom_center) - bottom_offset;
+        let delta = pick_pos - bottom_center;
+
+        /*
+        let new_pos = pick_pos;
+        let new_pos = Vector3::<f32>::new(new_pos.x, new_pos.y, new_pos.z);
+
+        dbg!(pick_pos);
+        dbg!(bottom_offset);
+        dbg!(new_pos);
+         */
+
+
+        /*
         let p_down = Point3::<f32>::new(pick_pos.x, bounding_min.y, pick_pos.z);
         //let ray_down = p_down - pick_pos;
         let ray_down = pick_pos - p_down;
@@ -837,6 +874,7 @@ impl Editor
             if camera.is_point_in_viewport(&pos_new)
             {
                 new_cam_pick_ray = Some(camera.get_ray_from_viewport_coordinates(&pos_new, width, height));
+
                 break;
             }
         }
@@ -858,7 +896,7 @@ impl Editor
         let pick_offset = pick_pos - bounding_center;
         let result_pos = new_pos + pick_offset;
         let result_pos = Vector3::<f32>::new(result_pos.x, result_pos.y, result_pos.z);
-
+         */
 
 
         /*
@@ -886,6 +924,9 @@ impl Editor
 
         // TODO map to "local" object coordinates
 
+
+        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
+        let scene = scene.unwrap();
 
 
         // ********** find transform component for node/instance **********
@@ -953,10 +994,12 @@ impl Editor
 
         component_downcast_mut!(edit_transformation, Transformation);
 
+        //let old_pos = edit_transformation.get_data().position;
 
-        //edit_transformation.apply_translation(delta);
+
+        edit_transformation.apply_translation(delta);
         //edit_transformation.set_translation(new_pos);
-        edit_transformation.set_translation(result_pos);
+        //edit_transformation.set_translation(result_pos);
 
         // snap to grid
         if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Shift) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
@@ -1378,7 +1421,7 @@ impl Editor
                         let mut offset = 0.0;
                         {
                             let root_node = root_node.read().unwrap();
-                            let bounding_info = root_node.get_bounding_info(None, true, None);
+                            let bounding_info = root_node.get_world_bounding_info(None, true, None);
 
                             if let Some(bounding_info) = bounding_info
                             {
