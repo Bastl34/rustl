@@ -1,10 +1,11 @@
 use std::sync::{Arc, RwLock};
 
 use egui::RichText;
+use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
 
-use crate::{component_impl_default, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
+use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
 use crate::state::scene::sound_source::Decodable;
 
 use super::component::{Component, ComponentBase, ComponentItem};
@@ -37,6 +38,7 @@ pub struct Sound
     data: ChangeTracker<SoundData>,
 
     pub sound_source: Option<SoundSourceItem>,
+    pub duration: f32,
 
     audio_device: Option<AudioDeviceItem>,
 
@@ -53,6 +55,7 @@ impl Sound
             base: ComponentBase::new(id, name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
             sound_source: Some(sound_source.clone()),
+            duration: 0.0,
 
             data: ChangeTracker::new(SoundData
             {
@@ -84,6 +87,7 @@ impl Sound
             base: ComponentBase::new(id, name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
             sound_source: None,
+            duration: 0.0,
 
             data: ChangeTracker::new(SoundData
             {
@@ -158,14 +162,20 @@ impl Sound
             if data.sound_type == SoundType::Stereo
             {
                 let s = rodio::Sink::try_new(stream_handle).unwrap();
+                let decoder = sound_source.decoder();
+
+                if let Some(total_duration) = decoder.total_duration()
+                {
+                    self.duration = (total_duration.as_millis() as f64 / 1000.0) as f32;
+                }
 
                 if data.looped
                 {
-                    s.append(sound_source.decoder().repeat_infinite());
+                    s.append(decoder.repeat_infinite());
                 }
                 else
                 {
-                    s.append(sound_source.decoder());
+                    s.append(decoder);
                 }
 
                 s.pause();
@@ -175,14 +185,20 @@ impl Sound
             else
             {
                 let s = rodio::SpatialSink::try_new(stream_handle, [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]).unwrap();
+                let decoder = sound_source.decoder();
+
+                if let Some(total_duration) = decoder.total_duration()
+                {
+                    self.duration = total_duration.as_secs_f32();
+                }
 
                 if data.looped
                 {
-                    s.append(sound_source.decoder().repeat_infinite());
+                    s.append(decoder.repeat_infinite());
                 }
                 else
                 {
-                    s.append(sound_source.decoder());
+                    s.append(decoder);
                 }
 
                 s.pause();
@@ -263,6 +279,38 @@ impl Sound
         if let Some(sink) = &mut self.sink_spatial
         {
             sink.pause();
+        }
+    }
+
+    pub fn sound_time(&self) -> f32
+    {
+        if let Some(sink) = &self.sink
+        {
+            let pos = sink.get_pos();
+            return pos.as_secs_f32();
+        }
+
+        if let Some(sink) = &self.sink_spatial
+        {
+            let pos = sink.get_pos();
+            return pos.as_secs_f32();
+        }
+
+        0.0
+    }
+
+    pub fn set_current_time(&mut self, time: f32)
+    {
+        if let Some(sink) = &mut self.sink
+        {
+            let pos = Duration::from_secs_f32(time);
+            let _ = sink.try_seek(pos);
+        }
+
+        if let Some(sink) = &mut self.sink_spatial
+        {
+            let pos = Duration::from_secs_f32(time);
+            let _ = sink.try_seek(pos);
         }
     }
 
@@ -403,6 +451,7 @@ impl Component for Sound
             base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
 
             sound_source: source.sound_source.clone(),
+            duration: source.duration,
 
             data: ChangeTracker::new(source.get_data().clone()),
 
@@ -505,6 +554,19 @@ impl Component for Sound
         });
 
         changed = ui.checkbox(&mut delete_after_playback, "Delete after playback").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            if !approx_zero(self.duration)
+            {
+                ui.label("Progress: ");
+                let mut time = self.sound_time() * speed;
+                if ui.add(egui::Slider::new(&mut time, 0.0..=self.duration).fixed_decimals(2).text("s")).changed()
+                {
+                    self.set_current_time(time);
+                }
+            }
+        });
 
         if changed
         {
