@@ -11,7 +11,7 @@ simple_logger = "5.0"
 log = "0.4"
 cfg-if = "1"
 wgpu = "0.18.0"
-bytemuck = { version = "1.14.0", features = [ "derive" ] }
+bytemuck = { version = "1.16", features = [ "derive" ] }
 instant = "0.1"
 winit = "0.28.7"
 anyhow = "1.0"
@@ -28,10 +28,10 @@ regex = "1.10"
 rodio = "0.19.0"
 gilrs = { version = "0.10", features = ["wgi"]}
 
-parry3d = "0.16"
+parry3d = "0.17"
 bvh = "0.10.0"
 
-arboard = "3.3"
+arboard = "3.4.0"
 
 tobj = { version = "4.0", features = ["async"]}
 
