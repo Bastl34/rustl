@@ -6,7 +6,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::{self, Alpha}, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
+use super::{components::{alpha::{self, Alpha}, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::Extras};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -36,7 +36,7 @@ pub struct Node
 
     pub skin: Vec<NodeItem>,
 
-    pub extras: NodeExtras,
+    pub extras: Extras,
 
     pub nodes: Vec<NodeItem>,
     //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
@@ -80,7 +80,7 @@ impl Node
 
             skin: vec![],
 
-            extras: NodeExtras::new(),
+            extras: Extras::new(),
 
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),

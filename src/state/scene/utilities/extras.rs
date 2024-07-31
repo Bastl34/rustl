@@ -16,7 +16,7 @@ pub enum ExtraType
     Float64(f64)
 }
 
-pub struct NodeExtras
+pub struct Extras
 {
     pub extras: HashMap<String, ExtraType>,
 }
@@ -93,18 +93,19 @@ impl From<f64> for ExtraType
     }
 }
 
-impl NodeExtras
+impl Extras
 {
-    pub fn new() -> NodeExtras
+    pub fn new() -> Extras
     {
-        NodeExtras
+        Extras
         {
             extras: HashMap::new()
         }
     }
 
-    pub fn contains(&self, key: String) -> bool
+    pub fn contains(&self, key: &str) -> bool
     {
+        let key = key.to_string();
         self.extras.contains_key(&key)
     }
 
@@ -165,8 +166,9 @@ impl NodeExtras
         }
     }
 
-    pub fn insert<T>(&mut self, key: String, value: T) where T: Into<ExtraType>,
+    pub fn insert<T>(&mut self, key: &str, value: T) where T: Into<ExtraType>,
     {
+        let key = key.to_string();
         let extra_type = value.into();
         self.extras.insert(key, extra_type);
     }

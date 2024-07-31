@@ -624,6 +624,7 @@ impl MainInterface
 
                 // sound
                 //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
+                //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
             });
 
             //load default env texture

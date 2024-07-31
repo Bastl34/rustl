@@ -304,13 +304,23 @@ impl Sound
         if let Some(sink) = &mut self.sink
         {
             let pos = Duration::from_secs_f32(time);
-            let _ = sink.try_seek(pos);
+            let res = sink.try_seek(pos);
+            if res.is_err()
+            {
+                println!("can not seek, because its not supported for this file");
+                println!("{:?}", res);
+            }
         }
 
         if let Some(sink) = &mut self.sink_spatial
         {
             let pos = Duration::from_secs_f32(time);
-            let _ = sink.try_seek(pos);
+            let res = sink.try_seek(pos);
+            if res.is_err()
+            {
+                println!("can not seek, because its not supported for this file");
+                println!("{:?}", res);
+            }
         }
     }
 

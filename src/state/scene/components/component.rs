@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
+use crate::state::scene::utilities::extras::Extras;
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -15,6 +16,10 @@ pub trait Component: Any
 {
     fn get_base(&self) -> &ComponentBase;
     fn get_base_mut(&mut self) -> &mut ComponentBase;
+
+    fn get_extras(&self) -> &Extras;
+    fn get_extras_mut(&mut self) -> &mut Extras;
+
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
@@ -59,6 +64,8 @@ pub struct ComponentBase
     pub icon: String,
     pub info: Option<String>,
 
+    pub extras: Extras,
+
     pub from_file: bool,
 
     pub delete_later_request: bool,
@@ -79,6 +86,8 @@ impl ComponentBase
             component_name,
             icon,
             info: None,
+
+            extras: Extras::new(),
 
             from_file: false,
 
@@ -120,6 +129,16 @@ macro_rules! component_impl_default
         fn get_base_mut(&mut self) -> &mut ComponentBase
         {
             &mut self.base
+        }
+
+        fn get_extras(&self) -> &crate::state::scene::utilities::extras::Extras
+        {
+            &self.base.extras
+        }
+
+        fn get_extras_mut(&mut self) -> &mut crate::state::scene::utilities::extras::Extras
+        {
+            &mut self.base.extras
         }
     };
 }

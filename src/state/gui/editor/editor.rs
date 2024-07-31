@@ -4,7 +4,7 @@ use egui::FullOutput;
 
 use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
 
-use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::ComponentItem, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
@@ -1001,14 +1001,65 @@ impl Editor
         //edit_transformation.set_translation(new_pos);
         //edit_transformation.set_translation(result_pos);
 
-        // snap to grid
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Shift) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+        // save not snapped position (simply in metadata/extras)
         {
-            let mut pos = edit_transformation.get_data().position;
-            pos.x = snap_to_grid(pos.x, grid_size);
-            pos.z = snap_to_grid(pos.z, grid_size);
+            if !edit_transformation.get_extras().contains("pos_x")
+            {
+                let pos_x = edit_transformation.get_data().position.x;
+                let pos_y = edit_transformation.get_data().position.y;
+                let pos_z = edit_transformation.get_data().position.z;
+
+                edit_transformation.get_extras_mut().insert("pos_x", pos_x);
+                edit_transformation.get_extras_mut().insert("pos_y", pos_y);
+                edit_transformation.get_extras_mut().insert("pos_z", pos_z);
+            }
+            else
+            {
+                let mut pos_x: f32 = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap();
+                let mut pos_y: f32 = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
+                let mut pos_z: f32 = *edit_transformation.get_extras().get::<f32>("pos_z").unwrap();
+
+                pos_x += delta.x;
+                pos_y += delta.y;
+                pos_z += delta.z;
+
+                edit_transformation.get_extras_mut().insert("pos_x", pos_x);
+                edit_transformation.get_extras_mut().insert("pos_y", pos_y);
+                edit_transformation.get_extras_mut().insert("pos_z", pos_z);
+            }
+        }
+
+        // snap to grid
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+        {
+            //let mut pos = edit_transformation.get_data().position;
+            let mut pos_x = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap();
+            let pos_y = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
+            let mut pos_z = *edit_transformation.get_extras().get::<f32>("pos_z").unwrap();
+
+            pos_x = snap_to_grid(pos_x, grid_size);
+            pos_z = snap_to_grid(pos_z, grid_size);
+
+            let pos = Vector3::<f32>::new(pos_x, pos_y, pos_z);
 
             edit_transformation.set_translation(pos);
+        }
+
+        // bottom left snapping
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+        {
+            let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
+            if let Some(bounding_info) = bounding_info
+            {
+                dbg!(bounding_info);
+
+                let pos_x = snap_to_grid(bounding_info.0.x, grid_size);
+                let pos_z = snap_to_grid(bounding_info.0.z, grid_size);
+
+                let delta_x = bounding_info.0.x - pos_x;
+                let delta_z = bounding_info.0.z - pos_z;
+
+            }
         }
 
         //let delta = edit_transformation.get_data().position
