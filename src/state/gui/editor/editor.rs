@@ -992,17 +992,21 @@ impl Editor
             edit_transformation = node_transform.clone();
         }
 
-        component_downcast_mut!(edit_transformation, Transformation);
+        {
+            component_downcast_mut!(edit_transformation, Transformation);
 
-        //let old_pos = edit_transformation.get_data().position;
+            //let old_pos = edit_transformation.get_data().position;
 
 
-        edit_transformation.apply_translation(delta);
-        //edit_transformation.set_translation(new_pos);
-        //edit_transformation.set_translation(result_pos);
+            edit_transformation.apply_translation(delta);
+            //edit_transformation.set_translation(new_pos);
+            //edit_transformation.set_translation(result_pos);
+        }
 
         // save not snapped position (simply in metadata/extras)
         {
+            component_downcast_mut!(edit_transformation, Transformation);
+
             if !edit_transformation.get_extras().contains("pos_x")
             {
                 let pos_x = edit_transformation.get_data().position.x;
@@ -1032,6 +1036,8 @@ impl Editor
         // snap to grid
         if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
         {
+            component_downcast_mut!(edit_transformation, Transformation);
+
             //let mut pos = edit_transformation.get_data().position;
             let mut pos_x = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap();
             let pos_y = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
@@ -1051,14 +1057,22 @@ impl Editor
             let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
             if let Some(bounding_info) = bounding_info
             {
-                dbg!(bounding_info);
+                component_downcast_mut!(edit_transformation, Transformation);
 
-                let pos_x = snap_to_grid(bounding_info.0.x, grid_size);
-                let pos_z = snap_to_grid(bounding_info.0.z, grid_size);
+                let center = bounding_info.0 + (bounding_info.1 - bounding_info.0) / 2.0;
+                let delta_x = center.x - bounding_info.0.x;
+                let delta_z = center.z - bounding_info.0.z;
 
-                let delta_x = bounding_info.0.x - pos_x;
-                let delta_z = bounding_info.0.z - pos_z;
+                let mut pos_x = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap() - delta_x;
+                let pos_y = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
+                let mut pos_z = *edit_transformation.get_extras().get::<f32>("pos_z").unwrap() - delta_z;
+    
+                pos_x = snap_to_grid(pos_x, grid_size);
+                pos_z = snap_to_grid(pos_z, grid_size);
 
+                let pos = Vector3::<f32>::new(pos_x + delta_x, pos_y, pos_z + delta_z);
+
+                edit_transformation.set_translation(pos);
             }
         }
 

@@ -662,6 +662,8 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
     let instance = instance.unwrap();
 
+    let bounding_box_info = node.get_world_bounding_info(Some(instance_id), true, None);
+
     // General
     collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", None, |ui|
     {
@@ -669,6 +671,12 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
         ui.label(format!("name: {}", instance.name));
         ui.label(format!("id: {}", instance.id));
+
+        if let Some(bounding_box_info) = bounding_box_info
+        {
+            ui.label(format!("B-Box min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
+            ui.label(format!("B-Box max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
+        }
     });
 
     // Settings
