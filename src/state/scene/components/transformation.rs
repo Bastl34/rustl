@@ -457,6 +457,28 @@ impl Transformation
         self.calc_transform();
     }
 
+    pub fn set_rotation(&mut self, rotation: Vector3<f32>)
+    {
+        let data = self.data.get_mut();
+
+        data.rotation = rotation;
+
+        if !data.transform_vectors
+        {
+            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
+            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
+            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
+
+            let mut rotation = rotation_z;
+            rotation = rotation * rotation_y;
+            rotation = rotation * rotation_x;
+
+            data.trans = data.trans * rotation;
+        }
+
+        self.calc_transform();
+    }
+
     pub fn apply_rotation_quaternion(&mut self, rotation: Vector4<f32>)
     {
         let data = self.data.get_mut();
