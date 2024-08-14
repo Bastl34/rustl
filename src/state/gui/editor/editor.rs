@@ -2,9 +2,9 @@ use std::{cell::RefCell, f32::consts::PI, f64::consts::E, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
-use nalgebra::{Vector3, Matrix4, Point2, Point3, Vector2};
+use nalgebra::{Vector3, Point2, Point3, Vector2, Vector4};
 
-use crate::{component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
@@ -61,6 +61,9 @@ impl Editor
         // update modes
         self.update_modes(state);
 
+        // key bindings
+        self.key_bindings(state);
+
         // update grid based on camera pos
         self.update_grid(state);
 
@@ -110,6 +113,27 @@ impl Editor
             else
             {
                 self.editor_state.de_select_current_item(state);
+            }
+        }
+    }
+
+    pub fn key_bindings(&mut self, state: &mut State)
+    {
+        if self.editor_state.try_out
+        {
+            return;
+        }
+
+        // create instance
+        if state.input_manager.keyboard.is_pressed(Key::I)
+        {
+            if self.editor_state.selected_type == SelectionType::Object
+            {
+                if let (Some(scene), Some(node), _) = self.editor_state.get_selected_node(state)
+                {
+                    let new_instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    node.write().unwrap().create_default_instance(node.clone(), new_instance_id);
+                }
             }
         }
     }
@@ -265,6 +289,15 @@ impl Editor
                             let node = node_arc.read().unwrap();
 
                             // select object itself if there is not instance on it
+                            if right_mouse_button && !use_root_node
+                            {
+                                id_string = format!("objects_{}_{}", node.id, hit.instance_id);
+                            }
+                            else
+                            {
+                                id_string = format!("objects_{}", node.id);
+                            }
+                            /*
                             if node.instances.get_ref().len() == 1 || use_root_node
                             {
                                 id_string = format!("objects_{}", node.id);
@@ -273,6 +306,7 @@ impl Editor
                             {
                                 id_string = format!("objects_{}_{}", node.id, hit.instance_id);
                             }
+                            */
                         }
 
                         let mut already_selected = false;
@@ -608,17 +642,76 @@ impl Editor
         }
     }
 
+    pub fn find_fransform_component(&mut self, state: &mut State) -> ComponentItem
+    {
+        // ********** find transform component for node/instance **********
+        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
+
+        let scene = scene.unwrap();
+        let node = node.unwrap();
+
+        let edit_transformation: ComponentItem;
+
+        if let Some(instance_id) = instance_id
+        {
+            let instance_transform;
+            {
+                let node = node.read().unwrap();
+                let instance = node.find_instance_by_id(instance_id).unwrap();
+                let instance = instance.read().unwrap();
+                instance_transform = instance.find_component::<Transformation>();
+            }
+
+            if let Some(instance_transform) = instance_transform
+            {
+                edit_transformation = instance_transform.clone();
+            }
+            else
+            {
+                let node = node.read().unwrap();
+                let instance = node.find_instance_by_id(instance_id).unwrap() ;
+                let mut instance = instance.write().unwrap();
+                let id = scene.id_manager.write().unwrap().get_next_component_id();
+
+                instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+
+                let transformation = instance.find_component::<Transformation>().unwrap();
+                edit_transformation = transformation.clone();
+            }
+        }
+        else
+        {
+            let node_transform;
+            {
+                let node = node.read().unwrap();
+                node_transform = node.find_component::<Transformation>();
+            }
+
+            if let Some(node_transform) = node_transform
+            {
+                edit_transformation = node_transform.clone();
+            }
+            else
+            {
+                let mut node = node.write().unwrap();
+                let id = scene.id_manager.write().unwrap().get_next_component_id();
+
+                node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+
+                let transformation = node.find_component::<Transformation>().unwrap();
+                edit_transformation = transformation.clone();
+            }
+        }
+
+        edit_transformation
+    }
+
     pub fn move_object(&mut self, state: &mut State)
     {
         let width = state.width;
         let height = state.height;
 
-        let step_size = 1.0;
-        let angle_steps = PI / 8.0;
-        let factor = 0.01;
-
         let grid_size = self.editor_state.grid_size;
-
 
         // ********** enable movement if nothing is selected **********
         if self.editor_state.selected_object.is_empty() || self.editor_state.selected_type != SelectionType::Object || state.input_manager.mouse.point.pos.is_none()
@@ -641,14 +734,9 @@ impl Editor
             return;
         }
 
-        //let pos = pos.unwrap();
-        //let old_pos = pos - state.input_manager.mouse.point.velocity;
-
         let pos_new = pos.unwrap();
         let pos = pos_new - state.input_manager.mouse.point.velocity;
         let pos_delta = state.input_manager.mouse.point.velocity;
-
-
 
 
         // ********** get selection **********
@@ -677,7 +765,6 @@ impl Editor
             return;
         }
 
-
         // ********** check that first interaction (after selection) was on the selected object **********
         let engine_frame = state.stats.frame;
 
@@ -695,6 +782,7 @@ impl Editor
                 if selected_scene_id == scene_id && has_currect_parent
                 {
                     self.editor_state.edit_moving = true;
+                    self.editor_state.selected_object_position = None;
                 }
             }
         }
@@ -712,13 +800,11 @@ impl Editor
             return;
         }
 
-
         // ********** check mouse movement **********
         if !state.input_manager.mouse.has_velocity()
         {
             return;
         }
-
 
         // ********** disable camera movement **********
         let instance_id;
@@ -732,9 +818,23 @@ impl Editor
             instance_id = instance;
         }
 
+        // ********** find transform component for node/instance **********
+        let edit_transformation = self.find_fransform_component(state);
+
+        // ********** re-apply saved movement (without snapping) **********
+        if let Some(selected_object_position) = self.editor_state.selected_object_position
+        {
+            let pos_x = selected_object_position.x;
+            let pos_y = selected_object_position.y;
+            let pos_z = selected_object_position.z;
+
+            let pos = Vector3::<f32>::new(pos_x, pos_y, pos_z);
+
+            component_downcast_mut!(edit_transformation, Transformation);
+            edit_transformation.set_translation(pos);
+        }
 
         // ********** get pick info **********
-        //let mut object_pos = None;
         let mut pick_pos = None;
         let mut pick_distance = None;
         let mut bounding_min = None;
@@ -774,6 +874,7 @@ impl Editor
                 true
             };
 
+            // ***** bounding box info *****
             if bounding_center.is_none() { return; }
             let bounding_center = bounding_center.unwrap();
             let bounding_min = bounding_min.unwrap();
@@ -782,7 +883,7 @@ impl Editor
 
             let mut bottom_center_screen_space = None;
 
-            let (scene, node, instance) = self.editor_state.get_selected_node(state);
+            let (scene, node, _instance) = self.editor_state.get_selected_node(state);
             let scene = scene.unwrap();
             for camera in &scene.cameras
             {
@@ -799,37 +900,12 @@ impl Editor
             let bottom_center_screen_space = bottom_center_screen_space.unwrap();
             let new_bottom_center = bottom_center_screen_space + pos_delta;
 
-            //dbg!(bottom_center_screen_space);
-            //dbg!(new_bottom_center);
-
-            //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, Some(Arc::new(pick_predicate)));
-            //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, pos, true, None);
             let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate)));
-            //let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, bottom_center_screen_space, true, Some(Arc::new(pick_predicate)));
             if let Some(pick_res) = pick_res
             {
-                let node = pick_res.1.node.read().unwrap();
-                //dbg!(&node.name);
-
                 pick_pos = Some(pick_res.1.point);
                 pick_distance = Some(pick_res.1.time_of_impact);
             }
-
-
-            // ***** pick on node *****
-            //let pick_node_res = self.pick_node(state, selected_node.clone(), pos);
-
-            // ***** bounding info *****
-            /*
-            let selected_node = selected_node.read().unwrap();
-            let bounding_info = selected_node.get_world_bounding_info(instance_id, true, None);
-
-            if let Some((min, max)) = bounding_info
-            {
-                bounding_min = Some(min);
-                bounding_center = Some(min + (max - min) / 2.0);
-            }
-             */
         }
 
         if pick_pos.is_none() || pick_distance.is_none() || bounding_min.is_none()
@@ -838,247 +914,119 @@ impl Editor
         }
 
         let pick_pos = pick_pos.unwrap();
-        let pick_distance = pick_distance.unwrap();
         let bounding_min = bounding_min.unwrap();
         let bounding_center = bounding_center.unwrap();
 
         let bottom_center = Point3::<f32>::new(bounding_center.x, bounding_min.y, bounding_center.z);
+        let mut delta = pick_pos - bottom_center;
 
-        let bottom_offset = bottom_center - bounding_center;
-        //let delta = (pick_pos - bottom_center) - bottom_offset;
-        let delta = pick_pos - bottom_center;
-
-        /*
-        let new_pos = pick_pos;
-        let new_pos = Vector3::<f32>::new(new_pos.x, new_pos.y, new_pos.z);
-
-        dbg!(pick_pos);
-        dbg!(bottom_offset);
-        dbg!(new_pos);
-         */
-
-
-        /*
-        let p_down = Point3::<f32>::new(pick_pos.x, bounding_min.y, pick_pos.z);
-        //let ray_down = p_down - pick_pos;
-        let ray_down = pick_pos - p_down;
-
-
-        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
-        let scene = scene.unwrap();
-
-        let mut new_cam_pick_ray = None;
-        for camera in &scene.cameras
+        // ********** map to local **********
+        let transform_to_parent_local = |instance_id: Option<u64>, selected_node: NodeItem, vec: Vector3<f32>| -> Vector3<f32>
         {
-            // check if click is insight
-            if camera.is_point_in_viewport(&pos_new)
+            let mut vec = vec;
+
+            if instance_id.is_some()
             {
-                new_cam_pick_ray = Some(camera.get_ray_from_viewport_coordinates(&pos_new, width, height));
-
-                break;
-            }
-        }
-
-        if new_cam_pick_ray.is_none()
-        {
-            return;
-        }
-
-        let new_cam_pick_ray = new_cam_pick_ray.unwrap();
-
-        let origin = new_cam_pick_ray.origin;
-        let dir = new_cam_pick_ray.dir.normalize();
-
-        let new_pos = origin + (dir * pick_distance);
-
-        let delta = new_pos - pick_pos;
-
-        let pick_offset = pick_pos - bounding_center;
-        let result_pos = new_pos + pick_offset;
-        let result_pos = Vector3::<f32>::new(result_pos.x, result_pos.y, result_pos.z);
-         */
-
-
-        /*
-        let bottom_point = origin + (dir * pick_distance) + ray_down;
-        let bottom_offset = bounding_min - bounding_center;
-
-
-        let delta = bottom_point - pick_pos;
-
-        let new_pos = bottom_point - bottom_offset;
-        let new_pos = Vector3::<f32>::new(new_pos.x, new_pos.y, new_pos.z);
-
-         */
-
-        //dbg!(delta);
-
-        /*
-        let object_pos = object_pos.unwrap();
-        let pick_pos = pick_pos.unwrap();
-
-        let delta = pick_pos - object_pos;
-        */
-
-        //dbg!(delta);
-
-        // TODO map to "local" object coordinates
-
-
-        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
-        let scene = scene.unwrap();
-
-
-        // ********** find transform component for node/instance **********
-        let edit_transformation: ComponentItem;
-        let node_transform;
-        let mut instance_transform = None;
-        let instances_amount;
-
-        {
-            let node = selected_node.read().unwrap();
-            instances_amount = node.instances.get_ref().len();
-            node_transform = node.find_component::<Transformation>();
-        }
-
-        if let Some(instance_id) = instance_id
-        {
-            let node = selected_node.read().unwrap();
-            let instance = node.find_instance_by_id(instance_id).unwrap();
-
-            let instance = instance.write().unwrap();
-            instance_transform = instance.find_component::<Transformation>();
-        }
-
-        // if there are multiple instances in the node -> use instance transform
-        if instances_amount > 1 && instance_id.is_some()
-        {
-            if let Some(instance_transform) = instance_transform
-            {
-                edit_transformation = instance_transform.clone();
+                let node = selected_node.read().unwrap();
+                vec = node.transform_global_to_local(&Vector4::<f32>::new(vec.x, vec.y, vec.z, 0.0)).xyz();
             }
             else
             {
                 let node = selected_node.read().unwrap();
-                let instance = node.find_instance_by_id(instance_id.unwrap()).unwrap() ;
-                let mut instance = instance.write().unwrap();
-                let id = scene.id_manager.write().unwrap().get_next_component_id();
 
-                instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
-
-                let transformation = instance.find_component::<Transformation>().unwrap();
-                edit_transformation = transformation.clone();
+                if let Some(parent) = &node.parent
+                {
+                    let parent = parent.read().unwrap();
+                    vec = parent.transform_global_to_local(&Vector4::<f32>::new(vec.x, vec.y, vec.z, 0.0)).xyz();
+                }
             }
-        }
-        // if there is no node and instance transform -> use node transform
-        else if instance_transform.is_none() && node_transform.is_none()
-        {
-            let mut node = selected_node.write().unwrap();
-            let id = scene.id_manager.write().unwrap().get_next_component_id();
-            node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
 
-            let transformation = node.find_component::<Transformation>().unwrap();
-            edit_transformation = transformation.clone();
-        }
-        // if there is already a transform on the instance -> use it
-        else if let Some(instance_transform) = instance_transform
+            vec
+        };
+
+
+        // parent: because the rotation/scale of a local transform is applied otherwise to the position. which will result in movement in the wrong direction
+        delta = transform_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
+
+        // ********** save not snapped position (simply in metadata/extras) **********
+        if let Some(selected_object_position) = self.editor_state.selected_object_position.as_mut()
         {
-            edit_transformation = instance_transform.clone();
+            selected_object_position.x += delta.x;
+            selected_object_position.y += delta.y;
+            selected_object_position.z += delta.z;
         }
-        // otherwise use node transform
         else
         {
-            let node_transform = node_transform.unwrap();
-            edit_transformation = node_transform.clone();
+            component_downcast!(edit_transformation, Transformation);
+
+            let pos = edit_transformation.get_data().position.clone() + delta;
+            self.editor_state.selected_object_position = Some(pos);
         }
 
+        // ********** apply movement (without snapping) **********
         {
-            component_downcast_mut!(edit_transformation, Transformation);
-
-            //let old_pos = edit_transformation.get_data().position;
-
-
-            edit_transformation.apply_translation(delta);
-            //edit_transformation.set_translation(new_pos);
-            //edit_transformation.set_translation(result_pos);
-        }
-
-        // save not snapped position (simply in metadata/extras)
-        {
-            component_downcast_mut!(edit_transformation, Transformation);
-
-            if !edit_transformation.get_extras().contains("pos_x")
-            {
-                let pos_x = edit_transformation.get_data().position.x;
-                let pos_y = edit_transformation.get_data().position.y;
-                let pos_z = edit_transformation.get_data().position.z;
-
-                edit_transformation.get_extras_mut().insert("pos_x", pos_x);
-                edit_transformation.get_extras_mut().insert("pos_y", pos_y);
-                edit_transformation.get_extras_mut().insert("pos_z", pos_z);
-            }
-            else
-            {
-                let mut pos_x: f32 = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap();
-                let mut pos_y: f32 = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
-                let mut pos_z: f32 = *edit_transformation.get_extras().get::<f32>("pos_z").unwrap();
-
-                pos_x += delta.x;
-                pos_y += delta.y;
-                pos_z += delta.z;
-
-                edit_transformation.get_extras_mut().insert("pos_x", pos_x);
-                edit_transformation.get_extras_mut().insert("pos_y", pos_y);
-                edit_transformation.get_extras_mut().insert("pos_z", pos_z);
-            }
-        }
-
-        // snap to grid
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
-        {
-            component_downcast_mut!(edit_transformation, Transformation);
-
-            //let mut pos = edit_transformation.get_data().position;
-            let mut pos_x = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap();
-            let pos_y = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
-            let mut pos_z = *edit_transformation.get_extras().get::<f32>("pos_z").unwrap();
-
-            pos_x = snap_to_grid(pos_x, grid_size);
-            pos_z = snap_to_grid(pos_z, grid_size);
+            let pos_x = self.editor_state.selected_object_position.unwrap().x;
+            let pos_y = self.editor_state.selected_object_position.unwrap().y;
+            let pos_z = self.editor_state.selected_object_position.unwrap().z;
 
             let pos = Vector3::<f32>::new(pos_x, pos_y, pos_z);
 
+            component_downcast_mut!(edit_transformation, Transformation);
             edit_transformation.set_translation(pos);
         }
 
-        // bottom left snapping
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+        // ********** snap to grid center **********
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
         {
             let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
             if let Some(bounding_info) = bounding_info
             {
+                let center = bounding_info.0 + (bounding_info.1 - bounding_info.0) / 2.0;
+
+                let new_x = snap_to_grid(center.x, grid_size);
+                let new_z = snap_to_grid(center.z, grid_size);
+
+                let delta = Vector3::<f32>::new(new_x - center.x, 0.0, new_z - center.z);
+                let delta = transform_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
+
                 component_downcast_mut!(edit_transformation, Transformation);
 
-                let center = bounding_info.0 + (bounding_info.1 - bounding_info.0) / 2.0;
-                let delta_x = center.x - bounding_info.0.x;
-                let delta_z = center.z - bounding_info.0.z;
+                edit_transformation.apply_translation(delta);
+            }
+        }
+        // ********** bottom left snapping **********
+        else if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+        {
+            let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
+            if let Some(bounding_info) = bounding_info
+            {
+                let min = bounding_info.0;
+                let max = bounding_info.1;
+                let bottom_left = Vector3::<f32>::new(min.x, min.y, max.z);
 
-                let mut pos_x = *edit_transformation.get_extras().get::<f32>("pos_x").unwrap() - delta_x;
-                let pos_y = *edit_transformation.get_extras().get::<f32>("pos_y").unwrap();
-                let mut pos_z = *edit_transformation.get_extras().get::<f32>("pos_z").unwrap() - delta_z;
-    
-                pos_x = snap_to_grid(pos_x, grid_size);
-                pos_z = snap_to_grid(pos_z, grid_size);
+                let new_x = snap_to_grid(bottom_left.x, grid_size);
+                let new_z = snap_to_grid(bottom_left.z, grid_size);
 
-                let pos = Vector3::<f32>::new(pos_x + delta_x, pos_y, pos_z + delta_z);
+                let delta = Vector3::<f32>::new(new_x - bottom_left.x, 0.0, new_z - bottom_left.z);
+                let delta = transform_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
 
-                edit_transformation.set_translation(pos);
+                component_downcast_mut!(edit_transformation, Transformation);
+
+                edit_transformation.apply_translation(delta);
             }
         }
 
-        //let delta = edit_transformation.get_data().position
+    }
 
 
+    pub fn move_object_old(&mut self, state: &mut State)
+    {
+        let width = state.width;
+        let height = state.height;
+
+        let step_size = 1.0;
+        let angle_steps = PI / 8.0;
+        let factor = 0.01;
 
 
         /*

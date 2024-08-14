@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
@@ -39,8 +41,6 @@ pub struct Node
     pub extras: Extras,
 
     pub nodes: Vec<NodeItem>,
-    //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
-    //pub instances: ChangeTracker<Vec<RefCell<InstanceItem>>>,
     pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
 
     pub components: Vec<ComponentItem>,
@@ -490,6 +490,58 @@ impl Node
         {
             node_transform
         }
+    }
+
+    /*
+    pub fn get_full_transform_inverse(&self) -> Matrix4<f32>
+    {
+        let (node_transform, node_parent_inheritance) = self.get_transform();
+        let mut parent_inverse_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = &self.parent
+        {
+            let parent_node = parent_node.read().unwrap();
+            parent_inverse_trans = parent_node.get_full_transform_inverse();
+        }
+
+        if node_parent_inheritance
+        {
+            node_transform.try_inverse().unwrap() * parent_inverse_trans
+        }
+        else
+        {
+            node_transform.try_inverse().unwrap()
+        }
+    }
+    */
+
+    pub fn get_full_transform_inverse(&self) -> Matrix4<f32>
+    {
+        let full_transform = self.get_full_transform();
+
+        full_transform.try_inverse().unwrap()
+    }
+
+    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.get_full_transform_inverse();
+
+        trans * vec
+    }
+
+    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.get_full_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_from_node_to_local(&self, vec: &Vector4<f32>, node: NodeItem) -> Vector4<f32>
+    {
+        let node = node.read().unwrap();
+        let global_vec = node.transform_local_to_global(vec);
+
+        self.transform_global_to_local(&global_vec)
     }
 
     fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
@@ -1006,25 +1058,6 @@ impl Node
                 let mut node = node.write().unwrap();
                 node.instances.force_change();
             }
-
-            // consume alpha and transform manually (not prevent useless updates)
-            /*
-            let node_read = node.read().unwrap();
-            let transform_component = node_read.find_component::<Transformation>();
-            let alpha_component = node_read.find_component::<Alpha>();
-
-            if let Some(transform_component) = transform_component
-            {
-                component_downcast_mut!(transform_component, Transformation);
-                transform_component.get_data_mut().consume();
-            }
-
-            if let Some(alpha_component) = alpha_component
-            {
-                component_downcast_mut!(alpha_component, Alpha);
-                alpha_component.get_data_mut().consume();
-            }
-             */
         }
 
         // ***** update childs *****

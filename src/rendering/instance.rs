@@ -132,9 +132,9 @@ impl InstanceBuffer
         {
             let instance = instance.read().unwrap();
             //let instance = instance.read().unwrap();
-            let transform = instance.get_world_transform();
-            let alpha = instance.get_alpha();
-            let locked = instance.get_is_locked();
+            let transform = instance.get_cached_world_transform();
+            let alpha = instance.get_cached_alpha();
+            let locked = instance.get_cached_is_locked();
             let instance_data = instance.get_data();
 
             self.transformations.push(transform);
@@ -172,9 +172,9 @@ impl InstanceBuffer
             return;
         }
 
-        let transform = instance.get_world_transform();
-        let alpha = instance.get_alpha();
-        let locked = instance.get_is_locked();
+        let transform = instance.get_cached_world_transform();
+        let alpha = instance.get_cached_alpha();
+        let locked = instance.get_cached_is_locked();
         let instance_data = instance.get_data();
 
         let data = Instance
@@ -210,9 +210,9 @@ impl InstanceBuffer
         let buffer_data = slice.iter().map(|instance|
         {
             let instance = instance.borrow();
-            let transform = instance.get_world_transform();
-            let alpha = instance.get_alpha();
-            let locked = instance.get_is_locked();
+            let transform = instance.get_cached_world_transform();
+            let alpha = instance.get_cached_alpha();
+            let locked = instance.get_cached_is_locked();
             let instance_data = instance.get_data();
 
             self.transformations[i] = transform;

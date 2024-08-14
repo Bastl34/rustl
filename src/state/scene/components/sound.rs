@@ -370,7 +370,7 @@ impl Sound
             if let Some(instance) = instance
             {
                 let instance = instance.read().unwrap();
-                let transform = instance.get_world_transform();
+                let transform = instance.get_cached_world_transform();
                 position = Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34));
 
             }

@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use std::sync::{Arc, RwLock};
 
-use nalgebra::{Matrix3, Matrix4, Vector3};
+use nalgebra::{Matrix4, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
@@ -370,6 +372,35 @@ impl Instance
         }
     }
 
+    pub fn calculate_inverse_transform(&self) -> Matrix4<f32>
+    {
+        let full_transform = self.calculate_transform();
+
+        full_transform.try_inverse().unwrap()
+    }
+
+    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_inverse_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_from_instance_to_local(&self, vec: &Vector4<f32>, instance: Arc<RwLock<Box<Instance>>>) -> Vector4<f32>
+    {
+        let instance = instance.read().unwrap();
+        let global_vec = instance.transform_local_to_global(vec);
+
+        self.transform_global_to_local(&global_vec)
+    }
+
     pub fn calculate_alpha(&self) -> f32
     {
         let node_alpha = Node::get_full_alpha(self.node.clone());
@@ -412,12 +443,12 @@ impl Instance
         node.is_locked()
     }
 
-    pub fn get_world_transform(&self) -> Matrix4::<f32>
+    pub fn get_cached_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
     }
 
-    pub fn get_alpha(&self) -> f32
+    pub fn get_cached_alpha(&self) -> f32
     {
         if self.get_data().visible == false
         {
@@ -427,7 +458,7 @@ impl Instance
         self.get_data().computed.alpha
     }
 
-    pub fn get_is_locked(&self) -> bool
+    pub fn get_cached_is_locked(&self) -> bool
     {
         if self.get_data().locked
         {

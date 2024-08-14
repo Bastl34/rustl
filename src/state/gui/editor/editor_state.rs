@@ -1,7 +1,7 @@
 use std::{sync::{RwLock, Arc}, fmt::format};
 
 use image::{ImageFormat, EncodableLayout};
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector3};
 
 use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{camera_controller::fly_controller::FlyController, node::NodeItem, scene::Scene}, state::State}};
 
@@ -111,6 +111,7 @@ pub struct EditorState
     pub selected_scene_id: Option<u64>,
     pub selected_type: SelectionType,
     pub selected_object: String,
+    pub selected_object_position: Option<Vector3<f32>>,
 
     pub drag_id: Option<String>,
 
@@ -166,6 +167,7 @@ impl EditorState
             selected_scene_id: None,
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
+            selected_object_position: None,
 
             drag_id: None,
 

@@ -1006,7 +1006,7 @@ impl Scene
                     continue;
                 }
 
-                let alpha = instance.get_alpha();
+                let alpha = instance.get_cached_alpha();
 
                 if approx_zero(alpha)
                 {
@@ -1014,7 +1014,7 @@ impl Scene
                 }
 
                 // transformation
-                let transform = instance.get_world_transform();
+                let transform = instance.get_cached_world_transform();
                 let transform_inverse = transform.try_inverse().unwrap();
 
                 let ray_inverse = math::inverse_ray(ray, &transform_inverse);

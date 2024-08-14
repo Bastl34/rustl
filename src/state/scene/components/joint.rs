@@ -138,7 +138,7 @@ impl Joint
         self.get_data_mut().get_mut().local_trans = local_trans;
     }
 
-    fn get_full_inverse_bind_transform(node: NodeItem) -> Matrix4<f32>
+    fn get_full_transform_inverse_bind_transform(node: NodeItem) -> Matrix4<f32>
     {
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();
@@ -156,7 +156,7 @@ impl Joint
                 //if parent.read().unwrap().find_component::<Joint>().is_some()
                 if !parent.read().unwrap().root_node
                 {
-                    let parent_inverse_bindpose_matrix = Self::get_full_inverse_bind_transform(parent.clone());
+                    let parent_inverse_bindpose_matrix = Self::get_full_transform_inverse_bind_transform(parent.clone());
                     inverse_bindpose_matrix = parent_inverse_bindpose_matrix * inverse_bindpose_matrix;
                 }
             }
@@ -209,7 +209,7 @@ impl Component for Joint
 
         }
 
-        //let inverse_bind_transform = Self::get_full_inverse_bind_transform(node.clone());
+        //let inverse_bind_transform = Self::get_full_transform_inverse_bind_transform(node.clone());
         //self.get_data_mut().get_mut().inverse_bind_trans_calculated = inverse_bind_transform;
     }
 
