@@ -205,7 +205,8 @@ impl Editor
 
     pub fn select_object(&mut self, state: &mut State)
     {
-        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
+        //if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
+        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
             let left_mouse_button = state.input_manager.mouse.clicked(MouseButton::Left);
             let right_mouse_button = state.input_manager.mouse.clicked(MouseButton::Right);
@@ -702,6 +703,16 @@ impl Editor
 
     pub fn set_edit_mode(&mut self, state: &mut State)
     {
+        // if its in rotation mode -> just end rotation mode
+        if let Some(EditMode::Rotate(start_pos, _, _, _)) = self.editor_state.edit_mode
+        {
+            if state.input_manager.mouse.is_pressed(MouseButton::Left)
+            {
+                self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
+                return;
+            }
+        }
+
         // ********** mode change **********
         if state.input_manager.keyboard.is_pressed(Key::G)
         {
@@ -713,17 +724,6 @@ impl Editor
             let start_pos = state.input_manager.mouse.point.pos.unwrap();
             self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
         }
-
-        if self.editor_state.edit_mode.is_some() && state.input_manager.mouse.is_pressed(MouseButton::Left)
-        {
-            let start_pos = state.input_manager.mouse.point.pos.unwrap();
-            match self.editor_state.edit_mode.as_ref().unwrap()
-            {
-                EditMode::Movement(_, _, _, _) => {  },
-                EditMode::Rotate(_, _, _, _) => { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true)); },
-            }
-        }
-
 
         if self.editor_state.edit_mode.is_some()
         {
