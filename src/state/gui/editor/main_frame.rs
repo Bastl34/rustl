@@ -1,6 +1,9 @@
 
+use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
+use crate::state::scene::components::component::ComponentItem;
+use crate::state::scene::components::transformation::Transformation;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
@@ -13,7 +16,7 @@ use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
-use super::general::{create_general_settings};
+use super::general::create_general_settings;
 use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
@@ -129,29 +132,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
-            // grid size
-            let mut changed = false;
-            let mut grid_size = editor_state.grid_size;
-
-            ui.label("▓").on_hover_text("Grid");
-            egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
-            {
-                ui.style_mut().wrap = Some(false);
-
-                changed = ui.selectable_value(&mut grid_size, 0.0625, "0.0625").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 1.0, "1.0").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 2.5, "2.5").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 5.0, "5.0").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 10.0, "10.0").changed() || changed;
-            });
-
-            if changed
-            {
-                editor_state.set_grid_size(grid_size);
-            }
+            create_tool_menu_grid(editor_state, state, ui);
         });
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -192,35 +173,72 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     });
 }
 
-fn create_editor_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
+    // grid size
+    let mut changed = false;
+    let mut grid_size = editor_state.grid_size;
+
+    ui.label("▓").on_hover_text("Grid");
+    egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
+    {
+        ui.style_mut().wrap = Some(false);
+
+        changed = ui.selectable_value(&mut grid_size, 0.0625, "0.0625").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 1.0, "1.0").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 2.5, "2.5").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 5.0, "5.0").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 10.0, "10.0").changed() || changed;
+    });
+
+    if changed
+    {
+        editor_state.set_grid_size(grid_size);
+    }
+
+    ui.separator();
+
+    ui.checkbox(&mut editor_state.drag_and_drop_grid_only, "Only move on Grid");
+
+    ui.separator();
+
     ui.horizontal(|ui|
     {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+        ui.label("Grid Y: ");
+
+        let mut y = 0.0;
+        let mut grid_transform: Option<ComponentItem> = None;
+
+        for scene in &mut state.scenes
         {
-            // grid size
-            let mut changed = false;
-            let mut grid_size = editor_state.grid_size;
+            let grid = scene.find_node_by_name("grid");
 
-            ui.label("Grid: ");
-            egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
+            if let Some(grid) = grid
             {
-                ui.style_mut().wrap = Some(false);
+                let grid = grid.read().unwrap();
+                grid_transform = grid.find_component::<Transformation>();
 
-                changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 1.0, "1.0").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 2.5, "2.5").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 5.0, "5.0").changed() || changed;
-                changed = ui.selectable_value(&mut grid_size, 10.0, "10.0").changed() || changed;
-            });
-
-            if changed
-            {
-                editor_state.set_grid_size(grid_size);
+                if let Some(grid_transform) = &grid_transform
+                {
+                    component_downcast!(grid_transform, Transformation);
+                    y = grid_transform.get_data().position.y;
+                }
             }
-        });
+        }
+
+        if ui.add(egui::DragValue::new(&mut y).speed(0.1).prefix("y: ")).changed()
+        {
+            if let Some(grid_transform) = &grid_transform
+            {
+                component_downcast_mut!(grid_transform, Transformation);
+                let mut pos = grid_transform.get_data().position;
+                pos.y = y;
+                grid_transform.set_translation(pos);
+            }
+        }
     });
 }
 
@@ -361,7 +379,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         let scene_id = scene.id;
         let id = format!("scene_{}", scene_id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, true).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {

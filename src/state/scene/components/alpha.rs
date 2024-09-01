@@ -4,7 +4,7 @@ use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state
 
 use super::component::{ComponentBase, Component};
 
-#[derive( Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct AlphaData
 {
     pub alpha_inheritance: bool,

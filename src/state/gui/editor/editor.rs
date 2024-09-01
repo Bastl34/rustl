@@ -64,7 +64,7 @@ impl Editor
         // key bindings
         self.key_bindings(state);
 
-        // update grid based on camera pos
+        // update grid based on camera pos and key inputs
         self.update_grid(state);
 
         // set edit mode
@@ -143,6 +143,10 @@ impl Editor
     {
         let grid_size = self.editor_state.grid_size;
 
+        // create instance
+        let move_up = state.input_manager.keyboard.is_pressed(Key::Plus) || state.input_manager.keyboard.is_pressed(Key::Equals); // TODO: equals is not needed (winit update?)
+        let move_down = state.input_manager.keyboard.is_pressed(Key::Minus);
+
         for scene in &mut state.scenes
         {
             let scene_id = scene.id;
@@ -193,6 +197,11 @@ impl Editor
 
                     let transformation = transformation.unwrap();
                     component_downcast_mut!(transformation, Transformation);
+
+                    pos.y = transformation.get_data().position.y;
+
+                    if move_up { pos.y += grid_size; }
+                    if move_down { pos.y -= grid_size; }
 
                     if !approx_equal_vec(&pos, &transformation.get_data().position)
                     {
@@ -1127,6 +1136,11 @@ impl Editor
                 true
             };
 
+            let pick_predicate_grid_only = move |node: NodeItem, check_instance_id: Option<u64>| -> bool
+            {
+                node.read().unwrap().name == "grid"
+            };
+
             // ***** bounding box info *****
             if bounding_center.is_none() { return; }
             let bounding_center = bounding_center.unwrap();
@@ -1153,7 +1167,17 @@ impl Editor
             let bottom_center_screen_space = bottom_center_screen_space.unwrap();
             let new_bottom_center = bottom_center_screen_space + pos_delta;
 
-            let pick_res: Option<(u64, ScenePickRes)> = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate)));
+
+            let pick_res: Option<(u64, ScenePickRes)>;
+            if self.editor_state.drag_and_drop_grid_only
+            {
+                pick_res = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate_grid_only)));
+            }
+            else
+            {
+                pick_res = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate)));
+            }
+
             if let Some(pick_res) = pick_res
             {
                 pick_pos = Some(pick_res.1.point);

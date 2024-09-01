@@ -634,6 +634,31 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 node.write().unwrap().create_default_instance(node.clone(), id);
             }
 
+            if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()
+            {
+                let (node_id, instance_id) = editor_state.get_object_ids();
+
+                if instance_id.is_some()
+                {
+                    editor_state.selected_object = format!("objects_{}", node_id.unwrap());
+                }
+                else if let Some(node_id) = node_id
+                {
+                    let node = state.find_scene_by_id(scene_id).unwrap().find_node_by_id(node_id);
+
+                    if let Some(node) = node
+                    {
+                        let parent = node.read().unwrap().parent.clone();
+
+                        if let Some(parent) = parent
+                        {
+                            let parent = parent.read().unwrap();
+                            editor_state.selected_object = format!("objects_{}", parent.id);
+                        }
+                    }
+                }
+            }
+
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
@@ -842,6 +867,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             let component_id;
             let name;
+            let component_title;
             let component_name;
             let is_material;
             let is_sound;
@@ -850,7 +876,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
-                component_name = format!("{} {}", base.icon, base.component_name);
+                component_title = format!("{} {}", base.icon, base.name);
+                component_name = base.component_name.clone();
                 name = base.name.clone();
                 component_id = component.id();
                 from_file = base.from_file;
@@ -866,7 +893,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
             {
-                ui.label(RichText::new(component_name).heading().strong());
+                ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                 {
                     if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
@@ -997,13 +1024,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let component_id;
                     let name;
                     let component_name;
+                    let component_title;
                     let is_sound;
                     let from_file;
                     let duplicatable;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
-                        component_name = format!("{} {}", base.icon, base.component_name);
+                        component_name = format!("{} {}", base.icon, base.name);
+                        component_title = base.component_name.clone();
                         name = base.name.clone();
                         component_id = component.id();
                         from_file = base.from_file;
@@ -1017,7 +1046,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                     generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
                     {
-                        ui.label(RichText::new(component_name).heading().strong());
+                        ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                         {
                             if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()

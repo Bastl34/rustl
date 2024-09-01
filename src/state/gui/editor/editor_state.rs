@@ -8,7 +8,7 @@ use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rende
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
-const DEFAULT_GRID_SIZE: f32 = 1.0;
+const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 500;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -97,6 +97,7 @@ pub struct EditorState
 
     pub edit_mode: Option<EditMode>,
     pub edit_moving: bool,
+    pub drag_and_drop_grid_only: bool,
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
@@ -153,13 +154,14 @@ impl EditorState
 
             edit_mode: None,
             edit_moving: false,
+            drag_and_drop_grid_only: false,
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
 
             settings: SettingsPanel::General,
 
-            hierarchy_expand_all: true,
+            hierarchy_expand_all: false,
             hierarchy_filter: String::new(),
 
             component_filter: String::new(),

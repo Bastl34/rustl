@@ -647,7 +647,7 @@ impl MainInterface
                             let id = scene.id_manager.write().unwrap().get_next_camera_id();
                             let mut cam = Camera::new(id, "Cam".to_string());
 
-                            cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                            cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
                             let cam_data = cam.get_data_mut().get_mut();
                             cam_data.fovy = 45.0f32.to_radians();
