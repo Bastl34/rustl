@@ -4,6 +4,9 @@ Here are some screenshots which are showing the development progress.
 # 2024-09-09
 * Editor Improvements (Copy/Paste, Asset selection, Grid based movement)
 
+<img src="history/2024-09-09-2.png" width="720">
+<br><br>
+
 <img src="history/2024-09-09.png" width="720">
 <br><br>
 
