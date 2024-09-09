@@ -5,12 +5,13 @@
 
 
 ## current state
-<img src="history/2023-12-31-2.webp" width="720">
-<sub>model/animation from: https://www.mixamo.com/</sub>
+<img src="history/2024-09-09-2.png" width="720">
+<sub>based on own custom models</sub>
 <br><br>
 
-<img src="history/2023-11-12-2.png" width="720">
-<sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
+
+<img src="history/2023-12-31-2.webp" width="720">
+<sub>model/animation from: https://www.mixamo.com/</sub>
 <br><br>
 
 <img src="history/2023-10-05.png" width="720">
