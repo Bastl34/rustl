@@ -4,7 +4,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, approx_zero_vec3, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, approx_zero_vec3, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{self, InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
@@ -51,7 +51,8 @@ impl Editor
 
         let platform_output = full_output.platform_output.clone();
 
-        egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
+        //egui.ui_state.handle_platform_output(window, &egui.ctx, platform_output);
+        egui.ui_state.handle_platform_output(window, platform_output);
 
         full_output
     }
@@ -61,7 +62,7 @@ impl Editor
         // update modes
         self.update_modes(state);
 
-        // key bindings
+        // key bindings (copy paste, instancing, ...)
         self.key_bindings(state);
 
         // update grid based on camera pos and key inputs
@@ -83,7 +84,7 @@ impl Editor
     pub fn update_modes(&mut self, state: &mut State)
     {
         // start try out mde
-        if !self.editor_state.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)) && state.input_manager.keyboard.is_pressed(Key::R)
+        if !self.editor_state.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.input_manager.keyboard.is_pressed(Key::R)
         {
             self.editor_state.set_try_out(state, true);
         }
@@ -137,6 +138,44 @@ impl Editor
                 }
             }
         }
+
+        // copy paste
+        self.copy_paste(state);
+    }
+
+    pub fn copy_paste(&mut self, state: &mut State)
+    {
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+        {
+            // copy
+            if state.input_manager.keyboard.is_pressed(Key::C)
+            {
+                let (scene, node, _) = self.editor_state.get_selected_node(state);
+
+                if scene.is_none() || node.is_none()
+                {
+                    return;
+                }
+
+                let node = node.unwrap();
+                let node = node.read().unwrap();
+
+                if let Some(source) = &node.source
+                {
+                    self.editor_state.copy_asset = Some(source.clone());
+                }
+            }
+
+            // paste
+            if state.input_manager.keyboard.is_pressed(Key::V)
+            {
+                if let Some(copy_asset) = &self.editor_state.copy_asset
+                {
+                    let pos = state.input_manager.mouse.point.pos.unwrap();
+                    self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y));
+                }
+            }
+        }
     }
 
     pub fn update_grid(&mut self, state: &mut State)
@@ -144,7 +183,7 @@ impl Editor
         let grid_size = self.editor_state.grid_size;
 
         // create instance
-        let move_up = state.input_manager.keyboard.is_pressed(Key::Plus) || state.input_manager.keyboard.is_pressed(Key::Equals); // TODO: equals is not needed (winit update?)
+        let move_up = state.input_manager.keyboard.is_pressed(Key::Plus);
         let move_down = state.input_manager.keyboard.is_pressed(Key::Minus);
 
         for scene in &mut state.scenes
@@ -156,7 +195,7 @@ impl Editor
             // recreate grid
             if grid.is_some() && self.editor_state.grid_recreate
             {
-                // delte first
+                // delete first
                 scene.delete_node_by_name("grid");
 
                 let grid_size = self.editor_state.grid_size;
@@ -603,9 +642,7 @@ impl Editor
     {
         if let Some(drag_id) = &self.editor_state.drag_id
         {
-            let is_being_dragged = ctx.memory(|mem| { mem.is_anything_being_dragged() });
-
-            if !is_being_dragged
+            if ctx.dragged_id().is_none()
             {
                 if !ctx.wants_pointer_input()
                 {
@@ -614,7 +651,6 @@ impl Editor
                     if let Some(pos) = pos
                     {
                         let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
-
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
                             self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y));
@@ -746,7 +782,7 @@ impl Editor
 
             if state.input_manager.keyboard.is_pressed(Key::X)
             {
-                if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos.clone(), true, false, false)); }
                     else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos.clone(), true, false, false)); }
@@ -760,7 +796,7 @@ impl Editor
 
             if state.input_manager.keyboard.is_pressed(Key::Y)
             {
-                if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, false)); }
                     else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, false)); }
@@ -774,7 +810,7 @@ impl Editor
 
             if state.input_manager.keyboard.is_pressed(Key::Z)
             {
-                if !state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, false, true)); }
                     else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, false, true)); }
@@ -853,7 +889,7 @@ impl Editor
 
                 if x
                 {
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                     {
                         if movement.z.abs() >= angle_steps
                         {
@@ -862,7 +898,7 @@ impl Editor
                             applied = true;
                         }
                     }
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         component_downcast!(edit_transformation, Transformation);
 
@@ -884,7 +920,7 @@ impl Editor
 
                 if y
                 {
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                     {
                         if movement.x.abs() >= angle_steps
                         {
@@ -893,7 +929,7 @@ impl Editor
                             applied = true;
                         }
                     }
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         component_downcast!(edit_transformation, Transformation);
 
@@ -915,7 +951,7 @@ impl Editor
 
                 if z
                 {
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                     {
                         if movement.x.abs() >= angle_steps
                         {
@@ -924,7 +960,7 @@ impl Editor
                             applied = true;
                         }
                     }
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         component_downcast!(edit_transformation, Transformation);
 
@@ -1260,7 +1296,7 @@ impl Editor
          */
 
         // ********** snap to grid center **********
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::Logo)
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
         {
             let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
             if let Some(bounding_info) = bounding_info
@@ -1279,7 +1315,7 @@ impl Editor
             }
         }
         // ********** bottom left snapping **********
-        else if state.input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+        else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
         {
             let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
             if let Some(bounding_info) = bounding_info
@@ -1416,6 +1452,7 @@ impl Editor
                     }
                 }
 
+                // TODO: remove me
                 if let Some(train) = scene.find_node_by_name("Train")
                 {
                     let mut node = train.write().unwrap();
@@ -1429,13 +1466,13 @@ impl Editor
                     {
                         let component = node.components.get_mut(components_len - 2).unwrap();
                         component_downcast_mut!(component, TransformationAnimation);
-                        component.keyboard_key = Some(Key::Left as usize);
+                        component.keyboard_key = Some(Key::ArrowLeft as usize);
                     }
 
                     {
                         let component = node.components.get_mut(components_len - 1).unwrap();
                         component_downcast_mut!(component, TransformationAnimation);
-                        component.keyboard_key = Some(Key::Right as usize);
+                        component.keyboard_key = Some(Key::ArrowRight as usize);
                     }
                 }
 

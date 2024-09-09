@@ -1,4 +1,7 @@
-use egui::{FullOutput, ViewportId};
+use std::sync::Arc;
+
+use egui::FullOutput;
+use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::winit;
 use wgpu::{TextureView, CommandEncoder};
 
@@ -7,28 +10,35 @@ use crate::rendering::wgpu::WGpu;
 pub struct EGui
 {
     pub ctx: egui::Context,
-    pub renderer: egui_wgpu::renderer::Renderer,
+    pub renderer: egui_wgpu::Renderer,
     pub ui_state: egui_winit::State,
-    pub screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
+    pub screen_descriptor: egui_wgpu::ScreenDescriptor,
 
     pub output: Option<FullOutput>
 }
 
 impl EGui
 {
-    pub fn new(event_loop: &winit::event_loop::EventLoop<()>, device: &wgpu::Device, surface_cfg: &wgpu::SurfaceConfiguration, window: &winit::window::Window) -> Self
+    pub fn new(device: &wgpu::Device, surface_cfg: &wgpu::SurfaceConfiguration, window: Arc<winit::window::Window>) -> Self
     {
         let size = window.inner_size();
 
         let ctx: egui::Context = egui::Context::default();
-        let ui_state = egui_winit::State::new(ViewportId::ROOT, event_loop, None, None);
+        let viewport_id = ctx.viewport_id();
+
+        let native_pixels_per_point = window.scale_factor() as f32;
+        let max_texture_side = device.limits().max_texture_dimension_2d as usize;
+        let theme = Some(winit::window::Theme::Dark);
+        let ui_state = egui_winit::State::new(ctx.clone(), viewport_id, &window, Some(native_pixels_per_point), theme, Some(max_texture_side));
+
+        let dithering = true;
 
         Self
         {
             ctx: ctx,
-            renderer: egui_wgpu::renderer::Renderer::new(&device, surface_cfg.format, None, 1),
+            renderer: Renderer::new(&device, surface_cfg.format, None, 1, dithering),
             ui_state: ui_state,
-            screen_descriptor: egui_wgpu::renderer::ScreenDescriptor
+            screen_descriptor: ScreenDescriptor
             {
                 pixels_per_point: window.scale_factor() as f32,
                 size_in_pixels: [size.width, size.height],
@@ -68,10 +78,11 @@ impl EGui
         }
     }
 
-    pub fn on_event(&mut self, event: &winit::event::WindowEvent) -> bool
+    pub fn on_event(&mut self, event: &winit::event::WindowEvent, window: Arc<winit::window::Window>) -> bool
     {
-        let r = self.ui_state.on_window_event(&self.ctx, event);
-        r.consumed
+        //let r = self.ui_state.on_window_event(&self.ctx, event);
+        //r.consumed
+        self.ui_state.on_window_event(&window, event).consumed
     }
 
     pub fn request_repaint(&self)

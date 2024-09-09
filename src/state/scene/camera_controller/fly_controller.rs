@@ -160,7 +160,7 @@ impl CameraController for FlyController
         if self.keyboard_movement
         {
             let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
-            if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+            if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
             {
                 if input_manager.keyboard.is_holding(Key::W)
                 {
@@ -187,7 +187,7 @@ impl CameraController for FlyController
                 {
                     movement.y = -1.0;
                 }
-                if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     fast_movement = true;
                 }

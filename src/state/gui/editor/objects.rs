@@ -98,7 +98,62 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
-                toggle = toggle.context_menu(|ui|
+
+                if toggle.clicked()
+                {
+                    if editor_state.pick_mode == PickType::Camera
+                    {
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            let (camera_id, ..) = editor_state.get_object_ids();
+                            if let Some(camera_id) = camera_id
+                            {
+                                let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
+                                camera.node = Some(node.clone());
+                            }
+                        }
+                        editor_state.pick_mode = PickType::None;
+                    }
+                    else if editor_state.pick_mode == PickType::Parent
+                    {
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            let (node_id, ..) = editor_state.get_object_ids();
+                            if let Some(node_id) = node_id
+                            {
+                                let picking_node = scene.find_node_by_id(node_id).unwrap();
+                                let node = node.clone();
+
+                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
+                                {
+                                    Node::set_parent(picking_node.clone(), node.clone());
+                                }));
+                            }
+                        }
+                        editor_state.pick_mode = PickType::None;
+                    }
+                    else
+                    {
+                        if editor_state.selected_object != id
+                        {
+                            editor_state.selected_object = id;
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.selected_type = SelectionType::Object;
+
+                            if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                            {
+                                editor_state.settings = SettingsPanel::Components;
+                            }
+                        }
+                        else
+                        {
+                            editor_state.selected_object.clear();
+                            editor_state.selected_scene_id = None;
+                        }
+                    }
+                }
+
+                toggle.context_menu(|ui|
                 {
                     if ui.button("⊞ Add empty node").clicked()
                     {
@@ -193,60 +248,6 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }));
                     }
                 });
-
-                if toggle.clicked()
-                {
-                    if editor_state.pick_mode == PickType::Camera
-                    {
-                        if let Some(node) = scene.find_node_by_id(node_id)
-                        {
-                            let (camera_id, ..) = editor_state.get_object_ids();
-                            if let Some(camera_id) = camera_id
-                            {
-                                let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
-                                camera.node = Some(node.clone());
-                            }
-                        }
-                        editor_state.pick_mode = PickType::None;
-                    }
-                    else if editor_state.pick_mode == PickType::Parent
-                    {
-                        if let Some(node) = scene.find_node_by_id(node_id)
-                        {
-                            let (node_id, ..) = editor_state.get_object_ids();
-                            if let Some(node_id) = node_id
-                            {
-                                let picking_node = scene.find_node_by_id(node_id).unwrap();
-                                let node = node.clone();
-
-                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
-                                {
-                                    Node::set_parent(picking_node.clone(), node.clone());
-                                }));
-                            }
-                        }
-                        editor_state.pick_mode = PickType::None;
-                    }
-                    else
-                    {
-                        if editor_state.selected_object != id
-                        {
-                            editor_state.selected_object = id;
-                            editor_state.selected_scene_id = Some(scene_id);
-                            editor_state.selected_type = SelectionType::Object;
-
-                            if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
-                            {
-                                editor_state.settings = SettingsPanel::Components;
-                            }
-                        }
-                        else
-                        {
-                            editor_state.selected_object.clear();
-                            editor_state.selected_scene_id = None;
-                        }
-                    }
-                }
             });
 
         }).body(|ui|
@@ -321,9 +322,29 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                 toggle = ui.toggle_value(&mut selection, heading);
             }
 
+            if toggle.clicked()
+            {
+                if editor_state.selected_object != ui_id
+                {
+                    editor_state.selected_object = ui_id;
+                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_type = SelectionType::Object;
+
+                    if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                    {
+                        editor_state.settings = SettingsPanel::Components;
+                    }
+                }
+                else
+                {
+                    editor_state.selected_object.clear();
+                    editor_state.selected_scene_id = None;
+                }
+            }
+
             // context menu
             let node_arc = node_arc.clone();
-            toggle = toggle.context_menu(|ui|
+            toggle.context_menu(|ui|
             {
                 // hide/show
                 let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
@@ -358,26 +379,6 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                     });
                 }
             });
-
-            if toggle.clicked()
-            {
-                if editor_state.selected_object != ui_id
-                {
-                    editor_state.selected_object = ui_id;
-                    editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Object;
-
-                    if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
-                    {
-                        editor_state.settings = SettingsPanel::Components;
-                    }
-                }
-                else
-                {
-                    editor_state.selected_object.clear();
-                    editor_state.selected_scene_id = None;
-                }
-            }
         }
     });
 }

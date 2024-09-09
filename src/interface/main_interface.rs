@@ -10,6 +10,7 @@ use gltf::scene::Transform;
 use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
+use winit::keyboard::ModifiersKeyState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
@@ -53,7 +54,7 @@ pub struct MainInterface
     editor_gui: Editor,
 
     wgpu: WGpu,
-    window: Window,
+    window: Arc<Window>,
     egui: EGui,
 
     gilrs: Option<Gilrs>
@@ -61,7 +62,8 @@ pub struct MainInterface
 
 impl MainInterface
 {
-    pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
+    //pub async fn new(window: Arc<Window>, event_loop: &winit::event_loop::EventLoop<()>) -> Self
+    pub async fn new(window: Arc<Window>) -> Self
     {
         let audio_device = AudioDevice::default();
         let state = State::new(Arc::new(RwLock::new(Box::new(audio_device))));
@@ -73,7 +75,9 @@ impl MainInterface
             let state = &mut *(state.borrow_mut());
             state.width = window.inner_size().width;
             state.height = window.inner_size().height;
-            wgpu = WGpu::new(&window, state).await;
+            state.scale_factor = window.scale_factor() as f32;
+
+            wgpu = WGpu::new(window.clone(), state).await;
 
             dbg!(state.adapter.max_msaa_samples);
             state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.adapter.max_msaa_samples));
@@ -82,7 +86,8 @@ impl MainInterface
             wgpu.create_msaa_texture(samlpes);
         }
 
-        let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
+        //let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
+        let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
         let mut editor_gui = Editor::new();
         {
@@ -148,10 +153,22 @@ impl MainInterface
         &self.window
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
+    pub fn resize(&mut self, dimensions: Option<winit::dpi::PhysicalSize<u32>>, scale_factor: Option<f64>)
     {
-        let mut width = dimensions.width;
-        let mut height = dimensions.height;
+        let mut width;
+        let mut height;
+
+        if let Some(dimensions) = dimensions
+        {
+            width = dimensions.width;
+            height = dimensions.height;
+        }
+        else
+        {
+            let size = self.window.inner_size();
+            width = size.width;
+            height = size.height;
+        }
 
         if width == 0 { width = 1; }
         if height == 0 { height = 1; }
@@ -651,7 +668,7 @@ impl MainInterface
 
                             let cam_data = cam.get_data_mut().get_mut();
                             cam_data.fovy = 45.0f32.to_radians();
-                            cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                            cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
                             cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
                             cam_data.clipping_near = 0.1;
                             cam_data.clipping_far = 1000.0;
@@ -974,7 +991,7 @@ impl MainInterface
 
     pub fn input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.editor_gui.editor_state.visible && self.egui.on_event(event)
+        if self.editor_gui.editor_state.visible && self.egui.on_event(event, self.window.clone())
         {
             return;
         }
@@ -984,27 +1001,32 @@ impl MainInterface
 
             match event
             {
-                winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
+                winit::event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } =>
                 {
-                    if let Some(key) = input.virtual_keycode
+                    let key = winit_map_key(&event.logical_key, &event.physical_key, event.location);
+
+                    if event.state == ElementState::Pressed
                     {
-                        let key = winit_map_key(key);
-                        if input.state == ElementState::Pressed
-                        {
-                            global_state.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
-                        }
-                        else
-                        {
-                            global_state.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
-                        }
+                        global_state.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt(), global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl(), global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo(), global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift(), global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
                 {

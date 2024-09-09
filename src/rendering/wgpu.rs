@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
@@ -9,7 +11,7 @@ pub struct WGpu
 {
     device: Device,
     queue: Queue,
-    surface: Surface,
+    surface: Surface<'static>,
 
     msaa_samples: u32,
     msaa_texture: Option<wgpu::Texture>,
@@ -20,7 +22,7 @@ pub struct WGpu
 
 impl WGpu
 {
-    pub async fn new(window: &winit::window::Window, state: &mut State) -> Self
+    pub async fn new(window: Arc<winit::window::Window>, state: &mut State) -> Self
     {
         let dimensions = window.inner_size();
 
@@ -33,7 +35,8 @@ impl WGpu
         }
 
         let instance = wgpu::Instance::new(instance_desc);
-        let surface = unsafe { instance.create_surface(window) }.unwrap();
+        //let surface = unsafe { instance.create_surface(window) }.unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions
         {
@@ -59,9 +62,9 @@ impl WGpu
             {
                 label: None,
                 //features: wgpu::Features::empty(),
-                features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
-                limits: if cfg!(target_arch = "wasm32")
+                required_limits: if cfg!(target_arch = "wasm32")
                 {
                     wgpu::Limits::downlevel_webgl2_defaults()
                 }
@@ -69,6 +72,7 @@ impl WGpu
                 {
                     wgpu::Limits::default()
                 },
+                memory_hints: Default::default(),
             },
             None,
         )
@@ -99,6 +103,7 @@ impl WGpu
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2, // 1: lower latency, 2: higher throughput
         };
 
         surface.configure(&device, &surface_config);
@@ -131,7 +136,6 @@ impl WGpu
             wgpu::Backend::Vulkan => state.adapter.backend = "Vulkan".to_string(),
             wgpu::Backend::Metal => state.adapter.backend = "Metal".to_string(),
             wgpu::Backend::Dx12 => state.adapter.backend = "Dx12".to_string(),
-            wgpu::Backend::Dx11 => state.adapter.backend = "Dx11".to_string(),
             wgpu::Backend::Gl => state.adapter.backend = "Gl".to_string(),
             wgpu::Backend::BrowserWebGpu => state.adapter.backend = "BrowserWebGpu".to_string(),
         }

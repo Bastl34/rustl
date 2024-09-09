@@ -385,14 +385,6 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
                 let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("Clear").clicked()
-                    {
-                        ui.close_menu();
-                        scene.clear();
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -409,6 +401,15 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         editor_state.settings = SettingsPanel::General;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Clear").clicked()
+                    {
+                        ui.close_menu();
+                        scene.clear();
+                    }
+                });
             });
         }).body(|ui|
         {
@@ -432,14 +433,6 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
                 let toggle = ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("⊞ Add New Node").clicked()
-                    {
-                        ui.close_menu();
-                        scene.add_empty_node("Node", None);
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -455,6 +448,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("⊞ Add New Node").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_node("Node", None);
+                    }
+                });
             });
         }).body(|ui|
         {
@@ -474,14 +476,6 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
 
                 let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("Add New Camera").clicked()
-                    {
-                        ui.close_menu();
-                        scene.add_empty_camera("Camera");
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -497,6 +491,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Camera").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_camera("Camera");
+                    }
+                });
             });
         }).body(|ui|
         {
