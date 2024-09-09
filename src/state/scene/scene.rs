@@ -740,6 +740,11 @@ impl Scene
         false
     }
 
+    pub fn add_empty_light(&mut self, name: &str) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        self.add_light_point(name, Point3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0)
+    }
+
     pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
         let light = Light::new_point(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, color, intensity);

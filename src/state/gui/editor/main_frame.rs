@@ -516,7 +516,9 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong());
+
+                if toggle.clicked()
                 {
                     if selection
                     {
@@ -530,6 +532,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Light").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_light("Light");
+                    }
+                });
             });
         }).body(|ui|
         {
