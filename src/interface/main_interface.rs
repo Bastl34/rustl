@@ -17,6 +17,7 @@ use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
+use crate::helper::platform::is_windows;
 use crate::input::keyboard::{Modifier, Key};
 use crate::input::gamepad::{Gamepad, GamepadPowerInfo};
 use crate::interface::winit::winit_map_mouse_button;
@@ -1016,17 +1017,35 @@ impl MainInterface
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    // TODO: Check if windows is able to catch left/right difference
+                    if is_windows()
+                    {
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
 
-                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
 
-                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
 
-                    global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                    global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    }
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
                 {
@@ -1130,7 +1149,8 @@ impl MainInterface
             let window_size = self.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);
 
-            self.window.set_cursor_position(center).unwrap_or_else(|e|{
+            self.window.set_cursor_position(center).unwrap_or_else(|e|
+            {
                 dbg!("Failed to set mouse position: {:?}", e);
             });
         }
