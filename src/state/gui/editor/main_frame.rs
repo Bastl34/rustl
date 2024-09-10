@@ -184,7 +184,9 @@ fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: 
     {
         ui.style_mut().wrap = Some(false);
 
+        changed = ui.selectable_value(&mut grid_size, 0.05, "0.05").changed() || changed;
         changed = ui.selectable_value(&mut grid_size, 0.0625, "0.0625").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.1, "0.1").changed() || changed;
         changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
         changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
         changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;

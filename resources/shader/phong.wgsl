@@ -390,6 +390,22 @@ fn sphericalCoords(direction: vec3<f32>) -> vec2<f32>
     return uv;
 }
 
+fn easeInExpo(x: f32) -> f32
+{
+    if (x <= 0.00001)
+    {
+        return 0.0;
+    }
+
+    return pow(2.0, 10.0 * x - 10.0);
+}
+
+fn easeInQuint(x: f32) -> f32
+{
+    return x * x * x * x * x;
+}
+
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
@@ -614,7 +630,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
     }
 
-    let alpha = in.alpha * object_color.a * material.alpha;
+    var alpha = in.alpha * object_color.a * material.alpha;
+
+    // distance based blending out
+    /*
+    let max_distance: f32 = 50.0;
+    let view_dir = camera.view_pos.xyz - in.position;
+
+    let distance = length(view_dir);
+    let dist_scaled = distance / max_distance;
+    //let distance_fading_factor = 1.0 - easeInExpo(dist_scaled);
+    let distance_fading_factor = 1.0 - easeInQuint(dist_scaled);
+
+    alpha *= distance_fading_factor;
+        */
 
     if (alpha < 0.000001)
     {

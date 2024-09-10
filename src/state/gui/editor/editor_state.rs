@@ -9,7 +9,7 @@ const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
-const DEFAULT_GRID_AMOUNT: u32 = 500;
+const DEFAULT_GRID_AMOUNT: u32 = 1500;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel

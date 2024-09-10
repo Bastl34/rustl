@@ -1,8 +1,8 @@
 use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
 
-use nalgebra::Vector3;
+use nalgebra::{Point3, Vector3};
 
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::scene::{components::{material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}};
+use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, math::is_almost_integer}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::scene::{components::{component::Component, material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, node::Node, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -167,7 +167,11 @@ pub fn insert_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, te
 
 pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
 {
+    let integer_grid_line_scale = 3.0;
+
     let amount = amount as i32;
+
+    let size = amount as f32 * spacing;
 
     let loaded_ids = load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), id_manager, true, true, false, 0).unwrap();
 
@@ -194,10 +198,13 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                         grid_arc.clone()
                     );
 
+                    let z_pos = pos as f32 * spacing;
+                    let scale = if is_almost_integer(z_pos) { integer_grid_line_scale } else { 1.0 };
+
                     let component_id = scene.id_manager.write().unwrap().get_next_component_id();
                     let mut transformation = Transformation::identity(component_id, "Transform");
-                    transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, pos as f32 * spacing));
-                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, 1.0, 1.0), true);
+                    transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, z_pos));
+                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
 
                     instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
 
@@ -215,11 +222,14 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                         grid_arc.clone()
                     );
 
+                    let x_pos = pos as f32 * spacing;
+                    let scale = if is_almost_integer(x_pos) { integer_grid_line_scale } else { 1.0 };
+
                     let component_id = scene.id_manager.write().unwrap().get_next_component_id();
                     let mut transformation = Transformation::identity(component_id, "Transform");
-                    transformation.apply_translation(Vector3::<f32>::new(pos as f32 * spacing, 0.0, 0.0));
+                    transformation.apply_translation(Vector3::<f32>::new(x_pos, 0.0, 0.0));
                     transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
-                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, 1.0, 1.0), true);
+                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
 
                     instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
 
@@ -234,7 +244,9 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                 if let Some(material) = grid.find_component::<Material>()
                 {
                     component_downcast_mut!(material, Material);
+                    material.get_base_mut().name = "grid material".to_string();
                     material.get_data_mut().get_mut().unlit_shading = true;
+                    material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.28, 0.66, 0.9);
                 }
             }
         }
@@ -254,6 +266,47 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                     instance.write().unwrap().pickable = false;
                 }
             }
+        }
+
+        // create plane
+        if let Some(grid_arc) = scene.find_mesh_node_by_name("grid")
+        {
+            let mesh_component_id = scene.id_manager.write().unwrap().get_next_component_id();
+            let material_id = scene.id_manager.write().unwrap().get_next_component_id();
+
+            let half_size = size / 2.0;
+
+            let p0 = Point3::<f32>::new(-half_size, -0.001, half_size);
+            let p1 = Point3::<f32>::new(half_size, -0.001, half_size);
+            let p2 = Point3::<f32>::new(half_size, -0.001, -half_size);
+            let p3 = Point3::<f32>::new(-half_size, -0.001, -half_size);
+
+            let plane_mesh = Mesh::new_plane(mesh_component_id, "grid plane mesh", p0, p1, p2, p3);
+
+            let mut plane_material = Material::new(material_id, "grid plane material");
+            plane_material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.005, 0.005, 0.02);
+            plane_material.get_data_mut().get_mut().alpha = 0.5;
+            plane_material.get_data_mut().get_mut().unlit_shading = true;
+
+            let plane_material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(plane_material)));
+
+            scene.add_material(material_id, &plane_material_arc.clone());
+
+            let plane_node = Node::new(scene.id_manager.write().unwrap().get_next_node_id(), "plane");
+            {
+                {
+                    let mut plane_node = plane_node.write().unwrap();
+                    plane_node.add_component(Arc::new(RwLock::new(Box::new(plane_mesh))));
+                    plane_node.add_component(plane_material_arc);
+                }
+
+                let instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
+
+                plane_node.write().unwrap().create_default_instance(plane_node.clone(), instance_id);
+                plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
+            }
+
+            Node::add_node(grid_arc, plane_node);
         }
     }));
 }

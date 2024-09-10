@@ -48,6 +48,12 @@ pub fn approx_one_vec3(value: &Vector3::<f32>) -> bool
     approx_equal_vec(value, &one)
 }
 
+pub fn is_almost_integer(value: f32) -> bool
+{
+    let tolerance = 1e-6;
+    (value - value.round()).abs() < tolerance
+}
+
 pub fn interpolate(a: f32, b: f32, f: f32) -> f32
 {
     return a + f * (b - a);
