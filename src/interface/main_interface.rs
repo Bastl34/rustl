@@ -37,7 +37,7 @@ use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::sound_source::SoundSource;
-use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, execute_on_scene_mut_and_wait, load_object};
+use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::gilrs::{gilrs_event, gilrs_initialize};
@@ -999,6 +999,7 @@ impl MainInterface
         else
         {
             let global_state = &mut *(self.state.borrow_mut());
+            //let main_queue = global_state.main_thread_execution_queue.clone();
 
             match event
             {
@@ -1091,6 +1092,14 @@ impl MainInterface
                     global_state.in_focus = *focus;
                     global_state.input_manager.reset();
                 },
+                winit::event::WindowEvent::DroppedFile(path) =>
+                {
+                    if let Some(path) = path.to_str()
+                    {
+                        self.editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        self.window.request_redraw();
+                    }
+                }
                 _ => {}
                 /*
                 winit::event::WindowEvent::Resized(_) => todo!(),

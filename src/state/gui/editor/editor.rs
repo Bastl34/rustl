@@ -41,7 +41,7 @@ impl Editor
             main_frame::create_frame(ctx, &mut self.editor_state, state);
         });
 
-        self.apply_asset_drag(state, &egui.ctx);
+        self.apply_internal_asset_drag(state, &egui.ctx);
 
         // stop text input when the user wants to move/navigate in 3d space
         if state.input_manager.mouse.is_any_button_holding()
@@ -407,7 +407,8 @@ impl Editor
                 }
                 else
                 {
-                    self.editor_state.de_select_current_item(state);
+                    //self.editor_state.de_select_current_item(state);
+                    EditorState::de_select_all_items(state, None);
                 }
 
                 self.editor_state.pick_mode = PickType::None;
@@ -638,7 +639,7 @@ impl Editor
         None
     }
 
-    pub fn apply_asset_drag(&mut self, state: &mut State, ctx: &egui::Context)
+    pub fn apply_internal_asset_drag(&mut self, state: &mut State, ctx: &egui::Context)
     {
         if let Some(drag_id) = &self.editor_state.drag_id
         {
@@ -661,6 +662,12 @@ impl Editor
                 self.editor_state.drag_id = None;
             }
         }
+    }
+
+    pub fn apply_external_asset_drag(&mut self, state: &mut State, path: String)
+    {
+        let pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
+        self.load_asset(state, path, pos);
     }
 
     pub fn apply_fly_camera_move_state(scene: &mut Scene, state: bool)

@@ -280,6 +280,38 @@ impl EditorState
         state.find_scene_by_id_mut(scene_id)
     }
 
+    pub fn de_select_all_items(state: &mut State, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>)
+    {
+        for scene in &mut state.scenes
+        {
+            for node in &scene.nodes
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    if let Some(predicate) = &predicate
+                    {
+                        if !predicate(node.clone())
+                        {
+                            continue;
+                        }
+                    }
+
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn de_select_current_item(&mut self, state: &mut State)
     {
         if self.selected_scene_id == None

@@ -3,7 +3,7 @@ use std::{fmt::format, sync::{Arc, RwLock}};
 use egui::{Ui, RichText, Color32};
 use nalgebra::DimName;
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait, execute_on_state_mut}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -144,9 +144,44 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             {
                                 editor_state.settings = SettingsPanel::Components;
                             }
+
+                            // highlight
+                            let mut all_nodes = vec![];
+                            all_nodes.push(node_arc.clone());
+                            all_nodes.extend(Scene::list_all_child_nodes(&node_arc.read().unwrap().nodes));
+
+                            for node in all_nodes
+                            {
+                                let node = node.read().unwrap();
+
+                                for instance in node.instances.get_ref()
+                                {
+                                    let mut instance = instance.write().unwrap();
+                                    let instance_data = instance.get_data_mut().get_mut();
+                                    instance_data.highlight = true;
+                                }
+                            }
+
+                            // delesect all other
+                            let node_id = node_arc.read().unwrap().id;
+
+                            execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                            {
+                                let predicate = move |node: NodeItem|
+                                {
+                                    return !node.read().unwrap().has_parent_id_or_is_equal(node_id)
+                                };
+
+                                EditorState::de_select_all_items(state, Some(Arc::new(predicate)));
+                            }));
                         }
                         else
                         {
+                            execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                            {
+                                EditorState::de_select_all_items(state, None);
+                            }));
+
                             editor_state.selected_object.clear();
                             editor_state.selected_scene_id = None;
                         }

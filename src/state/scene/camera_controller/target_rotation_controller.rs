@@ -139,7 +139,7 @@ impl CameraController for TargetRotationController
         }
 
         // rotation
-        if input_manager.mouse.is_holding(MouseButton::Left) && !approx_zero_vec2(velocity)
+        if (input_manager.mouse.is_holding(MouseButton::Left) || !*input_manager.mouse.visible.get_ref()) && !approx_zero_vec2(velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;

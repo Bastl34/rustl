@@ -372,6 +372,37 @@ impl Node
         self.has_parent(node)
     }
 
+    pub fn has_parent_id(&self, parent_node_id: u64) -> bool
+    {
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            let parent_clone = parent.clone();
+
+            if let Some(parent) = parent
+            {
+                if parent.read().unwrap().id == parent_node_id
+                {
+                    return true;
+                }
+            }
+
+            parent = parent_clone.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
+    }
+
+    pub fn has_parent_id_or_is_equal(&self, node_id: u64) -> bool
+    {
+        if self.id == node_id
+        {
+            return true;
+        }
+
+        self.has_parent_id(node_id)
+    }
+
     pub fn is_locked(&self) -> bool
     {
         if self.locked
