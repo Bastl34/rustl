@@ -52,9 +52,9 @@ RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```
 
-Linux (Ubuntu) Requirements:
+Linux (Ubuntu 24.04 +) Requirements:
 ```bash
-sudo apt-get install pkg-config cmake libglib2.0-dev build-essential librust-atk-dev libgtk-3-dev librust-alsa-sys-dev libasound2-dev libudev-dev
+sudo apt-get install pkg-config cmake libglib2.0-dev build-essential libgtk-3-dev librust-alsa-sys-dev libasound2-dev libudev-dev
 ```
 
 
