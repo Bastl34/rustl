@@ -123,8 +123,19 @@ impl ApplicationHandler<CustomEvent> for AppState
                 }
             },
             winit::event::WindowEvent::CloseRequested => event_loop.exit(),
-            _ => app.interface.input(&event)
+            _ => app.interface.window_input(&event)
         }
+    }
+
+    fn device_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, device_id: winit::event::DeviceId, event: winit::event::DeviceEvent)
+    {
+        let app = match self
+        {
+            AppState::Initialized(app) => app,
+            AppState::Uninitialized(_) => return,
+        };
+
+        app.interface.device_input(&event)
     }
 
     /*

@@ -99,6 +99,12 @@ impl CameraController for FlyController
                 !*input_manager.mouse.visible.get_ref()
             {
                 angle_velocity = input_manager.mouse.point.velocity;
+
+                if !*input_manager.mouse.visible.get_ref()
+                {
+                    angle_velocity = input_manager.mouse.raw_velocity.velocity;
+                }
+
                 angle_velocity.x *= self.mouse_sensitivity.x;
                 angle_velocity.y *= self.mouse_sensitivity.y;
             }

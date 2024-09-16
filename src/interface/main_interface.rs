@@ -990,7 +990,7 @@ impl MainInterface
         self.state.borrow().exit
     }
 
-    pub fn input(&mut self, event: &winit::event::WindowEvent)
+    pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
         if self.editor_gui.editor_state.visible && self.egui.on_event(event, self.window.clone())
         {
@@ -1099,37 +1099,24 @@ impl MainInterface
                         self.editor_gui.apply_external_asset_drag(global_state, path.to_string());
                         self.window.request_redraw();
                     }
-                }
+                },
                 _ => {}
-                /*
-                winit::event::WindowEvent::Resized(_) => todo!(),
-                winit::event::WindowEvent::Moved(_) => todo!(),
-                winit::event::WindowEvent::CloseRequested => todo!(),
-                winit::event::WindowEvent::Destroyed => todo!(),
-                winit::event::WindowEvent::DroppedFile(_) => todo!(),
-                winit::event::WindowEvent::HoveredFile(_) => todo!(),
-                winit::event::WindowEvent::HoveredFileCancelled => todo!(),
-                winit::event::WindowEvent::ReceivedCharacter(_) => todo!(),
-                winit::event::WindowEvent::Focused(_) => todo!(),
-                winit::event::WindowEvent::KeyboardInput { device_id, input, is_synthetic } => todo!(),
-                winit::event::WindowEvent::ModifiersChanged(_) => todo!(),
-                winit::event::WindowEvent::Ime(_) => todo!(),
-                winit::event::WindowEvent::CursorMoved { device_id, position, modifiers } => todo!(),
-                winit::event::WindowEvent::CursorEntered { device_id } => todo!(),
-                winit::event::WindowEvent::CursorLeft { device_id } => todo!(),
-                winit::event::WindowEvent::MouseWheel { device_id, delta, phase, modifiers } => todo!(),
-                winit::event::WindowEvent::MouseInput { device_id, state, button, modifiers } => todo!(),
-                winit::event::WindowEvent::TouchpadMagnify { device_id, delta, phase } => todo!(),
-                winit::event::WindowEvent::SmartMagnify { device_id } => todo!(),
-                winit::event::WindowEvent::TouchpadRotate { device_id, delta, phase } => todo!(),
-                winit::event::WindowEvent::TouchpadPressure { device_id, pressure, stage } => todo!(),
-                winit::event::WindowEvent::AxisMotion { device_id, axis, value } => todo!(),
-                winit::event::WindowEvent::Touch(_) => todo!(),
-                winit::event::WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => todo!(),
-                winit::event::WindowEvent::ThemeChanged(_) => todo!(),
-                winit::event::WindowEvent::Occluded(_) => todo!(),
-                 */
             }
+        }
+    }
+
+    pub fn device_input(&mut self, event: &winit::event::DeviceEvent)
+    {
+        let global_state = &mut *(self.state.borrow_mut());
+
+        match event
+        {
+            winit::event::DeviceEvent::MouseMotion { delta } =>
+            {
+                let velocity = Vector2::<f32>::new(delta.0 as f32, -delta.1 as f32);
+                global_state.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
+            },
+            _ => {}
         }
     }
 
@@ -1153,6 +1140,7 @@ impl MainInterface
             }
         }
 
+        /*
         if !*global_state.input_manager.mouse.visible.get_ref()
         {
             let window_size = self.window.inner_size();
@@ -1163,5 +1151,6 @@ impl MainInterface
                 dbg!("Failed to set mouse position: {:?}", e);
             });
         }
+        */
     }
 }

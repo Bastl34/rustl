@@ -109,7 +109,12 @@ impl CameraController for TargetRotationController
     {
         let mut change = false;
 
-        let velocity = &input_manager.mouse.point.velocity;
+        let mut velocity = input_manager.mouse.point.velocity.clone();
+
+        if !*input_manager.mouse.visible.get_ref()
+        {
+            velocity = input_manager.mouse.raw_velocity.velocity;
+        }
 
         let mut update_needed = false;
         if let Some(node) = &node
@@ -118,7 +123,7 @@ impl CameraController for TargetRotationController
         }
 
         // offset
-        if input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(velocity)
+        if input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;
@@ -139,7 +144,7 @@ impl CameraController for TargetRotationController
         }
 
         // rotation
-        if (input_manager.mouse.is_holding(MouseButton::Left) || !*input_manager.mouse.visible.get_ref()) && !approx_zero_vec2(velocity)
+        if (input_manager.mouse.is_holding(MouseButton::Left) || !*input_manager.mouse.visible.get_ref()) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;

@@ -41,6 +41,8 @@ pub struct Mouse
 
     pub wheel_delta_x: f32,
     pub wheel_delta_y: f32,
+
+    pub raw_velocity: InputPoint,
 }
 
 impl Mouse
@@ -61,7 +63,9 @@ impl Mouse
             last_active_button: MouseButton::Unkown,
 
             wheel_delta_x: 0.0,
-            wheel_delta_y: 0.0
+            wheel_delta_y: 0.0,
+
+            raw_velocity: InputPoint::new(0),
         }
     }
 
@@ -145,8 +149,16 @@ impl Mouse
             self.point.state = PointState::Stationary;
         }
 
-		self.point.last_action = generic::get_millis();
-		self.point.last_action_frame = engine_frame;
+       self.point.last_action = generic::get_millis();
+       self.point.last_action_frame = engine_frame;
+    }
+
+    pub fn set_raw_velocity(&mut self, velocity: Vector2::<f32>, engine_frame: u64)
+    {
+        self.raw_velocity.velocity += velocity;
+
+        self.raw_velocity.last_action = generic::get_millis();
+        self.raw_velocity.last_action_frame = engine_frame;
     }
 
     pub fn set_wheel_delta_x(&mut self, delta: f32)
@@ -165,6 +177,7 @@ impl Mouse
     {
         self.point.last_pos = self.point.pos;
         self.point.velocity = Vector2::<f32>::zeros();
+        self.raw_velocity.velocity = Vector2::<f32>::zeros();
 
         if self.point.state == PointState::Up
         {
