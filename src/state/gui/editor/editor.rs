@@ -62,23 +62,26 @@ impl Editor
         // update modes
         self.update_modes(state);
 
-        // key bindings (copy paste, instancing, ...)
-        self.key_bindings(state);
-
         // update grid based on camera pos and key inputs
         self.update_grid(state);
 
-        // set edit mode
-        self.set_edit_mode(state);
+        if !self.editor_state.try_out
+        {
+            // key bindings (copy paste, instancing, ...)
+            self.key_bindings(state);
 
-        // select/pick objects
-        self.select_object(state);
+            // set edit mode
+            self.set_edit_mode(state);
 
-        // delete objects
-        self.delete_objct(state);
+            // select/pick objects
+            self.select_object(state);
 
-        // edit mode
-        self.move_object(state);
+            // delete objects
+            self.delete_objct(state);
+
+            // edit mode
+            self.move_object(state);
+        }
     }
 
     pub fn update_modes(&mut self, state: &mut State)
