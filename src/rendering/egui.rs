@@ -80,8 +80,6 @@ impl EGui
 
     pub fn on_event(&mut self, event: &winit::event::WindowEvent, window: Arc<winit::window::Window>) -> bool
     {
-        //let r = self.ui_state.on_window_event(&self.ctx, event);
-        //r.consumed
         self.ui_state.on_window_event(&window, event).consumed
     }
 
@@ -95,7 +93,7 @@ impl EGui
         let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
 
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: None,
                 color_attachments:
@@ -116,7 +114,9 @@ impl EGui
                 occlusion_query_set: None,
             });
 
-            self.renderer.render(&mut pass, &primitives, &self.screen_descriptor);
+            // forget_lifetime is intentional -> see render description
+            // https://github.com/emilk/egui/pull/5149
+            self.renderer.render(&mut pass.forget_lifetime(), &primitives, &self.screen_descriptor);
         }
     }
 }

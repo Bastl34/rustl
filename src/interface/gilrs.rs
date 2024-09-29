@@ -33,7 +33,7 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
 {
     let mut re_init = false;
 
-    while let Some(gilrs::Event { id, event, time }) = gilrs.next_event()
+    while let Some(gilrs::Event { id, event, time: _ , .. }) = gilrs.next_event()
     {
         let id: usize = id.into();
         let gamepad = state.input_manager.gamepads.get_mut(&id);
@@ -70,8 +70,9 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
             gilrs::EventType::Connected => re_init = true,
             gilrs::EventType::Disconnected => re_init = true,
             gilrs::EventType::Dropped => {},
+            gilrs::EventType::ForceFeedbackEffectCompleted => {},
+            _ => {},
         }
-        //println!("{:?} New event from {}: {:?}", time, id, event);
     }
 
     if re_init

@@ -883,7 +883,9 @@ impl MainInterface
         }
 
         // ******************** render ********************
-        let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
+        let (output, view, msaa_view) = self.wgpu.start_render();
+        let mut engine_encoder = self.wgpu.create_command_encoder();
+        let mut egui_encoder = self.wgpu.create_command_encoder();
         {
             let state = &mut *(self.state.borrow_mut());
 
@@ -904,7 +906,7 @@ impl MainInterface
 
                     let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
                     render_scene.distance_sorting = state.rendering.distance_sorting;
-                    state.stats.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                    state.stats.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
 
                     scene.render_item = render_item;
                 }
@@ -916,12 +918,13 @@ impl MainInterface
             if self.editor_gui.editor_state.visible
             {
                 let now = Instant::now();
-                self.egui.render(&mut self.wgpu, &view, &mut encoder);
+                self.egui.render(&mut self.wgpu, &view, &mut egui_encoder);
 
                 state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
         }
-        self.wgpu.end_render(output, encoder);
+        self.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
+        self.wgpu.end_render(output);
 
         // ******************** screenshot ********************
         {
@@ -929,7 +932,8 @@ impl MainInterface
 
             if state.save_screenshot
             {
-                let (buffer_dimensions, output_buffer, texture, view, msaa_view, mut encoder) = self.wgpu.start_screenshot_render();
+                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.wgpu.start_screenshot_render();
+                let mut encoder = self.wgpu.create_command_encoder();
                 {
                     for scene in &mut state.scenes
                     {

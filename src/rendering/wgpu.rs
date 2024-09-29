@@ -224,7 +224,7 @@ impl WGpu
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>, CommandEncoder)
+    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>)
     {
         // TODO: this can timeout
         // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
@@ -250,24 +250,37 @@ impl WGpu
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
         let mut msaa_view = None;
         if self.msaa_texture.is_some()
         {
             msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
         }
 
-        (output, view, msaa_view, encoder)
+        (output, view, msaa_view)
     }
 
-    pub fn end_render(&mut self, output: SurfaceTexture, encoder: CommandEncoder)
+    pub fn create_command_encoder(&mut self) -> CommandEncoder
     {
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default())
+    }
+
+    pub fn submit_commands(&mut self, encoders: Vec<CommandEncoder>)
+    {
+        let command_buffers: Vec<wgpu::CommandBuffer> = encoders
+            .into_iter()
+            .map(|encoder| encoder.finish())
+            .collect();
+
+        self.queue.submit(command_buffers);
+    }
+
+    pub fn end_render(&mut self, output: SurfaceTexture)
+    {
         output.present();
     }
 
-    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>, CommandEncoder)
+
+    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
     {
         let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
 
@@ -320,9 +333,8 @@ impl WGpu
 
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        (buffer_dimensions, output_buffer, texture, view, msaa_texture_view, encoder)
+        (buffer_dimensions, output_buffer, texture, view, msaa_texture_view)
     }
 
     pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
@@ -351,7 +363,7 @@ impl WGpu
             texture_extent,
         );
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(vec![encoder]);
 
         // read buffer
         let slice: wgpu::BufferSlice = output_buffer.slice(..);
@@ -369,5 +381,4 @@ impl WGpu
         //brga_to_rgba(img)
         img
     }
-
 }
