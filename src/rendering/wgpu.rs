@@ -5,7 +5,7 @@ use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, Co
 
 use crate::{helper::{image::brga_to_rgba, platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
 
-use super::helper::buffer::{BufferDimensions, remove_padding};
+use super::helper::buffer::{BufferDimensions, remove_padding_by_dimensions};
 
 pub struct WGpu
 {
@@ -226,10 +226,7 @@ impl WGpu
 
     pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>, CommandEncoder)
     {
-        // TODO: this can timeout
-        // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
-        //let output = self.surface.get_current_texture().unwrap();
-
+        // get_current_texture can timeout
         let mut output: Result<wgpu::SurfaceTexture, wgpu::SurfaceError>;
         loop
         {
@@ -250,13 +247,13 @@ impl WGpu
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
         let mut msaa_view = None;
         if self.msaa_texture.is_some()
         {
             msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
         }
+
+        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         (output, view, msaa_view, encoder)
     }
@@ -360,7 +357,7 @@ impl WGpu
 
         // remove padding
         let padded_data = slice.get_mapped_range();
-        let data = remove_padding(&padded_data, &buffer_dimensions);
+        let data = remove_padding_by_dimensions(&padded_data, &buffer_dimensions);
         drop(padded_data);
 
         output_buffer.unmap();

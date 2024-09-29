@@ -3,7 +3,7 @@ use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
 
 use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
 
-use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
+use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding_by_dimensions}};
 
 #[derive(Debug)]
 pub enum TextureFormat
@@ -522,7 +522,7 @@ impl Texture
 
         // ********** remove padding **********
         let padded_data = slice.get_mapped_range();
-        let data = remove_padding(&padded_data, &buffer_dimensions);
+        let data = remove_padding_by_dimensions(&padded_data, &buffer_dimensions);
         drop(padded_data);
         output_buffer.unmap();
 

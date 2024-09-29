@@ -126,6 +126,7 @@ pub struct MaterialData
     pub roughness: f32, //degree in rad (max PI/2)
 
     pub smooth_shading: bool,
+    pub depth_write: bool,
 
     pub reflection_only: bool,
     pub backface_cullig: bool
@@ -183,6 +184,7 @@ impl Material
             monte_carlo: true,
 
             smooth_shading: true,
+            depth_write: true,
 
             reflection_only: false,
             backface_cullig: true,
@@ -681,6 +683,7 @@ impl Component for Material
         let mut roughness;
         let mut monte_carlo;
         let mut smooth_shading;
+        let mut depth_write;
         let mut reflection_only;
         let mut backface_cullig;
 
@@ -707,6 +710,7 @@ impl Component for Material
             roughness = data.roughness;
             monte_carlo = data.monte_carlo;
             smooth_shading = data.smooth_shading;
+            depth_write = data.depth_write;
             reflection_only = data.reflection_only;
             backface_cullig = data.backface_cullig;
 
@@ -752,6 +756,7 @@ impl Component for Material
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
         apply_settings = ui.checkbox(&mut monte_carlo, "monte carlo").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut smooth_shading, "smooth shading").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut depth_write, "depth_write").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut reflection_only, "reflection only").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut backface_cullig, "backface cullig").changed() || apply_settings;
 

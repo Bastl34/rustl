@@ -35,7 +35,7 @@ impl BufferDimensions
     }
 }
 
-pub fn remove_padding(padded_data: &BufferView, buffer_dimensions: &BufferDimensions) -> Vec<u8>
+pub fn remove_padding_by_dimensions(padded_data: &BufferView, buffer_dimensions: &BufferDimensions) -> Vec<u8>
 {
     padded_data
         .chunks(buffer_dimensions.padded_bytes_per_row as _)

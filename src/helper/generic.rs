@@ -32,3 +32,8 @@ pub fn match_by_include_exclude(str: &String, include: &Vec<String>, exclude: &V
 
     true
 }
+
+pub fn create_array_chunks<T: Clone>(items: &Vec<T>, chunk_size: usize) -> Vec<Vec<T>>
+{
+    items.chunks(chunk_size).map(|chunk| chunk.to_vec()).collect()
+}
