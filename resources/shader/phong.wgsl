@@ -22,6 +22,7 @@ struct LightUniform
     position: vec4<f32>,
     dir: vec4<f32>,
     color: vec4<f32>,
+    ground_color: vec4<f32>,
     intensity: f32,
     light_type: u32,
     max_angle: f32,
@@ -466,6 +467,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
         for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
         {
+            // light_type == 0 --> disabled
+            if (lights[i].light_type == 0)
+            {
+                continue;
+            }
+
             let light_color = lights[i].color.rgb;
             var light_pos = lights[i].position.xyz;
             var direction_to_light = lights[i].position.xyz - in.position;
@@ -476,17 +483,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             {
                 switch lights[i].light_type
                 {
-                    case 0u //LIGHT_TYPE_DIRECTIONAL
+                    case 1u //LIGHT_TYPE_DIRECTIONAL
                     {
                         intensity = lights[i].intensity;
                     }
-                    case 1u //LIGHT_TYPE_POINT
+                    case 2u //LIGHT_TYPE_POINT
                     {
                         var distance = length(direction_to_light);
                         //distance = distance * distance;
                         intensity = lights[i].intensity / (4.0 * PI * distance);
                     }
-                    case 2u //LIGHT_TYPE_SPOT
+                    case 3u //LIGHT_TYPE_SPOT
                     {
                         var distance = length(direction_to_light);
                         //distance = distance * distance;
@@ -501,40 +508,57 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                             intensity = 0.0;
                         }
                     }
+                    case 4u //LIGHT_TYPE_HEMISPHERIC
+                    {
+                        intensity = lights[i].intensity;
+                    }
                     default {}
                 }
             }
 
             intensity = min(intensity, 1.0);
 
-            // phong light dir
-            switch lights[i].light_type
+            if (lights[i].light_type == 4u) //LIGHT_TYPE_HEMISPHERIC
             {
-                case 0u //LIGHT_TYPE_DIRECTIONAL
-                {
-                    direction_to_light = -lights[i].dir.xyz;
-                }
-                default {}
+                let dir = normalize(lights[i].dir.xyz);
+                let normal_dot_light_dir = dot(normal, dir);
+
+                let light_contrib = clamp(normal_dot_light_dir, -1.0, 1.0) * 0.5 + 0.5;
+                let light_color = mix(lights[i].ground_color, lights[i].color, light_contrib);
+
+                color += (light_color * object_color * intensity).rgb;
             }
+            else
+            {
+                // phong light dir
+                switch lights[i].light_type
+                {
+                    case 1u //LIGHT_TYPE_DIRECTIONAL
+                    {
+                        direction_to_light = -lights[i].dir.xyz;
+                    }
+                    default {}
+                }
 
-            direction_to_light = normalize(direction_to_light);
+                direction_to_light = normalize(direction_to_light);
 
-            let half_dir = normalize(view_dir + direction_to_light);
+                let half_dir = normalize(view_dir + direction_to_light);
 
-            let diffuse_strength = max(dot(normal, direction_to_light), 0.0);
-            let diffuse_color = (lights[i].color * object_color * diffuse_strength).rgb;
+                let diffuse_strength = max(dot(normal, direction_to_light), 0.0);
+                let diffuse_color = (lights[i].color * object_color * diffuse_strength).rgb;
 
-            let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
+                let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
 
-            /*
-            let reflect_dir = reflect(-direction_to_light, normal);
-            let spec_dot = max(dot(reflect_dir, view_dir), 0.0);
-            let specular_strength = pow(spec_dot, material.shininess);
-            */
+                /*
+                let reflect_dir = reflect(-direction_to_light, normal);
+                let spec_dot = max(dot(reflect_dir, view_dir), 0.0);
+                let specular_strength = pow(spec_dot, material.shininess);
+                */
 
-            let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
+                let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
 
-            color += (diffuse_color + specular_color) * intensity;
+                color += (diffuse_color + specular_color) * intensity;
+            }
         }
 
         // ambient occlusion

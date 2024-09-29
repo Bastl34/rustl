@@ -15,6 +15,7 @@ struct LightUniform
     position: vec4<f32>,
     dir: vec4<f32>,
     color: vec4<f32>,
+    ground_color: vec4<f32>,
     intensity: f32,
     light_type: u32,
     max_angle: f32,
