@@ -1205,7 +1205,7 @@ impl Scene
         {
             ui.label("Max lights:");
 
-            if ui.add(egui::DragValue::new(&mut max_lights).clamp_range(0..=20)).changed()
+            if ui.add(egui::DragValue::new(&mut max_lights).range(0..=20)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 
@@ -1217,7 +1217,7 @@ impl Scene
         {
             ui.label("Gamma:");
 
-            if ui.add(egui::DragValue::new(&mut gamma).clamp_range(0.0..=10.0).speed(0.1)).changed()
+            if ui.add(egui::DragValue::new(&mut gamma).range(0.0..=10.0).speed(0.1)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 
@@ -1238,7 +1238,7 @@ impl Scene
         {
             ui.label("Exposure:");
 
-            if ui.add(egui::DragValue::new(&mut exposure).clamp_range(0.0..=100.0).speed(0.1)).changed()
+            if ui.add(egui::DragValue::new(&mut exposure).range(0.0..=100.0).speed(0.1)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 

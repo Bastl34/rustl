@@ -25,6 +25,8 @@ const FALL_HEIGHT: f32 = 2.0;
 const FALL_STOP_HEIGHT: f32 = 0.1;
 const BODY_OFFSET: f32 = 0.5;
 
+const DEFAULT_CAM_RADIUS: f32 = 6.0;
+
 #[derive(Debug)]
 enum CharAnimationType
 {
@@ -186,8 +188,9 @@ impl CharacterController
         let mut target_rotation_controller = TargetRotationController::default();
         target_rotation_controller.data.get_mut().alpha = 0.0;
         target_rotation_controller.data.get_mut().beta = PI / 7.0;
-        target_rotation_controller.data.get_mut().radius = 6.0;
+        target_rotation_controller.data.get_mut().radius = DEFAULT_CAM_RADIUS;
         target_rotation_controller.data.get_mut().offset.y = 1.0;
+        target_rotation_controller.collision_check = true;
 
         // do not include joint attached items to the check (like heads or weapons)
         target_rotation_controller.object_center_predicate = Some(Arc::new(|node: NodeItem| -> bool

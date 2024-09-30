@@ -311,7 +311,10 @@ impl Mesh
                 normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
             }
 
-            return Some((res.time_of_impact, normal, face_id))
+            let time_of_impact = res.time_of_impact * ray.dir.magnitude();
+
+            return Some((time_of_impact, normal, face_id))
+            //return Some((res.time_of_impact, normal, face_id))
         }
         None
     }
@@ -382,7 +385,10 @@ impl Mesh
                 normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
             }
 
-            return Some((res.time_of_impact, normal, face_id))
+            let time_of_impact = res.time_of_impact * ray.dir.magnitude();
+
+            return Some((time_of_impact, normal, face_id))
+            //return Some((res.time_of_impact, normal, face_id))
         }
         None
     }

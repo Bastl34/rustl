@@ -17,7 +17,7 @@ use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
-use crate::helper::platform::is_windows;
+use crate::helper::platform::{is_mac, is_windows};
 use crate::input::keyboard::{Modifier, Key};
 use crate::input::gamepad::{Gamepad, GamepadPowerInfo};
 use crate::interface::winit::winit_map_mouse_button;
@@ -511,6 +511,7 @@ impl MainInterface
 
             spawn_thread(move ||
             {
+                /*
                 let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
@@ -530,6 +531,7 @@ impl MainInterface
                         }
                     }
                 }));
+                */
 
                 //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -557,14 +559,14 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //scene_utils::load_object("objects/temp/box.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                scene_utils::load_object("objects/temp/box2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                scene_utils::load_object("objects/temp/extras.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/box2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/extras.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
@@ -1144,8 +1146,8 @@ impl MainInterface
             }
         }
 
-        /*
-        if !*global_state.input_manager.mouse.visible.get_ref()
+        // still needed for windows
+        if !*global_state.input_manager.mouse.visible.get_ref() && !is_mac()
         {
             let window_size = self.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);
@@ -1155,6 +1157,5 @@ impl MainInterface
                 dbg!("Failed to set mouse position: {:?}", e);
             });
         }
-        */
     }
 }

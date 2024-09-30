@@ -16,6 +16,15 @@ pub fn approx_equal(a: f32, b: f32) -> bool
     a == b
 }
 
+pub fn approx_equal_with_decimal_places(a: f32, b: f32, decimal_places: i32) -> bool
+{
+    let factor = 10.0f32.powi(decimal_places);
+    let a = (a * factor).trunc();
+    let b = (b * factor).trunc();
+
+    a == b
+}
+
 pub fn approx_equal_vec(a: &Vector3<f32>, b: &Vector3<f32>) -> bool
 {
     approx_equal(a.x, b.x) && approx_equal(a.y, b.y) && approx_equal(a.z, b.z)
