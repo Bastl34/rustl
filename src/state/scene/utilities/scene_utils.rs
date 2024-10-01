@@ -2,7 +2,7 @@ use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
 
 use nalgebra::{Point3, Vector3};
 
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, math::is_almost_integer}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{component::Component, material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, node::Node, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, math::is_almost_integer}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{self, components::{component::{Component, ComponentItem}, material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -424,6 +424,28 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
             }
         }));
     });
+}
+
+pub fn copy_all_animations(from: NodeItem, to: NodeItem, scene: &mut Scene)
+{
+    let animations = from.read().unwrap().get_all_animations();
+
+    for animation in animations
+    {
+        copy_animation(animation.clone(), to.clone(), scene);
+    }
+}
+
+pub fn copy_animation(animation_component: ComponentItem, to: NodeItem, scene: &mut Scene)
+{
+    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+    let cloned_animation = animation_component.read().unwrap().duplicate(component_id);
+    if let Some(cloned_animation) = cloned_animation
+    {
+        let mut target_node = to.write().unwrap();
+        target_node.add_component(cloned_animation);
+        target_node.re_target_animations_to_child_nodes();
+    }
 }
 
 pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)

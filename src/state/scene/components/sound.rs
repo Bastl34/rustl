@@ -5,7 +5,7 @@ use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
 use crate::state::scene::sound_source::Decodable;
 
 use super::component::{Component, ComponentBase, ComponentItem};
@@ -426,6 +426,7 @@ impl Drop for Sound
 impl Component for Sound
 {
     component_impl_default!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -458,7 +459,7 @@ impl Component for Sound
 
         let mut sound = Sound
         {
-            base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
+            base: ComponentBase::duplicate(new_component_id, source.get_base()),
 
             sound_source: source.sound_source.clone(),
             duration: source.duration,

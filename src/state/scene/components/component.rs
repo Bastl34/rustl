@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashSet;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
@@ -29,6 +31,7 @@ pub trait Component: Any
     fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
     fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>;
+    fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
 
     fn set_enabled(&mut self, state: bool);
 
@@ -88,6 +91,28 @@ impl ComponentBase
             info: None,
 
             extras: Extras::new(),
+
+            from_file: false,
+
+            delete_later_request: false,
+
+            render_item: None,
+        }
+    }
+
+    pub fn duplicate(id: u64, from: &ComponentBase) -> ComponentBase
+    {
+        ComponentBase
+        {
+            id,
+            is_enabled: from.is_enabled,
+
+            name: from.name.clone(),
+            component_name: from.component_name.clone(),
+            icon: from.icon.clone(),
+            info: from.info.clone(),
+
+            extras: from.extras.clone(),
 
             from_file: false,
 
@@ -177,6 +202,18 @@ macro_rules! component_impl_set_enabled
         fn set_enabled(&mut self, state: bool)
         {
             self.get_base_mut().is_enabled = state;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component_impl_no_cleanup_node
+{
+    () =>
+    {
+        fn cleanup_node(&mut self, _node: NodeItem) -> bool
+        {
+            false
         }
     };
 }

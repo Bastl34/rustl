@@ -37,7 +37,7 @@ use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::sound_source::SoundSource;
-use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object};
+use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, copy_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::gilrs::{gilrs_event, gilrs_initialize};
@@ -566,9 +566,11 @@ impl MainInterface
 
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
+                let animation_nodes = scene_utils::load_object("objects/temp/Animation Only - Happy Idle.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -630,9 +632,11 @@ impl MainInterface
                     }
 
                     // add camera controller and run auto setup
+                    /*
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar3");
                     scene.pre_controller.push(Box::new(controller));
+                    */
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
@@ -645,6 +649,23 @@ impl MainInterface
                 // sound
                 //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
                 //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
+
+                //re-target animations
+                let avatar_root = avatar_nodes.unwrap()[0];
+                let animation_root = animation_nodes.unwrap()[0];
+
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    let avatar_root = scene.find_node_by_id(avatar_root).unwrap();
+                    let animation_root = scene.find_node_by_id(animation_root).unwrap();
+
+                    let avatar_animation = avatar_root.read().unwrap().find_child_node_by_name("Armature");
+                    let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
+
+                    copy_all_animations(retarget_animation.unwrap(), avatar_animation.unwrap(), scene);
+
+                    animation_root.write().unwrap().delete_later();
+                }));
             });
 
             //load default env texture

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::sync::{Arc, RwLock};
+
 use std::collections::HashMap;
 
 use egui::{Color32, RichText};
@@ -9,7 +11,7 @@ use crate::{component_downcast_mut, component_impl_default, component_impl_no_up
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Interpolation
 {
     Linear,
@@ -17,6 +19,7 @@ pub enum Interpolation
     CubicSpline
 }
 
+#[derive(Clone)]
 pub struct Channel
 {
     pub interpolation: Interpolation,
@@ -49,6 +52,7 @@ impl Channel
     }
 }
 
+#[derive(Clone)]
 struct TargetMapItem
 {
     pub component: ComponentItem,
@@ -376,7 +380,7 @@ impl Component for Animation
 
     fn duplicatable(&self) -> bool
     {
-        false
+        true
     }
 
     fn set_enabled(&mut self, state: bool)
@@ -387,9 +391,59 @@ impl Component for Animation
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn cleanup_node(&mut self, node: NodeItem) -> bool
     {
-        None
+        let channels_amount = self.channels.len();
+
+        self.channels.retain(|channel|
+        {
+            channel.target.read().unwrap().id != node.read().unwrap().id
+        });
+
+        channels_amount != self.channels.len()
+    }
+
+    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        let source = self.as_any().downcast_ref::<Animation>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let animation = Animation
+        {
+            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+
+            looped: self.looped,
+            reverse: self.reverse,
+
+            easing: self.easing,
+
+            from: self.from,
+            to: self.to,
+            duration: self.duration,
+
+            start_time: self.start_time,
+            pause_time: self.pause_time,
+
+            weight: self.weight,
+            speed: self.speed,
+
+            channels: self.channels.clone(),
+
+            joint_filter: self.joint_filter.clone(),
+
+            current_time: 0,
+            current_local_time: 0.0,
+
+            ui_joint_include_option: self.ui_joint_include_option
+        };
+
+        Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
     fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, frame: u64)

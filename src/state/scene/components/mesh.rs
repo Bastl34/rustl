@@ -3,7 +3,7 @@ use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
 use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
 
-use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
 
 use super::component::{Component, ComponentBase};
 
@@ -626,6 +626,7 @@ impl Component for Mesh
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {

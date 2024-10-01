@@ -2,7 +2,7 @@
 
 use std::collections::{hash_map::Iter, HashMap};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExtraType
 {
     Bool(bool),
@@ -16,6 +16,7 @@ pub enum ExtraType
     Float64(f64)
 }
 
+#[derive(Clone)]
 pub struct Extras
 {
     pub extras: HashMap<String, ExtraType>,

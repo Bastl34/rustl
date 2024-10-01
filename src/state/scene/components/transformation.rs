@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::RichText;
 use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem, gui::helper::info_box::info_box_with_body}, component_impl_no_update};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{gui::helper::info_box::info_box_with_body, scene::node::NodeItem}};
 
 use super::component::{Component, ComponentBase};
 
@@ -532,6 +532,7 @@ impl Component for Transformation
 {
     component_impl_default!();
     component_impl_no_update!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {

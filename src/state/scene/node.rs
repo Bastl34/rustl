@@ -23,6 +23,11 @@ pub struct NodeSettings
     pub pick_bbox_first: bool,
 }
 
+pub struct NodeUpdateResult
+{
+    pub delete_nodes: Vec<u64>,
+}
+
 pub struct Node
 {
     pub id: u64,
@@ -51,6 +56,8 @@ pub struct Node
 
     // bounding box
     b_box_node_index: usize,
+
+    delete_later_request: bool,
 }
 
 impl Node
@@ -89,7 +96,9 @@ impl Node
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
 
-            b_box_node_index: 0
+            b_box_node_index: 0,
+
+            delete_later_request: false
         };
 
         Arc::new(RwLock::new(Box::new(node)))
@@ -107,6 +116,39 @@ impl Node
             // remove cyclic reference to parent
             node.parent = None;
         }
+    }
+
+    pub fn remove_node_from_components(node: NodeItem, node_to_remove: NodeItem)
+    {
+        let mut components;
+        {
+            let node = node.read().unwrap();
+
+            components = node.components.clone();
+
+            for instance in node.instances.get_ref()
+            {
+                let instance = instance.read().unwrap();
+                components.append(&mut instance.components.clone());
+            }
+        }
+
+        for component in &mut components
+        {
+            component.write().unwrap().cleanup_node(node_to_remove.clone());
+        }
+
+        // child nodes
+        let node = node.read().unwrap();
+        for child in &node.nodes
+        {
+            Self::remove_node_from_components(child.clone(), node_to_remove.clone());
+        }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 
     pub fn add_node(node: NodeItem, child_node: NodeItem)
@@ -658,6 +700,45 @@ impl Node
         Some(morph_targets)
     }
 
+    pub fn find_child_node_by_id(&self, id: u64) -> Option<NodeItem>
+    {
+        for node in &self.nodes
+        {
+            if node.read().unwrap().id == id
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result: Option<Arc<RwLock<Box<Node>>>> = node.read().unwrap().find_child_node_by_id(id);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_child_node_by_name(&self, name: &str) -> Option<NodeItem>
+    {
+        for node in &self.nodes
+        {
+            if node.read().unwrap().name == name
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = node.read().unwrap().find_child_node_by_name(name);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+        None
+    }
+
     pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
     {
         for node in nodes
@@ -688,7 +769,7 @@ impl Node
             }
 
             // check child nodes
-            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name);
             if result.is_some()
             {
                 return result;
@@ -708,7 +789,7 @@ impl Node
             }
 
             // check child nodes
-            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name);
             if result.is_some()
             {
                 return result;
@@ -934,6 +1015,35 @@ impl Node
         }
     }
 
+    pub fn re_target_animations_to_child_nodes(&mut self) -> bool
+    {
+        let all_animations = self.get_all_animations();
+
+        let mut all_animations_retarteted = true;
+
+        for animation in all_animations
+        {
+            component_downcast_mut!(animation, Animation);
+            for channel in &mut animation.channels
+            {
+                let target_name = channel.target.read().unwrap().name.clone();
+                let target_node_candidate = self.find_child_node_by_name(target_name.as_str());
+
+                if let Some(target_node_candidate) = target_node_candidate
+                {
+                    channel.target = target_node_candidate.clone();
+                }
+                else
+                {
+                    all_animations_retarteted = false;
+                    println!("warning: not target found for {}", target_name);
+                }
+            }
+        }
+
+        all_animations_retarteted
+    }
+
     pub fn get_alpha(&self) -> (f32, bool)
     {
         let alpha_components = self.find_components::<Alpha>();
@@ -1021,7 +1131,7 @@ impl Node
         self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
     }
 
-    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
     {
         // ***** copy all components *****
         let all_components;
@@ -1091,12 +1201,29 @@ impl Node
             }
         }
 
+        // check for delete later
+        let mut delete_nodes = vec![];
+        {
+            let node = node.read().unwrap();
+            if node.delete_later_request
+            {
+                delete_nodes.push(node.id);
+            }
+        }
+
         // ***** update childs *****
         let node_read = node.read().unwrap();
         for child_node in &node_read.nodes
         {
-            Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
+            let mut update_result = Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
+
+            if update_result.delete_nodes.len() > 0
+            {
+                delete_nodes.append(&mut update_result.delete_nodes);
+            }
         }
+
+        NodeUpdateResult { delete_nodes:  delete_nodes}
     }
 
 

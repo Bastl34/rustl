@@ -8,7 +8,7 @@ use strum_macros::{Display, EnumIter};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
-use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
@@ -648,6 +648,7 @@ impl Component for Material
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {

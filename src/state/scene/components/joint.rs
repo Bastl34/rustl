@@ -2,7 +2,7 @@ use std::collections::{HashSet, HashMap};
 
 use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_impl_default, component_impl_no_update_instance, helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::scene::node::NodeItem};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::scene::node::NodeItem};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -172,6 +172,7 @@ impl Component for Joint
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {

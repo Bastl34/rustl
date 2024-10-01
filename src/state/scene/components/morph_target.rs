@@ -3,7 +3,7 @@ use std::{collections::{HashSet, HashMap}, cell::RefCell};
 use egui::mutex::RwLock;
 use nalgebra::{Matrix4, Point3, Vector3};
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::NodeItem, component_impl_no_update_instance, input::input_manager::InputManager, component_downcast};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, state::scene::node::NodeItem};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -61,6 +61,7 @@ impl Component for MorphTarget
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
