@@ -567,10 +567,11 @@ impl MainInterface
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone());
+
+
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-
-                let animation_nodes = scene_utils::load_object("objects/temp/Animation Only - Happy Idle.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -579,25 +580,6 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-
-                //re-target animations
-                /*
-                let avatar_root = avatar_nodes.unwrap()[0];
-                let animation_root = animation_nodes.unwrap()[0];
-
-                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
-                {
-                    let avatar_root = scene.find_node_by_id(avatar_root).unwrap();
-                    let animation_root = scene.find_node_by_id(animation_root).unwrap();
-
-                    let avatar_animation = avatar_root.read().unwrap().find_child_node_by_name("Armature");
-                    let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
-
-                    copy_all_animations(retarget_animation.unwrap(), avatar_animation.unwrap(), scene);
-
-                    animation_root.write().unwrap().delete_later();
-                }));
-                */
 
                 let id_manager_clone_inner = id_manager_clone.clone();
 
@@ -651,11 +633,9 @@ impl MainInterface
                     }
 
                     // add camera controller and run auto setup
-                    /*
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar3");
                     scene.pre_controller.push(Box::new(controller));
-                    */
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();

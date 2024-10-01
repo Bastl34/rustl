@@ -241,7 +241,8 @@ impl CameraController for TargetRotationController
             if data.radius <= 0.0 { data.radius = 0.0; }
 
             update_needed = true;
-            self.last_manual_move = get_millis()
+            self.last_manual_move = get_millis();
+            self.last_radius = None;
         }
 
         // apply

@@ -426,6 +426,34 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
     });
 }
 
+pub fn load_and_retarget_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem) -> anyhow::Result<bool>
+{
+    let animations = load_object(path, scene_id, main_queue.clone(), id_manager.clone(), false, true, false, 0);
+
+    if let Err(animations) = animations
+    {
+        return Err(animations);
+    }
+
+    let animation_id = animations.unwrap()[0];
+
+    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+    {
+        let target_root = scene.find_node_by_id(target_id).unwrap();
+        let animation_root = scene.find_node_by_id(animation_id).unwrap();
+
+        let target_animation_node = Node::find_animation_node(target_root.clone());
+        let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
+
+        copy_all_animations(retarget_animation.clone().unwrap(), target_animation_node.unwrap(), scene);
+
+        animation_root.write().unwrap().delete_later();
+    }));
+
+    Ok(true)
+}
+
+
 pub fn copy_all_animations(from: NodeItem, to: NodeItem, scene: &Scene)
 {
     let animations = from.read().unwrap().get_all_animations();
