@@ -258,18 +258,7 @@ impl CharacterController
             self.animation_strafe_right_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "run".to_string()].to_vec(), &vec![]);
             self.animation_fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
             self.animation_fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
-
-            let actions = vec!["(?i)action.*punch", "(?i)action.*thumbs", "(?i)action.*dance"];
-
-            for action in actions
-            {
-                let animation = node.find_animation_by_regex(action);
-
-                if let Some(animation) = animation
-                {
-                    self.animation_actions.push(animation);
-                }
-            }
+            self.animation_actions = node.find_animations_by_regex("(?i)action.*");
         }
 
         // transformation animation

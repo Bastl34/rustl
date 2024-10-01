@@ -580,6 +580,23 @@ impl MainInterface
 
                 //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
+                //re-target animations
+                let avatar_root = avatar_nodes.unwrap()[0];
+                let animation_root = animation_nodes.unwrap()[0];
+
+                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
+                {
+                    let avatar_root = scene.find_node_by_id(avatar_root).unwrap();
+                    let animation_root = scene.find_node_by_id(animation_root).unwrap();
+
+                    let avatar_animation = avatar_root.read().unwrap().find_child_node_by_name("Armature");
+                    let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
+
+                    copy_all_animations(retarget_animation.unwrap(), avatar_animation.unwrap(), scene);
+
+                    animation_root.write().unwrap().delete_later();
+                }));
+
                 let id_manager_clone_inner = id_manager_clone.clone();
 
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
@@ -649,23 +666,6 @@ impl MainInterface
                 // sound
                 //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
                 //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
-
-                //re-target animations
-                let avatar_root = avatar_nodes.unwrap()[0];
-                let animation_root = animation_nodes.unwrap()[0];
-
-                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
-                {
-                    let avatar_root = scene.find_node_by_id(avatar_root).unwrap();
-                    let animation_root = scene.find_node_by_id(animation_root).unwrap();
-
-                    let avatar_animation = avatar_root.read().unwrap().find_child_node_by_name("Armature");
-                    let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
-
-                    copy_all_animations(retarget_animation.unwrap(), avatar_animation.unwrap(), scene);
-
-                    animation_root.write().unwrap().delete_later();
-                }));
             });
 
             //load default env texture

@@ -898,6 +898,46 @@ impl Node
         None
     }
 
+    pub fn find_animations_by_regex(&self, regex: &str) -> Vec<ComponentItem>
+    {
+        let regex = Regex::new(regex).unwrap();
+
+        let mut animations_found: Vec<ComponentItem> = vec![];
+
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+            if regex.is_match(&componen_name)
+            {
+                animations_found.push(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+                if regex.is_match(&componen_name)
+                {
+                    animations_found.push(animation.clone());
+                }
+            }
+        }
+
+        animations_found
+    }
+
     pub fn find_animation_by_include_exclude(&self, include: &Vec<String>, exclude: &Vec<String>) -> Option<ComponentItem>
     {
         // first check on the item itself
