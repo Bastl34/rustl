@@ -3,7 +3,7 @@ use std::{fmt::format, sync::{Arc, RwLock}};
 use egui::{Ui, RichText, Color32};
 use nalgebra::DimName;
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_scene_mut_and_wait, execute_on_state_mut}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -130,6 +130,38 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                                 }));
                             }
                         }
+                        editor_state.pick_mode = PickType::None;
+                    }
+                    else if editor_state.pick_mode == PickType::AnimationCopy
+                    {
+                        let (node_id, ..) = editor_state.get_object_ids();
+                        if let Some(node_id) = node_id
+                        {
+                            let from_node = scene.find_node_by_id(node_id).unwrap();
+
+                            // find root
+                            let mut picking_node = node_arc.clone();
+                            if let Some(root_node) = Node::find_root_node(picking_node.clone())
+                            {
+                                picking_node = root_node.clone();
+                            }
+
+                            let target_animation_node = Node::find_animation_node(picking_node.clone());
+                            if let Some(target_animation_node) = target_animation_node
+                            {
+                                if from_node.read().unwrap().id != target_animation_node.read().unwrap().id
+                                {
+                                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                                    {
+                                        scene_utils::copy_all_animations(from_node.clone(), target_animation_node.clone(), scene);
+                                    }));
+                                }
+                            }
+                        }
+
+                        editor_state.selected_object = id;
+                        editor_state.settings = SettingsPanel::Components;
+
                         editor_state.pick_mode = PickType::None;
                     }
                     else
@@ -268,6 +300,17 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         {
                             ui.close_menu();
                             node.stop_all_animations();
+                        }
+
+                        if ui.button("🗐 Copy and re-target animations").clicked()
+                        {
+                            ui.close_menu();
+
+                            editor_state.de_select_current_item_from_scene(scene);
+                            editor_state.selected_object = format!("objects_{}", node.id);
+                            editor_state.selected_type = SelectionType::Object;
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.pick_mode = PickType::AnimationCopy;
                         }
                     }
 

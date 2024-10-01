@@ -426,7 +426,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
     });
 }
 
-pub fn copy_all_animations(from: NodeItem, to: NodeItem, scene: &mut Scene)
+pub fn copy_all_animations(from: NodeItem, to: NodeItem, scene: &Scene)
 {
     let animations = from.read().unwrap().get_all_animations();
 
@@ -436,7 +436,7 @@ pub fn copy_all_animations(from: NodeItem, to: NodeItem, scene: &mut Scene)
     }
 }
 
-pub fn copy_animation(animation_component: ComponentItem, to: NodeItem, scene: &mut Scene)
+pub fn copy_animation(animation_component: ComponentItem, to: NodeItem, scene: &Scene)
 {
     let component_id = scene.id_manager.write().unwrap().get_next_component_id();
     let cloned_animation = animation_component.read().unwrap().duplicate(component_id);

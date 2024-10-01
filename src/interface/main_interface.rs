@@ -581,6 +581,7 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //re-target animations
+                /*
                 let avatar_root = avatar_nodes.unwrap()[0];
                 let animation_root = animation_nodes.unwrap()[0];
 
@@ -596,6 +597,7 @@ impl MainInterface
 
                     animation_root.write().unwrap().delete_later();
                 }));
+                */
 
                 let id_manager_clone_inner = id_manager_clone.clone();
 

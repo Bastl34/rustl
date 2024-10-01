@@ -44,6 +44,7 @@ pub enum PickType
 {
     Camera,
     Parent,
+    AnimationCopy,
     None
 }
 
@@ -346,6 +347,40 @@ impl EditorState
                             let instance_data = instance.get_data_mut().get_mut();
                             instance_data.highlight = false;
                         }
+                    }
+                }
+            }
+        }
+
+        self.selected_object.clear();
+        self.selected_scene_id = None;
+        self.selected_type = SelectionType::None;
+    }
+
+    pub fn de_select_current_item_from_scene(&mut self, scene: &mut Scene)
+    {
+        if self.selected_scene_id == None
+        {
+            return;
+        }
+
+        let (node_id, _deselect_instance_id) = self.get_object_ids();
+        if let Some(node_id) = node_id
+        {
+            if let Some(node) = scene.find_node_by_id(node_id)
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
                     }
                 }
             }

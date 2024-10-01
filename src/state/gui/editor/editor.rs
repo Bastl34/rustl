@@ -322,6 +322,43 @@ impl Editor
                             Node::set_parent(node, hit.node.clone());
                         }
                     }
+                    // animation re-targeting (copy)
+                    else if self.editor_state.pick_mode == PickType::AnimationCopy && self.editor_state.selected_scene_id.is_some()
+                    {
+                        let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
+
+                        let (node_id, ..) = self.editor_state.get_object_ids();
+
+                        let scene = state.find_scene_by_id(scene_id);
+                        if scene.is_none() { return; }
+
+                        let scene = scene.unwrap();
+
+                        if node_id.is_none() { return; }
+                        let node_id = node_id.unwrap();
+
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            // find root
+                            let mut hit_node = hit.node;
+                            if let Some(root_node) = Node::find_root_node(hit_node.clone())
+                            {
+                                hit_node = root_node.clone();
+                            }
+
+                            let target_animation_node = Node::find_animation_node(hit_node.clone());
+                            if let Some(target_animation_node) = target_animation_node
+                            {
+                                if node.read().unwrap().id != target_animation_node.read().unwrap().id
+                                {
+                                    self.editor_state.selected_object = format!("objects_{}", target_animation_node.read().unwrap().id);
+                                    self.editor_state.settings = SettingsPanel::Components;
+
+                                    scene_utils::copy_all_animations(node, target_animation_node, scene);
+                                }
+                            }
+                        }
+                    }
                     // show selection
                     else
                     {
