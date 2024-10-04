@@ -86,7 +86,7 @@ pub struct EditorState
     pub visible: bool,
     pub loading: Arc<RwLock<bool>>,
 
-    pub try_out: bool,
+    pub try_mode: bool,
     pub selectable: bool,
     pub fly_camera: bool,
 
@@ -145,7 +145,7 @@ impl EditorState
             visible: true,
             loading: Arc::new(RwLock::new(false)),
 
-            try_out: false,
+            try_mode: false,
             selectable: true,
             fly_camera: true,
 
@@ -391,9 +391,9 @@ impl EditorState
         self.selected_type = SelectionType::None;
     }
 
-    pub fn set_try_out(&mut self, state: &mut State, try_out: bool)
+    pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)
     {
-        self.try_out = try_out;
+        self.try_mode = try_out;
         self.visible = !try_out;
         state.rendering.fullscreen.set(try_out);
         state.input_manager.mouse.visible.set(!try_out);

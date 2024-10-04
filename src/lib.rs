@@ -132,6 +132,7 @@ pub(crate) mod input
 
     pub(crate) mod keyboard;
     pub(crate) mod mouse;
+    pub(crate) mod touch;
     pub(crate) mod gamepad;
 }
 

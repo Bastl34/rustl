@@ -4,7 +4,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{approx_equal, approx_equal_vec, approx_zero_vec3, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{self, InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal, approx_equal_vec, approx_zero_vec3, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{self, InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
@@ -65,7 +65,7 @@ impl Editor
         // update grid based on camera pos and key inputs
         self.update_grid(state);
 
-        if !self.editor_state.try_out
+        if !self.editor_state.try_mode
         {
             // key bindings (copy paste, instancing, ...)
             self.key_bindings(state);
@@ -87,15 +87,15 @@ impl Editor
     pub fn update_modes(&mut self, state: &mut State)
     {
         // start try out mde
-        if !self.editor_state.try_out && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.input_manager.keyboard.is_pressed(Key::R)
+        if !self.editor_state.try_mode && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.input_manager.keyboard.is_pressed(Key::R)
         {
-            self.editor_state.set_try_out(state, true);
+            self.editor_state.set_try_mode(state, true);
         }
 
         // end try out mode
-        if self.editor_state.try_out && state.input_manager.keyboard.is_pressed(Key::Escape)
+        if self.editor_state.try_mode && state.input_manager.keyboard.is_pressed(Key::Escape)
         {
-            self.editor_state.set_try_out(state, false);
+            self.editor_state.set_try_mode(state, false);
         }
 
         // hide ui
@@ -124,7 +124,7 @@ impl Editor
 
     pub fn key_bindings(&mut self, state: &mut State)
     {
-        if self.editor_state.try_out
+        if self.editor_state.try_mode
         {
             return;
         }
@@ -257,15 +257,21 @@ impl Editor
     pub fn select_object(&mut self, state: &mut State)
     {
         //if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
-        if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
+        if !self.editor_state.try_mode && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
             let left_mouse_button = state.input_manager.mouse.clicked(MouseButton::Left);
             let right_mouse_button = state.input_manager.mouse.clicked(MouseButton::Right);
+            let tapped = state.input_manager.touch.tapped_any().is_some();
 
-            if left_mouse_button || right_mouse_button
+            let mut pos = state.input_manager.mouse.point.pos;
+
+            if let Some(touch_id) = state.input_manager.touch.tapped_any()
             {
-                let pos = state.input_manager.mouse.point.pos;
+                pos = state.input_manager.touch.get_touch_by_id(touch_id).unwrap().pos;
+            }
 
+            if left_mouse_button || right_mouse_button || tapped
+            {
                 let mut hit: Option<ScenePickRes> = None;
                 let mut scene_id: u64 = 0;
 
@@ -365,7 +371,7 @@ impl Editor
                         let mut node_arc = hit.node;
                         let mut use_root_node = false;
 
-                        if left_mouse_button
+                        if left_mouse_button || tapped
                         {
                             if let Some(root_node) = Node::find_root_node(node_arc.clone())
                             {
@@ -405,7 +411,7 @@ impl Editor
                             self.editor_state.selected_scene_id = Some(scene_id);
                             self.editor_state.selected_type = SelectionType::Object;
 
-                            let start_pos = state.input_manager.mouse.point.pos.unwrap();
+                            let start_pos = pos.unwrap();
                             self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
 
                             if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
@@ -424,7 +430,7 @@ impl Editor
                                     instance_data.highlight = true;
                                 }
                             }
-                            else if left_mouse_button
+                            else if left_mouse_button || tapped
                             {
                                 let mut all_nodes = vec![];
                                 all_nodes.push(node_arc.clone());
@@ -687,7 +693,7 @@ impl Editor
             {
                 if !ctx.wants_pointer_input()
                 {
-                    let pos = ctx.input(|i| i.pointer.latest_pos());
+                    let pos = ctx.input(|i| i.pointer.interact_pos());
 
                     if let Some(pos) = pos
                     {
@@ -899,8 +905,21 @@ impl Editor
             EditMode::Rotate(pos, _, _, _) => { start_pos = pos.clone(); },
         }
 
-        let mouse_pos = state.input_manager.mouse.point.pos.unwrap();
-        let movement = (mouse_pos - start_pos) * factor;
+        let mut pointer_pos = state.input_manager.mouse.point.pos;
+
+        if let Some(touch) = state.input_manager.touch.get_first_touch()
+        {
+            pointer_pos = touch.pos
+        }
+
+        if pointer_pos.is_none()
+        {
+            return;
+        }
+
+        let pointer_pos = pointer_pos.unwrap();
+
+        let movement = (pointer_pos - start_pos) * factor;
         let mut movement = Vector3::<f32>::new(movement.x, 0.0, movement.y);
 
         // get camera transform
@@ -1040,7 +1059,7 @@ impl Editor
                         edit_transformation.set_rotation(rotation_pos);
                     }
 
-                    self.editor_state.edit_mode = Some(EditMode::Rotate(mouse_pos, x, y, z));
+                    self.editor_state.edit_mode = Some(EditMode::Rotate(pointer_pos, x, y, z));
                 }
             },
         }
@@ -1068,15 +1087,23 @@ impl Editor
         }
 
 
-        let pos = state.input_manager.mouse.point.pos;
-        if pos.is_none()
+        let mut pointer_pos = state.input_manager.mouse.point.pos;
+        let mut pointer_velocity = state.input_manager.mouse.point.velocity;
+
+        if let Some(touch) = state.input_manager.touch.get_first_touch()
+        {
+            pointer_pos = touch.pos;
+            pointer_velocity = touch.velocity;
+        }
+
+        if pointer_pos.is_none()
         {
             return;
         }
 
-        let pos_new = pos.unwrap();
-        let pos = pos_new - state.input_manager.mouse.point.velocity;
-        let pos_delta = state.input_manager.mouse.point.velocity;
+        let pos_new = pointer_pos.unwrap();
+        let pos = pos_new - pointer_velocity;
+        let pos_delta = pointer_velocity;
 
         // ********** get selection **********
         let mut selected_scene_id = None;
@@ -1107,7 +1134,7 @@ impl Editor
         // ********** check that first interaction (after selection) was on the selected object **********
         let engine_frame = state.stats.frame;
 
-        if !self.editor_state.edit_moving && (state.input_manager.mouse.is_first_action(MouseButton::Left, engine_frame) || state.input_manager.mouse.is_first_action(MouseButton::Right, engine_frame))
+        if !self.editor_state.edit_moving && (state.input_manager.mouse.is_first_action(MouseButton::Left, engine_frame) || state.input_manager.mouse.is_first_action(MouseButton::Right, engine_frame) || state.input_manager.touch.is_first_action(engine_frame))
         {
             let pick_res = self.pick(state, pos, false, None);
 
@@ -1126,7 +1153,7 @@ impl Editor
             }
         }
 
-        else if self.editor_state.edit_moving && !state.input_manager.mouse.is_holding(MouseButton::Left) && !state.input_manager.mouse.is_holding(MouseButton::Right)
+        else if self.editor_state.edit_moving && !state.input_manager.mouse.is_holding(MouseButton::Left) && !state.input_manager.mouse.is_holding(MouseButton::Right) && !state.input_manager.touch.has_touches()
         {
             self.editor_state.edit_moving = false;
         }
@@ -1140,7 +1167,7 @@ impl Editor
         }
 
         // ********** check mouse movement **********
-        if !state.input_manager.mouse.has_velocity()
+        if math::approx_zero_vec2(&pointer_velocity)
         {
             return;
         }
@@ -1186,7 +1213,7 @@ impl Editor
         let mut bounding_center = None;
 
         {
-            // ***** map the mouse pos to the bottom center of the object *****
+            // ***** map the pointer (mouse/touch) pos to the bottom center of the object *****
             {
                 let selected_node = selected_node.read().unwrap();
                 let bounding_info = selected_node.get_world_bounding_info(instance_id, true, None);
