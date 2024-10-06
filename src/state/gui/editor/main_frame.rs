@@ -128,7 +128,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     ui.horizontal(|ui|
     {
         let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
-        let mut try_out = editor_state.try_out;
+        let mut try_out = editor_state.try_mode;
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
@@ -146,7 +146,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             // try out mode
             if ui.toggle_value(&mut try_out, RichText::new("🚀").size(icon_size)).on_hover_text("try out").changed()
             {
-                editor_state.set_try_out(state, try_out);
+                editor_state.set_try_mode(state, try_out);
             };
 
             ui.separator();

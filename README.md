@@ -48,7 +48,7 @@ cargo watch -s "wasm-pack build --target web" -w src/ -w resources/
 set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 # run with backtrace (mac/linux)
-RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
+RUST_BACKTRACE=1 cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```
 

@@ -18,6 +18,7 @@ use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::platform::{is_mac, is_windows};
+use crate::input::input_point::PointState;
 use crate::input::keyboard::{Modifier, Key};
 use crate::input::gamepad::{Gamepad, GamepadPowerInfo};
 use crate::interface::winit::winit_map_mouse_button;
@@ -1027,22 +1028,8 @@ impl MainInterface
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    // TODO: Check if windows is able to catch left/right difference
-                    if is_windows()
-                    {
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
-
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
-
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
-
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
-                    }
-                    else
+                    // TODO: Check if windows/linux is able to catch left/right difference
+                    if is_mac()
                     {
                         global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
                         global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
@@ -1055,6 +1042,20 @@ impl MainInterface
 
                         global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
                         global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
@@ -1090,11 +1091,33 @@ impl MainInterface
                 {
                     let mut pos = Point2::<f32>::new(position.x as f32, position.y as f32);
 
-                    pos.x = pos.x;
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
                     global_state.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                },
+                winit::event::WindowEvent::Touch(touch) =>
+                {
+                    let mut pos = Point2::<f32>::new(touch.location.x as f32, touch.location.y as f32);
+
+                    // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
+                    pos.y = global_state.height as f32 - pos.y;
+
+                    let mut force = None;
+                    if let Some(touch_force) = touch.force
+                    {
+                        force = Some(touch_force.normalized() as f32);
+                    }
+
+                    let state = match touch.phase
+                    {
+                        winit::event::TouchPhase::Started => PointState::Down,
+                        winit::event::TouchPhase::Moved => PointState::Move,
+                        winit::event::TouchPhase::Ended => PointState::Up,
+                        winit::event::TouchPhase::Cancelled => PointState::Up,
+                    };
+
+                    global_state.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
