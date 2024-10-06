@@ -17,8 +17,8 @@ pub struct TargetRotationControllerData
     pub offset: Vector3::<f32>,
 
     pub radius: f32,
-    pub alpha: f32,
-    pub beta: f32,
+    pub alpha: f32, // y-achis
+    pub beta: f32, // x-achis
 }
 
 pub struct TargetRotationController

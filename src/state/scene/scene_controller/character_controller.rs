@@ -3,7 +3,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{ComplexField, Normed, Point3, Rotation3, Vector2, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction, yaw_pitch_to_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -651,6 +651,25 @@ impl SceneController for CharacterController
 
         let mut is_action = self.is_action();
 
+        // ********** first person mode **********
+        let mut is_first_person = false;
+        if let Some(cam) = scene.get_active_camera()
+        {
+            if let Some(controller) = cam.controller.as_ref()
+            {
+                if let Some(controller) = controller.as_any().downcast_ref::<TargetRotationController>()
+                {
+                    is_first_person = approx_zero(controller.data.get_ref().radius);
+                }
+            }
+        }
+
+        // do not show charactar in first person mode
+        if let Some(node) = &self.node
+        {
+            node.write().unwrap().visible = !is_first_person;
+        }
+
         // ********** forward/backward **********
         if !input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
         {
@@ -700,7 +719,7 @@ impl SceneController for CharacterController
         {
             if input_manager.keyboard.is_holding(Key::A)
             {
-                if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+                if (!self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)) && !is_first_person
                 {
                     rotation.y = self.rotation_speed;
                 }
@@ -722,7 +741,7 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::D)
             {
-                if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+                if (!self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)) && !is_first_person
                 {
                     rotation.y = -self.rotation_speed;
                 }
@@ -909,7 +928,7 @@ impl SceneController for CharacterController
 
                 if !approx_zero_vec3(&movement_frame_scale)
                 {
-                    let movement_in_direction;
+                    let mut movement_in_direction = Vector3::<f32>::zeros();
 
                     // strafe left/right
                     if !approx_zero(movement_frame_scale.x)
@@ -920,19 +939,19 @@ impl SceneController for CharacterController
                         // strafe left
                         if movement_frame_scale.x < 0.0
                         {
-                            movement_in_direction = movement_frame_scale.x * strafe_dir.normalize();
+                            movement_in_direction += movement_frame_scale.x * strafe_dir.normalize();
                         }
                         // strafe right
                         else
                         {
-                            movement_in_direction = movement_frame_scale.x * strafe_dir.normalize();
+                            movement_in_direction += movement_frame_scale.x * strafe_dir.normalize();
                         }
                     }
 
                     // forward/backward
-                    else
+                    if !approx_zero(movement_frame_scale.z)
                     {
-                        movement_in_direction = movement_frame_scale.z * self.direction.normalize();
+                        movement_in_direction += movement_frame_scale.z * self.direction.normalize();
                     }
 
                     let gravity = Vector3::<f32>::new(0.0, movement.y, 0.0);
@@ -944,7 +963,7 @@ impl SceneController for CharacterController
             }
         }
 
-        // ********** camera angle **********
+        // ********** camera angle for follow mode **********
         if !approx_zero_vec3(&rotation) && self.rotation_follow
         {
             if let Some(cam) = scene.get_active_camera_mut()
@@ -955,6 +974,33 @@ impl SceneController for CharacterController
                     {
                         let (yaw, _) = yaw_pitch_from_direction(self.direction);
                         controller.data.get_mut().alpha = yaw + PI;
+                    }
+                }
+            }
+        }
+
+        // ********** rotation for first person mode **********
+        if let Some(cam) = scene.get_active_camera()
+        {
+            if let Some(controller) = cam.controller.as_ref()
+            {
+                if let Some(controller) = controller.as_any().downcast_ref::<TargetRotationController>()
+                {
+                    let controller_data = controller.data.get_ref();
+                    if approx_zero(controller_data.radius)
+                    {
+                        if let Some(transformation) = &self.transformation
+                        {
+                            component_downcast_mut!(transformation, Transformation);
+
+                            let mut rotation = transformation.get_data().rotation;
+                            rotation.y = controller_data.alpha;
+
+                            transformation.set_rotation(rotation);
+
+                            let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y);
+                            self.direction = (rotation_mat * CHARACTER_DIRECTION).normalize();
+                        }
                     }
                 }
             }
