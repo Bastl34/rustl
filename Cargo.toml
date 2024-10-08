@@ -32,7 +32,7 @@ take_mut = "0.2"
 parry3d = "0.17"
 bvh = "0.10.0"
 
-arboard = "3.4.0"
+arboard = "3.4.1"
 
 tobj = { version = "4.0", features = ["async"]}
 

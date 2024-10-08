@@ -125,6 +125,7 @@ impl State
         components.push(("Morph Target Animation".to_string(), crate::state::scene::components::morph_target_animation::MorphTargetAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
         components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
         components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(id, name)))) }));
+        components.push(("Delay".to_string(), crate::state::scene::components::delay::Delay::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::delay::Delay::new_empty(id, name)))) }));
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
