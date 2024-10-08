@@ -1055,9 +1055,9 @@ impl Component for Animation
 
             let easings = get_easing_as_string_vec();
             let current_easing_name = easings[self.easing as usize].as_str();
-            egui::ComboBox::from_id_source(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(30.0);
 
                 let mut current_easing_id = self.easing as usize;
@@ -1105,7 +1105,7 @@ impl Component for Animation
             {
                 ui.label("Progress: ");
                 let mut time = self.animation_time();
-                if ui.add(egui::Slider::new(&mut time, 0.0..=self.to).fixed_decimals(2).text("s")).changed()
+                if ui.add(egui::Slider::new(&mut time, 0.0..=self.to).fixed_decimals(2).clamping(egui::SliderClamping::Edits).text("s")).changed()
                 {
                     self.set_current_time(time);
                 }
@@ -1160,7 +1160,7 @@ impl Component for Animation
             {
                 ui.label(" - ");
 
-                egui::ComboBox::from_id_source(ui.make_persistent_id("partials")).selected_text("").width(200.0).show_ui(ui, |ui|
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("partials")).selected_text("").width(200.0).show_ui(ui, |ui|
                 {
                     changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
 

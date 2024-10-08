@@ -57,7 +57,7 @@ pub struct Statistics
     pub fps_absolute: u32,
     pub fps_chart: Vec<u32>,
 
-    pub frame_update_time: u128,
+    pub frame_update_time: u128, // micros
     pub frame_scale: f32,
 
     pub frame_time: f32,
