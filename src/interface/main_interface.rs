@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{vec, cmp};
 
 use gilrs::Gilrs;
@@ -49,7 +49,6 @@ const FPS_CHART_FACTOR: f32 = 25.0;
 pub struct MainInterface
 {
     pub state: StateItem,
-    start_time: Instant,
 
     window_title: String,
 
@@ -107,7 +106,6 @@ impl MainInterface
         let mut interface = Self
         {
             state,
-            start_time: Instant::now(),
 
             window_title: window.title().clone(),
 
@@ -796,8 +794,7 @@ impl MainInterface
             }
 
             // frame scale
-            let elapsed = self.start_time.elapsed();
-            let now = elapsed.as_micros();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
 
             if state.stats.frame_update_time > 0 && now - state.stats.frame_update_time > 0
             {

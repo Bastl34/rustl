@@ -12,6 +12,7 @@ pub struct Delay
 
     pub target_id: Option<u64>,
     pub delay: f32,
+    pub state: bool,
 
     current_time: u128,
     pub start_time: Option<u128>,
@@ -26,6 +27,7 @@ impl Delay
             base: ComponentBase::new(id, name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay,
             target_id: Some(target_id),
+            state: true,
 
             current_time: 0,
             start_time: None,
@@ -37,8 +39,9 @@ impl Delay
         Delay
         {
             base: ComponentBase::new(id, name.to_string(), "Delay".to_string(), "⏰".to_string()),
-            delay: 100.0,
+            delay: 0.0,
             target_id: None,
+            state: true,
 
             current_time: 0,
             start_time: None,
@@ -50,39 +53,22 @@ impl Delay
         self.start_time.is_some()
     }
 
-    /*
-    pub fn delay_percentage(&self) -> f32
-    {
-        if let Some(start_time) = self.start_time
-        {
-            //let time = (self.current_time as f64 - (self.current_local_time as f64 * 1000.0 * 1000.0) * (1.0 / self.speed as f64)) as u128;
-            //let local_timestamp = ((self.current_time - start_time) as f64 / 1000.0 / 1000.0) as f32;
-            let delay_micros = (self.delay * 1000.0 * 1000.0) as u128;
-
-            if start_time + delay_micros >= self.current_time
-            {
-                return 1.0;
-            }
-
-            let start_time_float = ((self.current_time - start_time) as f64 / 1000.0 / 1000.0) as f32;
-            let to = (start_time as f64 / 1000.0 / 1000.0) as f32 + self.delay;
-
-            return 1.0 / to * start_time_float;
-        }
-
-        0.0
-    }
-
-    */
-
     pub fn delay_time(&self) -> f32
     {
+        if self.current_time == 0
+        {
+            return 0.0;
+        }
+
         if let Some(start_time) = self.start_time
         {
-            let current_time = (self.current_time as f64 / 1000.0 / 1000.0) as f32;
-            let start_time = (start_time as f64 / 1000.0 / 1000.0) as f32;
+            if start_time == 0
+            {
+                return 0.0;
+            }
 
-            return current_time - start_time;
+            let diff = ((self.current_time - start_time) as f64 / 1000.0 / 1000.0) as f32;
+            return diff;
         }
 
         0.0
@@ -94,8 +80,8 @@ impl Delay
         {
             let time_micros = (time as f64 * 1000.0 * 1000.0) as u128 + start_time;
             let delta = time_micros - self.current_time;
-            dbg!( delta as f64 / 1000.0 / 1000.0);
-            self.start_time = Some(start_time + delta);
+
+            self.start_time = Some(start_time - delta);
         }
     }
 
@@ -142,7 +128,7 @@ impl Delay
 
                 if time > start_time + delay_micros
                 {
-                    component.write().unwrap().get_base_mut().is_enabled = true;
+                    component.write().unwrap().get_base_mut().is_enabled = self.state;
                     self.stop();
                 }
             }
@@ -190,6 +176,7 @@ impl Component for Delay
 
             delay: self.delay,
             target_id: self.target_id,
+            state: self.state,
 
             current_time: 0,
             start_time: None,
@@ -265,6 +252,13 @@ impl Component for Delay
             });
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("State:");
+            ui.selectable_value(& mut self.state, true, "Enable");
+            ui.selectable_value(& mut self.state, false, "Disable");
+        });
+
         let mut is_running = self.running();
         let mut is_stopped = !is_running;
 
@@ -285,16 +279,19 @@ impl Component for Delay
                 }
             });
 
-            ui.horizontal(|ui|
+            ui.add_enabled_ui(self.running(), |ui|
             {
-                ui.label("Progress: ");
-
-                let mut time = self.delay_time();
-
-                if ui.add(egui::Slider::new(&mut time, 0.0..=self.delay).fixed_decimals(2).clamping(egui::SliderClamping::Edits).text("s")).changed()
+                ui.horizontal(|ui|
                 {
-                    self.set_current_time(time);
-                }
+                    ui.label("Progress: ");
+
+                    let mut time = self.delay_time();
+
+                    if ui.add(egui::Slider::new(&mut time, 0.0..=self.delay).fixed_decimals(2).clamping(egui::SliderClamping::Edits).text("s")).changed()
+                    {
+                        self.set_current_time(time);
+                    }
+                });
             });
         });
 
