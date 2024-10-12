@@ -347,6 +347,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut uvs1: Vec<Point2<f32>> = vec![];
             let mut uvs2: Vec<Point2<f32>> = vec![];
             let mut uvs3: Vec<Point2<f32>> = vec![];
+            let mut uvs4: Vec<Point2<f32>> = vec![];
             let mut normals: Vec<Vector3<f32>> = vec![];
 
             let mut joints: Vec<[u32; JOINTS_LIMIT]> = vec![];
@@ -406,6 +407,17 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 {
                     // flip y coordinate
                     uvs3.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
+                }
+            }
+
+            // uvs (4)
+            let gltf_uvs4 = reader.read_tex_coords(3);
+            if let Some(gltf_uvs4) = gltf_uvs4
+            {
+                for uv in gltf_uvs4.into_f32()
+                {
+                    // flip y coordinate
+                    uvs4.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
                 }
             }
 
@@ -479,6 +491,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut mesh_component: Mesh = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
             mesh_component.get_data_mut().get_mut().uvs_2 = uvs2;
             mesh_component.get_data_mut().get_mut().uvs_3 = uvs3;
+            mesh_component.get_data_mut().get_mut().uvs_4 = uvs4;
 
             if joints.len() == weights.len()
             {

@@ -164,7 +164,7 @@ impl EditorState
 
             settings: SettingsPanel::General,
 
-            hierarchy_expand_all: false,
+            hierarchy_expand_all: true,
             hierarchy_filter: String::new(),
 
             component_filter: String::new(),

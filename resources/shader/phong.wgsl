@@ -43,7 +43,7 @@ struct SkeletonUniform
 
 struct MorphTargetUniform
 {
-    weights: array<vec4<f32>, MAX_MORPH_TARGETS>, // array stride must be 16 - so we use vec4
+    weights: array<vec4<f32>, MAX_MORPH_TARGETS>, // array stride must be 16 - so we use vec4 - but its just the first coordinate which matters
     amount: u32,
 };
 

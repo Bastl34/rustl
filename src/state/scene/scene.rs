@@ -794,6 +794,14 @@ impl Scene
         self.lights.get_ref().last().unwrap()
     }
 
+    pub fn add_light_hemisperical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        let light = Light::new_hemi(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), dir, color, ground_color, intensity);
+        self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+        self.lights.get_ref().last().unwrap()
+    }
+
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];
@@ -1159,7 +1167,18 @@ impl Scene
                 }
             }
 
-            let intersection = mesh.intersect_skinned(ray, &ray_inverse, &transform, &transform_inverse, &joint_matrices, solid, material_data.smooth_shading);
+            let mut morph_target_vec = vec![];
+            if node.has_morph_target_weights()
+            {
+                let morph_targets = node.get_morph_target_weights_vec();
+
+                if let Some(morph_targets) = morph_targets
+                {
+                    morph_target_vec = morph_targets;
+                }
+            }
+
+            let intersection = mesh.intersect_morphed_and_skinned(ray, &ray_inverse, &transform, &transform_inverse, &joint_matrices, &morph_target_vec, solid, material_data.smooth_shading);
 
             if let Some(intersection) = intersection
             {

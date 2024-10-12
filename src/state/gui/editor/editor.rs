@@ -1527,6 +1527,7 @@ impl Editor
                 }
 
                 // TODO: remove me
+                /*
                 if let Some(train) = scene.find_node_by_name("Train")
                 {
                     let mut node = train.write().unwrap();
@@ -1549,6 +1550,7 @@ impl Editor
                         component.keyboard_key = Some(Key::ArrowRight as usize);
                     }
                 }
+                 */
 
                 // add light
                 if scene.lights.get_ref().len() == 0

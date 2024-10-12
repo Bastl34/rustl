@@ -13,6 +13,7 @@ pub struct Delay
     pub target_id: Option<u64>,
     pub delay: f32,
     pub state: bool,
+    pub repeat: bool,
 
     current_time: u128,
     pub start_time: Option<u128>,
@@ -28,6 +29,7 @@ impl Delay
             delay,
             target_id: Some(target_id),
             state: true,
+            repeat: false,
 
             current_time: 0,
             start_time: None,
@@ -42,6 +44,7 @@ impl Delay
             delay: 0.0,
             target_id: None,
             state: true,
+            repeat: false,
 
             current_time: 0,
             start_time: None,
@@ -130,6 +133,11 @@ impl Delay
                 {
                     component.write().unwrap().get_base_mut().is_enabled = self.state;
                     self.stop();
+
+                    if self.repeat
+                    {
+                        self.start();
+                    }
                 }
             }
         }
@@ -177,6 +185,7 @@ impl Component for Delay
             delay: self.delay,
             target_id: self.target_id,
             state: self.state,
+            repeat: self.repeat,
 
             current_time: 0,
             start_time: None,
@@ -258,6 +267,8 @@ impl Component for Delay
             ui.selectable_value(& mut self.state, true, "Enable");
             ui.selectable_value(& mut self.state, false, "Disable");
         });
+
+        ui.checkbox(&mut self.repeat, "Repeat");
 
         let mut is_running = self.running();
         let mut is_stopped = !is_running;

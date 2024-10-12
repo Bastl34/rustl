@@ -675,7 +675,12 @@ impl Node
         Some(joints)
     }
 
-    pub fn get_morph_targets_vec(&self) -> Option<Vec<f32>>
+    pub fn has_morph_target_weights(&self) -> bool
+    {
+        self.find_component::<MorphTarget>().is_some()
+    }
+
+    pub fn get_morph_target_weights_vec(&self) -> Option<Vec<f32>>
     {
         let morph_components = self.find_components::<MorphTarget>();
 
