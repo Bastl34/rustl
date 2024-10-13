@@ -502,6 +502,15 @@ impl Component for Sound
             sound_source.read().unwrap().ui_info(ui);
         }
 
+        if !approx_zero(self.duration)
+        {
+            ui.label(format!("Duration: {}", self.duration));
+        }
+        else
+        {
+            ui.label(format!("Duration: unkown"));
+        }
+
         {
             let is_pause = !self.running();
             let mut is_stopped = is_pause;

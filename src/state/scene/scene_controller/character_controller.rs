@@ -20,6 +20,8 @@ const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 const GRAVITY: f32 = 0.3;
 //const GRAVITY: f32 = 0.981;
 //const GRAVITY: f32 = 0.0981;
+const JUMP_FORCE: f32 = 5.0;
+const MAX_FALL_SPEED: f32 = 1.0;
 
 const FALL_HEIGHT: f32 = 2.0;
 const FALL_STOP_HEIGHT: f32 = 0.1;
@@ -69,10 +71,13 @@ pub struct CharacterController
     pub rotation_follow: bool,
     pub direction: Vector3<f32>,
 
-    pub gravity: f32,
     pub fall_height: f32,
     pub fall_stop_height: f32,
     pub body_offset: f32,
+
+    pub gravity: f32,
+    pub jump_force: f32,
+    pub max_fall_speed: f32,
 
     pub physics: bool, // very simple at the moment
     pub falling: bool,
@@ -124,10 +129,13 @@ impl CharacterController
             rotation_follow: false,
             direction: CHARACTER_DIRECTION,
 
-            gravity: GRAVITY,
             fall_height: FALL_HEIGHT,
             fall_stop_height: FALL_STOP_HEIGHT,
             body_offset: BODY_OFFSET,
+
+            gravity: GRAVITY,
+            jump_force: JUMP_FORCE,
+            max_fall_speed: MAX_FALL_SPEED,
 
             physics: true,
             falling: false,
@@ -954,9 +962,9 @@ impl SceneController for CharacterController
                         movement_in_direction += movement_frame_scale.z * self.direction.normalize();
                     }
 
-                    let gravity = Vector3::<f32>::new(0.0, movement.y, 0.0);
+                    let yMovement = Vector3::<f32>::new(0.0, movement.y, 0.0);
 
-                    let res = movement_in_direction + gravity;
+                    let res = movement_in_direction + yMovement;
 
                     transformation.apply_translation(res);
                 }
@@ -1059,12 +1067,6 @@ impl SceneController for CharacterController
 
         ui.horizontal(|ui|
         {
-            ui.label("Gravity: ");
-            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=1.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
             ui.label("Fall Height: ");
             ui.add(egui::Slider::new(&mut self.fall_height, 0.0..=10.0).fixed_decimals(2));
         });
@@ -1074,6 +1076,28 @@ impl SceneController for CharacterController
             ui.label("Fall Stop Height: ");
             ui.add(egui::Slider::new(&mut self.fall_stop_height, 0.001..=1.0).fixed_decimals(3));
         });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Gravity: ");
+            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=1.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Jump Force: ");
+            ui.add(egui::Slider::new(&mut self.jump_force, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Max Fall Speed: ");
+            ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.separator();
 
         ui.horizontal(|ui|
         {
