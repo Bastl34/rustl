@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
+use crate::component_downcast;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
@@ -84,6 +85,7 @@ pub struct Animation
     pub channels: Vec<Channel>,
 
     pub joint_filter: Vec<(NodeItem, bool)>, // only apply parts of the animation for specific nodes
+    pub in_place_joint_node: Option<NodeItem>, // apply the animation in place (only for the hips)
 
     current_time: u128,
     current_local_time: f32,
@@ -117,6 +119,7 @@ impl Animation
             channels: vec![],
 
             joint_filter: vec![],
+            in_place_joint_node: None,
 
             current_time: 0,
             current_local_time: 0.0,
@@ -421,6 +424,8 @@ impl Component for Animation
             looped: self.looped,
             reverse: self.reverse,
 
+            in_place_joint_node: self.in_place_joint_node.clone(),
+
             easing: self.easing,
 
             from: self.from,
@@ -566,7 +571,6 @@ impl Component for Animation
                     {
                         joint_excluded_found = true;
                     }
-
                 }
             }
 
@@ -601,15 +605,20 @@ impl Component for Animation
                 continue;
             }
 
-            let mut target_id = 0;
-            if let Some(joint) = &joint
+            let target_node_id;
             {
-                target_id = joint.read().unwrap().id();
-            } else if let Some(transformation) = transformation
-            {
-                target_id = transformation.read().unwrap().id();
+                let target = channel.target.read().unwrap();
+                target_node_id = target.id;
             }
 
+            let mut target_component_id = 0;
+            if let Some(joint) = &joint
+            {
+                target_component_id = joint.read().unwrap().id();
+            } else if let Some(transformation) = transformation
+            {
+                target_component_id = transformation.read().unwrap().id();
+            }
 
             // ********** only one item per channel **********
             if channel.timestamps.len() <= 1
@@ -654,12 +663,12 @@ impl Component for Animation
                     }
                 }
 
-                apply_transformation_to_target(&mut target_map, target_id, &transform);
+                apply_transformation_to_target(&mut target_map, target_component_id, &transform);
 
                 // skip joint flag
                 if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
                 {
-                    let target_item = target_map.get_mut(&target_id).unwrap();
+                    let target_item = target_map.get_mut(&target_component_id).unwrap();
                     target_item.skip_joint = skip_joint;
                 }
             }
@@ -696,52 +705,64 @@ impl Component for Animation
                 // ********** translation **********
                 if channel.transform_translation.len() > 0
                 {
-                    let translation = match channel.interpolation
+                    let translation;
+                    if self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == target_node_id
                     {
-                        Interpolation::Linear =>
+                        let joint = joint.unwrap();
+                        component_downcast!(joint, Joint);
+                        let local_transform = joint.get_local_transform();
+
+                        translation = Vector3::<f32>::new(local_transform[(0, 3)], local_transform[(1, 3)], local_transform[(2, 3)]);
+                    }
+                    else
+                    {
+                        translation = match channel.interpolation
                         {
-                            let from = &channel.transform_translation[t0];
-                            let to = &channel.transform_translation[t1];
+                            Interpolation::Linear =>
+                            {
+                                let from = &channel.transform_translation[t0];
+                                let to = &channel.transform_translation[t1];
 
-                            interpolate_vec3(&from, &to, factor)
-                        },
-                        Interpolation::Step =>
-                        {
-                            channel.transform_translation[t0].clone()
-                        },
-                        Interpolation::CubicSpline =>
-                        {
-                            let delta_time = next_time - prev_time;
+                                interpolate_vec3(&from, &to, factor)
+                            },
+                            Interpolation::Step =>
+                            {
+                                channel.transform_translation[t0].clone()
+                            },
+                            Interpolation::CubicSpline =>
+                            {
+                                let delta_time = next_time - prev_time;
 
-                            let l = t0 * 3;
+                                let l = t0 * 3;
 
-                            let prev_input_tangent = &channel.transform_translation[l];
-                            let prev_keyframe_value = &channel.transform_translation[l+1];
-                            let prev_output_tangent = &channel.transform_translation[l+2];
+                                let prev_input_tangent = &channel.transform_translation[l];
+                                let prev_keyframe_value = &channel.transform_translation[l+1];
+                                let prev_output_tangent = &channel.transform_translation[l+2];
 
-                            let r = t1 * 3;
+                                let r = t1 * 3;
 
-                            let next_input_tangent = &channel.transform_translation[r];
-                            let next_keyframe_value = &channel.transform_translation[r+1];
-                            let next_output_tangent = &channel.transform_translation[r+2];
+                                let next_input_tangent = &channel.transform_translation[r];
+                                let next_keyframe_value = &channel.transform_translation[r+1];
+                                let next_output_tangent = &channel.transform_translation[r+2];
 
-                            let res = cubic_spline_interpolate_vec3
-                            (
-                                factor,
-                                delta_time,
-                                prev_input_tangent,
-                                prev_keyframe_value,
-                                prev_output_tangent,
-                                next_input_tangent,
-                                next_keyframe_value,
-                                next_output_tangent,
-                            );
+                                let res = cubic_spline_interpolate_vec3
+                                (
+                                    factor,
+                                    delta_time,
+                                    prev_input_tangent,
+                                    prev_keyframe_value,
+                                    prev_output_tangent,
+                                    next_input_tangent,
+                                    next_keyframe_value,
+                                    next_output_tangent,
+                                );
 
-                            res
-                        },
-                    };
+                                res
+                            },
+                        };
+                    }
 
-                    apply_transformation_to_target(&mut target_map, target_id, &(Some(translation), None, None));
+                    apply_transformation_to_target(&mut target_map, target_component_id, &(Some(translation), None, None));
                 }
                 // ********** rotation **********
                 else if channel.transform_rotation.len() > 0
@@ -796,7 +817,7 @@ impl Component for Animation
                         },
                     };
 
-                    apply_transformation_to_target(&mut target_map, target_id, &(None, Some(rotation), None));
+                    apply_transformation_to_target(&mut target_map, target_component_id, &(None, Some(rotation), None));
                 }
                 // ********** scale **********
                 else if channel.transform_scale.len() > 0
@@ -846,7 +867,7 @@ impl Component for Animation
                         },
                     };
 
-                    apply_transformation_to_target(&mut target_map, target_id, &(None, None, Some(scale)));
+                    apply_transformation_to_target(&mut target_map, target_component_id, &(None, None, Some(scale)));
                 }
                 // ********** morph targets **********
                 else if channel.transform_morph.len() > 0
@@ -1108,6 +1129,57 @@ impl Component for Animation
                 if ui.add(egui::Slider::new(&mut time, 0.0..=self.to).fixed_decimals(2).clamping(egui::SliderClamping::Edits).text("s")).changed()
                 {
                     self.set_current_time(time);
+                }
+            }
+        });
+
+        ui.separator();
+
+        // in place joint
+        ui.horizontal(|ui|
+        {
+            ui.label("In Place Joint: ");
+            if let Some(in_place_joint_node) = self.in_place_joint_node.clone()
+            {
+
+                let in_place_joint_node = in_place_joint_node.read().unwrap();
+                ui.label(in_place_joint_node.name.clone());
+
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    self.in_place_joint_node = None;
+                }
+
+            }
+            else if let Some(node) = node.clone()
+            {
+                let node = node.read().unwrap();
+                let all_nodes = Scene::list_all_child_nodes(&node.nodes);
+
+                let mut selection: usize = 0;
+                let mut changed = false;
+
+                ui.horizontal(|ui|
+                {
+                    egui::ComboBox::from_id_salt(ui.make_persistent_id("in_place")).selected_text("").width(200.0).show_ui(ui, |ui|
+                    {
+                        changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
+
+                        for (i, child_node) in all_nodes.iter().enumerate()
+                        {
+                            let child_node = child_node.read().unwrap();
+                            if child_node.find_component::<Joint>().is_some()
+                            {
+                                changed = ui.selectable_value(&mut selection, i + 1, child_node.name.clone()).changed() || changed;
+                            }
+                        }
+                    });
+                });
+
+                if changed
+                {
+                    let add_node = &all_nodes[selection - 1];
+                    self.in_place_joint_node = Some(add_node.clone());
                 }
             }
         });
