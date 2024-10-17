@@ -1,22 +1,24 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, sync::Arc};
 
 use nalgebra::{Vector2, Vector3, Point3};
+use parry3d::query::Ray;
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_zero, approx_zero_vec2}, platform}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}, platform}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
 const DEFAULT_TARGET_POS: Point3::<f32> = Point3::new(0.0, 0.0, 0.0);
 const ANGLE_OFFSET: f32 = 0.01;
 const DEFAULT_AUTO_ROTATE_TIMEOUT: u64 = 2000;
+const DEFAULT_ZOOM_SPEED: f32 = 0.05;
 
 pub struct TargetRotationControllerData
 {
     pub offset: Vector3::<f32>,
 
     pub radius: f32,
-    pub alpha: f32,
-    pub beta: f32,
+    pub alpha: f32, // y-achis
+    pub beta: f32, // x-achis
 }
 
 pub struct TargetRotationController
@@ -33,9 +35,14 @@ pub struct TargetRotationController
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
-    pub object_center_predicate: Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>,
+    pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>,
+
+    pub collision_check: bool,
+    pub collision_check_offset: f32,
+    pub collision_zoom_speed: f32,
 
     last_manual_move: u64, // time in millis after the last movement
+    last_radius: Option<f32> // the last radius which was maybe overwritten by collision
 }
 
 impl TargetRotationController
@@ -65,13 +72,19 @@ impl TargetRotationController
 
             object_center_predicate: None,
 
-            last_manual_move: 0
+            collision_check: false,
+            collision_check_offset: 0.1,
+            collision_zoom_speed: DEFAULT_ZOOM_SPEED,
+
+            last_manual_move: 0,
+            last_radius: None
         }
     }
 
     pub fn default() -> Self
     {
-        let mouse_wheel_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+        //let mouse_wheel_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
+        let mouse_wheel_sensivity = 0.1;
 
         TargetRotationController
         {
@@ -91,25 +104,69 @@ impl TargetRotationController
             mouse_sensitivity: Vector2::<f32>::new(0.0015, 0.0015),
             mouse_wheel_sensitivity: mouse_wheel_sensivity,
 
-            object_center_predicate: None,
-
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
 
-            last_manual_move: 0
+            object_center_predicate: None,
+
+            collision_check: false,
+            collision_check_offset: 0.1,
+            collision_zoom_speed: DEFAULT_ZOOM_SPEED,
+
+            last_manual_move: 0,
+            last_radius: None
         }
     }
+
+    pub fn get_target_pos(&self, node: Option<NodeItem>) -> Point3::<f32>
+    {
+        let mut target_pos = DEFAULT_TARGET_POS;
+
+        if let Some(node) = node
+        {
+            let node = node.read().unwrap();
+
+            if let Some(center) = node.get_world_bbox_center(None, true, self.object_center_predicate.clone())
+            {
+                target_pos = center;
+            }
+        }
+
+        let controller_data = self.data.get_ref();
+        target_pos + controller_data.offset
+    }
+
+    fn apply_to_camera(&mut self, node: Option<NodeItem>, cam_data: &mut ChangeTracker<CameraData>)
+    {
+        let target_pos = self.get_target_pos(node);
+
+        let cam_data = cam_data.get_mut();
+        let controller_data = self.data.get_ref();
+
+        let dir = math::yaw_pitch_to_direction(controller_data.alpha, controller_data.beta).normalize();
+
+        cam_data.dir = -dir;
+        let dir = dir * controller_data.radius;
+
+        cam_data.eye_pos = target_pos + dir;
+    }
+
 }
 
 impl CameraController for TargetRotationController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, node: Option<NodeItem>, _scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
+    fn update(&mut self, node: Option<NodeItem>, scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;
 
-        let velocity = &input_manager.mouse.point.velocity;
+        let mut velocity = input_manager.mouse.point.velocity.clone();
+
+        if !*input_manager.mouse.visible.get_ref()
+        {
+            velocity = input_manager.mouse.raw_velocity.velocity;
+        }
 
         let mut update_needed = false;
         if let Some(node) = &node
@@ -118,7 +175,7 @@ impl CameraController for TargetRotationController
         }
 
         // offset
-        if input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(velocity)
+        if input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;
@@ -139,7 +196,7 @@ impl CameraController for TargetRotationController
         }
 
         // rotation
-        if input_manager.mouse.is_holding(MouseButton::Left) && !approx_zero_vec2(velocity)
+        if (input_manager.mouse.is_holding(MouseButton::Left) || !*input_manager.mouse.visible.get_ref()) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;
@@ -181,36 +238,88 @@ impl CameraController for TargetRotationController
             let data = self.data.get_mut();
             data.radius += self.mouse_wheel_sensitivity * -input_manager.mouse.wheel_delta_y;
 
+            if data.radius <= 0.0 { data.radius = 0.0; }
+
             update_needed = true;
+            self.last_manual_move = get_millis();
+            self.last_radius = None;
         }
 
         // apply
-        let (data, controller_data_change) = self.data.consume_borrow();
+        let controller_data_change = self.data.consume_change();
         if self.run_initial_update || update_needed || controller_data_change
         {
-            let mut target_pos = DEFAULT_TARGET_POS;
-
-            if let Some(node) = node
-            {
-                let node = node.read().unwrap();
-
-                if let Some(center) = node.get_bbox_center(true, &self.object_center_predicate)
-                {
-                    target_pos = center;
-                }
-            }
-
-            let cam_data = cam_data.get_mut();
-
-            let dir = math::yaw_pitch_to_direction(data.alpha, data.beta).normalize();
-
-            cam_data.dir = -dir;
-            let dir = dir * data.radius;
-            cam_data.eye_pos = target_pos + data.offset + dir;
+            self.apply_to_camera(node.clone(), cam_data);
 
             self.run_initial_update = false;
 
             change = true;
+        }
+
+        // collision
+        if change && self.collision_check && node.is_some()
+        {
+            let target_pos = self.get_target_pos(node.clone());
+
+            // use "saved" radius for distance check
+            let mut dir = -cam_data.get_ref().dir;
+            if let Some(last_radius) = self.last_radius
+            {
+                dir *= last_radius;
+            }
+            else
+            {
+                dir *= self.data.get_ref().radius;
+            }
+
+            let ray = Ray::new(target_pos, dir);
+
+            let target_node = node.clone().unwrap();
+            let pick_res = scene.pick(&ray, false, false, Some(Arc::new(move |node, _instance|
+            {
+                let node = node.read().unwrap();
+                let has_currect_parent = node.has_parent_or_is_equal(target_node.clone());
+
+                !has_currect_parent
+            })));
+
+            if let Some(pick_res) = pick_res
+            {
+                // near collision detected -> move camera near to avatar
+                if pick_res.time_of_impact < self.data.get_ref().radius
+                {
+                    if self.last_radius.is_none()
+                    {
+                        self.last_radius = Some(self.data.get_ref().radius);
+                    }
+
+                    self.data.get_mut().radius = (pick_res.time_of_impact - self.collision_check_offset).max(self.collision_check_offset);
+                    self.apply_to_camera(node.clone(), cam_data);
+                    change = true;
+                }
+                // move out the camera a bit if possible
+                else if self.last_radius.is_some() && pick_res.time_of_impact < self.last_radius.unwrap()
+                {
+                    self.data.get_mut().radius = (pick_res.time_of_impact - self.collision_check_offset).max(self.collision_check_offset);
+                    self.apply_to_camera(node.clone(), cam_data);
+                    change = true;
+                }
+            }
+            else if let Some(last_radius) = self.last_radius
+            {
+                // interpolate smoothly to old position
+                let radius = interpolate(self.data.get_mut().radius, last_radius, (frame_scale * self.collision_zoom_speed).min(1.0));
+                self.data.get_mut().radius = radius;
+
+                if approx_equal_with_decimal_places(radius, last_radius, 1)
+                {
+                    self.data.get_mut().radius = last_radius;
+                    self.last_radius = None;
+                }
+
+                self.apply_to_camera(node.clone(), cam_data);
+                change = true;
+            }
         }
 
         change
@@ -302,5 +411,20 @@ impl CameraController for TargetRotationController
         });
 
         ui.add(egui::Slider::new(&mut self.auto_rotate_timeout, 0..=5000).text("auto rotate timeout"));
+
+        ui.checkbox(&mut self.collision_check, "Collision check");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Collision check offset: ");
+            ui.add(egui::DragValue::new(&mut self.collision_check_offset).speed(0.01))
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Collision zoom speed: ");
+            ui.add(egui::DragValue::new(&mut self.collision_zoom_speed).speed(0.1))
+        });
+
     }
 }

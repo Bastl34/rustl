@@ -63,7 +63,7 @@ pub struct Scene
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
-    empty_skeleton_morph: SkeletonMorphTargetBindGroup,
+    empty_skeleton_morph_group: SkeletonMorphTargetBindGroup,
 }
 
 impl RenderItem for Scene
@@ -82,7 +82,7 @@ impl Scene
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
 
-        let empty_skeleton_morph = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
+        let empty_skeleton_morph_group = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
 
         let mut render_scene = Self
         {
@@ -105,7 +105,7 @@ impl Scene
             empty_skeleton,
             empty_morph_target,
 
-            empty_skeleton_morph
+            empty_skeleton_morph_group
         };
 
         render_scene.to_buffer(wgpu, scene);
@@ -440,7 +440,7 @@ impl Scene
                     let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
                     if let Some(mesh) = mesh
                     {
-                        let weights = node.get_morph_targets_vec();
+                        let weights = node.get_morph_target_weights_vec();
 
                         if let Some(weights) = weights
                         {
@@ -1230,7 +1230,7 @@ impl Scene
                     }
                     else
                     {
-                        pass.set_bind_group(2, &self.empty_skeleton_morph.bind_group, &[]);
+                        pass.set_bind_group(2, &self.empty_skeleton_morph_group.bind_group, &[]);
                     }
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));

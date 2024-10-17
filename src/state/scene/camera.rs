@@ -390,6 +390,23 @@ impl Camera
         ray
     }
 
+    pub fn get_viewport_coordinates_from_point(&self, point: &Point3<f32>, width: u32, height: u32) -> Point2<f32>
+    {
+        let data = self.get_data();
+
+        let w = data.viewport_width as f32 * width as f32;
+        let h = data.viewport_height as f32 * height as f32;
+
+        let camera_point = data.view.transform_point(&point);
+        let clip_space_point = data.projection.transform_point(&camera_point);
+
+        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32;
+        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32;
+
+        // reduce by 0.5 because the point was the center of the pixel
+        Point2::new(screen_x - 0.5, screen_y - 0.5)
+    }
+
     pub fn get_left_right_ear_positions(&self) -> (Point3::<f32>, Point3<f32>)
     {
         let left = self.get_data().left_ear_pos;

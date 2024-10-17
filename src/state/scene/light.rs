@@ -1,6 +1,6 @@
 use std::{f32::consts::PI, cell::RefCell};
 
-use nalgebra::{Point3, Vector3};
+use nalgebra::{zero, Point3, Vector3};
 
 use crate::{state::helper::render_item::{RenderItemOption}, helper::change_tracker::ChangeTracker};
 
@@ -13,7 +13,8 @@ pub enum LightType
 {
     Directional,
     Point,
-    Spot
+    Spot,
+    Hemispheric
 }
 
 // ******************** Light ********************
@@ -26,6 +27,7 @@ pub struct Light
     pub pos: Point3<f32>,
     pub dir: Vector3<f32>,
     pub color: Vector3<f32>,
+    pub ground_color: Vector3<f32>,
     pub intensity: f32,
     pub distance_based_intensity: bool,
     pub max_angle: f32, //in rad
@@ -44,6 +46,7 @@ impl Light
             pos: pos,
             dir: Vector3::<f32>::new(0.0, -1.0, 0.0),
             color: color,
+            ground_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             intensity: intensity,
             distance_based_intensity: false,
             max_angle: 0.0,
@@ -61,6 +64,7 @@ impl Light
             pos: pos,
             dir: dir,
             color: color,
+            ground_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             intensity: intensity,
             distance_based_intensity: false,
             max_angle: 0.0,
@@ -78,10 +82,29 @@ impl Light
             pos: pos,
             dir: dir,
             color: color,
+            ground_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             intensity: intensity,
             distance_based_intensity: false,
             max_angle: max_angle,
             light_type: LightType::Spot,
+        }
+    }
+
+    pub fn new_hemi(id: u64, name: String, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> Light
+    {
+        Self
+        {
+            enabled: true,
+            id: id,
+            name: name,
+            pos: Point3::<f32>::new(0.0, 0.0, 0.0),
+            dir: dir,
+            color: color,
+            ground_color: ground_color,
+            intensity: intensity,
+            distance_based_intensity: false,
+            max_angle: 0.0,
+            light_type: LightType::Hemispheric,
         }
     }
 
@@ -92,6 +115,7 @@ impl Light
         let mut pos;
         let mut dir;
         let mut color;
+        let mut ground_color;
         let mut intensity;
         let mut max_angle;
         let mut light_type;
@@ -106,10 +130,19 @@ impl Light
             pos = light.pos;
             dir = light.dir;
 
-            let r = (light.color.x * 255.0) as u8;
-            let g = (light.color.y * 255.0) as u8;
-            let b = (light.color.z * 255.0) as u8;
-            color = egui::Color32::from_rgb(r, g, b);
+            {
+                let r = (light.color.x * 255.0) as u8;
+                let g = (light.color.y * 255.0) as u8;
+                let b = (light.color.z * 255.0) as u8;
+                color = egui::Color32::from_rgb(r, g, b);
+            }
+
+            {
+                let r = (light.ground_color.x * 255.0) as u8;
+                let g = (light.ground_color.y * 255.0) as u8;
+                let b = (light.ground_color.z * 255.0) as u8;
+                ground_color = egui::Color32::from_rgb(r, g, b);
+            }
 
             intensity = light.intensity;
             max_angle = light.max_angle.to_degrees();
@@ -145,7 +178,16 @@ impl Light
                 apply_settings = ui.color_edit_button_srgba(&mut color).changed() || apply_settings;
             });
 
-            if light_type == LightType::Directional
+            if light_type == LightType::Hemispheric
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("Ground Color:");
+                    apply_settings = ui.color_edit_button_srgba(&mut ground_color).changed() || apply_settings;
+                });
+            }
+
+            if light_type == LightType::Directional || light_type == LightType::Hemispheric
             {
                 apply_settings = ui.add(egui::Slider::new(&mut intensity, 0.0..=1.0).text("intensity")).changed() || apply_settings;
             }
@@ -161,6 +203,7 @@ impl Light
                 apply_settings = ui.selectable_value(& mut light_type, LightType::Directional, "Directional").changed() || apply_settings;
                 apply_settings = ui.selectable_value(& mut light_type, LightType::Point, "Point").changed() || apply_settings;
                 apply_settings = ui.selectable_value(& mut light_type, LightType::Spot, "Spot").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut light_type, LightType::Hemispheric, "Hemispheric").changed() || apply_settings;
             });
 
             apply_settings = ui.checkbox(&mut distance_based_intensity, "Distance based intensity").changed() || apply_settings;
@@ -176,10 +219,19 @@ impl Light
             light.pos = pos;
             light.dir = dir;
 
-            let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
-            let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
-            let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
-            light.color = Vector3::<f32>::new(r, g, b);
+            {
+                let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                light.color = Vector3::<f32>::new(r, g, b);
+            }
+
+            {
+                let r = ((ground_color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                let g = ((ground_color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                let b = ((ground_color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                light.ground_color = Vector3::<f32>::new(r, g, b);
+            }
 
             light.intensity = intensity;
             light.max_angle = max_angle.to_radians();

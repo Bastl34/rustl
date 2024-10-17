@@ -5,12 +5,13 @@
 
 
 ## current state
-<img src="history/2023-12-31-2.webp" width="720">
-<sub>model/animation from: https://www.mixamo.com/</sub>
+<img src="history/2024-09-09-2.png" width="720">
+<sub>based on own custom models</sub>
 <br><br>
 
-<img src="history/2023-11-12-2.png" width="720">
-<sub>model from: https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet</sub>
+
+<img src="history/2023-12-31-2.webp" width="720">
+<sub>model/animation from: https://www.mixamo.com/</sub>
 <br><br>
 
 <img src="history/2023-10-05.png" width="720">
@@ -47,13 +48,13 @@ cargo watch -s "wasm-pack build --target web" -w src/ -w resources/
 set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
 
 # run with backtrace (mac/linux)
-RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/
+RUST_BACKTRACE=1 cargo watch -s "cargo run --release" -w src/ -w resources/
 
 ```
 
-Linux (Ubuntu) Requirements:
+Linux (Ubuntu 24.04 +) Requirements:
 ```bash
-sudo apt-get install pkg-config cmake libglib2.0-dev build-essential librust-atk-dev libgtk-3-dev librust-alsa-sys-dev libasound2-dev libudev-dev
+sudo apt-get install pkg-config cmake libglib2.0-dev build-essential libgtk-3-dev librust-alsa-sys-dev libasound2-dev libudev-dev
 ```
 
 

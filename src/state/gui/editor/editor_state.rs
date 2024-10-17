@@ -1,12 +1,15 @@
 use std::{sync::{RwLock, Arc}, fmt::format};
 
 use image::{ImageFormat, EncodableLayout};
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector3};
 
-use crate::{state::{scene::{scene::Scene, node::NodeItem}, state::State}, resources::resources::{read_files_recursive, exists, load_binary}, helper::file::{get_extension, get_stem}, rendering::egui::EGui};
+use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{camera_controller::fly_controller::FlyController, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
+
+const DEFAULT_GRID_SIZE: f32 = 0.25;
+const DEFAULT_GRID_AMOUNT: u32 = 1500;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
@@ -41,6 +44,7 @@ pub enum PickType
 {
     Camera,
     Parent,
+    AnimationCopy,
     None
 }
 
@@ -82,13 +86,19 @@ pub struct EditorState
     pub visible: bool,
     pub loading: Arc<RwLock<bool>>,
 
-    pub try_out: bool,
+    pub try_mode: bool,
     pub selectable: bool,
     pub fly_camera: bool,
 
     pub pick_mode: PickType,
 
+    pub grid_size: f32,
+    pub grid_amount: u32,
+    pub grid_recreate: bool,
+
     pub edit_mode: Option<EditMode>,
+    pub edit_moving: bool,
+    pub drag_and_drop_grid_only: bool,
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
@@ -103,6 +113,9 @@ pub struct EditorState
     pub selected_scene_id: Option<u64>,
     pub selected_type: SelectionType,
     pub selected_object: String,
+    pub selected_object_position: Option<Vector3<f32>>,
+
+    pub copy_asset: Option<String>,
 
     pub drag_id: Option<String>,
 
@@ -132,13 +145,19 @@ impl EditorState
             visible: true,
             loading: Arc::new(RwLock::new(false)),
 
-            try_out: false,
+            try_mode: false,
             selectable: true,
             fly_camera: true,
 
             pick_mode: PickType::None,
 
+            grid_size: DEFAULT_GRID_SIZE,
+            grid_amount: DEFAULT_GRID_AMOUNT,
+            grid_recreate: false,
+
             edit_mode: None,
+            edit_moving: false,
+            drag_and_drop_grid_only: false,
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
@@ -153,6 +172,9 @@ impl EditorState
             selected_scene_id: None,
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
+            selected_object_position: None,
+
+            copy_asset: None,
 
             drag_id: None,
 
@@ -173,6 +195,21 @@ impl EditorState
             scenes: vec![],
         }
     }
+
+    pub fn set_grid_size(&mut self, size: f32)
+    {
+        if approx_equal(self.grid_size, size)
+        {
+            return;
+        }
+
+        let new_amount = (DEFAULT_GRID_SIZE / size) * DEFAULT_GRID_AMOUNT as f32;
+        self.grid_size = size;
+        self.grid_amount = new_amount.round() as u32;
+
+        self.grid_recreate = true;
+    }
+
     pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
         // no scene selected
@@ -244,6 +281,38 @@ impl EditorState
         state.find_scene_by_id_mut(scene_id)
     }
 
+    pub fn de_select_all_items(state: &mut State, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>)
+    {
+        for scene in &mut state.scenes
+        {
+            for node in &scene.nodes
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    if let Some(predicate) = &predicate
+                    {
+                        if !predicate(node.clone())
+                        {
+                            continue;
+                        }
+                    }
+
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn de_select_current_item(&mut self, state: &mut State)
     {
         if self.selected_scene_id == None
@@ -288,9 +357,43 @@ impl EditorState
         self.selected_type = SelectionType::None;
     }
 
-    pub fn set_try_out(&mut self, state: &mut State, try_out: bool)
+    pub fn de_select_current_item_from_scene(&mut self, scene: &mut Scene)
     {
-        self.try_out = try_out;
+        if self.selected_scene_id == None
+        {
+            return;
+        }
+
+        let (node_id, _deselect_instance_id) = self.get_object_ids();
+        if let Some(node_id) = node_id
+        {
+            if let Some(node) = scene.find_node_by_id(node_id)
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
+                    }
+                }
+            }
+        }
+
+        self.selected_object.clear();
+        self.selected_scene_id = None;
+        self.selected_type = SelectionType::None;
+    }
+
+    pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)
+    {
+        self.try_mode = try_out;
         self.visible = !try_out;
         state.rendering.fullscreen.set(try_out);
         state.input_manager.mouse.visible.set(!try_out);

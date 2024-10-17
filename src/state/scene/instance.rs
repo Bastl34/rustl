@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use std::sync::{Arc, RwLock};
 
-use nalgebra::{Matrix3, Matrix4, Vector3};
+use nalgebra::{Matrix4, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
@@ -13,6 +15,7 @@ pub struct ComputedInstanceData
 {
     pub world_matrix: Matrix4::<f32>,
     pub alpha: f32,
+    pub locked: bool,
 }
 
 pub struct InstanceData
@@ -22,6 +25,7 @@ pub struct InstanceData
     pub visible: bool,
     pub highlight: bool,
     pub collision: bool,
+    pub locked: bool,
 }
 
 
@@ -60,11 +64,13 @@ impl Instance
                 {
                     world_matrix: Matrix4::<f32>::identity(),
                     alpha: 1.0,
+                    locked: false
                 },
 
                 visible: true,
                 highlight: false,
-                collision: true
+                collision: true,
+                locked: false,
             })
         };
 
@@ -90,11 +96,13 @@ impl Instance
                 {
                     world_matrix: Matrix4::<f32>::identity(),
                     alpha: 1.0,
+                    locked: false
                 },
 
                 visible: true,
                 highlight: false,
-                collision: true
+                collision: true,
+                locked: false,
             })
         };
 
@@ -232,10 +240,12 @@ impl Instance
 
             let world_matrix = instance.calculate_transform();
             let alpha = instance.calculate_alpha();
+            let locked = instance.accumulate_locked();
 
             let data = instance.get_data_mut().get_mut();
             data.computed.world_matrix = world_matrix;
             data.computed.alpha = alpha;
+            data.computed.locked = locked;
         }
 
         {
@@ -272,6 +282,12 @@ impl Instance
             {
                 changed = true;
             }
+        }
+
+        // locked check
+        if self.accumulate_locked() != self.get_data().computed.locked
+        {
+            changed = true;
         }
 
         // ********** check node and parents **********
@@ -356,6 +372,35 @@ impl Instance
         }
     }
 
+    pub fn calculate_inverse_transform(&self) -> Matrix4<f32>
+    {
+        let full_transform = self.calculate_transform();
+
+        full_transform.try_inverse().unwrap()
+    }
+
+    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_inverse_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_from_instance_to_local(&self, vec: &Vector4<f32>, instance: Arc<RwLock<Box<Instance>>>) -> Vector4<f32>
+    {
+        let instance = instance.read().unwrap();
+        let global_vec = instance.transform_local_to_global(vec);
+
+        self.transform_global_to_local(&global_vec)
+    }
+
     pub fn calculate_alpha(&self) -> f32
     {
         let node_alpha = Node::get_full_alpha(self.node.clone());
@@ -387,12 +432,23 @@ impl Instance
         }
     }
 
-    pub fn get_world_transform(&self) -> Matrix4::<f32>
+    pub fn accumulate_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        let node = self.node.read().unwrap();
+        node.is_locked()
+    }
+
+    pub fn get_cached_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
     }
 
-    pub fn get_alpha(&self) -> f32
+    pub fn get_cached_alpha(&self) -> f32
     {
         if self.get_data().visible == false
         {
@@ -400,6 +456,16 @@ impl Instance
         }
 
         self.get_data().computed.alpha
+    }
+
+    pub fn get_cached_is_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        self.get_data().computed.locked
     }
 
     pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)

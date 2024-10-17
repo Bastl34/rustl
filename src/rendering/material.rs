@@ -43,6 +43,7 @@ pub struct MaterialUniform
     pub specular_color: [f32; 4],
 
     pub highlight_color: [f32; 4],
+    pub locked_color: [f32; 4],
 
     pub alpha: f32,
     pub shininess: f32,
@@ -111,6 +112,13 @@ impl MaterialUniform
                 material_data.highlight_color.x,
                 material_data.highlight_color.y,
                 material_data.highlight_color.z,
+                1.0,
+            ],
+            locked_color:
+            [
+                material_data.locked_color.x,
+                material_data.locked_color.y,
+                material_data.locked_color.z,
                 1.0,
             ],
             alpha: material_data.alpha,

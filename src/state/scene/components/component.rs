@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashSet;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
@@ -6,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
+use crate::state::scene::utilities::extras::Extras;
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -15,6 +18,10 @@ pub trait Component: Any
 {
     fn get_base(&self) -> &ComponentBase;
     fn get_base_mut(&mut self) -> &mut ComponentBase;
+
+    fn get_extras(&self) -> &Extras;
+    fn get_extras_mut(&mut self) -> &mut Extras;
+
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
@@ -24,6 +31,7 @@ pub trait Component: Any
     fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
     fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>;
+    fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
 
     fn set_enabled(&mut self, state: bool);
 
@@ -59,6 +67,8 @@ pub struct ComponentBase
     pub icon: String,
     pub info: Option<String>,
 
+    pub extras: Extras,
+
     pub from_file: bool,
 
     pub delete_later_request: bool,
@@ -79,6 +89,30 @@ impl ComponentBase
             component_name,
             icon,
             info: None,
+
+            extras: Extras::new(),
+
+            from_file: false,
+
+            delete_later_request: false,
+
+            render_item: None,
+        }
+    }
+
+    pub fn duplicate(id: u64, from: &ComponentBase) -> ComponentBase
+    {
+        ComponentBase
+        {
+            id,
+            is_enabled: from.is_enabled,
+
+            name: from.name.clone(),
+            component_name: from.component_name.clone(),
+            icon: from.icon.clone(),
+            info: from.info.clone(),
+
+            extras: from.extras.clone(),
 
             from_file: false,
 
@@ -121,6 +155,16 @@ macro_rules! component_impl_default
         {
             &mut self.base
         }
+
+        fn get_extras(&self) -> &crate::state::scene::utilities::extras::Extras
+        {
+            &self.base.extras
+        }
+
+        fn get_extras_mut(&mut self) -> &mut crate::state::scene::utilities::extras::Extras
+        {
+            &mut self.base.extras
+        }
     };
 }
 
@@ -158,6 +202,18 @@ macro_rules! component_impl_set_enabled
         fn set_enabled(&mut self, state: bool)
         {
             self.get_base_mut().is_enabled = state;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component_impl_no_cleanup_node
+{
+    () =>
+    {
+        fn cleanup_node(&mut self, _node: NodeItem) -> bool
+        {
+            false
         }
     };
 }

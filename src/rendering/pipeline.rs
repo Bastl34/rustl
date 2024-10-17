@@ -125,7 +125,8 @@ impl Pipeline
             {
                 module: &self.shader,
                 entry_point: "fs_main",
-                targets: fragment_targets
+                targets: fragment_targets,
+                compilation_options: Default::default(),
             });
         }
 
@@ -142,6 +143,7 @@ impl Pipeline
                     Vertex::desc(),
                     Instance::desc()
                 ],
+                compilation_options: Default::default(),
             },
             fragment: fragment_state,
             primitive: wgpu::PrimitiveState
@@ -149,8 +151,8 @@ impl Pipeline
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back), // backface culling
-                //cull_mode: None,
+                //cull_mode: Some(wgpu::Face::Back), // backface culling
+                cull_mode: None,
                 // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
                 // or Features::POLYGON_MODE_POINT
                 polygon_mode: wgpu::PolygonMode::Fill,
@@ -167,6 +169,7 @@ impl Pipeline
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+            cache: None,
         });
 
         self.pipeline = Some(render_pipeline);

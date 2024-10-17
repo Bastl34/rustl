@@ -3,7 +3,6 @@ todo:
  * TODOs
  * flickering on windows (amd)
  * better scene statistics graph
- * winit + wgpu update
  * deadlock while asset loading
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
  * dead lock while loading an object/scene (just sometimes)
@@ -11,6 +10,7 @@ todo:
  * action management
 
 done:
+ * winit + wgpu update
  * controller support
  * memory leak
  * cleanup is not working (clear scene)
