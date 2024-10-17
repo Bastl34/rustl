@@ -87,6 +87,8 @@ pub struct Animation
     pub joint_filter: Vec<(NodeItem, bool)>, // only apply parts of the animation for specific nodes
     pub in_place_joint_node: Option<NodeItem>, // apply the animation in place (only for the hips)
 
+    pub in_place_axis: Vector3<bool>,
+
     current_time: u128,
     current_local_time: f32,
 
@@ -120,6 +122,7 @@ impl Animation
 
             joint_filter: vec![],
             in_place_joint_node: None,
+            in_place_axis: Vector3::new(true, true, true),
 
             current_time: 0,
             current_local_time: 0.0,
@@ -396,6 +399,19 @@ impl Component for Animation
 
     fn cleanup_node(&mut self, node: NodeItem) -> bool
     {
+        // joints
+        self.joint_filter.retain(|(joint, _)|
+        {
+            joint.read().unwrap().id != node.read().unwrap().id
+        });
+
+        // in place
+        if self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == node.read().unwrap().id
+        {
+            self.in_place_joint_node = None;
+        }
+
+        // channels
         let channels_amount = self.channels.len();
 
         self.channels.retain(|channel|
@@ -425,6 +441,7 @@ impl Component for Animation
             reverse: self.reverse,
 
             in_place_joint_node: self.in_place_joint_node.clone(),
+            in_place_axis: self.in_place_axis,
 
             easing: self.easing,
 
@@ -705,62 +722,71 @@ impl Component for Animation
                 // ********** translation **********
                 if channel.transform_translation.len() > 0
                 {
-                    let translation;
-                    if self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == target_node_id
+                    let is_in_place = self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == target_node_id;
+
+                    // in place check
+                    let mut in_place_local_transform = Vector3::<f32>::new(0.0, 0.0, 0.0);
+                    if is_in_place
                     {
                         let joint = joint.unwrap();
                         component_downcast!(joint, Joint);
                         let local_transform = joint.get_local_transform();
 
-                        translation = Vector3::<f32>::new(local_transform[(0, 3)], local_transform[(1, 3)], local_transform[(2, 3)]);
+                        in_place_local_transform.x = local_transform[(0, 3)];
+                        in_place_local_transform.y = local_transform[(1, 3)];
+                        in_place_local_transform.z = local_transform[(2, 3)];
                     }
-                    else
+
+                    // interpolation
+                    let translation_interpolated = match channel.interpolation
                     {
-                        translation = match channel.interpolation
+                        Interpolation::Linear =>
                         {
-                            Interpolation::Linear =>
-                            {
-                                let from = &channel.transform_translation[t0];
-                                let to = &channel.transform_translation[t1];
+                            let from = &channel.transform_translation[t0];
+                            let to = &channel.transform_translation[t1];
 
-                                interpolate_vec3(&from, &to, factor)
-                            },
-                            Interpolation::Step =>
-                            {
-                                channel.transform_translation[t0].clone()
-                            },
-                            Interpolation::CubicSpline =>
-                            {
-                                let delta_time = next_time - prev_time;
+                            interpolate_vec3(&from, &to, factor)
+                        },
+                        Interpolation::Step =>
+                        {
+                            channel.transform_translation[t0].clone()
+                        },
+                        Interpolation::CubicSpline =>
+                        {
+                            let delta_time = next_time - prev_time;
 
-                                let l = t0 * 3;
+                            let l = t0 * 3;
 
-                                let prev_input_tangent = &channel.transform_translation[l];
-                                let prev_keyframe_value = &channel.transform_translation[l+1];
-                                let prev_output_tangent = &channel.transform_translation[l+2];
+                            let prev_input_tangent = &channel.transform_translation[l];
+                            let prev_keyframe_value = &channel.transform_translation[l+1];
+                            let prev_output_tangent = &channel.transform_translation[l+2];
 
-                                let r = t1 * 3;
+                            let r = t1 * 3;
 
-                                let next_input_tangent = &channel.transform_translation[r];
-                                let next_keyframe_value = &channel.transform_translation[r+1];
-                                let next_output_tangent = &channel.transform_translation[r+2];
+                            let next_input_tangent = &channel.transform_translation[r];
+                            let next_keyframe_value = &channel.transform_translation[r+1];
+                            let next_output_tangent = &channel.transform_translation[r+2];
 
-                                let res = cubic_spline_interpolate_vec3
-                                (
-                                    factor,
-                                    delta_time,
-                                    prev_input_tangent,
-                                    prev_keyframe_value,
-                                    prev_output_tangent,
-                                    next_input_tangent,
-                                    next_keyframe_value,
-                                    next_output_tangent,
-                                );
+                            let res = cubic_spline_interpolate_vec3
+                            (
+                                factor,
+                                delta_time,
+                                prev_input_tangent,
+                                prev_keyframe_value,
+                                prev_output_tangent,
+                                next_input_tangent,
+                                next_keyframe_value,
+                                next_output_tangent,
+                            );
 
-                                res
-                            },
-                        };
-                    }
+                            res
+                        },
+                    };
+
+                    let mut translation = translation_interpolated;
+                    if is_in_place && self.in_place_axis.x { translation.x = in_place_local_transform.x; }
+                    if is_in_place && self.in_place_axis.y { translation.y = in_place_local_transform.y; }
+                    if is_in_place && self.in_place_axis.z { translation.z = in_place_local_transform.z; }
 
                     apply_transformation_to_target(&mut target_map, target_component_id, &(Some(translation), None, None));
                 }
@@ -1037,6 +1063,7 @@ impl Component for Animation
 
         let icon_size = 20.0;
 
+        // ********** controls **********
         ui.horizontal(|ui|
         {
             if ui.toggle_value(&mut is_stopped, RichText::new("⏹").size(icon_size)).on_hover_text("stop animation").clicked()
@@ -1067,6 +1094,8 @@ impl Component for Animation
             }
         });
 
+
+        // ********** settings **********
         ui.checkbox(&mut self.looped, "Loop");
         ui.checkbox(&mut self.reverse, "Reverse");
 
@@ -1135,7 +1164,7 @@ impl Component for Animation
 
         ui.separator();
 
-        // in place joint
+        // ********** in place **********
         ui.horizontal(|ui|
         {
             ui.label("In Place Joint: ");
@@ -1184,9 +1213,20 @@ impl Component for Animation
             }
         });
 
+        ui.add_enabled_ui(self.in_place_joint_node.is_some(), |ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Axes: ");
+                ui.checkbox(&mut self.in_place_axis.x, "x");
+                ui.checkbox(&mut self.in_place_axis.y, "y");
+                ui.checkbox(&mut self.in_place_axis.z, "z");
+            });
+        });
+
         ui.separator();
 
-        // partials
+        // ********** partials **********
         ui.label("Partial body animation: ");
 
         let mut delete_id = None;

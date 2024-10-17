@@ -38,7 +38,7 @@ use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::sound_source::SoundSource;
-use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, copy_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object};
+use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::gilrs::{gilrs_event, gilrs_initialize};
@@ -568,7 +568,8 @@ impl MainInterface
                 let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
 
-                let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone());
+                //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone());
+                let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone(), Some("mixamorig:Hips"));
 
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);

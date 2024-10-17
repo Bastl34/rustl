@@ -360,7 +360,7 @@ impl Editor
                                     self.editor_state.selected_object = format!("objects_{}", target_animation_node.read().unwrap().id);
                                     self.editor_state.settings = SettingsPanel::Components;
 
-                                    scene_utils::copy_all_animations(node, target_animation_node, scene);
+                                    scene_utils::clone_all_animations(node, target_animation_node, scene);
                                 }
                             }
                         }

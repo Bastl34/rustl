@@ -153,7 +153,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                                 {
                                     execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                                     {
-                                        scene_utils::copy_all_animations(from_node.clone(), target_animation_node.clone(), scene);
+                                        scene_utils::clone_all_animations(from_node.clone(), target_animation_node.clone(), scene);
                                     }));
                                 }
                             }

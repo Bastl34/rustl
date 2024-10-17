@@ -74,7 +74,9 @@ pub struct CharacterController
     pub fall_height: f32,
     pub fall_stop_height: f32,
     pub body_offset: f32,
+    pub rotation_offset: f32,
 
+    pub current_y_velocity: f32,
     pub gravity: f32,
     pub jump_force: f32,
     pub max_fall_speed: f32,
@@ -132,7 +134,9 @@ impl CharacterController
             fall_height: FALL_HEIGHT,
             fall_stop_height: FALL_STOP_HEIGHT,
             body_offset: BODY_OFFSET,
+            rotation_offset: 0.0,
 
+            current_y_velocity: 0.0,
             gravity: GRAVITY,
             jump_force: JUMP_FORCE,
             max_fall_speed: MAX_FALL_SPEED,
@@ -931,7 +935,7 @@ impl SceneController for CharacterController
 
                 transformation.apply_rotation(rotation_frame_scale);
 
-                let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y);
+                let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y + self.rotation_offset);
                 self.direction = (rotation_mat * CHARACTER_DIRECTION).normalize();
 
                 if !approx_zero_vec3(&movement_frame_scale)
@@ -1002,7 +1006,7 @@ impl SceneController for CharacterController
                             component_downcast_mut!(transformation, Transformation);
 
                             let mut rotation = transformation.get_data().rotation;
-                            rotation.y = controller_data.alpha;
+                            rotation.y = controller_data.alpha + self.rotation_offset;
 
                             transformation.set_rotation(rotation);
 
@@ -1063,6 +1067,12 @@ impl SceneController for CharacterController
         {
             ui.label("Body Offset: ");
             ui.add(egui::Slider::new(&mut self.body_offset, 0.0..=2.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Rotation Offset: ");
+            ui.add(egui::Slider::new(&mut self.rotation_offset, 0.0..=PI * 2.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
