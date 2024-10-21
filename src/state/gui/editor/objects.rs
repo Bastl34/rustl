@@ -330,14 +330,14 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
         }).body(|ui|
         {
-            if child_nodes.len() > 0
-            {
-                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible, locked);
-            }
-
             if node.instances.get_ref().len() > 0
             {
                 build_instances_list(editor_state, ui, node_arc.clone(), scene_id, visible, locked);
+            }
+
+            if child_nodes.len() > 0
+            {
+                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible, locked);
             }
         });
     }
@@ -352,7 +352,7 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
     {
         for instance in node.instances.get_ref()
         {
-            let mut toggle;
+            let toggle;
             let visible;
             let locked;
             let instance_id;

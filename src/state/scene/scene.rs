@@ -850,6 +850,11 @@ impl Scene
         Node::find_mesh_node_by_name(&self.nodes, name)
     }
 
+    pub fn find_mesh_node_by_ids(&self, ids: &Vec<u64>) -> Option<NodeItem>
+    {
+        Node::find_mesh_node_by_ids(&self.nodes, ids)
+    }
+
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
     {
         self.cleanup_cyclic_references(Some(id));

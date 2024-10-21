@@ -804,6 +804,26 @@ impl Node
         None
     }
 
+    pub fn find_mesh_node_by_ids(nodes: &Vec<NodeItem>, ids: &Vec<u64>) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if ids.contains(&node.read().unwrap().id) && node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_mesh_node_by_ids(&node.read().unwrap().nodes, ids);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
     // find the node which has animations
     pub fn find_animation_node(node: NodeItem) -> Option<NodeItem>
     {

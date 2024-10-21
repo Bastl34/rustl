@@ -200,6 +200,7 @@ impl Editor
             {
                 // delete first
                 scene.delete_node_by_name("grid");
+                scene.delete_node_by_name("grid origin");
 
                 let grid_size = self.editor_state.grid_size;
                 let grid_amount = self.editor_state.grid_amount;
