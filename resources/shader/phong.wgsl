@@ -89,7 +89,7 @@ struct InstanceInput
     @location(9) model_matrix_2: vec4<f32>,
     @location(10) model_matrix_3: vec4<f32>,
 
-    @location(11) alpha: f32,
+    @location(11) color: vec4<f32>,
     @location(12) highlight: f32,
     @location(13) locked: f32,
 };
@@ -105,7 +105,7 @@ struct VertexOutput
 
     @location(5) view_dir: vec3<f32>,
 
-    @location(6) alpha: f32,
+    @location(6) color: vec4<f32>,
     @location(7) highlight: f32,
     @location(8) locked: f32,
 
@@ -313,7 +313,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.bitangent = bitangent;
     out.view_dir = camera.view_pos.xyz - out.position;
 
-    out.alpha = instance.alpha;
+    out.color = instance.color;
     out.highlight = instance.highlight;
     out.locked = instance.locked;
 
@@ -413,7 +413,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var uv = in.tex_coords;
 
     // base color
-    var object_color = material.base_color;
+    var object_color = material.base_color * in.color;
     if (has_base_texture())
     {
         let tex_color = textureSample(t_base, s_base, uv);
@@ -654,7 +654,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
     }
 
-    var alpha = in.alpha * object_color.a * material.alpha;
+    var alpha = in.color.a * object_color.a * material.alpha;
 
     // distance based blending out
     /*

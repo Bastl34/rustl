@@ -60,7 +60,7 @@ struct InstanceInput
     @location(9) model_matrix_2: vec4<f32>,
     @location(10) model_matrix_3: vec4<f32>,
 
-    @location(11) alpha: f32,
+    @location(11) color: vec4<f32>,
     @location(12) highlight: f32,
     @location(13) locked: f32,
 };

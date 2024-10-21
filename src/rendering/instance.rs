@@ -19,7 +19,7 @@ use super::wgpu::WGpu;
 pub struct Instance
 {
     pub transform: [[f32; 4]; 4],
-    pub alpha: f32,
+    pub color: [f32; 4],
     pub highlight: f32,
     pub locked: f32,
 }
@@ -63,18 +63,19 @@ impl Instance
                     format: wgpu::VertexFormat::Float32x4,
                 },
 
-                // ***** alpha *****
+                // ***** color *****
                 wgpu::VertexAttribute
                 {
                     offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 4,
-                    format: wgpu::VertexFormat::Float32,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
+
 
                 // ***** highlight *****
                 wgpu::VertexAttribute
                 {
-                    offset: mem::size_of::<[f32; 17]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 20]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 5,
                     format: wgpu::VertexFormat::Float32,
                 },
@@ -82,7 +83,7 @@ impl Instance
                 // ***** locked *****
                 wgpu::VertexAttribute
                 {
-                    offset: mem::size_of::<[f32; 18]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 21]>() as wgpu::BufferAddress,
                     shader_location: Self::SHADER_LOCATION_START + 6,
                     format: wgpu::VertexFormat::Float32,
                 },
@@ -137,12 +138,15 @@ impl InstanceBuffer
             let locked = instance.get_cached_is_locked();
             let instance_data = instance.get_data();
 
+            let mut color = instance_data.color.clone();
+            color.w = alpha;
+
             self.transformations.push(transform);
 
             Instance
             {
                 transform: transform.into(),
-                alpha: alpha,
+                color: color.into(),
                 highlight: f32::from(instance_data.highlight),
                 locked: f32::from(locked),
             }
@@ -177,10 +181,13 @@ impl InstanceBuffer
         let locked = instance.get_cached_is_locked();
         let instance_data = instance.get_data();
 
+        let mut color = instance_data.color.clone();
+        color.w = alpha;
+
         let data = Instance
         {
             transform: transform.into(),
-            alpha: alpha,
+            color: color.into(),
             highlight: f32::from(instance_data.highlight),
             locked: f32::from(locked),
         };
@@ -215,6 +222,9 @@ impl InstanceBuffer
             let locked = instance.get_cached_is_locked();
             let instance_data = instance.get_data();
 
+            let mut color = instance_data.color.clone();
+            color.w = alpha;
+
             self.transformations[i] = transform;
 
             i += 1;
@@ -222,7 +232,7 @@ impl InstanceBuffer
             Instance
             {
                 transform: transform.into(),
-                alpha: alpha,
+                color: color.into(),
                 highlight: f32::from(instance_data.highlight),
                 locked: f32::from(locked),
             }

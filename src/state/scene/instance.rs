@@ -26,6 +26,7 @@ pub struct InstanceData
     pub highlight: bool,
     pub collision: bool,
     pub locked: bool,
+    pub color: Vector4::<f32>
 }
 
 
@@ -71,6 +72,7 @@ impl Instance
                 highlight: false,
                 collision: true,
                 locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             })
         };
 
@@ -103,6 +105,7 @@ impl Instance
                 highlight: false,
                 collision: true,
                 locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             })
         };
 
@@ -403,6 +406,8 @@ impl Instance
 
     pub fn calculate_alpha(&self) -> f32
     {
+        let instance_color_alpha = self.get_data().color.w;
+
         let node_alpha = Node::get_full_alpha(self.node.clone());
 
         let alpha_components = self.find_components::<Alpha>();
@@ -424,11 +429,11 @@ impl Instance
 
         if inheritance
         {
-            alpha * node_alpha
+            alpha * node_alpha * instance_color_alpha
         }
         else
         {
-            alpha
+            alpha * instance_color_alpha
         }
     }
 
@@ -525,6 +530,68 @@ impl Instance
         else
         {
             panic!("trnasform component not found");
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        let mut changed = false;
+
+        let mut visible;
+        let mut locked;
+        let mut collision;
+        let mut highlight;
+        let mut name;
+        let mut pickable;
+        let mut color;
+        {
+            let instance_data = self.get_data();
+            visible = instance_data.visible;
+            locked = instance_data.locked;
+            collision = instance_data.collision;
+            highlight = instance_data.highlight;
+            name = self.name.clone();
+            pickable = self.pickable;
+
+            let r = (instance_data.color.x * 255.0) as u8;
+            let g = (instance_data.color.y * 255.0) as u8;
+            let b = (instance_data.color.z * 255.0) as u8;
+            let a = (instance_data.color.w * 255.0) as u8;
+            color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
+        }
+
+        ui.horizontal(|ui|
+        {
+            ui.label("name: ");
+            changed = ui.text_edit_singleline(&mut name).changed() || changed;
+        });
+        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
+        changed = ui.checkbox(&mut collision, "collision").changed() || changed;
+        changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
+        changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("color:");
+            changed = ui.color_edit_button_srgba(&mut color).changed() || changed;
+        });
+
+        if changed
+        {
+            self.name = name;
+            self.pickable = pickable;
+
+            let instance_data = self.get_data_mut().get_mut();
+            instance_data.visible = visible;
+            instance_data.collision = collision;
+            instance_data.highlight = highlight;
+
+            let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            let a = ((color.a() as f32) / 255.0).clamp(0.0, 1.0);
+            instance_data.color = Vector4::<f32>::new(r, g, b, a);
         }
     }
 }

@@ -787,46 +787,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
     let mut delete_instance = false;
     collapse_with_title(ui, "instance_settings", true, "⛭ Instance Settings", None, |ui|
     {
-        let mut changed = false;
-
-        let mut visible;
-        let mut locked;
-        let mut collision;
-        let mut highlight;
-        let mut name;
-        let mut pickable;
-        {
-            let instance = instance.read().unwrap();
-            let instance_data = instance.get_data();
-            visible = instance_data.visible;
-            locked = instance_data.locked;
-            collision = instance_data.collision;
-            highlight = instance_data.highlight;
-            name = instance.name.clone();
-            pickable = instance.pickable;
-        }
-
-        ui.horizontal(|ui|
-        {
-            ui.label("name: ");
-            changed = ui.text_edit_singleline(&mut name).changed() || changed;
-        });
-        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
-        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
-        changed = ui.checkbox(&mut collision, "collision").changed() || changed;
-        changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
-        changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
-
-        if changed
-        {
-            let mut instance = instance.write().unwrap();
-            let instance_data = instance.get_data_mut().get_mut();
-            instance_data.visible = visible;
-            instance_data.collision = collision;
-            instance_data.highlight = highlight;
-            instance.name = name;
-            instance.pickable = pickable;
-        }
+        instance.write().unwrap().ui(ui);
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {

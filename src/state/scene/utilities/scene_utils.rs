@@ -173,7 +173,7 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
 
     let size = amount as f32 * spacing;
 
-    let loaded_ids = load_object("objects/grid/grid.gltf", scene_id, main_queue.clone(), id_manager, true, true, false, 0).unwrap();
+    let loaded_ids = load_object("objects/grid/grid_line.gltf", scene_id, main_queue.clone(), id_manager, true, true, false, 0).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
