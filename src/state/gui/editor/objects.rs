@@ -3,20 +3,24 @@ use std::{fmt::format, sync::{Arc, RwLock}};
 use egui::{Ui, RichText, Color32};
 use nalgebra::DimName;
 
-use crate::{component_downcast, helper::concurrency::execution_queue::ExecutionQueueItem, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_scene_mut_and_wait, execute_on_state_mut}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 const FROM_FILE_COLOR: Color32 = Color32::from_rgb(80, 20, 20);
 
-pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
     for node_arc in nodes
     {
         let node = node_arc.read().unwrap();
         let child_nodes = &node.nodes.clone();
 
-        let visible = node.visible && parent_visible;
+        let node_visible = node.visible;
+        let visible = node_visible && parent_visible;
+
+        let node_locked = node.locked;
+        let locked = node_locked || parent_locked;
 
         let name = node.name.clone();
         let node_id = node.id;
@@ -49,7 +53,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let headline_name: String;
+                let mut headline_name: String;
                 if node.find_component::<Animation>().is_some()
                 {
                     headline_name = format!("🎞 {}: {}", node_id, name.clone());
@@ -71,7 +75,12 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     headline_name = format!("◻ {}: {}", node_id, name.clone());
                 }
 
-                let heading;
+                if locked
+                {
+                    headline_name += " 🔒";
+                }
+
+                let mut heading;
                 if visible
                 {
                     heading = RichText::new(headline_name).strong()
@@ -81,61 +90,14 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     heading = RichText::new(headline_name).strikethrough();
                 }
 
+                if locked
+                {
+                    heading = heading.color(Color32::LIGHT_RED);
+                }
+
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
-                toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("⊞ Add empty node").clicked()
-                    {
-                        ui.close_menu();
-
-                        let node_arc = node_arc.clone();
-                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
-                        {
-                            scene.add_empty_node("Node", Some(node_arc.clone()));
-                        }));
-                    }
-
-                    ui.separator();
-
-                    let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
-                    if ui.button(hide_show_text).clicked()
-                    {
-                        ui.close_menu();
-
-                        let node_arc = node_arc.clone();
-                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
-                        {
-                            let mut node = node_arc.write().unwrap();
-                            node.visible = !node.visible;
-                        }));
-
-                    }
-
-                    if node.find_component::<Animation>().is_some()
-                    {
-                        ui.separator();
-
-                        if ui.button("⏵ Start all animations").clicked()
-                        {
-                            ui.close_menu();
-                            node.start_all_animations();
-                        }
-
-                        if ui.button("⏵ Start first animation").clicked()
-                        {
-                            ui.close_menu();
-                            node.start_first_animation();
-                        }
-
-                        if ui.button("⏹ Stop all animations").clicked()
-                        {
-                            ui.close_menu();
-                            node.stop_all_animations();
-                        }
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -170,6 +132,38 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }
                         editor_state.pick_mode = PickType::None;
                     }
+                    else if editor_state.pick_mode == PickType::AnimationCopy
+                    {
+                        let (node_id, ..) = editor_state.get_object_ids();
+                        if let Some(node_id) = node_id
+                        {
+                            let from_node = scene.find_node_by_id(node_id).unwrap();
+
+                            // find root
+                            let mut picking_node = node_arc.clone();
+                            if let Some(root_node) = Node::find_root_node(picking_node.clone())
+                            {
+                                picking_node = root_node.clone();
+                            }
+
+                            let target_animation_node = Node::find_animation_node(picking_node.clone());
+                            if let Some(target_animation_node) = target_animation_node
+                            {
+                                if from_node.read().unwrap().id != target_animation_node.read().unwrap().id
+                                {
+                                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                                    {
+                                        scene_utils::clone_all_animations(from_node.clone(), target_animation_node.clone(), scene);
+                                    }));
+                                }
+                            }
+                        }
+
+                        editor_state.selected_object = id;
+                        editor_state.settings = SettingsPanel::Components;
+
+                        editor_state.pick_mode = PickType::None;
+                    }
                     else
                     {
                         if editor_state.selected_object != id
@@ -182,68 +176,235 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             {
                                 editor_state.settings = SettingsPanel::Components;
                             }
+
+                            // highlight
+                            let mut all_nodes = vec![];
+                            all_nodes.push(node_arc.clone());
+                            all_nodes.extend(Scene::list_all_child_nodes(&node_arc.read().unwrap().nodes));
+
+                            for node in all_nodes
+                            {
+                                let node = node.read().unwrap();
+
+                                for instance in node.instances.get_ref()
+                                {
+                                    let mut instance = instance.write().unwrap();
+                                    let instance_data = instance.get_data_mut().get_mut();
+                                    instance_data.highlight = true;
+                                }
+                            }
+
+                            // delesect all other
+                            let node_id = node_arc.read().unwrap().id;
+
+                            execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                            {
+                                let predicate = move |node: NodeItem|
+                                {
+                                    return !node.read().unwrap().has_parent_id_or_is_equal(node_id)
+                                };
+
+                                EditorState::de_select_all_items(state, Some(Arc::new(predicate)));
+                            }));
                         }
                         else
                         {
+                            execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                            {
+                                EditorState::de_select_all_items(state, None);
+                            }));
+
                             editor_state.selected_object.clear();
                             editor_state.selected_scene_id = None;
                         }
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("⊞ Add empty node").clicked()
+                    {
+                        ui.close_menu();
+
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.add_empty_node("Node", Some(node_arc.clone()));
+                        }));
+                    }
+
+                    ui.separator();
+
+                    if node.has_mesh()
+                    {
+                        if ui.button("🖹 Add default instance").clicked()
+                        {
+                            ui.close_menu();
+
+                            let node_arc = node_arc.clone();
+                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                            {
+                                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), id);
+                            }));
+                        }
+
+                        ui.separator();
+                    }
+
+                    // hide/show
+                    let hide_show_text = if node_visible { "👁 Hide" } else { "👁 Show" };
+                    if ui.button(hide_show_text).clicked()
+                    {
+                        ui.close_menu();
+
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let mut node = node_arc.write().unwrap();
+                            node.visible = !node.visible;
+                        }));
+                    }
+
+                    // lock/unlock
+                    let lock_unlock_text = if node_locked { "🔓 Unlock" } else { "🔒 Lock" };
+                    if ui.button(lock_unlock_text).clicked()
+                    {
+                        ui.close_menu();
+
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let mut node = node_arc.write().unwrap();
+                            node.locked = !node.locked;
+                        }));
+                    }
+
+                    if node.find_component::<Animation>().is_some()
+                    {
+                        ui.separator();
+
+                        if ui.button("⏵ Start all animations").clicked()
+                        {
+                            ui.close_menu();
+                            node.start_all_animations();
+                        }
+
+                        if ui.button("⏵ Start first animation").clicked()
+                        {
+                            ui.close_menu();
+                            node.start_first_animation();
+                        }
+
+                        if ui.button("⏹ Stop all animations").clicked()
+                        {
+                            ui.close_menu();
+                            node.stop_all_animations();
+                        }
+
+                        if ui.button("🗐 Copy and re-target animations").clicked()
+                        {
+                            ui.close_menu();
+
+                            editor_state.de_select_current_item_from_scene(scene);
+                            editor_state.selected_object = format!("objects_{}", node.id);
+                            editor_state.selected_type = SelectionType::Object;
+                            editor_state.selected_scene_id = Some(scene_id);
+                            editor_state.pick_mode = PickType::AnimationCopy;
+                        }
+                    }
+
+                    // delete
+                    ui.separator();
+                    if ui.button("🗑 Delete").clicked()
+                    {
+                        ui.close_menu();
+
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.delete_node_by_id(node_id);
+                        }));
+                    }
+                });
             });
 
         }).body(|ui|
         {
-            if child_nodes.len() > 0
-            {
-                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible);
-            }
-
             if node.instances.get_ref().len() > 0
             {
-                build_instances_list(editor_state, ui, node_arc.clone(), scene_id, visible);
+                build_instances_list(editor_state, ui, node_arc.clone(), scene_id, visible, locked);
+            }
+
+            if child_nodes.len() > 0
+            {
+                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible, locked);
             }
         });
     }
 }
 
-pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: NodeItem, scene_id: u64, parent_visible: bool)
+pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: NodeItem, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
+    let node_arc = node.clone();
     let node = node.read().unwrap();
 
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
         for instance in node.instances.get_ref()
         {
-            let instance = instance.read().unwrap();
-            let instance_id = instance.id;
-            let instance_data = instance.get_data();
+            let toggle;
+            let visible;
+            let locked;
+            let instance_id;
+            let ui_id;
 
-            let id = format!("objects_{}_{}", node.id, instance_id);
-            let headline_name = format!("⚫ {}: {}", instance_id, instance.name);
-
-            let mut heading = RichText::new(headline_name);
-
-            if instance_data.visible && parent_visible
             {
-                heading = heading.strong()
-            }
-            else
-            {
-                heading = heading.strikethrough();
-            }
+                let instance = instance.read().unwrap();
+                instance_id = instance.id;
+                let instance_data = instance.get_data();
 
-            if instance_data.highlight
-            {
-                heading = heading.color(Color32::from_rgb(255, 175, 175));
-            }
+                visible = instance_data.visible;
+                locked = instance_data.locked;
 
-            let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
-            {
-                if editor_state.selected_object != id
+                ui_id = format!("objects_{}_{}", node.id, instance_id);
+                let mut headline_name = format!("⚫ {}: {}", instance_id, instance.name);
+
+                if parent_locked
                 {
-                    editor_state.selected_object = id;
+                    headline_name += " 🔒";
+                }
+
+                let mut heading = RichText::new(headline_name);
+
+                if visible && parent_visible
+                {
+                    heading = heading.strong()
+                }
+                else
+                {
+                    heading = heading.strikethrough();
+                }
+
+                if locked || parent_locked
+                {
+                    heading = heading.color(Color32::LIGHT_RED);
+                }
+
+                if instance_data.highlight
+                {
+                    //heading = heading.color(Color32::from_rgb(255, 175, 175));
+                    heading = heading.italics();
+                }
+
+                let mut selection; if editor_state.selected_object == ui_id { selection = true; } else { selection = false; }
+                toggle = ui.toggle_value(&mut selection, heading);
+            }
+
+            if toggle.clicked()
+            {
+                if editor_state.selected_object != ui_id
+                {
+                    editor_state.selected_object = ui_id;
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Object;
 
@@ -258,6 +419,44 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                     editor_state.selected_scene_id = None;
                 }
             }
+
+            // context menu
+            let node_arc = node_arc.clone();
+            toggle.context_menu(|ui|
+            {
+                // hide/show
+                let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
+                if ui.button(hide_show_text).clicked()
+                {
+                    ui.close_menu();
+
+                    let mut instance = instance.write().unwrap();
+                    instance.get_data_mut().get_mut().visible = !visible;
+                }
+
+                // lock/unlock
+                let lock_unlock_text = if locked { "🔓 Unlock" } else { "🔒 Lock" };
+                if ui.button(lock_unlock_text).clicked()
+                {
+                    ui.close_menu();
+
+                    let mut instance = instance.write().unwrap();
+                    instance.get_data_mut().get_mut().locked = !locked;
+                }
+
+                // delete
+                ui.separator();
+                if ui.button("🗑 Delete").clicked()
+                {
+                    ui.close_menu();
+
+                    spawn_thread(move ||
+                    {
+                        let mut node = node_arc.write().unwrap();
+                        node.delete_instance_by_id(instance_id);
+                    });
+                }
+            });
         }
     });
 }
@@ -347,7 +546,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         }
     }
 
-    let bounding_box_info = node.read().unwrap().get_bounding_info(true, &None);
+    let bounding_box_info = node.read().unwrap().get_world_bounding_info(None, true, None);
 
     // General
     collapse_with_title(ui, "object_data", true, "ℹ Object Data", None, |ui|
@@ -428,6 +627,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut changed = false;
 
         let mut visible;
+        let mut locked: bool;
         let mut root_node: bool;
         let mut render_children_first;
         let mut alpha_index;
@@ -436,6 +636,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let node = node.read().unwrap();
             visible = node.visible;
+            locked = node.locked;
             root_node = node.root_node;
             render_children_first = node.settings.render_children_first;
             alpha_index = node.settings.alpha_index;
@@ -450,6 +651,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
         changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
         ui.horizontal(|ui|
@@ -463,6 +665,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             let mut node = node.write().unwrap();
             node.visible = visible;
+            node.locked = locked;
             node.root_node = root_node;
             node.settings.render_children_first = render_children_first;
             node.settings.alpha_index = alpha_index;
@@ -510,6 +713,31 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 node.write().unwrap().create_default_instance(node.clone(), id);
             }
 
+            if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()
+            {
+                let (node_id, instance_id) = editor_state.get_object_ids();
+
+                if instance_id.is_some()
+                {
+                    editor_state.selected_object = format!("objects_{}", node_id.unwrap());
+                }
+                else if let Some(node_id) = node_id
+                {
+                    let node = state.find_scene_by_id(scene_id).unwrap().find_node_by_id(node_id);
+
+                    if let Some(node) = node
+                    {
+                        let parent = node.read().unwrap().parent.clone();
+
+                        if let Some(parent) = parent
+                        {
+                            let parent = parent.read().unwrap();
+                            editor_state.selected_object = format!("objects_{}", parent.id);
+                        }
+                    }
+                }
+            }
+
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
@@ -538,6 +766,8 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
     let instance = instance.unwrap();
 
+    let bounding_box_info = node.get_world_bounding_info(Some(instance_id), true, None);
+
     // General
     collapse_with_title(ui, "instance_data", true, "ℹ Instance Data", None, |ui|
     {
@@ -545,49 +775,19 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
         ui.label(format!("name: {}", instance.name));
         ui.label(format!("id: {}", instance.id));
+
+        if let Some(bounding_box_info) = bounding_box_info
+        {
+            ui.label(format!("B-Box min: x={:.3} y={:.3} z={:.3}", bounding_box_info.0.x, bounding_box_info.0.y, bounding_box_info.0.z));
+            ui.label(format!("B-Box max: x={:.3} y={:.3} z={:.3}", bounding_box_info.1.x, bounding_box_info.1.y, bounding_box_info.1.z));
+        }
     });
 
     // Settings
     let mut delete_instance = false;
     collapse_with_title(ui, "instance_settings", true, "⛭ Instance Settings", None, |ui|
     {
-        let mut changed = false;
-
-        let mut visible;
-        let mut collision;
-        let mut highlight;
-        let mut name;
-        let mut pickable;
-        {
-            let instance = instance.read().unwrap();
-            let instance_data = instance.get_data();
-            visible = instance_data.visible;
-            collision = instance_data.collision;
-            highlight = instance_data.highlight;
-            name = instance.name.clone();
-            pickable = instance.pickable;
-        }
-
-        ui.horizontal(|ui|
-        {
-            ui.label("name: ");
-            changed = ui.text_edit_singleline(&mut name).changed() || changed;
-        });
-        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
-        changed = ui.checkbox(&mut collision, "collision").changed() || changed;
-        changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
-        changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
-
-        if changed
-        {
-            let mut instance = instance.write().unwrap();
-            let instance_data = instance.get_data_mut().get_mut();
-            instance_data.visible = visible;
-            instance_data.collision = collision;
-            instance_data.highlight = highlight;
-            instance.name = name;
-            instance.pickable = pickable;
-        }
+        instance.write().unwrap().ui(ui);
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
@@ -707,6 +907,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             let component_id;
             let name;
+            let component_title;
             let component_name;
             let is_material;
             let is_sound;
@@ -715,7 +916,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
-                component_name = format!("{} {}", base.icon, base.component_name);
+                component_title = format!("{} {}", base.icon, base.name);
+                component_name = base.component_name.clone();
                 name = base.name.clone();
                 component_id = component.id();
                 from_file = base.from_file;
@@ -731,7 +933,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
             {
-                ui.label(RichText::new(component_name).heading().strong());
+                ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                 {
                     if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
@@ -754,7 +956,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     {
                         toggle_text = RichText::new("⏺").color(Color32::RED);
                     }
-
 
                     if ui.toggle_value(&mut enabled, toggle_text).clicked()
                     {
@@ -863,13 +1064,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let component_id;
                     let name;
                     let component_name;
+                    let component_title;
                     let is_sound;
                     let from_file;
                     let duplicatable;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
-                        component_name = format!("{} {}", base.icon, base.component_name);
+                        component_name = format!("{} {}", base.icon, base.name);
+                        component_title = base.component_name.clone();
                         name = base.name.clone();
                         component_id = component.id();
                         from_file = base.from_file;
@@ -883,7 +1086,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                     generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
                     {
-                        ui.label(RichText::new(component_name).heading().strong());
+                        ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                         {
                             if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()

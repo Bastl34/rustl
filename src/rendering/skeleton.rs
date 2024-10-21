@@ -1,12 +1,13 @@
 use nalgebra::Matrix4;
-use wgpu::{BindGroupLayout, BindGroup, util::DeviceExt};
+use wgpu::{BindGroup, util::DeviceExt};
+use colored::Colorize;
 
 use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
 
-use super::{material::MaterialBuffer, wgpu::WGpu, uniform, helper::buffer::create_empty_buffer};
+use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
 
-pub const MAX_JOINTS: usize = 128; // 256?!
+pub const MAX_JOINTS: usize = 256; // 128?!
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -28,7 +29,8 @@ impl SkeletonUniform
         {
             if i + 1 > MAX_JOINTS
             {
-                println!("MAX_JOINTS reached - try to increase MAX_JOINTS or reduce joints in skeleton");
+                let error = "MAX_JOINTS reached - try to increase MAX_JOINTS or reduce joints in skeleton".to_string();
+                println!("{}", error.red());
                 break;
             }
 

@@ -3,7 +3,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{ComplexField, Normed, Point3, Rotation3, Vector2, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_equal_vec, approx_zero, approx_zero_vec3, yaw_pitch_from_direction, yaw_pitch_to_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}, mouse::MouseButton}, scene_controller_impl_default, state::scene::{camera_controller::{follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, mesh::Mesh, transformation::Transformation, transformation_animation::TransformationAnimation}, manager::id_manager::IdManagerItem, node::{self, Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}};
 
 use super::scene_controller::SceneController;
 
@@ -20,10 +20,14 @@ const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 const GRAVITY: f32 = 0.3;
 //const GRAVITY: f32 = 0.981;
 //const GRAVITY: f32 = 0.0981;
+const JUMP_FORCE: f32 = 5.0;
+const MAX_FALL_SPEED: f32 = 1.0;
 
 const FALL_HEIGHT: f32 = 2.0;
 const FALL_STOP_HEIGHT: f32 = 0.1;
 const BODY_OFFSET: f32 = 0.5;
+
+const DEFAULT_CAM_RADIUS: f32 = 6.0;
 
 #[derive(Debug)]
 enum CharAnimationType
@@ -67,10 +71,15 @@ pub struct CharacterController
     pub rotation_follow: bool,
     pub direction: Vector3<f32>,
 
-    pub gravity: f32,
     pub fall_height: f32,
     pub fall_stop_height: f32,
     pub body_offset: f32,
+    pub rotation_offset: f32,
+
+    pub current_y_velocity: f32,
+    pub gravity: f32,
+    pub jump_force: f32,
+    pub max_fall_speed: f32,
 
     pub physics: bool, // very simple at the moment
     pub falling: bool,
@@ -122,10 +131,15 @@ impl CharacterController
             rotation_follow: false,
             direction: CHARACTER_DIRECTION,
 
-            gravity: GRAVITY,
             fall_height: FALL_HEIGHT,
             fall_stop_height: FALL_STOP_HEIGHT,
             body_offset: BODY_OFFSET,
+            rotation_offset: 0.0,
+
+            current_y_velocity: 0.0,
+            gravity: GRAVITY,
+            jump_force: JUMP_FORCE,
+            max_fall_speed: MAX_FALL_SPEED,
 
             physics: true,
             falling: false,
@@ -186,11 +200,12 @@ impl CharacterController
         let mut target_rotation_controller = TargetRotationController::default();
         target_rotation_controller.data.get_mut().alpha = 0.0;
         target_rotation_controller.data.get_mut().beta = PI / 7.0;
-        target_rotation_controller.data.get_mut().radius = 6.0;
+        target_rotation_controller.data.get_mut().radius = DEFAULT_CAM_RADIUS;
         target_rotation_controller.data.get_mut().offset.y = 1.0;
+        target_rotation_controller.collision_check = true;
 
         // do not include joint attached items to the check (like heads or weapons)
-        target_rotation_controller.object_center_predicate = Some(Box::new(|node: NodeItem| -> bool
+        target_rotation_controller.object_center_predicate = Some(Arc::new(|node: NodeItem| -> bool
         {
             let node = node.read().unwrap();
             let node_has_joint = node.find_component::<Joint>().is_some();
@@ -255,18 +270,7 @@ impl CharacterController
             self.animation_strafe_right_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "run".to_string()].to_vec(), &vec![]);
             self.animation_fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
             self.animation_fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
-
-            let actions = vec!["(?i)action.*punch", "(?i)action.*thumbs", "(?i)action.*dance"];
-
-            for action in actions
-            {
-                let animation = node.find_animation_by_regex(action);
-
-                if let Some(animation) = animation
-                {
-                    self.animation_actions.push(animation);
-                }
-            }
+            self.animation_actions = node.find_animations_by_regex("(?i)action.*");
         }
 
         // transformation animation
@@ -659,10 +663,29 @@ impl SceneController for CharacterController
 
         let mut is_action = self.is_action();
 
+        // ********** first person mode **********
+        let mut is_first_person = false;
+        if let Some(cam) = scene.get_active_camera()
+        {
+            if let Some(controller) = cam.controller.as_ref()
+            {
+                if let Some(controller) = controller.as_any().downcast_ref::<TargetRotationController>()
+                {
+                    is_first_person = approx_zero(controller.data.get_ref().radius);
+                }
+            }
+        }
+
+        // do not show charactar in first person mode
+        if let Some(node) = &self.node
+        {
+            node.write().unwrap().visible = !is_first_person;
+        }
+
         // ********** forward/backward **********
         if !input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
         {
-            if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
@@ -672,7 +695,7 @@ impl SceneController for CharacterController
                 movement.z = self.movement_speed;
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
@@ -681,7 +704,7 @@ impl SceneController for CharacterController
                 movement.z = -self.movement_speed;
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
@@ -691,7 +714,7 @@ impl SceneController for CharacterController
                 movement.z = self.movement_speed_fast;
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+            else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling
                 {
@@ -708,13 +731,13 @@ impl SceneController for CharacterController
         {
             if input_manager.keyboard.is_holding(Key::A)
             {
-                if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+                if (!self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)) && !is_first_person
                 {
                     rotation.y = self.rotation_speed;
                 }
                 else
                 {
-                    if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, true, false, false);
                         movement.x = -self.movement_speed_fast;
@@ -730,13 +753,13 @@ impl SceneController for CharacterController
             }
             else if input_manager.keyboard.is_holding(Key::D)
             {
-                if !self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)
+                if (!self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)) && !is_first_person
                 {
                     rotation.y = -self.rotation_speed;
                 }
                 else
                 {
-                    if input_manager.keyboard.is_holding_modifier(Modifier::Shift)
+                    if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, true, false, false);
                         movement.x = self.movement_speed_fast;
@@ -753,19 +776,19 @@ impl SceneController for CharacterController
         }
 
         // ********** jump **********
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
         {
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
         // ********** crouch **********
-        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
+        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
         {
             self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, false, false, false);
             has_change = true;
         }
         // ********** roll **********
-        else if input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
+        else if input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
         {
             if movement.z > 0.0
             {
@@ -801,7 +824,7 @@ impl SceneController for CharacterController
         is_rolling = self.is_rolling();
 
         // ********** idle **********
-        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::Ctrl) && !input_manager.keyboard.is_holding(Key::C)
+        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C)
         {
             self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, true, false, false);
         }
@@ -847,7 +870,7 @@ impl SceneController for CharacterController
 
                 let character_node = node.clone();
 
-                let predicate_func = move |node: NodeItem| -> bool
+                let predicate_func = move |node: NodeItem, _instance_id: Option<u64>| -> bool
                 {
                     let check_node = node.read().unwrap();
 
@@ -857,7 +880,7 @@ impl SceneController for CharacterController
                 };
 
                 let ray = Ray::new(pos, down);
-                let pick_res = scene.multi_pick(&ray, false, false, Some(Box::new(predicate_func)));
+                let pick_res = scene.multi_pick(&ray, false, false, Some(Arc::new(predicate_func)));
 
                 if let Some(first_pick) = pick_res.first()
                 {
@@ -912,12 +935,12 @@ impl SceneController for CharacterController
 
                 transformation.apply_rotation(rotation_frame_scale);
 
-                let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y);
+                let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y + self.rotation_offset);
                 self.direction = (rotation_mat * CHARACTER_DIRECTION).normalize();
 
                 if !approx_zero_vec3(&movement_frame_scale)
                 {
-                    let movement_in_direction;
+                    let mut movement_in_direction = Vector3::<f32>::zeros();
 
                     // strafe left/right
                     if !approx_zero(movement_frame_scale.x)
@@ -928,31 +951,31 @@ impl SceneController for CharacterController
                         // strafe left
                         if movement_frame_scale.x < 0.0
                         {
-                            movement_in_direction = movement_frame_scale.x * strafe_dir.normalize();
+                            movement_in_direction += movement_frame_scale.x * strafe_dir.normalize();
                         }
                         // strafe right
                         else
                         {
-                            movement_in_direction = movement_frame_scale.x * strafe_dir.normalize();
+                            movement_in_direction += movement_frame_scale.x * strafe_dir.normalize();
                         }
                     }
 
                     // forward/backward
-                    else
+                    if !approx_zero(movement_frame_scale.z)
                     {
-                        movement_in_direction = movement_frame_scale.z * self.direction.normalize();
+                        movement_in_direction += movement_frame_scale.z * self.direction.normalize();
                     }
 
-                    let gravity = Vector3::<f32>::new(0.0, movement.y, 0.0);
+                    let yMovement = Vector3::<f32>::new(0.0, movement.y, 0.0);
 
-                    let res = movement_in_direction + gravity;
+                    let res = movement_in_direction + yMovement;
 
                     transformation.apply_translation(res);
                 }
             }
         }
 
-        // ********** camera angle **********
+        // ********** camera angle for follow mode **********
         if !approx_zero_vec3(&rotation) && self.rotation_follow
         {
             if let Some(cam) = scene.get_active_camera_mut()
@@ -963,6 +986,33 @@ impl SceneController for CharacterController
                     {
                         let (yaw, _) = yaw_pitch_from_direction(self.direction);
                         controller.data.get_mut().alpha = yaw + PI;
+                    }
+                }
+            }
+        }
+
+        // ********** rotation for first person mode **********
+        if let Some(cam) = scene.get_active_camera()
+        {
+            if let Some(controller) = cam.controller.as_ref()
+            {
+                if let Some(controller) = controller.as_any().downcast_ref::<TargetRotationController>()
+                {
+                    let controller_data = controller.data.get_ref();
+                    if approx_zero(controller_data.radius)
+                    {
+                        if let Some(transformation) = &self.transformation
+                        {
+                            component_downcast_mut!(transformation, Transformation);
+
+                            let mut rotation = transformation.get_data().rotation;
+                            rotation.y = controller_data.alpha + self.rotation_offset;
+
+                            transformation.set_rotation(rotation);
+
+                            let rotation_mat = Rotation3::from_axis_angle(&Vector3::y_axis(), transformation.get_data().rotation.y);
+                            self.direction = (rotation_mat * CHARACTER_DIRECTION).normalize();
+                        }
                     }
                 }
             }
@@ -1021,8 +1071,8 @@ impl SceneController for CharacterController
 
         ui.horizontal(|ui|
         {
-            ui.label("Gravity: ");
-            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=1.0).fixed_decimals(2));
+            ui.label("Rotation Offset: ");
+            ui.add(egui::Slider::new(&mut self.rotation_offset, 0.0..=PI * 2.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
@@ -1036,6 +1086,28 @@ impl SceneController for CharacterController
             ui.label("Fall Stop Height: ");
             ui.add(egui::Slider::new(&mut self.fall_stop_height, 0.001..=1.0).fixed_decimals(3));
         });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Gravity: ");
+            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=1.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Jump Force: ");
+            ui.add(egui::Slider::new(&mut self.jump_force, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Max Fall Speed: ");
+            ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.separator();
 
         ui.horizontal(|ui|
         {

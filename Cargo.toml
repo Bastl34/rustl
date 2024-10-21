@@ -10,33 +10,34 @@ crate-type = ["cdylib", "rlib"]
 simple_logger = "5.0"
 log = "0.4"
 cfg-if = "1"
-wgpu = "0.18.0"
-bytemuck = { version = "1.14.0", features = [ "derive" ] }
+wgpu = "22.1"
+bytemuck = { version = "1.16", features = [ "derive" ] }
 instant = "0.1"
-winit = "0.28.7"
+winit = "0.30.5"
 anyhow = "1.0"
-nalgebra = "0.32"
+nalgebra = "0.33.0"
 sha256 = "1.5.0"
 colored = "2.1.0"
 base64 = "0.22"
 strum = "0.26"
 strum_macros = "0.26"
-rfd = "0.14.1"
+rfd = "0.15"
 serde = "1.0"
 serde_json = "1.0"
-regex = "1.10"
-rodio = "0.18"
-gilrs = { version = "0.10", features = ["wgi"]}
+regex = "1.11"
+rodio = "0.19.0"
+gilrs = { version = "0.11", features = ["wgi"]}
+take_mut = "0.2"
 
-parry3d = "0.15"
-bvh = "0.9"
+parry3d = "0.17"
+bvh = "0.10.0"
 
-arboard = "3.3"
+arboard = "3.4.1"
 
 tobj = { version = "4.0", features = ["async"]}
 
-#gltf = { version = "1.4.0", features = [
-gltf = { git = "https://github.com/gltf-rs/gltf", features = [
+gltf = { version = "1.4", features = [
+#gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
@@ -49,15 +50,19 @@ gltf = { git = "https://github.com/gltf-rs/gltf", features = [
 image = { version = "0.25", default-features = false, features = [ "png", "jpeg"] }
 # image = "0.24.5"
 
-egui = "0.24.1"
-egui-wgpu = "0.24.1"
-egui_plot = "0.24.1"
+egui = "0.29"
+egui-wgpu = "0.29"
+egui_plot = "0.29"
 #egui = { git = "https://github.com/emilk/egui" }
 #egui-wgpu = { git = "https://github.com/emilk/egui" }
-#egui_plot = { git = "https://github.com/emilk/egui" }
+#egui_plot = { git = "https://github.com/emilk/egui_plot" }
+
+#[patch.crates-io]
+#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+#egui = { git = "https://github.com/emilk/egui" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.24.1"
+egui-winit = "0.29"
 #egui-winit = { git ="https://github.com/emilk/egui" }
 pollster = "0.3.0"
 
@@ -65,7 +70,7 @@ pollster = "0.3.0"
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.12"
-wgpu = { version = "0.18", features = ["webgl"]}
+wgpu = { version = "22.1", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
@@ -76,8 +81,8 @@ web-sys = { version = "0.3", features = [
 ]}
 wasm_thread = { version = "0.3.0", features = ["es_modules"]}
 
-egui-winit = { version = "0.24.1", default-features = false, features = [
-#egui-winit = { git ="https://github.com/emilk/egui", version = "0.22.0", default-features = false, features = [
+egui-winit = { version = "0.29", default-features = false, features = [
+#egui-winit = { git ="https://github.com/emilk/egui", default-features = false, features = [
   "links",
 ] }
 

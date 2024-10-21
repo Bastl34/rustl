@@ -1,7 +1,7 @@
 use egui::Color32;
 use nalgebra::{Vector3, Vector4};
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemArc}, instance::InstanceItem}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::{instance::InstanceItem, node::{InstanceItemArc, NodeItem}}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -156,6 +156,7 @@ impl TransformationAnimation
 impl Component for TransformationAnimation
 {
     component_impl_default!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {

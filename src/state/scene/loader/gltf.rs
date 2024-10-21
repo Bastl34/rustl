@@ -347,6 +347,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut uvs1: Vec<Point2<f32>> = vec![];
             let mut uvs2: Vec<Point2<f32>> = vec![];
             let mut uvs3: Vec<Point2<f32>> = vec![];
+            let mut uvs4: Vec<Point2<f32>> = vec![];
             let mut normals: Vec<Vector3<f32>> = vec![];
 
             let mut joints: Vec<[u32; JOINTS_LIMIT]> = vec![];
@@ -406,6 +407,17 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 {
                     // flip y coordinate
                     uvs3.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
+                }
+            }
+
+            // uvs (4)
+            let gltf_uvs4 = reader.read_tex_coords(3);
+            if let Some(gltf_uvs4) = gltf_uvs4
+            {
+                for uv in gltf_uvs4.into_f32()
+                {
+                    // flip y coordinate
+                    uvs4.push(Point2::<f32>::new(uv[0], 1.0 - uv[1]));
                 }
             }
 
@@ -479,6 +491,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut mesh_component: Mesh = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
             mesh_component.get_data_mut().get_mut().uvs_2 = uvs2;
             mesh_component.get_data_mut().get_mut().uvs_3 = uvs3;
+            mesh_component.get_data_mut().get_mut().uvs_4 = uvs4;
 
             if joints.len() == weights.len()
             {
@@ -568,7 +581,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     scene_node.add_component(component.clone());
                 }
 
-                scene_node.extras.insert("_json_index".to_string(), node_index);
+                scene_node.extras.insert("_json_index", node_index);
 
                 // add material
                 if let Some(material_index) = material_index
@@ -587,7 +600,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 // add skeleton/skin if needed
                 if let Some(skin) = node.skin()
                 {
-                    scene_node.extras.insert("_skeleton_index".to_string(), skin.index());
+                    scene_node.extras.insert("_skeleton_index", skin.index());
                 }
 
                 // add default instance
@@ -625,7 +638,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let node_id = id_manager.write().unwrap().get_next_node_id();
             let scene_node = Node::new(node_id, name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
-            scene_node.write().unwrap().extras.insert("_json_index".to_string(), node_index);
+            scene_node.write().unwrap().extras.insert("_json_index", node_index);
 
             // add transformation
             if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
@@ -668,23 +681,23 @@ pub fn read_extras(node: NodeItem, gltf_node: &gltf::Node)
                 {
                     if value.is_boolean()
                     {
-                        node.extras.insert::<bool>(key.clone(), value.as_bool().unwrap());
+                        node.extras.insert::<bool>(key.as_str(), value.as_bool().unwrap());
                     }
                     else if value.is_f64()
                     {
-                        node.extras.insert::<f64>(key.clone(), value.as_f64().unwrap());
+                        node.extras.insert::<f64>(key.as_str(), value.as_f64().unwrap());
                     }
                     else if value.is_i64()
                     {
-                        node.extras.insert::<i64>(key.clone(), value.as_i64().unwrap());
+                        node.extras.insert::<i64>(key.as_str(), value.as_i64().unwrap());
                     }
                     else if value.is_string()
                     {
-                        node.extras.insert::<String>(key.clone(), value.as_str().unwrap().to_string());
+                        node.extras.insert::<String>(key.as_str(), value.as_str().unwrap().to_string());
                     }
                     else if value.is_u64()
                     {
-                        node.extras.insert::<u64>(key.clone(), value.as_u64().unwrap());
+                        node.extras.insert::<u64>(key.as_str(), value.as_u64().unwrap());
                     }
                     else
                     {

@@ -1,15 +1,18 @@
 #![allow(dead_code)]
 
+use std::sync::{Arc, RwLock};
+
 use std::collections::HashMap;
 
 use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 
+use crate::component_downcast;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Interpolation
 {
     Linear,
@@ -17,6 +20,7 @@ pub enum Interpolation
     CubicSpline
 }
 
+#[derive(Clone)]
 pub struct Channel
 {
     pub interpolation: Interpolation,
@@ -49,6 +53,7 @@ impl Channel
     }
 }
 
+#[derive(Clone)]
 struct TargetMapItem
 {
     pub component: ComponentItem,
@@ -80,6 +85,9 @@ pub struct Animation
     pub channels: Vec<Channel>,
 
     pub joint_filter: Vec<(NodeItem, bool)>, // only apply parts of the animation for specific nodes
+    pub in_place_joint_node: Option<NodeItem>, // apply the animation in place (only for the hips)
+
+    pub in_place_axis: Vector3<bool>,
 
     current_time: u128,
     current_local_time: f32,
@@ -113,6 +121,8 @@ impl Animation
             channels: vec![],
 
             joint_filter: vec![],
+            in_place_joint_node: None,
+            in_place_axis: Vector3::new(true, true, true),
 
             current_time: 0,
             current_local_time: 0.0,
@@ -376,7 +386,7 @@ impl Component for Animation
 
     fn duplicatable(&self) -> bool
     {
-        false
+        true
     }
 
     fn set_enabled(&mut self, state: bool)
@@ -387,9 +397,75 @@ impl Component for Animation
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn cleanup_node(&mut self, node: NodeItem) -> bool
     {
-        None
+        // joints
+        self.joint_filter.retain(|(joint, _)|
+        {
+            joint.read().unwrap().id != node.read().unwrap().id
+        });
+
+        // in place
+        if self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == node.read().unwrap().id
+        {
+            self.in_place_joint_node = None;
+        }
+
+        // channels
+        let channels_amount = self.channels.len();
+
+        self.channels.retain(|channel|
+        {
+            channel.target.read().unwrap().id != node.read().unwrap().id
+        });
+
+        channels_amount != self.channels.len()
+    }
+
+    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    {
+        let source = self.as_any().downcast_ref::<Animation>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let animation = Animation
+        {
+            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+
+            looped: self.looped,
+            reverse: self.reverse,
+
+            in_place_joint_node: self.in_place_joint_node.clone(),
+            in_place_axis: self.in_place_axis,
+
+            easing: self.easing,
+
+            from: self.from,
+            to: self.to,
+            duration: self.duration,
+
+            start_time: self.start_time,
+            pause_time: self.pause_time,
+
+            weight: self.weight,
+            speed: self.speed,
+
+            channels: self.channels.clone(),
+
+            joint_filter: self.joint_filter.clone(),
+
+            current_time: 0,
+            current_local_time: 0.0,
+
+            ui_joint_include_option: self.ui_joint_include_option
+        };
+
+        Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
     fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, frame: u64)
@@ -512,7 +588,6 @@ impl Component for Animation
                     {
                         joint_excluded_found = true;
                     }
-
                 }
             }
 
@@ -547,15 +622,20 @@ impl Component for Animation
                 continue;
             }
 
-            let mut target_id = 0;
-            if let Some(joint) = &joint
+            let target_node_id;
             {
-                target_id = joint.read().unwrap().id();
-            } else if let Some(transformation) = transformation
-            {
-                target_id = transformation.read().unwrap().id();
+                let target = channel.target.read().unwrap();
+                target_node_id = target.id;
             }
 
+            let mut target_component_id = 0;
+            if let Some(joint) = &joint
+            {
+                target_component_id = joint.read().unwrap().id();
+            } else if let Some(transformation) = transformation
+            {
+                target_component_id = transformation.read().unwrap().id();
+            }
 
             // ********** only one item per channel **********
             if channel.timestamps.len() <= 1
@@ -600,12 +680,12 @@ impl Component for Animation
                     }
                 }
 
-                apply_transformation_to_target(&mut target_map, target_id, &transform);
+                apply_transformation_to_target(&mut target_map, target_component_id, &transform);
 
                 // skip joint flag
                 if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
                 {
-                    let target_item = target_map.get_mut(&target_id).unwrap();
+                    let target_item = target_map.get_mut(&target_component_id).unwrap();
                     target_item.skip_joint = skip_joint;
                 }
             }
@@ -642,7 +722,23 @@ impl Component for Animation
                 // ********** translation **********
                 if channel.transform_translation.len() > 0
                 {
-                    let translation = match channel.interpolation
+                    let is_in_place = self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == target_node_id;
+
+                    // in place check
+                    let mut in_place_local_transform = Vector3::<f32>::new(0.0, 0.0, 0.0);
+                    if is_in_place
+                    {
+                        let joint = joint.unwrap();
+                        component_downcast!(joint, Joint);
+                        let local_transform = joint.get_local_transform();
+
+                        in_place_local_transform.x = local_transform[(0, 3)];
+                        in_place_local_transform.y = local_transform[(1, 3)];
+                        in_place_local_transform.z = local_transform[(2, 3)];
+                    }
+
+                    // interpolation
+                    let translation_interpolated = match channel.interpolation
                     {
                         Interpolation::Linear =>
                         {
@@ -687,7 +783,12 @@ impl Component for Animation
                         },
                     };
 
-                    apply_transformation_to_target(&mut target_map, target_id, &(Some(translation), None, None));
+                    let mut translation = translation_interpolated;
+                    if is_in_place && self.in_place_axis.x { translation.x = in_place_local_transform.x; }
+                    if is_in_place && self.in_place_axis.y { translation.y = in_place_local_transform.y; }
+                    if is_in_place && self.in_place_axis.z { translation.z = in_place_local_transform.z; }
+
+                    apply_transformation_to_target(&mut target_map, target_component_id, &(Some(translation), None, None));
                 }
                 // ********** rotation **********
                 else if channel.transform_rotation.len() > 0
@@ -742,7 +843,7 @@ impl Component for Animation
                         },
                     };
 
-                    apply_transformation_to_target(&mut target_map, target_id, &(None, Some(rotation), None));
+                    apply_transformation_to_target(&mut target_map, target_component_id, &(None, Some(rotation), None));
                 }
                 // ********** scale **********
                 else if channel.transform_scale.len() > 0
@@ -792,7 +893,7 @@ impl Component for Animation
                         },
                     };
 
-                    apply_transformation_to_target(&mut target_map, target_id, &(None, None, Some(scale)));
+                    apply_transformation_to_target(&mut target_map, target_component_id, &(None, None, Some(scale)));
                 }
                 // ********** morph targets **********
                 else if channel.transform_morph.len() > 0
@@ -962,6 +1063,7 @@ impl Component for Animation
 
         let icon_size = 20.0;
 
+        // ********** controls **********
         ui.horizontal(|ui|
         {
             if ui.toggle_value(&mut is_stopped, RichText::new("⏹").size(icon_size)).on_hover_text("stop animation").clicked()
@@ -992,6 +1094,8 @@ impl Component for Animation
             }
         });
 
+
+        // ********** settings **********
         ui.checkbox(&mut self.looped, "Loop");
         ui.checkbox(&mut self.reverse, "Reverse");
 
@@ -1001,9 +1105,9 @@ impl Component for Animation
 
             let easings = get_easing_as_string_vec();
             let current_easing_name = easings[self.easing as usize].as_str();
-            egui::ComboBox::from_id_source(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(30.0);
 
                 let mut current_easing_id = self.easing as usize;
@@ -1051,7 +1155,7 @@ impl Component for Animation
             {
                 ui.label("Progress: ");
                 let mut time = self.animation_time();
-                if ui.add(egui::Slider::new(&mut time, 0.0..=self.to).fixed_decimals(2).text("s")).changed()
+                if ui.add(egui::Slider::new(&mut time, 0.0..=self.to).fixed_decimals(2).clamping(egui::SliderClamping::Edits).text("s")).changed()
                 {
                     self.set_current_time(time);
                 }
@@ -1060,7 +1164,69 @@ impl Component for Animation
 
         ui.separator();
 
-        // partials
+        // ********** in place **********
+        ui.horizontal(|ui|
+        {
+            ui.label("In Place Joint: ");
+            if let Some(in_place_joint_node) = self.in_place_joint_node.clone()
+            {
+
+                let in_place_joint_node = in_place_joint_node.read().unwrap();
+                ui.label(in_place_joint_node.name.clone());
+
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    self.in_place_joint_node = None;
+                }
+
+            }
+            else if let Some(node) = node.clone()
+            {
+                let node = node.read().unwrap();
+                let all_nodes = Scene::list_all_child_nodes(&node.nodes);
+
+                let mut selection: usize = 0;
+                let mut changed = false;
+
+                ui.horizontal(|ui|
+                {
+                    egui::ComboBox::from_id_salt(ui.make_persistent_id("in_place")).selected_text("").width(200.0).show_ui(ui, |ui|
+                    {
+                        changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
+
+                        for (i, child_node) in all_nodes.iter().enumerate()
+                        {
+                            let child_node = child_node.read().unwrap();
+                            if child_node.find_component::<Joint>().is_some()
+                            {
+                                changed = ui.selectable_value(&mut selection, i + 1, child_node.name.clone()).changed() || changed;
+                            }
+                        }
+                    });
+                });
+
+                if changed
+                {
+                    let add_node = &all_nodes[selection - 1];
+                    self.in_place_joint_node = Some(add_node.clone());
+                }
+            }
+        });
+
+        ui.add_enabled_ui(self.in_place_joint_node.is_some(), |ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Axes: ");
+                ui.checkbox(&mut self.in_place_axis.x, "x");
+                ui.checkbox(&mut self.in_place_axis.y, "y");
+                ui.checkbox(&mut self.in_place_axis.z, "z");
+            });
+        });
+
+        ui.separator();
+
+        // ********** partials **********
         ui.label("Partial body animation: ");
 
         let mut delete_id = None;
@@ -1106,7 +1272,7 @@ impl Component for Animation
             {
                 ui.label(" - ");
 
-                egui::ComboBox::from_id_source(ui.make_persistent_id("partials")).selected_text("").width(200.0).show_ui(ui, |ui|
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("partials")).selected_text("").width(200.0).show_ui(ui, |ui|
                 {
                     changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
 

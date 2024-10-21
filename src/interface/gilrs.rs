@@ -25,15 +25,15 @@ pub fn gilrs_initialize(state: &mut State, gilrs: &mut Gilrs)
     // delete old disconnected gamepads
     state.input_manager.gamepads.retain(|_, gamepad|
     {
-        !gamepad.can_be_deleted() 
+        !gamepad.can_be_deleted()
     });
 }
 
-pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs)
+pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
 {
     let mut re_init = false;
 
-    while let Some(gilrs::Event { id, event, time }) = gilrs.next_event()
+    while let Some(gilrs::Event { id, event, time: _ , .. }) = gilrs.next_event()
     {
         let id: usize = id.into();
         let gamepad = state.input_manager.gamepads.get_mut(&id);
@@ -49,29 +49,30 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs)
         {
             gilrs::EventType::ButtonPressed(button, _code) =>
             {
-                gamepad.set_button(gilrs_map_button(button), true);
+                gamepad.set_button(gilrs_map_button(button), true, engine_frame);
             },
-            gilrs::EventType::ButtonRepeated(button, _code) => 
+            gilrs::EventType::ButtonRepeated(button, _code) =>
             {
-                gamepad.set_button(gilrs_map_button(button), true);
+                gamepad.set_button(gilrs_map_button(button), true, engine_frame);
             },
             gilrs::EventType::ButtonReleased(button, _code) =>
             {
-                gamepad.set_button(gilrs_map_button(button), false);
+                gamepad.set_button(gilrs_map_button(button), false, engine_frame);
             },
-            gilrs::EventType::ButtonChanged(button, value, _code) => 
+            gilrs::EventType::ButtonChanged(button, value, _code) =>
             {
-                gamepad.set_button_float(gilrs_map_button(button), value);
+                gamepad.set_button_float(gilrs_map_button(button), value, engine_frame);
             },
-            gilrs::EventType::AxisChanged(axis, value, _code) => 
+            gilrs::EventType::AxisChanged(axis, value, _code) =>
             {
-                gamepad.set_axis(gilrs_map_axis(axis), value);
+                gamepad.set_axis(gilrs_map_axis(axis), value, engine_frame);
             },
             gilrs::EventType::Connected => re_init = true,
             gilrs::EventType::Disconnected => re_init = true,
             gilrs::EventType::Dropped => {},
+            gilrs::EventType::ForceFeedbackEffectCompleted => {},
+            _ => {},
         }
-        //println!("{:?} New event from {}: {:?}", time, id, event);
     }
 
     if re_init

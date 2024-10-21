@@ -3,7 +3,7 @@ use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
 use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
 
-use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
 
 use super::component::{Component, ComponentBase};
 
@@ -20,6 +20,7 @@ pub struct MeshData
     pub uvs_1: Vec<Point2<f32>>,
     pub uvs_2: Vec<Point2<f32>>,
     pub uvs_3: Vec<Point2<f32>>,
+    pub uvs_4: Vec<Point2<f32>>,
     pub uv_indices: Vec<[u32; 3]>,
 
     pub normals: Vec<Vector3<f32>>,
@@ -49,6 +50,7 @@ impl MeshData
         self.uvs_1.clear();
         self.uvs_2.clear();
         self.uvs_3.clear();
+        self.uvs_4.clear();
         self.uv_indices.clear();
 
         self.normals.clear();
@@ -98,6 +100,7 @@ impl Mesh
             uvs_1: uvs,
             uvs_2: vec![],
             uvs_3: vec![],
+            uvs_4: vec![],
             uv_indices: uv_indices,
 
             normals: normals,
@@ -311,12 +314,15 @@ impl Mesh
                 normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
             }
 
-            return Some((res.time_of_impact, normal, face_id))
+            let time_of_impact = res.time_of_impact * ray.dir.magnitude();
+
+            return Some((time_of_impact, normal, face_id))
+            //return Some((res.time_of_impact, normal, face_id))
         }
         None
     }
 
-    pub fn intersect_skinned(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, joint_matrices: &Vec<Matrix4<f32>>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
+    pub fn intersect_morphed_and_skinned(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, joint_matrices: &Vec<Matrix4<f32>>, morph_target_weights: &Vec<f32>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
     {
         if self.get_data().joints.len() == 0 || self.get_data().weights.len() == 0 || joint_matrices.len() == 0
         {
@@ -328,9 +334,22 @@ impl Mesh
         // transform by skin
         let vertices = self.get_data().vertices.iter().enumerate().map(|(v_i, v)|
         {
-            let pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
-            let mut transformed_pos = Point4::<f32>::new(0.0, 0.0, 0.0, 0.0);
-            for i in 0..4
+            let mut pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
+            let mut skinned_pos = Point4::<f32>::new(0.0, 0.0, 0.0, 0.0);
+
+            // morph targets
+            for i in 0..morph_target_weights.len()
+            {
+                let weight = morph_target_weights[i];
+
+                let morph_pos = data.morph_target_positions[i][v_i];
+                pos.x += morph_pos.x * weight;
+                pos.y += morph_pos.y * weight;
+                pos.z += morph_pos.z * weight;
+            }
+
+            // joints
+            for i in 0..JOINTS_LIMIT
             {
                 let joints = data.joints[v_i];
                 let weights = data.weights[v_i];
@@ -338,17 +357,17 @@ impl Mesh
                 let joint_transform = joint_matrices[joints[i] as usize];
                 let transformed = joint_transform * pos * weights[i];
 
-                transformed_pos.x += transformed.x;
-                transformed_pos.y += transformed.y;
-                transformed_pos.z += transformed.z;
-                transformed_pos.w += transformed.w;
+                skinned_pos.x += transformed.x;
+                skinned_pos.y += transformed.y;
+                skinned_pos.z += transformed.z;
+                skinned_pos.w += transformed.w;
             }
 
-            transformed_pos.x /= transformed_pos.w;
-            transformed_pos.y /= transformed_pos.w;
-            transformed_pos.z /= transformed_pos.w;
+            skinned_pos.x /= skinned_pos.w;
+            skinned_pos.y /= skinned_pos.w;
+            skinned_pos.z /= skinned_pos.w;
 
-            Point3::<f32>::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
+            Point3::<f32>::new(skinned_pos.x, skinned_pos.y, skinned_pos.z)
         }).collect::<Vec<Point3<f32>>>();
 
         let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
@@ -382,7 +401,10 @@ impl Mesh
                 normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
             }
 
-            return Some((res.time_of_impact, normal, face_id))
+            let time_of_impact = res.time_of_impact * ray.dir.magnitude();
+
+            return Some((time_of_impact, normal, face_id))
+            //return Some((res.time_of_impact, normal, face_id))
         }
         None
     }
@@ -436,6 +458,7 @@ impl Mesh
         data.uvs_1.extend(&mesh_data.uvs_1);
         data.uvs_2.extend(&mesh_data.uvs_2);
         data.uvs_3.extend(&mesh_data.uvs_3);
+        data.uvs_4.extend(&mesh_data.uvs_4);
 
         for i in &mesh_data.uv_indices
         {
@@ -469,6 +492,7 @@ impl Mesh
         let cloned_uvs_1;
         let cloned_uvs_2;
         let cloned_uvs_3;
+        let cloned_uvs_4;
         let cloned_uv_indices;
 
         let cloned_normals;
@@ -483,6 +507,7 @@ impl Mesh
             cloned_uvs_1 = data.uvs_1.clone();
             cloned_uvs_2 = data.uvs_2.clone();
             cloned_uvs_3 = data.uvs_3.clone();
+            cloned_uvs_4 = data.uvs_4.clone();
             cloned_uv_indices = data.uv_indices.clone();
 
             cloned_normals = data.normals.clone();
@@ -530,6 +555,7 @@ impl Mesh
                 data.uvs_1.extend(&cloned_uvs_1);
                 data.uvs_2.extend(&cloned_uvs_2);
                 data.uvs_3.extend(&cloned_uvs_3);
+                data.uvs_4.extend(&cloned_uvs_4);
 
                 for i in &cloned_uv_indices
                 {
@@ -620,6 +646,7 @@ impl Component for Mesh
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -646,6 +673,7 @@ impl Component for Mesh
             ui.label(format!(" ⚫ uvs_1: {}", data.uvs_1.len()));
             ui.label(format!(" ⚫ uvs_2: {}", data.uvs_2.len()));
             ui.label(format!(" ⚫ uvs_3: {}", data.uvs_3.len()));
+            ui.label(format!(" ⚫ uvs_4: {}", data.uvs_4.len()));
             ui.label(format!(" ⚫ uv_indices: {}", data.uv_indices.len()));
 
             ui.label(format!(" ⚫ normals: {}", data.normals.len()));

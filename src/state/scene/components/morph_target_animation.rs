@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::approx_equal, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::NodeItem};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::NodeItem};
 use crate::helper::easing::{Easing, easing, get_easing_as_string_vec};
 
 use super::{component::{Component, ComponentBase}, morph_target::MorphTarget};
@@ -102,6 +102,7 @@ impl Component for MorphTargetAnimation
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -134,7 +135,7 @@ impl Component for MorphTargetAnimation
 
         let mut animation = MorphTargetAnimation
         {
-            base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
+            base: ComponentBase::duplicate(new_component_id, source.get_base()),
 
             target_id: source.target_id.clone(),
 
@@ -252,13 +253,16 @@ impl Component for MorphTargetAnimation
                 }
             }
 
-
             weight = weight.clamp(self.from, self.to);
-            self.weight = weight;
 
             // easing
             let delta_t = self.to - self.from;
-            weight = easing(self.easing, weight / delta_t) * delta_t;
+            if !approx_zero(delta_t)
+            {
+                weight = easing(self.easing, weight / delta_t) * delta_t;
+            }
+
+            self.weight = weight;
 
             if !approx_equal(weight, morph_target.get_data().weight)
             {
@@ -294,7 +298,7 @@ impl Component for MorphTargetAnimation
         ui.horizontal(|ui|
         {
             ui.label("Target: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("target_id")).width(160.0).selected_text(target_name.clone()).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("target_id")).width(160.0).selected_text(target_name.clone()).show_ui(ui, |ui|
             {
                 let mut changed = false;
 
@@ -323,9 +327,9 @@ impl Component for MorphTargetAnimation
 
             let easings = get_easing_as_string_vec();
             let current_easing_name = easings[self.easing as usize].as_str();
-            egui::ComboBox::from_id_source(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("easing_id")).selected_text(current_easing_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(30.0);
 
                 let mut current_easing_id = self.easing as usize;
@@ -389,9 +393,9 @@ impl Component for MorphTargetAnimation
         ui.horizontal(|ui|
         {
             ui.label("Keyboard key: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(60.0);
 
                 let mut new_key = 0;

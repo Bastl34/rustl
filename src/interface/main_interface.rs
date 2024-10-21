@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{vec, cmp};
 
 use gilrs::Gilrs;
@@ -10,12 +10,15 @@ use gltf::scene::Transform;
 use nalgebra::{Point3, Vector3, Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
+use winit::keyboard::ModifiersKeyState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
 use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
+use crate::helper::platform::{is_mac, is_windows};
+use crate::input::input_point::PointState;
 use crate::input::keyboard::{Modifier, Key};
 use crate::input::gamepad::{Gamepad, GamepadPowerInfo};
 use crate::interface::winit::winit_map_mouse_button;
@@ -35,7 +38,7 @@ use crate::state::scene::light::Light;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::character_controller::CharacterController;
 use crate::state::scene::sound_source::SoundSource;
-use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, execute_on_scene_mut_and_wait, load_object};
+use crate::state::scene::utilities::scene_utils::{self, attach_sound_to_node, clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
 use super::gilrs::{gilrs_event, gilrs_initialize};
@@ -46,14 +49,13 @@ const FPS_CHART_FACTOR: f32 = 25.0;
 pub struct MainInterface
 {
     pub state: StateItem,
-    start_time: Instant,
 
     window_title: String,
 
     editor_gui: Editor,
 
     wgpu: WGpu,
-    window: Window,
+    window: Arc<Window>,
     egui: EGui,
 
     gilrs: Option<Gilrs>
@@ -61,7 +63,8 @@ pub struct MainInterface
 
 impl MainInterface
 {
-    pub async fn new(window: Window, event_loop: &winit::event_loop::EventLoop<()>) -> Self
+    //pub async fn new(window: Arc<Window>, event_loop: &winit::event_loop::EventLoop<()>) -> Self
+    pub async fn new(window: Arc<Window>) -> Self
     {
         let audio_device = AudioDevice::default();
         let state = State::new(Arc::new(RwLock::new(Box::new(audio_device))));
@@ -73,7 +76,9 @@ impl MainInterface
             let state = &mut *(state.borrow_mut());
             state.width = window.inner_size().width;
             state.height = window.inner_size().height;
-            wgpu = WGpu::new(&window, state).await;
+            state.scale_factor = window.scale_factor() as f32;
+
+            wgpu = WGpu::new(window.clone(), state).await;
 
             dbg!(state.adapter.max_msaa_samples);
             state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.adapter.max_msaa_samples));
@@ -82,7 +87,8 @@ impl MainInterface
             wgpu.create_msaa_texture(samlpes);
         }
 
-        let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
+        //let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
+        let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
         let mut editor_gui = Editor::new();
         {
@@ -100,7 +106,6 @@ impl MainInterface
         let mut interface = Self
         {
             state,
-            start_time: Instant::now(),
 
             window_title: window.title().clone(),
 
@@ -148,10 +153,22 @@ impl MainInterface
         &self.window
     }
 
-    pub fn resize(&mut self, dimensions: winit::dpi::PhysicalSize<u32>, scale_factor: Option<f64>)
+    pub fn resize(&mut self, dimensions: Option<winit::dpi::PhysicalSize<u32>>, scale_factor: Option<f64>)
     {
-        let mut width = dimensions.width;
-        let mut height = dimensions.height;
+        let mut width;
+        let mut height;
+
+        if let Some(dimensions) = dimensions
+        {
+            width = dimensions.width;
+            height = dimensions.height;
+        }
+        else
+        {
+            let size = self.window.inner_size();
+            width = size.width;
+            height = size.height;
+        }
 
         if width == 0 { width = 1; }
         if height == 0 { height = 1; }
@@ -475,13 +492,16 @@ impl MainInterface
             let id_manager_thread = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
+            let grid_size = self.editor_gui.editor_state.grid_size;
+            let grid_amount = self.editor_gui.editor_state.grid_amount;
+
             //scene.update(&mut state.input_manager, state.frame_scale);
             state.scenes.push(Box::new(scene));
 
             let main_queue_clone = main_queue.clone();
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager.clone(), 500, 1.0);
+                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager.clone(), grid_amount, grid_size);
             });
             //scene_utils::create_grid(&mut scene, 1, 1.0);
 
@@ -490,6 +510,7 @@ impl MainInterface
 
             spawn_thread(move ||
             {
+                /*
                 let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
@@ -509,6 +530,7 @@ impl MainInterface
                         }
                     }
                 }));
+                */
 
                 //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -535,13 +557,20 @@ impl MainInterface
                 //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                scene_utils::load_object("objects/temp/extras.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/box.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/box2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/extras.gltf", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                let nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
+
+                //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone());
+                let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone(), Some("mixamorig:Hips"));
+
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
@@ -608,6 +637,16 @@ impl MainInterface
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar3");
                     scene.pre_controller.push(Box::new(controller));
+
+                    // set pos for fall test
+                    if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
+                    {
+                        let avatar_root = avatar_root.read().unwrap();
+                        let transform = avatar_root.find_component::<Transformation>().unwrap();
+                        component_downcast_mut!(transform, Transformation);
+                        transform.set_translation(Vector3::<f32>::new(21.980, 22.845, 6.331));
+                        transform.set_rotation(Vector3::<f32>::new(0.0, -2.618, 0.0));
+                    }
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
@@ -615,10 +654,13 @@ impl MainInterface
                 {
                     let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+                    scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
                 }));
 
                 // sound
-                attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
+                //attach_sound_to_node("sounds/m16.ogg", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
+                //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
             });
 
             //load default env texture
@@ -641,11 +683,11 @@ impl MainInterface
                             let id = scene.id_manager.write().unwrap().get_next_camera_id();
                             let mut cam = Camera::new(id, "Cam".to_string());
 
-                            cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                            cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
                             let cam_data = cam.get_data_mut().get_mut();
                             cam_data.fovy = 45.0f32.to_radians();
-                            cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
+                            cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
                             cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
                             cam_data.clipping_near = 0.1;
                             cam_data.clipping_far = 1000.0;
@@ -720,7 +762,7 @@ impl MainInterface
             let state = &mut *(self.state.borrow_mut());
             if let Some(gilrs) = &mut self.gilrs
             {
-                gilrs_event(state, gilrs);
+                gilrs_event(state, gilrs, state.stats.frame);
             }
         }
 
@@ -766,8 +808,7 @@ impl MainInterface
             }
 
             // frame scale
-            let elapsed = self.start_time.elapsed();
-            let now = elapsed.as_micros();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
 
             if state.stats.frame_update_time > 0 && now - state.stats.frame_update_time > 0
             {
@@ -859,7 +900,9 @@ impl MainInterface
         }
 
         // ******************** render ********************
-        let (output, view, msaa_view, mut encoder) = self.wgpu.start_render();
+        let (output, view, msaa_view) = self.wgpu.start_render();
+        let mut engine_encoder = self.wgpu.create_command_encoder();
+        let mut egui_encoder = self.wgpu.create_command_encoder();
         {
             let state = &mut *(self.state.borrow_mut());
 
@@ -880,7 +923,7 @@ impl MainInterface
 
                     let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
                     render_scene.distance_sorting = state.rendering.distance_sorting;
-                    state.stats.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut encoder, scene);
+                    state.stats.draw_calls += render_scene.render(&mut self.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
 
                     scene.render_item = render_item;
                 }
@@ -892,12 +935,13 @@ impl MainInterface
             if self.editor_gui.editor_state.visible
             {
                 let now = Instant::now();
-                self.egui.render(&mut self.wgpu, &view, &mut encoder);
+                self.egui.render(&mut self.wgpu, &view, &mut egui_encoder);
 
                 state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
         }
-        self.wgpu.end_render(output, encoder);
+        self.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
+        self.wgpu.end_render(output);
 
         // ******************** screenshot ********************
         {
@@ -905,7 +949,8 @@ impl MainInterface
 
             if state.save_screenshot
             {
-                let (buffer_dimensions, output_buffer, texture, view, msaa_view, mut encoder) = self.wgpu.start_screenshot_render();
+                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.wgpu.start_screenshot_render();
+                let mut encoder = self.wgpu.create_command_encoder();
                 {
                     for scene in &mut state.scenes
                     {
@@ -966,39 +1011,63 @@ impl MainInterface
         self.state.borrow().exit
     }
 
-    pub fn input(&mut self, event: &winit::event::WindowEvent)
+    pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.editor_gui.editor_state.visible && self.egui.on_event(event)
+        if self.editor_gui.editor_state.visible && self.egui.on_event(event, self.window.clone())
         {
             return;
         }
         else
         {
             let global_state = &mut *(self.state.borrow_mut());
+            //let main_queue = global_state.main_thread_execution_queue.clone();
 
             match event
             {
-                winit::event::WindowEvent::KeyboardInput { device_id: _, input, is_synthetic: _ } =>
+                winit::event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } =>
                 {
-                    if let Some(key) = input.virtual_keycode
+                    let key = winit_map_key(&event.logical_key, &event.physical_key, event.location);
+
+                    if event.state == ElementState::Pressed
                     {
-                        let key = winit_map_key(key);
-                        if input.state == ElementState::Pressed
-                        {
-                            global_state.input_manager.keyboard.set_key(key, true);
-                        }
-                        else
-                        {
-                            global_state.input_manager.keyboard.set_key(key, false);
-                        }
+                        global_state.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
                 {
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Alt, modifiers_state.alt());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Ctrl, modifiers_state.ctrl());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Logo, modifiers_state.logo());
-                    global_state.input_manager.keyboard.set_modifier(Modifier::Shift, modifiers_state.shift());
+                    // TODO: Check if windows/linux is able to catch left/right difference
+                    if is_mac()
+                    {
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                    }
+                    else
+                    {
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+
+                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                    }
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
                 {
@@ -1011,7 +1080,7 @@ impl MainInterface
 
                     let button = winit_map_mouse_button(button);
 
-                    global_state.input_manager.mouse.set_button(button, pressed);
+                    global_state.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseWheel { device_id: _, delta, phase: _, ..} =>
                 {
@@ -1033,47 +1102,64 @@ impl MainInterface
                 {
                     let mut pos = Point2::<f32>::new(position.x as f32, position.y as f32);
 
-                    pos.x = pos.x;
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
                     global_state.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                },
+                winit::event::WindowEvent::Touch(touch) =>
+                {
+                    let mut pos = Point2::<f32>::new(touch.location.x as f32, touch.location.y as f32);
+
+                    // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
+                    pos.y = global_state.height as f32 - pos.y;
+
+                    let mut force = None;
+                    if let Some(touch_force) = touch.force
+                    {
+                        force = Some(touch_force.normalized() as f32);
+                    }
+
+                    let state = match touch.phase
+                    {
+                        winit::event::TouchPhase::Started => PointState::Down,
+                        winit::event::TouchPhase::Moved => PointState::Move,
+                        winit::event::TouchPhase::Ended => PointState::Up,
+                        winit::event::TouchPhase::Cancelled => PointState::Up,
+                    };
+
+                    global_state.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
                     global_state.in_focus = *focus;
                     global_state.input_manager.reset();
                 },
+                winit::event::WindowEvent::DroppedFile(path) =>
+                {
+                    if let Some(path) = path.to_str()
+                    {
+                        self.editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        self.window.request_redraw();
+                    }
+                },
                 _ => {}
-                /*
-                winit::event::WindowEvent::Resized(_) => todo!(),
-                winit::event::WindowEvent::Moved(_) => todo!(),
-                winit::event::WindowEvent::CloseRequested => todo!(),
-                winit::event::WindowEvent::Destroyed => todo!(),
-                winit::event::WindowEvent::DroppedFile(_) => todo!(),
-                winit::event::WindowEvent::HoveredFile(_) => todo!(),
-                winit::event::WindowEvent::HoveredFileCancelled => todo!(),
-                winit::event::WindowEvent::ReceivedCharacter(_) => todo!(),
-                winit::event::WindowEvent::Focused(_) => todo!(),
-                winit::event::WindowEvent::KeyboardInput { device_id, input, is_synthetic } => todo!(),
-                winit::event::WindowEvent::ModifiersChanged(_) => todo!(),
-                winit::event::WindowEvent::Ime(_) => todo!(),
-                winit::event::WindowEvent::CursorMoved { device_id, position, modifiers } => todo!(),
-                winit::event::WindowEvent::CursorEntered { device_id } => todo!(),
-                winit::event::WindowEvent::CursorLeft { device_id } => todo!(),
-                winit::event::WindowEvent::MouseWheel { device_id, delta, phase, modifiers } => todo!(),
-                winit::event::WindowEvent::MouseInput { device_id, state, button, modifiers } => todo!(),
-                winit::event::WindowEvent::TouchpadMagnify { device_id, delta, phase } => todo!(),
-                winit::event::WindowEvent::SmartMagnify { device_id } => todo!(),
-                winit::event::WindowEvent::TouchpadRotate { device_id, delta, phase } => todo!(),
-                winit::event::WindowEvent::TouchpadPressure { device_id, pressure, stage } => todo!(),
-                winit::event::WindowEvent::AxisMotion { device_id, axis, value } => todo!(),
-                winit::event::WindowEvent::Touch(_) => todo!(),
-                winit::event::WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => todo!(),
-                winit::event::WindowEvent::ThemeChanged(_) => todo!(),
-                winit::event::WindowEvent::Occluded(_) => todo!(),
-                 */
             }
+        }
+    }
+
+    pub fn device_input(&mut self, event: &winit::event::DeviceEvent)
+    {
+        let global_state = &mut *(self.state.borrow_mut());
+
+        match event
+        {
+            winit::event::DeviceEvent::MouseMotion { delta } =>
+            {
+                let velocity = Vector2::<f32>::new(delta.0 as f32, -delta.1 as f32);
+                global_state.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
+            },
+            _ => {}
         }
     }
 
@@ -1097,12 +1183,14 @@ impl MainInterface
             }
         }
 
-        if !*global_state.input_manager.mouse.visible.get_ref()
+        // still needed for windows
+        if !*global_state.input_manager.mouse.visible.get_ref() && !is_mac()
         {
             let window_size = self.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);
 
-            self.window.set_cursor_position(center).unwrap_or_else(|e|{
+            self.window.set_cursor_position(center).unwrap_or_else(|e|
+            {
                 dbg!("Failed to set mouse position: {:?}", e);
             });
         }

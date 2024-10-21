@@ -4,7 +4,7 @@ use nalgebra::{Vector2, Point2};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
-use crate::{helper::{generic, math, change_tracker::ChangeTracker}, input::input_point::PointState};
+use crate::{helper::{change_tracker::ChangeTracker, generic, math::{self, approx_zero_vec2}}, input::input_point::PointState};
 
 use super::{press_state::{PressState, is_pressed_by_state}, input_point::InputPoint};
 
@@ -16,6 +16,8 @@ pub enum MouseButton
     Left,
     Right,
     Middle,
+    Back,
+    Forward,
     Other1,
     Other2,
     Other3,
@@ -39,6 +41,8 @@ pub struct Mouse
 
     pub wheel_delta_x: f32,
     pub wheel_delta_y: f32,
+
+    pub raw_velocity: InputPoint,
 }
 
 impl Mouse
@@ -59,7 +63,9 @@ impl Mouse
             last_active_button: MouseButton::Unkown,
 
             wheel_delta_x: 0.0,
-            wheel_delta_y: 0.0
+            wheel_delta_y: 0.0,
+
+            raw_velocity: InputPoint::new(0),
         }
     }
 
@@ -76,9 +82,9 @@ impl Mouse
         false
     }
 
-    pub fn set_button(&mut self, button: MouseButton, status: bool)
+    pub fn set_button(&mut self, button: MouseButton, status: bool, engine_frame: u64)
     {
-        self.buttons[button as usize].update(status);
+        self.buttons[button as usize].update(status, engine_frame);
 
         if self.point.first_action == 0
         {
@@ -109,7 +115,6 @@ impl Mouse
         {
             self.point.velocity += pos - Point2::<f32>::new(window_width as f32 / 2.0, window_height as f32 / 2.0);
         }
-
 
         if self.point.start_pos.is_none()
         {
@@ -144,8 +149,16 @@ impl Mouse
             self.point.state = PointState::Stationary;
         }
 
-		self.point.last_action = generic::get_millis();
-		self.point.last_action_frame = engine_frame;
+       self.point.last_action = generic::get_millis();
+       self.point.last_action_frame = engine_frame;
+    }
+
+    pub fn set_raw_velocity(&mut self, velocity: Vector2::<f32>, engine_frame: u64)
+    {
+        self.raw_velocity.velocity += velocity;
+
+        self.raw_velocity.last_action = generic::get_millis();
+        self.raw_velocity.last_action_frame = engine_frame;
     }
 
     pub fn set_wheel_delta_x(&mut self, delta: f32)
@@ -164,6 +177,7 @@ impl Mouse
     {
         self.point.last_pos = self.point.pos;
         self.point.velocity = Vector2::<f32>::zeros();
+        self.raw_velocity.velocity = Vector2::<f32>::zeros();
 
         if self.point.state == PointState::Up
         {
@@ -221,5 +235,17 @@ impl Mouse
     pub fn has_input(&self) -> bool
     {
         math::approx_zero_vec2(&self.point.velocity) || self.is_any_button_holding()
+    }
+
+    pub fn has_velocity(&self) -> bool
+    {
+        !approx_zero_vec2(&self.point.velocity)
+    }
+
+    pub fn is_first_action(&self, button: MouseButton, current_engine_frame: u64) -> bool
+    {
+        let state = &self.buttons[button as usize];
+
+        state.first_action_frame == current_engine_frame && state.holding()
     }
 }

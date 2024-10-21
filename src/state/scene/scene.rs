@@ -10,6 +10,7 @@ use crate::{component_downcast, component_downcast_mut, helper::{self, change_tr
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh, sound}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{self, SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
+pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
 
 #[derive(Clone)]
 pub struct ScenePickRes
@@ -122,18 +123,18 @@ impl Scene
 
     pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
-        // check moved nodes (if a note has a parent -> remove it from scene nodes)
+        // check moved nodes (if a node has a parent -> remove it from scene nodes)
         // this can happen when a node parent was set via set_parent
-        let mut nodes_to_remove = vec![];
+        let mut nodes_to_remove_scene = vec![];
         for node in &self.nodes
         {
             if node.read().unwrap().parent.is_some()
             {
-                nodes_to_remove.push(node.clone());
+                nodes_to_remove_scene.push(node.clone());
             }
         }
 
-        for node_to_remove in nodes_to_remove
+        for node_to_remove in nodes_to_remove_scene
         {
             self.nodes.retain(|node|
             {
@@ -155,9 +156,15 @@ impl Scene
         swap(&mut pre_controller, &mut self.pre_controller);
 
         // update nodes
+        let mut delete_nodes = vec![];
         for node in &self.nodes
         {
-            Node::update(node.clone(), input_manager, time, frame_scale, frame);
+            let mut update_result = Node::update(node.clone(), input_manager, time, frame_scale, frame);
+
+            if update_result.delete_nodes.len() > 0
+            {
+                delete_nodes.append(&mut update_result.delete_nodes);
+            }
         }
 
         // cameras
@@ -182,6 +189,12 @@ impl Scene
         }
 
         swap(&mut post_controller, &mut self.post_controller);
+
+        // delete requested "delete_later" nodes
+        for node_id in delete_nodes
+        {
+            self.delete_node_by_id(node_id);
+        }
     }
 
     pub fn print(&self)
@@ -406,6 +419,19 @@ impl Scene
             if let Some(all_nodes) = &all_nodes
             {
                 Node::cleanup_cyclic_references(&all_nodes);
+            }
+        }
+
+        // remove node from all components
+        if from_node_id.is_some() && self.find_node_by_id(from_node_id.unwrap()).is_some()
+        {
+            let node_to_remove = self.find_node_by_id(from_node_id.unwrap()).unwrap();
+
+            let all_nodes = Self::list_all_child_nodes(&self.nodes);
+
+            for node in all_nodes
+            {
+                Node::remove_node_from_components(node.clone(), node_to_remove.clone());
             }
         }
     }
@@ -739,6 +765,11 @@ impl Scene
         false
     }
 
+    pub fn add_empty_light(&mut self, name: &str) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        self.add_light_point(name, Point3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0)
+    }
+
     pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
         let light = Light::new_point(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, color, intensity);
@@ -758,6 +789,14 @@ impl Scene
     pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
         let light = Light::new_spot(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), pos, dir, color, max_angle, intensity);
+        self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+        self.lights.get_ref().last().unwrap()
+    }
+
+    pub fn add_light_hemisperical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    {
+        let light = Light::new_hemi(self.id_manager.write().unwrap().get_next_light_id(), name.to_string(), dir, color, ground_color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -810,6 +849,12 @@ impl Scene
     {
         Node::find_mesh_node_by_name(&self.nodes, name)
     }
+
+    pub fn find_mesh_node_by_ids(&self, ids: &Vec<u64>) -> Option<NodeItem>
+    {
+        Node::find_mesh_node_by_ids(&self.nodes, ids)
+    }
+
     pub fn delete_node_by_id(&mut self, id: u64) -> bool
     {
         self.cleanup_cyclic_references(Some(id));
@@ -844,7 +889,54 @@ impl Scene
         false
     }
 
-    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
+    pub fn delete_node_by_name(&mut self, name: &str) -> bool
+    {
+        let node = self.find_node_by_name(name);
+
+        if node.is_none()
+        {
+            return false;
+        }
+
+        let id;
+        {
+            let node = node.unwrap();
+            id = node.read().unwrap().id;
+        }
+
+        self.cleanup_cyclic_references(Some(id));
+
+        let len = self.nodes.len();
+        self.nodes.retain(|node|
+        {
+            if node.read().unwrap().id == id
+            {
+                node.write().unwrap().clear_instances();
+            }
+
+            node.read().unwrap().id != id
+        });
+
+        if self.nodes.len() != len
+        {
+            return true;
+        }
+
+        // if not found -> check children
+        for node in &self.nodes
+        {
+            let deleted = node.write().unwrap().delete_node_by_id(id);
+
+            if deleted
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let mut nodes = vec![];
 
@@ -861,7 +953,7 @@ impl Scene
         self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<ScenePickRes>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
         let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
 
@@ -873,7 +965,7 @@ impl Scene
         None
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Option<ScenePickRes>
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
@@ -887,14 +979,14 @@ impl Scene
         None
     }
 
-    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
         self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<Box<dyn Fn(NodeItem) -> bool>>) -> Vec<ScenePickRes>
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         // find hits (bbox based)
         let mut hits_bbox = vec![];
@@ -927,10 +1019,9 @@ impl Scene
                 continue;
             }
 
-            //if let Some(ref predicate) = predicate
             if let Some(predicate) = &predicate
             {
-                if !predicate(node_arc.clone())
+                if !predicate(node_arc.clone(), None)
                 {
                     continue;
                 }
@@ -938,14 +1029,27 @@ impl Scene
 
             for instance in node.instances.get_ref()
             {
-                let instance = instance.read().unwrap();
+                let instance_id;
+                {
+                    let instance = instance.read().unwrap();
+                    instance_id = instance.id;
+                }
 
+                if let Some(predicate) = &predicate
+                {
+                    if !predicate(node_arc.clone(), Some(instance_id))
+                    {
+                        continue;
+                    }
+                }
+
+                let instance = instance.read().unwrap();
                 if !instance.pickable
                 {
                     continue;
                 }
 
-                let alpha = instance.get_alpha();
+                let alpha = instance.get_cached_alpha();
 
                 if approx_zero(alpha)
                 {
@@ -953,7 +1057,7 @@ impl Scene
                 }
 
                 // transformation
-                let transform = instance.get_world_transform();
+                let transform = instance.get_cached_world_transform();
                 let transform_inverse = transform.try_inverse().unwrap();
 
                 let ray_inverse = math::inverse_ray(ray, &transform_inverse);
@@ -1068,7 +1172,18 @@ impl Scene
                 }
             }
 
-            let intersection = mesh.intersect_skinned(ray, &ray_inverse, &transform, &transform_inverse, &joint_matrices, solid, material_data.smooth_shading);
+            let mut morph_target_vec = vec![];
+            if node.has_morph_target_weights()
+            {
+                let morph_targets = node.get_morph_target_weights_vec();
+
+                if let Some(morph_targets) = morph_targets
+                {
+                    morph_target_vec = morph_targets;
+                }
+            }
+
+            let intersection = mesh.intersect_morphed_and_skinned(ray, &ray_inverse, &transform, &transform_inverse, &joint_matrices, &morph_target_vec, solid, material_data.smooth_shading);
 
             if let Some(intersection) = intersection
             {
@@ -1139,7 +1254,7 @@ impl Scene
         {
             ui.label("Max lights:");
 
-            if ui.add(egui::DragValue::new(&mut max_lights).clamp_range(0..=20)).changed()
+            if ui.add(egui::DragValue::new(&mut max_lights).range(0..=20)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 
@@ -1151,7 +1266,7 @@ impl Scene
         {
             ui.label("Gamma:");
 
-            if ui.add(egui::DragValue::new(&mut gamma).clamp_range(0.0..=10.0).speed(0.1)).changed()
+            if ui.add(egui::DragValue::new(&mut gamma).range(0.0..=10.0).speed(0.1)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 
@@ -1172,7 +1287,7 @@ impl Scene
         {
             ui.label("Exposure:");
 
-            if ui.add(egui::DragValue::new(&mut exposure).clamp_range(0.0..=100.0).speed(0.1)).changed()
+            if ui.add(egui::DragValue::new(&mut exposure).range(0.0..=100.0).speed(0.1)).changed()
             {
                 let data = self.get_data_mut().get_mut();
 

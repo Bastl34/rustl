@@ -1,15 +1,23 @@
 # History
 Here are some screenshots which are showing the development progress.
 
+# 2024-09-09
+* Editor Improvements (Copy/Paste, Asset selection, Grid based movement)
 
-# 2023-04-19
+<img src="history/2024-09-09-2.png" width="720">
+<br><br>
+
+<img src="history/2024-09-09.png" width="720">
+<br><br>
+
+# 2024-04-19
 * Skeleton Parenting
 
 <img src="history/2024-04-19.png" width="720">
 <sub>model/animation from: https://readyplayer.me/</sub>
 <br><br>
 
-# 2023-01-29
+# 2024-01-29
 * Morph Targets
 
 <img src="history/2024-01-29.png" width="720">

@@ -1,6 +1,9 @@
 
+use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
+use crate::state::scene::components::component::ComponentItem;
+use crate::state::scene::components::transformation::Transformation;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
@@ -13,7 +16,7 @@ use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
-use super::general::{create_general_settings};
+use super::general::create_general_settings;
 use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
@@ -125,24 +128,11 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     ui.horizontal(|ui|
     {
         let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
-        let mut try_out = editor_state.try_out;
+        let mut try_out = editor_state.try_mode;
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
-            // selectable
-            if ui.toggle_value(&mut editor_state.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects").changed()
-            {
-                if !editor_state.selectable
-                {
-                    editor_state.de_select_current_item(state);
-                }
-            }
-
-            ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
-
-            let mut playing = !state.pause;
-            ui.toggle_value(&mut playing, RichText::new("⏵").size(icon_size)).on_hover_text("Playing/Pause");
-            state.pause = !playing;
+            create_tool_menu_grid(editor_state, state, ui);
         });
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -156,9 +146,101 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             // try out mode
             if ui.toggle_value(&mut try_out, RichText::new("🚀").size(icon_size)).on_hover_text("try out").changed()
             {
-                editor_state.set_try_out(state, try_out);
+                editor_state.set_try_mode(state, try_out);
             };
+
+            ui.separator();
+
+            // fly camera
+            ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
+
+            // selectable
+            if ui.toggle_value(&mut editor_state.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects").changed()
+            {
+                if !editor_state.selectable
+                {
+                    editor_state.de_select_current_item(state);
+                }
+            }
+
+            ui.separator();
+
+            // play
+            let mut playing = !state.pause;
+            ui.toggle_value(&mut playing, RichText::new("⏵").size(icon_size)).on_hover_text("Playing/Pause");
+            state.pause = !playing;
         });
+    });
+}
+
+fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    // grid size
+    let mut changed = false;
+    let mut grid_size = editor_state.grid_size;
+
+    ui.label("▓").on_hover_text("Grid");
+    egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
+    {
+        ui.style_mut().wrap = Some(false);
+
+        changed = ui.selectable_value(&mut grid_size, 0.05, "0.05").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.0625, "0.0625").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.1, "0.1").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.125, "0.125").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.25, "0.25").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 0.5, "0.5").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 1.0, "1.0").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 2.5, "2.5").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 5.0, "5.0").changed() || changed;
+        changed = ui.selectable_value(&mut grid_size, 10.0, "10.0").changed() || changed;
+    });
+
+    if changed
+    {
+        editor_state.set_grid_size(grid_size);
+    }
+
+    ui.separator();
+
+    ui.checkbox(&mut editor_state.drag_and_drop_grid_only, "Only move on Grid");
+
+    ui.separator();
+
+    ui.horizontal(|ui|
+    {
+        ui.label("Grid Y: ");
+
+        let mut y = 0.0;
+        let mut grid_transform: Option<ComponentItem> = None;
+
+        for scene in &mut state.scenes
+        {
+            let grid = scene.find_node_by_name("grid");
+
+            if let Some(grid) = grid
+            {
+                let grid = grid.read().unwrap();
+                grid_transform = grid.find_component::<Transformation>();
+
+                if let Some(grid_transform) = &grid_transform
+                {
+                    component_downcast!(grid_transform, Transformation);
+                    y = grid_transform.get_data().position.y;
+                }
+            }
+        }
+
+        if ui.add(egui::DragValue::new(&mut y).speed(0.1).prefix("y: ")).changed()
+        {
+            if let Some(grid_transform) = &grid_transform
+            {
+                component_downcast_mut!(grid_transform, Transformation);
+                let mut pos = grid_transform.get_data().position;
+                pos.y = y;
+                grid_transform.set_translation(pos);
+            }
+        }
     });
 }
 
@@ -299,20 +381,12 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         let scene_id = scene.id;
         let id = format!("scene_{}", scene_id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, true).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
                 let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("Clear").clicked()
-                    {
-                        ui.close_menu();
-                        scene.clear();
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -329,6 +403,15 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         editor_state.settings = SettingsPanel::General;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Clear").clicked()
+                    {
+                        ui.close_menu();
+                        scene.clear();
+                    }
+                });
             });
         }).body(|ui|
         {
@@ -352,14 +435,6 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
                 let toggle = ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("⊞ Add New Node").clicked()
-                    {
-                        ui.close_menu();
-                        scene.add_empty_node("Node", None);
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -375,11 +450,20 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("⊞ Add New Node").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_node("Node", None);
+                    }
+                });
             });
         }).body(|ui|
         {
             let nodes = scene.nodes.clone();
-            build_objects_list(editor_state, exec_queue, scene, ui, &nodes, scene.id, true);
+            build_objects_list(editor_state, exec_queue, scene, ui, &nodes, scene.id, true, false);
         });
     }
 
@@ -394,14 +478,6 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
 
                 let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
-                let toggle = toggle.context_menu(|ui|
-                {
-                    if ui.button("Add New Camera").clicked()
-                    {
-                        ui.close_menu();
-                        scene.add_empty_camera("Camera");
-                    }
-                });
 
                 if toggle.clicked()
                 {
@@ -417,6 +493,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Camera").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_camera("Camera");
+                    }
+                });
             });
         }).body(|ui|
         {
@@ -433,7 +518,9 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong());
+
+                if toggle.clicked()
                 {
                     if selection
                     {
@@ -447,6 +534,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Light").clicked()
+                    {
+                        ui.close_menu();
+                        scene.add_empty_light("Light");
+                    }
+                });
             });
         }).body(|ui|
         {

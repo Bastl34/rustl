@@ -22,6 +22,7 @@ struct LightUniform
     position: vec4<f32>,
     dir: vec4<f32>,
     color: vec4<f32>,
+    ground_color: vec4<f32>,
     intensity: f32,
     light_type: u32,
     max_angle: f32,
@@ -42,7 +43,7 @@ struct SkeletonUniform
 
 struct MorphTargetUniform
 {
-    weights: array<vec4<f32>, MAX_MORPH_TARGETS>, // array stride must be 16 - so we use vec4
+    weights: array<vec4<f32>, MAX_MORPH_TARGETS>, // array stride must be 16 - so we use vec4 - but its just the first coordinate which matters
     amount: u32,
 };
 
@@ -52,6 +53,7 @@ struct MaterialUniform
     base_color: vec4<f32>,
     specular_color: vec4<f32>,
     highlight_color: vec4<f32>,
+    locked_color: vec4<f32>,
 
     alpha: f32,
     shininess: f32,
@@ -87,8 +89,9 @@ struct InstanceInput
     @location(9) model_matrix_2: vec4<f32>,
     @location(10) model_matrix_3: vec4<f32>,
 
-    @location(11) alpha: f32,
+    @location(11) color: vec4<f32>,
     @location(12) highlight: f32,
+    @location(13) locked: f32,
 };
 
 struct VertexOutput
@@ -102,10 +105,11 @@ struct VertexOutput
 
     @location(5) view_dir: vec3<f32>,
 
-    @location(6) alpha: f32,
+    @location(6) color: vec4<f32>,
     @location(7) highlight: f32,
+    @location(8) locked: f32,
 
-    @location(8) weights: vec4<f32>, // just for debugging
+    @location(9) weights: vec4<f32>, // just for debugging
 };
 
 // ****************************** inputs / bindings ******************************
@@ -309,8 +313,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.bitangent = bitangent;
     out.view_dir = camera.view_pos.xyz - out.position;
 
-    out.alpha = instance.alpha;
+    out.color = instance.color;
     out.highlight = instance.highlight;
+    out.locked = instance.locked;
 
     out.weights = model.weights;
 
@@ -386,13 +391,29 @@ fn sphericalCoords(direction: vec3<f32>) -> vec2<f32>
     return uv;
 }
 
+fn easeInExpo(x: f32) -> f32
+{
+    if (x <= 0.00001)
+    {
+        return 0.0;
+    }
+
+    return pow(2.0, 10.0 * x - 10.0);
+}
+
+fn easeInQuint(x: f32) -> f32
+{
+    return x * x * x * x * x;
+}
+
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
     var uv = in.tex_coords;
 
     // base color
-    var object_color = material.base_color;
+    var object_color = material.base_color * in.color;
     if (has_base_texture())
     {
         let tex_color = textureSample(t_base, s_base, uv);
@@ -446,6 +467,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
         for(var i = 0; i < min(light_amount, MAX_LIGHTS); i += 1)
         {
+            // light_type == 0 --> disabled
+            if (lights[i].light_type == 0)
+            {
+                continue;
+            }
+
             let light_color = lights[i].color.rgb;
             var light_pos = lights[i].position.xyz;
             var direction_to_light = lights[i].position.xyz - in.position;
@@ -456,17 +483,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             {
                 switch lights[i].light_type
                 {
-                    case 0u //LIGHT_TYPE_DIRECTIONAL
+                    case 1u //LIGHT_TYPE_DIRECTIONAL
                     {
                         intensity = lights[i].intensity;
                     }
-                    case 1u //LIGHT_TYPE_POINT
+                    case 2u //LIGHT_TYPE_POINT
                     {
                         var distance = length(direction_to_light);
                         //distance = distance * distance;
                         intensity = lights[i].intensity / (4.0 * PI * distance);
                     }
-                    case 2u //LIGHT_TYPE_SPOT
+                    case 3u //LIGHT_TYPE_SPOT
                     {
                         var distance = length(direction_to_light);
                         //distance = distance * distance;
@@ -481,40 +508,57 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                             intensity = 0.0;
                         }
                     }
+                    case 4u //LIGHT_TYPE_HEMISPHERIC
+                    {
+                        intensity = lights[i].intensity;
+                    }
                     default {}
                 }
             }
 
             intensity = min(intensity, 1.0);
 
-            // phong light dir
-            switch lights[i].light_type
+            if (lights[i].light_type == 4u) //LIGHT_TYPE_HEMISPHERIC
             {
-                case 0u //LIGHT_TYPE_DIRECTIONAL
-                {
-                    direction_to_light = -lights[i].dir.xyz;
-                }
-                default {}
+                let dir = normalize(lights[i].dir.xyz);
+                let normal_dot_light_dir = dot(normal, dir);
+
+                let light_contrib = clamp(normal_dot_light_dir, -1.0, 1.0) * 0.5 + 0.5;
+                let light_color = mix(lights[i].ground_color, lights[i].color, light_contrib);
+
+                color += (light_color * object_color * intensity).rgb;
             }
+            else
+            {
+                // phong light dir
+                switch lights[i].light_type
+                {
+                    case 1u //LIGHT_TYPE_DIRECTIONAL
+                    {
+                        direction_to_light = -lights[i].dir.xyz;
+                    }
+                    default {}
+                }
 
-            direction_to_light = normalize(direction_to_light);
+                direction_to_light = normalize(direction_to_light);
 
-            let half_dir = normalize(view_dir + direction_to_light);
+                let half_dir = normalize(view_dir + direction_to_light);
 
-            let diffuse_strength = max(dot(normal, direction_to_light), 0.0);
-            let diffuse_color = (lights[i].color * object_color * diffuse_strength).rgb;
+                let diffuse_strength = max(dot(normal, direction_to_light), 0.0);
+                let diffuse_color = (lights[i].color * object_color * diffuse_strength).rgb;
 
-            let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
+                let specular_strength = pow(max(dot(normal, half_dir), 0.0), material.shininess);
 
-            /*
-            let reflect_dir = reflect(-direction_to_light, normal);
-            let spec_dot = max(dot(reflect_dir, view_dir), 0.0);
-            let specular_strength = pow(spec_dot, material.shininess);
-            */
+                /*
+                let reflect_dir = reflect(-direction_to_light, normal);
+                let spec_dot = max(dot(reflect_dir, view_dir), 0.0);
+                let specular_strength = pow(spec_dot, material.shininess);
+                */
 
-            let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
+                let specular_color = (lights[i].color * material.specular_color * specular_strength).rgb;
 
-            color += (diffuse_color + specular_color) * intensity;
+                color += (diffuse_color + specular_color) * intensity;
+            }
         }
 
         // ambient occlusion
@@ -599,13 +643,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color.z = mapped.z;
     }
 
+    // locked color
+    if (in.highlight > 0.0001 && in.locked > 0.0001)
+    {
+        color = (color * 0.5) + (material.locked_color.rgb * 0.5);
+    }
     // highlight color
-    if (in.highlight > 0.0001)
+    else if (in.highlight > 0.0001)
     {
         color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
     }
 
-    let alpha = in.alpha * object_color.a * material.alpha;
+    var alpha = in.color.a * object_color.a * material.alpha;
+
+    // distance based blending out
+    /*
+    let max_distance: f32 = 50.0;
+    let view_dir = camera.view_pos.xyz - in.position;
+
+    let distance = length(view_dir);
+    let dist_scaled = distance / max_distance;
+    //let distance_fading_factor = 1.0 - easeInExpo(dist_scaled);
+    let distance_fading_factor = 1.0 - easeInQuint(dist_scaled);
+
+    alpha *= distance_fading_factor;
+        */
 
     if (alpha < 0.000001)
     {

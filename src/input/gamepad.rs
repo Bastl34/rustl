@@ -143,24 +143,24 @@ impl Gamepad
         false
     }
 
-    pub fn set_button(&mut self, button: GamepadButton, status: bool)
+    pub fn set_button(&mut self, button: GamepadButton, status: bool, engine_frame: u64)
     {
-        self.buttons[button as usize].update(status);
+        self.buttons[button as usize].update(status, engine_frame);
 
         self.last_update = get_secs();
     }
 
-    pub fn set_button_float(&mut self, button: GamepadButton, value: f32)
+    pub fn set_button_float(&mut self, button: GamepadButton, value: f32, engine_frame: u64)
     {
-        self.buttons[button as usize].update_float(value);
+        self.buttons[button as usize].update_float(value, engine_frame);
 
         self.last_update = get_secs();
     }
 
-    pub fn set_axis(&mut self, axis: GamepadAxis, value: f32)
+    pub fn set_axis(&mut self, axis: GamepadAxis, value: f32, engine_frame: u64)
     {
         self.axes[axis as usize] = value;
-        self.axes_press_states[axis as usize].update_float(value);
+        self.axes_press_states[axis as usize].update_float(value, engine_frame);
 
         self.last_update = get_secs();
     }

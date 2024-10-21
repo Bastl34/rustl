@@ -1,10 +1,10 @@
 use std::{any::Any, sync::{Arc, RwLock}};
 
-use crate::{helper::change_tracker::ChangeTracker, component_impl_default, state::scene::node::{NodeItem, InstanceItemArc}, component_impl_no_update};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::change_tracker::ChangeTracker, state::scene::node::{InstanceItemArc, NodeItem}};
 
 use super::component::{ComponentBase, Component};
 
-#[derive( Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct AlphaData
 {
     pub alpha_inheritance: bool,
@@ -67,6 +67,7 @@ impl Component for Alpha
 {
     component_impl_default!();
     component_impl_no_update!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -102,7 +103,7 @@ impl Component for Alpha
 
         let mut alpha = Alpha
         {
-            base: ComponentBase::new(new_component_id, source.get_base().name.clone(), source.get_base().component_name.clone(), source.get_base().icon.clone()),
+            base: ComponentBase::duplicate(new_component_id, source.get_base()),
 
             data: ChangeTracker::new(source.get_data().clone()),
         };

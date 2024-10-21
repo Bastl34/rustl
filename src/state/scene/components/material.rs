@@ -8,7 +8,7 @@ use strum_macros::{Display, EnumIter};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
-use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::scene::texture::{TextureItem, Texture}, helper};
 
@@ -91,6 +91,7 @@ pub struct MaterialData
     pub specular_color: Vector3<f32>,
 
     pub highlight_color: Vector3<f32>,
+    pub locked_color: Vector3<f32>,
 
     pub texture_ambient: Option<TextureState>,
     pub texture_base: Option<TextureState>,
@@ -146,7 +147,8 @@ impl Material
             base_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             specular_color: Vector3::<f32>::new(0.8, 0.8, 0.8),
 
-            highlight_color: Vector3::<f32>::new(1.0, 0.0, 0.0),
+            highlight_color: Vector3::<f32>::new(0.0, 1.0, 0.0),
+            locked_color: Vector3::<f32>::new(1.0, 0.0, 0.0),
 
             texture_ambient: None,
             texture_base: None,
@@ -646,6 +648,7 @@ impl Component for Material
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -686,6 +689,7 @@ impl Component for Material
         let mut base_color;
         let mut specular_color;
         let mut highlight_color;
+        let mut locked_color;
 
         {
             let data = self.data.get_ref();
@@ -726,6 +730,11 @@ impl Component for Material
             let g = (data.highlight_color.y * 255.0) as u8;
             let b = (data.highlight_color.z * 255.0) as u8;
             highlight_color = egui::Color32::from_rgb(r, g, b);
+
+            let r = (data.locked_color.x * 255.0) as u8;
+            let g = (data.locked_color.y * 255.0) as u8;
+            let b = (data.locked_color.z * 255.0) as u8;
+            locked_color = egui::Color32::from_rgb(r, g, b);
         }
 
         let mut apply_settings = false;
@@ -771,6 +780,11 @@ impl Component for Material
             apply_settings = ui.color_edit_button_srgba(&mut highlight_color).changed() || apply_settings;
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("lock color:");
+            apply_settings = ui.color_edit_button_srgba(&mut locked_color).changed() || apply_settings;
+        });
 
         if apply_settings
         {

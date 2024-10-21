@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use std::sync::{Arc, RwLock};
 
-use nalgebra::{Matrix3, Matrix4, Vector3};
+use nalgebra::{Matrix4, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
 
@@ -13,6 +15,7 @@ pub struct ComputedInstanceData
 {
     pub world_matrix: Matrix4::<f32>,
     pub alpha: f32,
+    pub locked: bool,
 }
 
 pub struct InstanceData
@@ -22,6 +25,8 @@ pub struct InstanceData
     pub visible: bool,
     pub highlight: bool,
     pub collision: bool,
+    pub locked: bool,
+    pub color: Vector4::<f32>
 }
 
 
@@ -60,11 +65,14 @@ impl Instance
                 {
                     world_matrix: Matrix4::<f32>::identity(),
                     alpha: 1.0,
+                    locked: false
                 },
 
                 visible: true,
                 highlight: false,
-                collision: true
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             })
         };
 
@@ -90,11 +98,14 @@ impl Instance
                 {
                     world_matrix: Matrix4::<f32>::identity(),
                     alpha: 1.0,
+                    locked: false
                 },
 
                 visible: true,
                 highlight: false,
-                collision: true
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
             })
         };
 
@@ -232,10 +243,12 @@ impl Instance
 
             let world_matrix = instance.calculate_transform();
             let alpha = instance.calculate_alpha();
+            let locked = instance.accumulate_locked();
 
             let data = instance.get_data_mut().get_mut();
             data.computed.world_matrix = world_matrix;
             data.computed.alpha = alpha;
+            data.computed.locked = locked;
         }
 
         {
@@ -272,6 +285,12 @@ impl Instance
             {
                 changed = true;
             }
+        }
+
+        // locked check
+        if self.accumulate_locked() != self.get_data().computed.locked
+        {
+            changed = true;
         }
 
         // ********** check node and parents **********
@@ -356,8 +375,39 @@ impl Instance
         }
     }
 
+    pub fn calculate_inverse_transform(&self) -> Matrix4<f32>
+    {
+        let full_transform = self.calculate_transform();
+
+        full_transform.try_inverse().unwrap()
+    }
+
+    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_inverse_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.calculate_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_from_instance_to_local(&self, vec: &Vector4<f32>, instance: Arc<RwLock<Box<Instance>>>) -> Vector4<f32>
+    {
+        let instance = instance.read().unwrap();
+        let global_vec = instance.transform_local_to_global(vec);
+
+        self.transform_global_to_local(&global_vec)
+    }
+
     pub fn calculate_alpha(&self) -> f32
     {
+        let instance_color_alpha = self.get_data().color.w;
+
         let node_alpha = Node::get_full_alpha(self.node.clone());
 
         let alpha_components = self.find_components::<Alpha>();
@@ -379,20 +429,31 @@ impl Instance
 
         if inheritance
         {
-            alpha * node_alpha
+            alpha * node_alpha * instance_color_alpha
         }
         else
         {
-            alpha
+            alpha * instance_color_alpha
         }
     }
 
-    pub fn get_world_transform(&self) -> Matrix4::<f32>
+    pub fn accumulate_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        let node = self.node.read().unwrap();
+        node.is_locked()
+    }
+
+    pub fn get_cached_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix
     }
 
-    pub fn get_alpha(&self) -> f32
+    pub fn get_cached_alpha(&self) -> f32
     {
         if self.get_data().visible == false
         {
@@ -400,6 +461,16 @@ impl Instance
         }
 
         self.get_data().computed.alpha
+    }
+
+    pub fn get_cached_is_locked(&self) -> bool
+    {
+        if self.get_data().locked
+        {
+            return true;
+        }
+
+        self.get_data().computed.locked
     }
 
     pub fn apply_transform(&mut self, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>)
@@ -459,6 +530,68 @@ impl Instance
         else
         {
             panic!("trnasform component not found");
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        let mut changed = false;
+
+        let mut visible;
+        let mut locked;
+        let mut collision;
+        let mut highlight;
+        let mut name;
+        let mut pickable;
+        let mut color;
+        {
+            let instance_data = self.get_data();
+            visible = instance_data.visible;
+            locked = instance_data.locked;
+            collision = instance_data.collision;
+            highlight = instance_data.highlight;
+            name = self.name.clone();
+            pickable = self.pickable;
+
+            let r = (instance_data.color.x * 255.0) as u8;
+            let g = (instance_data.color.y * 255.0) as u8;
+            let b = (instance_data.color.z * 255.0) as u8;
+            let a = (instance_data.color.w * 255.0) as u8;
+            color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
+        }
+
+        ui.horizontal(|ui|
+        {
+            ui.label("name: ");
+            changed = ui.text_edit_singleline(&mut name).changed() || changed;
+        });
+        changed = ui.checkbox(&mut visible, "visible").changed() || changed;
+        changed = ui.checkbox(&mut locked, "locked").changed() || changed;
+        changed = ui.checkbox(&mut collision, "collision").changed() || changed;
+        changed = ui.checkbox(&mut highlight, "highlight").changed() || changed;
+        changed = ui.checkbox(&mut pickable, "pickable").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("color:");
+            changed = ui.color_edit_button_srgba(&mut color).changed() || changed;
+        });
+
+        if changed
+        {
+            self.name = name;
+            self.pickable = pickable;
+
+            let instance_data = self.get_data_mut().get_mut();
+            instance_data.visible = visible;
+            instance_data.collision = collision;
+            instance_data.highlight = highlight;
+
+            let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            let a = ((color.a() as f32) / 255.0).clamp(0.0, 1.0);
+            instance_data.color = Vector4::<f32>::new(r, g, b, a);
         }
     }
 }
