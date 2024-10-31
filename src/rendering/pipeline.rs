@@ -124,7 +124,7 @@ impl Pipeline
             fragment_state = Some(wgpu::FragmentState
             {
                 module: &self.shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: fragment_targets,
                 compilation_options: Default::default(),
             });
@@ -137,7 +137,7 @@ impl Pipeline
             vertex: wgpu::VertexState
             {
                 module: &self.shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:
                 &[
                     Vertex::desc(),

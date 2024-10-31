@@ -2,7 +2,6 @@ use egui::{Ui, Color32, RichText, Align2, Id};
 
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
-
     let background_color;
     if let Some(color) = bg_color
     {
