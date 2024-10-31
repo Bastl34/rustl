@@ -31,6 +31,11 @@ impl SceneController for GenericController
     {
     }
 
+    fn cleanup_node(&mut self, node: crate::state::scene::node::NodeItem) -> bool
+    {
+        false
+    }
+
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, _input_manager: &mut InputManager, _frame_scale: f32) -> bool
     {
         let mut updated = false;

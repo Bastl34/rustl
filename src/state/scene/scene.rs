@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}, vec};
+use std::{borrow::BorrowMut, cell::RefCell, clone, collections::HashMap, mem::swap, sync::{Arc, RwLock}, vec};
 
 use anyhow::Ok;
 use nalgebra::Vector3;
@@ -364,6 +364,12 @@ impl Scene
 
     pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>)
     {
+        let mut node = None;
+        if let Some(node_id) = from_node_id
+        {
+            node = self.find_node_by_id(node_id).clone();
+        }
+
         // check camera targets and remove
         for camera in &mut self.cameras
         {
@@ -387,12 +393,28 @@ impl Scene
         // controller
         for controller in &mut self.pre_controller
         {
-            controller.cleanup();
+            if let Some(node) = &node
+            {
+                controller.cleanup_node(node.clone());
+            }
+            // only cleanup everything if no node is specified
+            else if from_node_id.is_none()
+            {
+                controller.cleanup();
+            }
         }
 
         for controller in &mut self.post_controller
         {
-            controller.cleanup();
+            if let Some(node) = &node
+            {
+                controller.cleanup_node(node.clone());
+            }
+            // only cleanup everything if no node is specified
+            else if from_node_id.is_none()
+            {
+                controller.cleanup();
+            }
         }
 
 
@@ -403,7 +425,6 @@ impl Scene
 
             if let Some(node_id) = from_node_id
             {
-                let node = self.find_node_by_id(node_id);
                 if let Some(node) = &node
                 {
                     let node = node.read().unwrap();

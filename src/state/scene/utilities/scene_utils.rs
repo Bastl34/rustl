@@ -5,8 +5,6 @@ use nalgebra::{Point3, Vector3, Vector4};
 use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, math::is_almost_integer}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::{Component, ComponentItem}, material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
-const VERY_BIG: f32 = 1_000_000.0;
-
 pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
@@ -170,14 +168,16 @@ pub fn insert_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, te
 pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
 {
     let integer_grid_line_scale = 3.0;
-    let grid_origin_line_scale = 10.0;
+
+    let grid_origin_line_scale = 3.5;
+    let grid_origin_line_scale_line = 1_000.0;
 
     let amount = amount as i32;
 
     let size = amount as f32 * spacing;
 
     let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line.gltf", scene_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
+    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
@@ -307,8 +307,7 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
 
                 let component_id = scene.id_manager.write().unwrap().get_next_component_id();
                 let mut transformation = Transformation::identity(component_id, "Transform");
-                //transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, 0.0));
-                transformation.apply_scale(Vector3::<f32>::new(VERY_BIG, scale, scale), true);
+                transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 instance.get_data_mut().get_mut().color = Vector4::<f32>::new(1.0, 0.0, 0.0, 1.0);
                 instance.pickable = false;
@@ -326,9 +325,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
 
                 let component_id = scene.id_manager.write().unwrap().get_next_component_id();
                 let mut transformation = Transformation::identity(component_id, "Transform");
-                //transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, 0.0));
                 transformation.apply_rotation(Vector3::<f32>::new(0.0, 0.0, PI / 2.0));
-                transformation.apply_scale(Vector3::<f32>::new(VERY_BIG, scale, scale), true);
+                transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 instance.get_data_mut().get_mut().color = Vector4::<f32>::new(0.0, 1.0, 0.0, 1.0);
                 instance.pickable = false;
@@ -346,9 +344,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
 
                 let component_id = scene.id_manager.write().unwrap().get_next_component_id();
                 let mut transformation = Transformation::identity(component_id, "Transform");
-                //transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, 0.0));
                 transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
-                transformation.apply_scale(Vector3::<f32>::new(VERY_BIG, scale, scale), true);
+                transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 instance.get_data_mut().get_mut().color = Vector4::<f32>::new(0.0, 0.0, 1.0, 1.0);
                 instance.pickable = false;

@@ -199,8 +199,8 @@ impl Editor
             if grid.is_some() && self.editor_state.grid_recreate
             {
                 // delete first
-                scene.delete_node_by_name("grid");
                 scene.delete_node_by_name("grid origin");
+                scene.delete_node_by_name("grid");
 
                 let grid_size = self.editor_state.grid_size;
                 let grid_amount = self.editor_state.grid_amount;

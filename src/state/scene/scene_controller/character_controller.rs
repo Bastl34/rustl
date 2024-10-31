@@ -642,6 +642,20 @@ impl SceneController for CharacterController
         self.transformation = None;
     }
 
+    fn cleanup_node(&mut self, node: NodeItem) -> bool
+    {
+        if let Some(own_node) = &self.node
+        {
+            if node.read().unwrap().id == own_node.read().unwrap().id
+            {
+                self.node = None;
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
     {
         if self.node.is_none()
