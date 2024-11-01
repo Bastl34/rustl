@@ -4,6 +4,7 @@ use egui::RichText;
 use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
+use wgpu::hal::DynBuffer;
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
 use crate::state::scene::sound_source::Decodable;
@@ -245,6 +246,11 @@ impl Sound
 
     pub fn start(&mut self)
     {
+        if self.stopped()
+        {
+            self.set_sound_source(self.sound_source.clone().unwrap());
+        }
+
         if let Some(sink) = &mut self.sink
         {
             sink.play();
@@ -526,10 +532,6 @@ impl Component for Sound
 
                 if ui.toggle_value(&mut is_running, RichText::new("⏵").size(icon_size)).on_hover_text("play animation").clicked()
                 {
-                    if self.stopped()
-                    {
-                        self.set_sound_source(self.sound_source.clone().unwrap());
-                    }
                     self.start();
                 }
 
@@ -581,7 +583,7 @@ impl Component for Sound
             {
                 ui.label("Progress: ");
                 let mut time = self.sound_time() * speed;
-                if ui.add(egui::Slider::new(&mut time, 0.0..=self.duration).fixed_decimals(2).text("s")).changed()
+                if ui.add(egui::Slider::new(&mut time, 0.0..=self.duration).fixed_decimals(2).clamping(egui::SliderClamping::Edits).text("s")).changed()
                 {
                     self.set_current_time(time);
                 }

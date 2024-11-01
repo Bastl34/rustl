@@ -10,6 +10,7 @@ use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3}
 use crate::component_downcast;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
 
+use super::sound::Sound;
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
 #[derive(PartialEq, Debug, Clone)]
@@ -89,8 +90,11 @@ pub struct Animation
 
     pub in_place_axis: Vector3<bool>,
 
+    pub sound_component: Option<ComponentItem>,
+
     current_time: u128,
     current_local_time: f32,
+    current_iteration: u64,
 
     ui_joint_include_option: bool
 }
@@ -124,8 +128,11 @@ impl Animation
             in_place_joint_node: None,
             in_place_axis: Vector3::new(true, true, true),
 
+            sound_component: None,
+
             current_time: 0,
             current_local_time: 0.0,
+            current_iteration: 0,
 
             ui_joint_include_option: true
         }
@@ -165,6 +172,13 @@ impl Animation
 
         self.start_time = Some(0);
         self.pause_time = None;
+        self.current_iteration = 0;
+
+        if let Some(sound) = &self.sound_component
+        {
+            component_downcast_mut!(sound, Sound);
+            sound.start();
+        }
     }
 
     pub fn resume(&mut self)
@@ -173,6 +187,12 @@ impl Animation
 
         self.start_time = Some(time);
         self.pause_time = None;
+
+        if let Some(sound) = &self.sound_component
+        {
+            component_downcast_mut!(sound, Sound);
+            sound.start();
+        }
     }
 
     pub fn stop(&mut self)
@@ -184,6 +204,12 @@ impl Animation
 
         self.start_time = None;
         self.reset();
+
+        if let Some(sound) = &self.sound_component
+        {
+            component_downcast_mut!(sound, Sound);
+            sound.stop();
+        }
     }
 
     pub fn stop_without_reset(&mut self)
@@ -191,6 +217,12 @@ impl Animation
         if !self.running()
         {
             return;
+        }
+
+        if let Some(sound) = &self.sound_component
+        {
+            component_downcast_mut!(sound, Sound);
+            sound.stop();
         }
 
         self.start_time = None;
@@ -207,6 +239,12 @@ impl Animation
         {
             self.pause_time = Some(self.current_time);
             self.start_time = None;
+
+            if let Some(sound) = &self.sound_component
+            {
+                component_downcast_mut!(sound, Sound);
+                sound.pause();
+            }
         }
     }
 
@@ -282,6 +320,7 @@ impl Animation
         self.pause_time = None;
         self.current_time = 0;
         self.current_local_time = 0.0;
+        self.current_iteration = 0;
     }
 
     pub fn get_local_time(&self, time: u128) -> f32
@@ -459,8 +498,11 @@ impl Component for Animation
 
             joint_filter: self.joint_filter.clone(),
 
+            sound_component: self.sound_component.clone(),
+
             current_time: 0,
             current_local_time: 0.0,
+            current_iteration: 0,
 
             ui_joint_include_option: self.ui_joint_include_option
         };
@@ -505,6 +547,19 @@ impl Component for Animation
         // animation
         if !approx_zero(delta)
         {
+            let iteration = (t / delta).floor() as u64;
+
+            if iteration != self.current_iteration && self.sound_component.is_some()
+            {
+                let sound = self.sound_component.as_ref().unwrap();
+                component_downcast_mut!(sound, Sound);
+                sound.stop();
+                sound.set_current_time(t % delta);
+                sound.start();
+            }
+
+            self.current_iteration = iteration;
+
             t = (t % delta) + self.from;
 
             //if self.reverse { t = self.to - t; }
@@ -1170,7 +1225,6 @@ impl Component for Animation
             ui.label("In Place Joint: ");
             if let Some(in_place_joint_node) = self.in_place_joint_node.clone()
             {
-
                 let in_place_joint_node = in_place_joint_node.read().unwrap();
                 ui.label(in_place_joint_node.name.clone());
 
@@ -1260,7 +1314,7 @@ impl Component for Animation
             self.joint_filter.remove(delete_id);
         }
 
-        if let Some(node) = node
+        if let Some(node) = &node
         {
             let node = node.read().unwrap();
             let all_nodes = Scene::list_all_child_nodes(&node.nodes);
@@ -1295,6 +1349,55 @@ impl Component for Animation
                 self.joint_filter.push((add_node.clone(), self.ui_joint_include_option));
             }
         }
+
+        ui.separator();
+
+        // ********** in place **********
+        ui.horizontal(|ui|
+        {
+            ui.label("Sound: ");
+            if let Some(sound_component) = self.sound_component.clone()
+            {
+                let sound_component = sound_component.read().unwrap();
+                ui.label(sound_component.get_base().name.clone());
+
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    self.sound_component = None;
+                }
+
+            }
+            else if let Some(node) = node.clone()
+            {
+                let node = node.read().unwrap();
+                let sounds = node.find_components::<Sound>();
+
+                let mut selection: usize = 0;
+                let mut changed = false;
+
+                ui.horizontal(|ui|
+                {
+                    egui::ComboBox::from_id_salt(ui.make_persistent_id("sound")).selected_text("").width(200.0).show_ui(ui, |ui|
+                    {
+                        changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
+
+                        for (i, sound) in sounds.iter().enumerate()
+                        {
+                            let sound = sound.read().unwrap();
+                            changed = ui.selectable_value(&mut selection, i + 1, sound.get_base().name.clone()).changed() || changed;
+                        }
+                    });
+                });
+
+                if changed
+                {
+                    let souond_component = &sounds[selection - 1];
+                    self.sound_component = Some(souond_component.clone());
+                }
+            }
+        });
+
+        ui.separator();
 
     }
 }
