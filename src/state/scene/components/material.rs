@@ -468,7 +468,7 @@ impl Material
             }
         }
 
-        if approx_equal(data.alpha, 1.0)
+        if !approx_equal(data.alpha, 1.0)
         {
             return true;
         }
@@ -738,6 +738,8 @@ impl Component for Material
         }
 
         let mut apply_settings = false;
+
+        ui.label(format!("has transparency: {}", self.has_transparency()));
 
         apply_settings = ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).text("alpha")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut shininess, 0.0..=1000.0).text("shininess")).changed() || apply_settings;

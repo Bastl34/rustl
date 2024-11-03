@@ -9,6 +9,7 @@ use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, c
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 
+#[derive(Copy, Clone)]
 pub struct RenderData<'a>
 {
     node: &'a RwLockReadGuard<'a, Box<Node>>,
@@ -921,7 +922,9 @@ impl Scene
             meshes_read.push(mesh_read);
         }
 
-        let mut render_data = Vec::with_capacity(materials_read.len());
+        let mut solid_objects: Vec<RenderData> = vec![];
+        let mut transparent_objects: Vec<RenderData> = vec![];
+
         for (i, material) in materials_read.iter().enumerate()
         {
             let mat;
@@ -947,7 +950,6 @@ impl Scene
                     continue;
                 }
 
-
                 let mut mesh_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
                 for mesh in meshes
                 {
@@ -962,7 +964,6 @@ impl Scene
                 mesh_middle.x /= len_f32;
                 mesh_middle.y /= len_f32;
                 mesh_middle.z /= len_f32;
-
 
                 if let Some(instance_render_item) = node.instance_render_item.as_ref()
                 {
@@ -989,19 +990,25 @@ impl Scene
                 has_transparency = mat.has_transparency();
             }
 
-            render_data.push
-            (
-                RenderData
-                {
-                    node: nodes_read.get(i).unwrap(),
-                    material: mat,
-                    meshes: meshes,
+            let item = RenderData
+            {
+                node: nodes_read.get(i).unwrap(),
+                material: mat,
+                meshes: meshes,
 
-                    has_transparency: has_transparency,
-                    alpha_index: node.settings.alpha_index,
-                    middle: item_middle
-                }
-            );
+                has_transparency: has_transparency,
+                alpha_index: node.settings.alpha_index,
+                middle: item_middle
+            };
+
+            if has_transparency
+            {
+                transparent_objects.push(item);
+            }
+            else
+            {
+                solid_objects.push(item);
+            }
         }
 
         let mut draw_calls: u32 = 0;
@@ -1016,9 +1023,9 @@ impl Scene
             // sort
             if self.distance_sorting
             {
-
                 let cam_pos = cam_data.eye_pos;
-                render_data.sort_by(|a, b|
+                // sorting based on the "prev" transparent_objects vec - its not cloned
+                transparent_objects.sort_by(|a, b|
                 {
                     if a.has_transparency != b.has_transparency
                     {
@@ -1045,6 +1052,12 @@ impl Scene
             // get bind groups
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
+
+            // in solid objects: transparent objects are added to the back. so solid objects are rendered first
+            let mut render_data = Vec::with_capacity(materials_read.len());
+            //let mut render_data = solid_objects.clone();
+            render_data.extend(solid_objects.iter().cloned());
+            render_data.extend(transparent_objects.iter().cloned());
 
             draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);

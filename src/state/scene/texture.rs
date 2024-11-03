@@ -497,6 +497,7 @@ impl Texture
         let format = if self.channels() == 1 { "Gray" } else { "RGBA" };
 
         ui.label(format!("{}x{}, {}, {} mips, {:.2} MB", data.width, data.height, format, self.get_mipmap_levels_amount(), gpu_size));
+        ui.label(format!("has transparency: {}", data.has_transparency));
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)

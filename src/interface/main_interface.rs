@@ -532,6 +532,8 @@ impl MainInterface
                 }));
                 */
 
+                let nodes = scene_utils::load_object("scenes/Sponza_fixed.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+
                 //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -563,6 +565,7 @@ impl MainInterface
 
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
+                /*
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -570,6 +573,7 @@ impl MainInterface
 
                 //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone());
                 let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone(), Some("mixamorig:Hips"));
+
 
                 //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -648,6 +652,7 @@ impl MainInterface
                         transform.set_rotation(Vector3::<f32>::new(0.0, -2.618, 0.0));
                     }
                 }));
+                */
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
