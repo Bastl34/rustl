@@ -1053,9 +1053,8 @@ impl Scene
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
 
-            // in solid objects: transparent objects are added to the back. so solid objects are rendered first
+            // transparent objects are added to the back. so solid objects are rendered first
             let mut render_data = Vec::with_capacity(materials_read.len());
-            //let mut render_data = solid_objects.clone();
             render_data.extend(solid_objects.iter().cloned());
             render_data.extend(transparent_objects.iter().cloned());
 
