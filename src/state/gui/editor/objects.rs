@@ -259,7 +259,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         ui.close_menu();
 
                         let node_arc = node_arc.clone();
-                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
                         {
                             let mut node = node_arc.write().unwrap();
                             node.visible = !node.visible;
@@ -273,7 +273,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         ui.close_menu();
 
                         let node_arc = node_arc.clone();
-                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
                         {
                             let mut node = node_arc.write().unwrap();
                             node.locked = !node.locked;
@@ -322,7 +322,16 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.delete_node_by_id(node_id);
+                            scene.delete_node_by_id(node_id, false, false);
+                        }));
+                    }
+                    if ui.button("🗑 Delete + materials/textures").clicked()
+                    {
+                        ui.close_menu();
+
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.delete_node_by_id(node_id, true, true);
                         }));
                     }
                 });
@@ -741,7 +750,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                scene.delete_node_by_id(node_id);
+                scene.delete_node_by_id(node_id, false, false);
+            }
+            if ui.button(RichText::new("Dispose Node + materials/textures").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            {
+                let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                scene.delete_node_by_id(node_id, true, true);
             }
         });
     });

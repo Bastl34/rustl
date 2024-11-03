@@ -199,8 +199,8 @@ impl Editor
             if grid.is_some() && self.editor_state.grid_recreate
             {
                 // delete first
-                scene.delete_node_by_name("grid origin");
-                scene.delete_node_by_name("grid");
+                scene.delete_node_by_name("grid origin", true, true);
+                scene.delete_node_by_name("grid", true, true);
 
                 let grid_size = self.editor_state.grid_size;
                 let grid_amount = self.editor_state.grid_amount;
@@ -486,7 +486,7 @@ impl Editor
                         else
                         {
                             let id = node.read().unwrap().id;
-                            scene.delete_node_by_id(id);
+                            scene.delete_node_by_id(id, true, true);
                         }
 
                         self.editor_state.de_select_current_item(state);

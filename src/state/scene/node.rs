@@ -1428,7 +1428,7 @@ impl Node
         self.instances.get_mut().clear();
     }
 
-    pub fn delete_node_by_id(&mut self, id: u64) -> bool
+    pub fn delete_child_node_by_id(&mut self, id: u64) -> bool
     {
         {
             let node = Node::find_node_by_id(&self.nodes, id);
@@ -1458,7 +1458,7 @@ impl Node
         // if not found -> check children
         for node in &self.nodes
         {
-            let deleted = node.write().unwrap().delete_node_by_id(id);
+            let deleted = node.write().unwrap().delete_child_node_by_id(id);
 
             if deleted
             {

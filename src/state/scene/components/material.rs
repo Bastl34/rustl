@@ -386,6 +386,14 @@ impl Material
         }
     }
 
+    pub fn remove_all_textures(&mut self)
+    {
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            self.remove_texture(texture_type);
+        }
+    }
+
     pub fn set_texture(&mut self, tex: TextureItem, tex_type: TextureType)
     {
         let data = self.data.get_mut();
@@ -530,6 +538,20 @@ impl Material
         }
 
         tex
+    }
+
+    pub fn get_all_textures(&self) -> Vec<TextureItem>
+    {
+        let mut textures = vec![];
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if let Some(texture) = self.get_texture_by_type(texture_type)
+            {
+                textures.push(texture.item.clone());
+            }
+        }
+
+        textures
     }
 
     pub fn has_texture(&self, tex_type: TextureType) -> bool
