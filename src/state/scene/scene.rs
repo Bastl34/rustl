@@ -955,11 +955,23 @@ impl Scene
 
             for node in all_nodes_to_delete
             {
-                let node = node.read().unwrap();
-                for material in node.find_components::<Material>()
+                let mut node_materials = vec![];
+
                 {
-                    let material_id = material.read().unwrap().id();
-                    materials_to_delete.insert(material_id);
+                    let node = node.read().unwrap();
+
+                    for material in node.find_components::<Material>()
+                    {
+                        let material_id = material.read().unwrap().id();
+                        materials_to_delete.insert(material_id);
+                        node_materials.push(material_id);
+                    }
+                }
+
+                let mut node = node.write().unwrap();
+                for material_id in node_materials
+                {
+                    node.remove_component_by_id(material_id);
                 }
             }
 
@@ -976,7 +988,7 @@ impl Scene
                     }
                 }
 
-                if usage == 1
+                if usage == 0
                 {
                     self.delete_material_by_id(material_id);
                 }
