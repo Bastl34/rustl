@@ -46,6 +46,11 @@ pub trait Component: Any
         self.get_base().id
     }
 
+    fn uuid(&self) -> &String
+    {
+        &self.get_base().uuid
+    }
+
     fn is_enabled(&self) -> bool
     {
         self.get_base().is_enabled
@@ -60,6 +65,8 @@ pub trait Component: Any
 pub struct ComponentBase
 {
     pub id: u64,
+    pub uuid: String,
+
     pub is_enabled: bool,
 
     pub name: String,
@@ -78,11 +85,12 @@ pub struct ComponentBase
 
 impl ComponentBase
 {
-    pub fn new(id: u64, name: String, component_name: String, icon: String) -> ComponentBase
+    pub fn new(id: u64, uuid: String, name: String, component_name: String, icon: String) -> ComponentBase
     {
         ComponentBase
         {
             id,
+            uuid,
             is_enabled: true,
 
             name,
@@ -105,6 +113,8 @@ impl ComponentBase
         ComponentBase
         {
             id,
+            uuid: uuid::Uuid::new_v4().to_string(),
+
             is_enabled: from.is_enabled,
 
             name: from.name.clone(),

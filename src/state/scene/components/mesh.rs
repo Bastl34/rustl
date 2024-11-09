@@ -122,7 +122,7 @@ impl Mesh
 
         let mut mesh = Mesh
         {
-            base: ComponentBase::new(id, name.to_string(), "Mesh".to_string(), "◼".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Mesh".to_string(), "◼".to_string()),
             data: ChangeTracker::new(mesh_data),
 
             morph_target_render_item: None,

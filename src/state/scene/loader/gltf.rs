@@ -102,7 +102,8 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     let node_id = id_manager.write().unwrap().get_next_node_id();
     loaded_ids.push(node_id);
 
-    let root_node = Node::new(node_id, resource_name.as_str());
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let root_node = Node::new(node_id, uuid, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(path.to_string());
 
@@ -215,7 +216,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_directional(light_id, (*name).clone(), pos, dir, color, intensity);
+                        let uuid = uuid::Uuid::new_v4().to_string();
+                        let light = Light::new_directional(light_id, uuid, (*name).clone(), pos, dir, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -227,7 +229,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_point(light_id, (*name).clone(), pos, color, intensity);
+                        let uuid = uuid::Uuid::new_v4().to_string();
+                        let light = Light::new_point(light_id, uuid, (*name).clone(), pos, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -239,7 +242,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_spot(light_id, (*name).clone(), pos, dir, color, outer_cone_angle, intensity);
+                        let uuid = uuid::Uuid::new_v4().to_string();
+                        let light = Light::new_spot(light_id, uuid, (*name).clone(), pos, dir, color, outer_cone_angle, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -276,7 +280,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let mut cam = Camera::new(cam_id, (*name).clone());
+                        let uuid = uuid::Uuid::new_v4().to_string();
+                        let mut cam = Camera::new(cam_id, uuid, (*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
 
                         cam_data.left = -width;
@@ -306,7 +311,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let mut cam = Camera::new(cam_id, (*name).clone());
+                        let uuid = uuid::Uuid::new_v4().to_string();
+                        let mut cam = Camera::new(cam_id, uuid, (*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
 
                         cam_data.fovy = yfov;
@@ -572,7 +578,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 mesh_name = format!("{} {} primitive_{}", node_name, mesh_name, primitive_id);
             }
 
-            let node_arc = Node::new(id, mesh_name.as_str());
+            let uuid = uuid::Uuid::new_v4().to_string();
+            let node_arc = Node::new(id, uuid, mesh_name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
 
@@ -605,7 +612,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                 // add default instance
                 let instance_id = id_manager.write().unwrap().get_next_instance_id();
-                scene_node.create_default_instance(node_arc.clone(), instance_id);
+                let uuid = uuid::Uuid::new_v4().to_string();
+                scene_node.create_default_instance(node_arc.clone(), instance_id, uuid);
 
                 // parent
                 scene_node.parent = Some(parent_node.clone());
@@ -635,8 +643,10 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let name = node.name().unwrap_or("transform node");
             println!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
 
+
             let node_id = id_manager.write().unwrap().get_next_node_id();
-            let scene_node = Node::new(node_id, name);
+            let uuid = uuid::Uuid::new_v4().to_string();
+            let scene_node = Node::new(node_id, uuid, name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
             scene_node.write().unwrap().extras.insert("_json_index", node_index);
 
@@ -1262,7 +1272,9 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             {
                 let tex = texture.read().unwrap();
                 tex_name = tex.name.clone();
-                reflectivity_tex = Texture::new_from_image_channel(tex_id, tex.name.as_str(), &tex, 2, max_texture_resolution);
+
+                let uuid = uuid::Uuid::new_v4().to_string();
+                reflectivity_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 2, max_texture_resolution);
             }
             let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), reflectivity_tex, tex_name.as_str());
 
@@ -1289,9 +1301,10 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             let roughness_tex;
             let tex_name;
             {
+                let uuid = uuid::Uuid::new_v4().to_string();
                 let tex = texture.read().unwrap();
                 tex_name = tex.name.clone();
-                roughness_tex = Texture::new_from_image_channel(tex_id, tex.name.as_str(), &tex, 1, max_texture_resolution);
+                roughness_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 1, max_texture_resolution);
             }
             let tex_arc = insert_texture_or_reuse(scene_id, main_queue.clone(), roughness_tex, tex_name.as_str());
 
@@ -1330,9 +1343,10 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             let ao_tex;
             let tex_name;
             {
+                let uuid = uuid::Uuid::new_v4().to_string();
                 let tex = texture.read().unwrap();
                 tex_name = tex.name.clone();
-                ao_tex = Texture::new_from_image_channel(tex_id, tex.name.as_str(), &tex, 0, max_texture_resolution);
+                ao_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 0, max_texture_resolution);
             }
             let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), ao_tex, tex_name.as_str());
 

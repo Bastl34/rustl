@@ -245,7 +245,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                             {
                                 let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), id);
+                                let uuid = uuid::Uuid::new_v4().to_string();
+                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), id, uuid);
                             }));
                         }
 
@@ -565,6 +566,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
             ui.label(format!("Name: {}", node.name));
             ui.label(format!("Id: {}", node.id));
+            ui.label(format!("UUID: {}", node.uuid));
             ui.label(format!("Source: {:?}", node.source));
 
             if let Some(bounding_box_info) = bounding_box_info
@@ -719,7 +721,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
                 let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                node.write().unwrap().create_default_instance(node.clone(), id);
+                let uuid = uuid::Uuid::new_v4().to_string();
+                node.write().unwrap().create_default_instance(node.clone(), id, uuid);
             }
 
             if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()
@@ -789,6 +792,7 @@ pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut Stat
 
         ui.label(format!("name: {}", instance.name));
         ui.label(format!("id: {}", instance.id));
+        ui.label(format!("UUID: {}", instance.uuid));
 
         if let Some(bounding_box_info) = bounding_box_info
         {
@@ -920,6 +924,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             }
 
             let component_id;
+            let uuid;
             let name;
             let component_title;
             let component_name;
@@ -934,6 +939,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 component_name = base.component_name.clone();
                 name = base.name.clone();
                 component_id = component.id();
+                uuid = component.uuid().clone();
+
                 from_file = base.from_file;
 
                 duplicatable = component.duplicatable();
@@ -1023,6 +1030,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             |ui|
             {
                 ui.label(format!("Id: {}", component_id));
+                ui.label(format!("UUID: {}", uuid));
                 ui.label(format!("Name: {}", name));
 
                 // filter out current component

@@ -105,7 +105,7 @@ impl Animation
     {
         Animation
         {
-            base: ComponentBase::new(id, name.to_string(), "Animation".to_string(), "🎞".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation".to_string(), "🎞".to_string()),
 
             looped: true,
             reverse: false,
@@ -1029,8 +1029,6 @@ impl Component for Animation
                 {
                     continue;
                 }
-
-                let joint_id = joint.id();
 
                 let component_data = joint.get_data_mut().get_mut();
 

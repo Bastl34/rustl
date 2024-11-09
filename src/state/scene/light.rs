@@ -21,9 +21,13 @@ pub enum LightType
 
 pub struct Light
 {
-    pub enabled: bool,
-    pub name: String,
     pub id: u64,
+    pub uuid: String,
+
+    pub name: String,
+
+    pub enabled: bool,
+
     pub pos: Point3<f32>,
     pub dir: Vector3<f32>,
     pub color: Vector3<f32>,
@@ -36,13 +40,17 @@ pub struct Light
 
 impl Light
 {
-    pub fn new_point(id: u64, name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_point(id: u64, uuid: String, name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
-            enabled: true,
-            id: id,
+            id,
+            uuid,
+
             name: name,
+
+            enabled: true,
+
             pos: pos,
             dir: Vector3::<f32>::new(0.0, -1.0, 0.0),
             color: color,
@@ -54,13 +62,17 @@ impl Light
         }
     }
 
-    pub fn new_directional(id: u64, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_directional(id: u64, uuid: String, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
-            enabled: true,
-            id: id,
+            id,
+            uuid,
+
             name: name,
+
+            enabled: true,
+
             pos: pos,
             dir: dir,
             color: color,
@@ -72,13 +84,17 @@ impl Light
         }
     }
 
-    pub fn new_spot(id: u64, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> Light
+    pub fn new_spot(id: u64, uuid: String, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> Light
     {
         Self
         {
-            enabled: true,
-            id: id,
+            id,
+            uuid,
+
             name: name,
+
+            enabled: true,
+
             pos: pos,
             dir: dir,
             color: color,
@@ -90,13 +106,17 @@ impl Light
         }
     }
 
-    pub fn new_hemi(id: u64, name: String, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_hemi(id: u64, uuid: String, name: String, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
-            enabled: true,
-            id: id,
+            id,
+            uuid,
+
             name: name,
+
+            enabled: true,
+
             pos: Point3::<f32>::new(0.0, 0.0, 0.0),
             dir: dir,
             color: color,

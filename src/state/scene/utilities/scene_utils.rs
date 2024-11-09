@@ -82,7 +82,8 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
     }
 
     // ***** if not found -> load *****
-    let texture = Texture::new(texture_id.read().unwrap().unwrap(), name, &image_bytes, extension, max_tex_res);
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let texture = Texture::new(texture_id.read().unwrap().unwrap(), uuid, name, &image_bytes, extension, max_tex_res);
     let arc = Arc::new(RwLock::new(Box::new(texture)));
 
     // ***** add to scene textures *****
@@ -213,9 +214,11 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                 // x
                 {
                     let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
                         id,
+                        uuid,
                         format!("grid_x_{}", pos),
                         grid_arc.clone()
                     );
@@ -224,6 +227,7 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                     let scale = if is_almost_integer(z_pos) { integer_grid_line_scale } else { 1.0 };
 
                     let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let uuid = uuid::Uuid::new_v4().to_string();
                     let mut transformation = Transformation::identity(component_id, "Transform");
                     transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, z_pos));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
@@ -237,9 +241,11 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                 // y
                 {
                     let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
                         id,
+                        uuid,
                         format!("grid_y_{}", pos),
                         grid_arc.clone()
                     );
@@ -301,7 +307,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
             // x (red)
             {
                 let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let mut instance = Instance::new(id, "grid_origin_x".to_string(), grid_arc.clone());
+                let uuid = uuid::Uuid::new_v4().to_string();
+                let mut instance = Instance::new(id, uuid, "grid_origin_x".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -319,7 +326,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
             // y (green)
             {
                 let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let mut instance = Instance::new(id, "grid_origin_y".to_string(), grid_arc.clone());
+                let uuid = uuid::Uuid::new_v4().to_string();
+                let mut instance = Instance::new(id, uuid, "grid_origin_y".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -338,7 +346,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
             // z (blue)
             {
                 let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let mut instance = Instance::new(id, "grid_origin_z".to_string(), grid_arc.clone());
+                let uuid = uuid::Uuid::new_v4().to_string();
+                let mut instance = Instance::new(id, uuid, "grid_origin_z".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -393,7 +402,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
 
             scene.add_material(material_id, &plane_material_arc.clone());
 
-            let plane_node = Node::new(scene.id_manager.write().unwrap().get_next_node_id(), "plane");
+            let uuid = uuid::Uuid::new_v4().to_string();
+            let plane_node = Node::new(scene.id_manager.write().unwrap().get_next_node_id(), uuid, "plane");
             {
                 {
                     let mut plane_node = plane_node.write().unwrap();
@@ -402,8 +412,9 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                 }
 
                 let instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
+                let uuid = uuid::Uuid::new_v4().to_string();
 
-                plane_node.write().unwrap().create_default_instance(plane_node.clone(), instance_id);
+                plane_node.write().unwrap().create_default_instance(plane_node.clone(), instance_id, uuid);
                 plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
             }
 
@@ -491,12 +502,22 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
     let path: String = path.to_string();
     let node_name = node_name.to_string();
 
+    let filename;
+    let extension;
+    {
+        let path = Path::new(&path);
+        filename = String::from(path.file_name().unwrap().to_string_lossy());
+        extension = String::from(path.extension().unwrap().to_string_lossy());
+    }
+
     let audio_device = audio_device.clone();
     spawn_thread(move ||
     {
         let audio_device = audio_device.clone();
         let path = path.clone();
         let node_name = node_name.clone();
+        let filename = filename.clone();
+        let extension = extension.clone();
 
         execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
         {
@@ -504,7 +525,8 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
             if let Ok(sound_source_bytes) = sound_source_bytes
             {
                 let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
-                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, "m16", audio_device.clone(), &sound_source_bytes, Some("ogg".to_string())))));
+                let uuid = uuid::Uuid::new_v4().to_string();
+                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, uuid, filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
                 let sound_source_clone = sound_source.clone();
 
                 let hash = sound_source.read().unwrap().hash.clone();

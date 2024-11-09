@@ -8,6 +8,8 @@ pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 pub struct SoundSource
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a sound already loaded (in dynamic textires - this may does not get updates)
@@ -47,7 +49,7 @@ impl Decodable for SoundSource
 
 impl SoundSource
 {
-    pub fn new(id: u64, name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource
+    pub fn new(id: u64, uuid: String, name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource
     {
         let bytes = sound_bytes.clone();
         let hash = helper::crypto::get_hash_from_byte_vec(sound_bytes);
@@ -55,6 +57,8 @@ impl SoundSource
         SoundSource
         {
             id,
+            uuid,
+
             name: name.to_string(),
             extension,
             hash,

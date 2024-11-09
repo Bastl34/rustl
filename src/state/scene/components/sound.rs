@@ -53,7 +53,7 @@ impl Sound
     {
         let mut sound = Sound
         {
-            base: ComponentBase::new(id, name.to_string(), "Sound".to_string(), "🔊".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
             sound_source: Some(sound_source.clone()),
             duration: 0.0,
@@ -85,7 +85,7 @@ impl Sound
     {
         let sound = Sound
         {
-            base: ComponentBase::new(id, name.to_string(), "Sound".to_string(), "🔊".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
             sound_source: None,
             duration: 0.0,

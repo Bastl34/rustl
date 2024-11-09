@@ -137,7 +137,8 @@ impl Editor
                 if let (Some(scene), Some(node), _) = self.editor_state.get_selected_node(state)
                 {
                     let new_instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
-                    node.write().unwrap().create_default_instance(node.clone(), new_instance_id);
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    node.write().unwrap().create_default_instance(node.clone(), new_instance_id, uuid);
                 }
             }
         }
@@ -1557,7 +1558,8 @@ impl Editor
                 if scene.lights.get_ref().len() == 0
                 {
                     let light_id = scene.id_manager.write().unwrap().get_next_light_id();
-                    let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    let light = Light::new_point(light_id, uuid, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                 }
 
@@ -1565,7 +1567,8 @@ impl Editor
                 if scene.cameras.len() == 0
                 {
                     let id = scene.id_manager.write().unwrap().get_next_camera_id();
-                    let mut cam = Camera::new(id, "Cam".to_string());
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    let mut cam = Camera::new(id, uuid, "Cam".to_string());
                     let cam_data = cam.get_data_mut().get_mut();
                     cam_data.fovy = 45.0f32.to_radians();
                     cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);

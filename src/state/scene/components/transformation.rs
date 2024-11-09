@@ -68,7 +68,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -106,7 +106,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -144,7 +144,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,

@@ -61,6 +61,8 @@ pub struct TextureData
 pub struct Texture
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
 
@@ -99,6 +101,8 @@ impl Texture
         Texture
         {
             id: 0,
+            uuid: uuid::Uuid::new_v4().to_string(),
+
             name: "empty".to_string(),
             hash: "".to_string(),
 
@@ -109,7 +113,7 @@ impl Texture
         }
     }
 
-    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
+    pub fn new(id: u64, uuid: String, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
     {
         let image;
 
@@ -165,6 +169,8 @@ impl Texture
         Texture
         {
             id,
+            uuid,
+
             name: name.to_string(),
             hash,
 
@@ -175,7 +181,7 @@ impl Texture
         }
     }
 
-    pub fn new_from_image_channel(id: u64, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
+    pub fn new_from_image_channel(id: u64, uuid: String, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
     {
         let width = texture.width();
         let height = texture.height();
@@ -229,6 +235,8 @@ impl Texture
         Texture
         {
             id,
+            uuid,
+
             name: name.to_string(),
             hash,
 

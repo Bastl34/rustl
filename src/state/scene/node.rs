@@ -31,6 +31,8 @@ pub struct NodeUpdateResult
 pub struct Node
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub visible: bool,
     pub locked: bool,
@@ -62,11 +64,13 @@ pub struct Node
 
 impl Node
 {
-    pub fn new(id: u64, name: &str) -> NodeItem
+    pub fn new(id: u64, uuid: String, name: &str) -> NodeItem
     {
         let node = Self
         {
             id: id,
+            uuid,
+
             name: name.to_string(),
             visible: true,
             locked: false,
@@ -1179,11 +1183,12 @@ impl Node
         !is_not_empty
     }
 
-    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64, uuid: String)
     {
         let instance = Instance::new
         (
             instance_id,
+            uuid,
             "instance".to_string(),
             self_node_item
         );
@@ -1373,7 +1378,7 @@ impl Node
         }
 
         self.clear_instances();
-        self.create_default_instance(node, instance_id);
+        self.create_default_instance(node, instance_id, uuid::Uuid::new_v4().to_string());
 
         true
     }

@@ -33,6 +33,8 @@ pub struct InstanceData
 pub struct Instance
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub pickable: bool,
 
@@ -46,12 +48,14 @@ pub struct Instance
 
 impl Instance
 {
-    pub fn new(id: u64, name: String, node: NodeItem) -> Instance
+    pub fn new(id: u64, uuid: String, name: String, node: NodeItem) -> Instance
     {
         let instance = Instance
         {
-            id: id,
-            name: name,
+            id,
+            uuid,
+
+            name,
             pickable: true,
 
             node: node,
@@ -79,12 +83,14 @@ impl Instance
         instance
     }
 
-    pub fn new_with_transform(id: u64, name: String, node: NodeItem, transform: Transformation) -> Instance
+    pub fn new_with_transform(id: u64, uuid: String, name: String, node: NodeItem, transform: Transformation) -> Instance
     {
         let mut instance = Instance
         {
-            id: id,
-            name: name,
+            id,
+            uuid,
+
+            name,
             pickable: true,
 
             node: node,

@@ -28,7 +28,7 @@ regex = "1.11"
 rodio = "0.20"
 gilrs = { version = "0.11", features = ["wgi"]}
 take_mut = "0.2"
-uuid = "1.11"
+uuid = {version = "1.11", features = ["v4"] }
 
 parry3d = "0.17"
 bvh = "0.10.0"

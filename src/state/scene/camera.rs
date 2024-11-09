@@ -94,6 +94,8 @@ pub struct CameraData
 pub struct Camera
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub enabled: bool,
 
@@ -108,11 +110,13 @@ pub struct Camera
 
 impl Camera
 {
-    pub fn new(id: u64, name: String) -> Camera
+    pub fn new(id: u64, uuid: String, name: String) -> Camera
     {
         Camera
         {
-            id: id,
+            id,
+            uuid,
+
             name: name,
             enabled: true,
 

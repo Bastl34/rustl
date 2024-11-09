@@ -204,7 +204,8 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
 
-            let mut scene = crate::state::scene::scene::Scene::new(0, "main scene", state.audio_device.clone());
+            let uuid = uuid::Uuid::new_v4().to_string();
+            let mut scene = crate::state::scene::scene::Scene::new(0, uuid, "main scene", state.audio_device.clone());
             scene.add_defaults();
 
             // ********** cam **********
@@ -657,7 +658,8 @@ impl MainInterface
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
-                    let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    let light = Light::new_point(light_id, uuid, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
                     scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
@@ -686,7 +688,8 @@ impl MainInterface
                         if scene.cameras.len() == 0
                         {
                             let id = scene.id_manager.write().unwrap().get_next_camera_id();
-                            let mut cam = Camera::new(id, "Cam".to_string());
+                            let uuid = uuid::Uuid::new_v4().to_string();
+                            let mut cam = Camera::new(id, uuid, "Cam".to_string());
 
                             cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
