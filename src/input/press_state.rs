@@ -34,7 +34,7 @@ pub struct PressState
 
     pub first_action_frame: u64,
 
-    holding_state: bool
+    holding_state: bool,
 }
 
 impl PressState
@@ -116,6 +116,7 @@ impl PressState
         else
         {
             self.holding_state = false;
+            self.holding_value = 0.0;
             self.first_action_time = 0;
             self.first_action_frame = 0;
             self.last_press_time = 0;
@@ -181,7 +182,7 @@ impl PressState
             }
         }
         // do not wait until key is released -> for instant key press action
-        else if (!wait_until_key_release || self.reset_on_pressed) && self.holding_state
+        else if (!wait_until_key_release || self.reset_on_pressed) && self.holding_state && self.holding_time > 0
         {
             if self.last_press_time + self.min_diff_time < get_millis()
             {
@@ -198,6 +199,11 @@ impl PressState
         }
 
         PressStateType::NotPressed
+    }
+
+    pub fn was_consumed(&self) -> bool
+    {
+        self.holding() && self.holding_time == 0
     }
 
     pub fn holding(&self) -> bool

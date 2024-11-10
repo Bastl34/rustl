@@ -152,7 +152,7 @@ impl Editor
         if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
         {
             // copy
-            if state.input_manager.keyboard.is_pressed(Key::C)
+            if state.input_manager.keyboard.is_pressed_no_wait(Key::C)
             {
                 let (scene, node, _) = self.editor_state.get_selected_node(state);
 
@@ -171,13 +171,32 @@ impl Editor
             }
 
             // paste
-            if state.input_manager.keyboard.is_pressed(Key::V)
+            if state.input_manager.keyboard.is_pressed_no_wait(Key::V)
             {
                 if let Some(copy_asset) = &self.editor_state.copy_asset
                 {
                     let pos = state.input_manager.mouse.point.pos.unwrap();
                     self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y));
                 }
+            }
+        }
+        if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.input_manager.keyboard.is_pressed_no_wait(Key::D)
+        {
+            // duplicate selected object
+            let (scene, node, _) = self.editor_state.get_selected_node(state);
+
+            if scene.is_none() || node.is_none()
+            {
+                return;
+            }
+
+            let node = node.unwrap();
+            let node = node.read().unwrap();
+
+            if let Some(source) = &node.source
+            {
+                let pos = state.input_manager.mouse.point.pos.unwrap();
+                self.load_asset(state, source.clone(), Point2::<f32>::new(pos.x, pos.y));
             }
         }
     }
@@ -189,6 +208,35 @@ impl Editor
         // create instance
         let move_up = state.input_manager.keyboard.is_pressed(Key::Plus);
         let move_down = state.input_manager.keyboard.is_pressed(Key::Minus);
+
+        let mut move_grid_y_to = None;
+
+        if state.input_manager.keyboard.is_pressed(Key::Numpad8)
+        {
+            if let (Some(_), Some(node), instance_id) = self.editor_state.get_selected_node(state)
+            {
+                let node = node.read().unwrap();
+                if let Some(bbox) = node.get_world_bounding_info(instance_id, true, None)
+                {
+                    move_grid_y_to = Some(bbox.1.y);
+                }
+            }
+        }
+        else if state.input_manager.keyboard.is_pressed(Key::Numpad2)
+        {
+            if let (Some(_), Some(node), instance_id) = self.editor_state.get_selected_node(state)
+            {
+                let node = node.read().unwrap();
+                if let Some(bbox) = node.get_world_bounding_info(instance_id, true, None)
+                {
+                    move_grid_y_to = Some(bbox.0.y);
+                }
+            }
+        }
+        else if state.input_manager.keyboard.is_pressed(Key::Numpad0)
+        {
+            move_grid_y_to = Some(0.0);
+        }
 
         for scene in &mut state.scenes
         {
@@ -244,8 +292,9 @@ impl Editor
 
                     pos.y = transformation.get_data().position.y;
 
-                    if move_up { pos.y += grid_size; }
-                    if move_down { pos.y -= grid_size; }
+                    if let Some(move_grid_y_to) = move_grid_y_to { pos.y = move_grid_y_to; }
+                    else if move_up { pos.y += grid_size; }
+                    else if move_down { pos.y -= grid_size; }
 
                     if !approx_equal_vec(&pos, &transformation.get_data().position)
                     {

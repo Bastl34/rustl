@@ -33,11 +33,12 @@ pub struct Node
     pub id: u64,
     pub uuid: String,
 
+    pub source: Option<String>,
+
     pub name: String,
     pub visible: bool,
     pub locked: bool,
     pub root_node: bool,
-    pub source: Option<String>,
 
     pub settings: NodeSettings,
 
@@ -71,11 +72,12 @@ impl Node
             id: id,
             uuid,
 
+            source: None,
+
             name: name.to_string(),
             visible: true,
             locked: false,
             root_node: false,
-            source: None,
 
             settings: NodeSettings
             {

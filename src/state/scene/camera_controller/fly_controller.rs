@@ -168,19 +168,19 @@ impl CameraController for FlyController
             let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
             if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
             {
-                if input_manager.keyboard.is_holding(Key::W)
+                if input_manager.keyboard.is_holding_and_not_consumed(Key::W)
                 {
                     movement.z = 1.0;
                 }
-                if input_manager.keyboard.is_holding(Key::S)
+                if input_manager.keyboard.is_holding_and_not_consumed(Key::S)
                 {
                     movement.z = -1.0;
                 }
-                if input_manager.keyboard.is_holding(Key::D)
+                if input_manager.keyboard.is_holding_and_not_consumed(Key::D)
                 {
                     movement.x = -1.0;
                 }
-                if input_manager.keyboard.is_holding(Key::A)
+                if input_manager.keyboard.is_holding_and_not_consumed(Key::A)
                 {
                     movement.x = 1.0;
                 }
@@ -188,8 +188,8 @@ impl CameraController for FlyController
                 {
                     movement.y = 1.0;
                 }
-                //if input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
-                if input_manager.keyboard.is_holding(Key::C)
+                //if input_manager.keyboard.is_holding_and_not_consumed(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+                if input_manager.keyboard.is_holding_and_not_consumed(Key::C)
                 {
                     movement.y = -1.0;
                 }

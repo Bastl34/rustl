@@ -326,7 +326,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             scene.delete_node_by_id(node_id, false, false);
                         }));
                     }
-                    if ui.button("🗑 Delete + materials/textures").clicked()
+
+                    if ui.button(RichText::new("🗑 Delete + materials/textures").color(Color32::LIGHT_RED)).clicked()
                     {
                         ui.close_menu();
 

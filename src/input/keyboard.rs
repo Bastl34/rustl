@@ -410,7 +410,7 @@ pub fn get_keys_as_string_vec() -> Vec<String>
     key_vec.iter().map(|key| { key.to_string() }).collect::<Vec<_>>()
 }
 
-#[derive(EnumIter, Debug, PartialEq, Display)]
+#[derive(EnumIter, Debug, Clone, Copy, PartialEq, Display)]
 pub enum Modifier
 {
     LeftShift = 0,
@@ -508,11 +508,29 @@ impl Keyboard
         self.keys[key as usize].holding()
     }
 
+    pub fn is_holding_and_not_consumed(&self, key: Key) -> bool
+    {
+        self.keys[key as usize].holding() && !self.keys[key as usize].was_consumed()
+    }
+
     pub fn is_holding_by_keys(&self, keys: &Vec<Key>) -> bool
     {
         for key in keys
         {
             if self.keys[*key as usize].holding()
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn was_consumed_by_keys(&self, keys: &Vec<Key>) -> bool
+    {
+        for key in keys
+        {
+            if self.keys[*key as usize].was_consumed()
             {
                 return true;
             }
@@ -572,5 +590,10 @@ impl Keyboard
     pub fn has_input(&self) -> bool
     {
         self.is_any_key_holding()
+    }
+
+    pub fn was_consumed(&mut self, key: Key) -> bool
+    {
+        self.keys[key as usize].was_consumed()
     }
 }
