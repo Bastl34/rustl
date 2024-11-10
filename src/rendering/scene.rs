@@ -77,7 +77,7 @@ impl Scene
     pub fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
         // shader source
-        let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
+        let color_shader = resources::load_string("shader/base.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
