@@ -17,10 +17,10 @@ pub struct MeshData
     pub vertices: Vec<Point3<f32>>,
     pub indices: Vec<[u32; 3]>,
 
+    pub uvs_0: Vec<Point2<f32>>,
     pub uvs_1: Vec<Point2<f32>>,
     pub uvs_2: Vec<Point2<f32>>,
     pub uvs_3: Vec<Point2<f32>>,
-    pub uvs_4: Vec<Point2<f32>>,
     pub uv_indices: Vec<[u32; 3]>,
 
     pub normals: Vec<Vector3<f32>>,
@@ -47,10 +47,10 @@ impl MeshData
         self.vertices.clear();
         self.indices.clear();
 
+        self.uvs_0.clear();
         self.uvs_1.clear();
         self.uvs_2.clear();
         self.uvs_3.clear();
-        self.uvs_4.clear();
         self.uv_indices.clear();
 
         self.normals.clear();
@@ -97,10 +97,10 @@ impl Mesh
             vertices: vertices,
             indices: indices,
 
-            uvs_1: uvs,
+            uvs_0: uvs,
+            uvs_1: vec![],
             uvs_2: vec![],
             uvs_3: vec![],
-            uvs_4: vec![],
             uv_indices: uv_indices,
 
             normals: normals,
@@ -441,7 +441,7 @@ impl Mesh
 
         let vertices_offset = data.vertices.len() as u32;
         let normals_offset = data.normals.len() as u32;
-        let uv_offset = data.uvs_1.len() as u32;
+        let uv_offset = data.uvs_0.len() as u32;
 
         // vertices and indices
         data.vertices.extend(&mesh_data.vertices);
@@ -455,10 +455,10 @@ impl Mesh
         }
 
         // uvs and uv indices (1)
+        data.uvs_0.extend(&mesh_data.uvs_0);
         data.uvs_1.extend(&mesh_data.uvs_1);
         data.uvs_2.extend(&mesh_data.uvs_2);
         data.uvs_3.extend(&mesh_data.uvs_3);
-        data.uvs_4.extend(&mesh_data.uvs_4);
 
         for i in &mesh_data.uv_indices
         {
@@ -504,10 +504,10 @@ impl Mesh
             cloned_vertices = data.vertices.clone();
             cloned_indices = data.indices.clone();
 
-            cloned_uvs_1 = data.uvs_1.clone();
-            cloned_uvs_2 = data.uvs_2.clone();
-            cloned_uvs_3 = data.uvs_3.clone();
-            cloned_uvs_4 = data.uvs_4.clone();
+            cloned_uvs_1 = data.uvs_0.clone();
+            cloned_uvs_2 = data.uvs_1.clone();
+            cloned_uvs_3 = data.uvs_2.clone();
+            cloned_uvs_4 = data.uvs_3.clone();
             cloned_uv_indices = data.uv_indices.clone();
 
             cloned_normals = data.normals.clone();
@@ -527,7 +527,7 @@ impl Mesh
 
                 let vertices_offset = data.vertices.len() as u32;
                 let normals_offset = data.normals.len() as u32;
-                let uv_offset = data.uvs_1.len() as u32;
+                let uv_offset = data.uvs_0.len() as u32;
 
                 for vertex in &cloned_vertices
                 {
@@ -552,10 +552,10 @@ impl Mesh
                     data.indices.push([i0, i1, i2]);
                 }
 
-                data.uvs_1.extend(&cloned_uvs_1);
-                data.uvs_2.extend(&cloned_uvs_2);
-                data.uvs_3.extend(&cloned_uvs_3);
-                data.uvs_4.extend(&cloned_uvs_4);
+                data.uvs_0.extend(&cloned_uvs_1);
+                data.uvs_1.extend(&cloned_uvs_2);
+                data.uvs_2.extend(&cloned_uvs_3);
+                data.uvs_3.extend(&cloned_uvs_4);
 
                 for i in &cloned_uv_indices
                 {
@@ -670,10 +670,10 @@ impl Component for Mesh
             ui.label(format!(" ⚫ vertices: {}", data.vertices.len()));
             ui.label(format!(" ⚫ indices: {}", data.indices.len()));
 
+            ui.label(format!(" ⚫ uvs_0: {}", data.uvs_0.len()));
             ui.label(format!(" ⚫ uvs_1: {}", data.uvs_1.len()));
             ui.label(format!(" ⚫ uvs_2: {}", data.uvs_2.len()));
             ui.label(format!(" ⚫ uvs_3: {}", data.uvs_3.len()));
-            ui.label(format!(" ⚫ uvs_4: {}", data.uvs_4.len()));
             ui.label(format!(" ⚫ uv_indices: {}", data.uv_indices.len()));
 
             ui.label(format!(" ⚫ normals: {}", data.normals.len()));

@@ -44,31 +44,31 @@ struct VertexInput
 {
     @builtin(vertex_index) index: u32,
     @location(0) position: vec3<f32>,
-    @location(1) tex_coords: vec2<f32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) tangent: vec3<f32>,
-    @location(4) bitangent: vec3<f32>,
+    @location(1) tex_coords_0_1: vec4<f32>,
+    @location(2) tex_coords_2_3: vec4<f32>,
+    @location(3) normal: vec3<f32>,
+    @location(4) tangent: vec3<f32>,
+    @location(5) bitangent: vec3<f32>,
 
-    @location(5) joints: vec4<u32>,
-    @location(6) weights: vec4<f32>,
+    @location(6) joints: vec4<u32>,
+    @location(7) weights: vec4<f32>,
 };
 
 struct InstanceInput
 {
-    @location(7) model_matrix_0: vec4<f32>,
-    @location(8) model_matrix_1: vec4<f32>,
-    @location(9) model_matrix_2: vec4<f32>,
-    @location(10) model_matrix_3: vec4<f32>,
+    @location(8) model_matrix_0: vec4<f32>,
+    @location(9) model_matrix_1: vec4<f32>,
+    @location(10) model_matrix_2: vec4<f32>,
+    @location(11) model_matrix_3: vec4<f32>,
 
-    @location(11) color: vec4<f32>,
-    @location(12) highlight: f32,
-    @location(13) locked: f32,
+    @location(12) color: vec4<f32>,
+    @location(13) highlight: f32,
+    @location(14) locked: f32,
 };
 
 struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
 };
 
 // ****************************** inputs / bindings ******************************
@@ -153,7 +153,6 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     var out: VertexOutput;
 
-    out.tex_coords = model.tex_coords;
     out.clip_position = camera.view_proj * world_position;
 
     return out;

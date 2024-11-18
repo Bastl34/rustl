@@ -4,7 +4,7 @@ use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collection
 use gltf::{Gltf, texture, animation::util::ReadOutputs, iter::{Animations, Skins}};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use nalgebra::{DimRange, Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector3, Vector4};
+use nalgebra::{DimRange, Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
@@ -495,9 +495,9 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             // mesh component
             let component_id = id_manager.write().unwrap().get_next_component_id();
             let mut mesh_component: Mesh = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
-            mesh_component.get_data_mut().get_mut().uvs_2 = uvs2;
-            mesh_component.get_data_mut().get_mut().uvs_3 = uvs3;
-            mesh_component.get_data_mut().get_mut().uvs_4 = uvs4;
+            mesh_component.get_data_mut().get_mut().uvs_1 = uvs2;
+            mesh_component.get_data_mut().get_mut().uvs_2 = uvs3;
+            mesh_component.get_data_mut().get_mut().uvs_3 = uvs4;
 
             if joints.len() == weights.len()
             {
@@ -1139,6 +1139,22 @@ pub fn get_path(item_path: &String, gltf_path: &str) -> String
     item_path.replace("\\", "/")
 }
 
+
+fn apply_texture_transform(transform: &gltf::texture::TextureTransform, tex: Arc<RwLock<Box<Texture>>>)
+{
+    let mut tex = tex.write().unwrap();
+    let tex_data = tex.get_data_mut().get_mut();
+
+    tex_data.transform.offset = Vector2::<f32>::new(transform.offset()[0], transform.offset()[1]);
+    tex_data.transform.scale = Vector2::<f32>::new(transform.scale()[0], transform.scale()[1]);
+    tex_data.transform.rotation = transform.rotation();
+
+    if let Some(uv_index) = transform.tex_coord()
+    {
+        tex_data.transform.uv_index = uv_index;
+    }
+}
+
 fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_texture: &gltf::Texture<'a>, create_mipmaps: bool)
 {
     let mut tex = tex.write().unwrap();
@@ -1218,6 +1234,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
         {
             set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Base);
             data.texture_base = Some(TextureState::new(texture));
+
+            if let Some(transform) = tex.texture_transform()
+            {
+                let tex = &data.texture_base.as_mut().unwrap().item;
+
+                apply_texture_transform(&transform, tex.clone());
+            }
         }
     }
 
@@ -1228,6 +1251,15 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
         {
             set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Normal);
             data.texture_normal = Some(TextureState::new(texture));
+
+            /*
+            // uncomment when this is merged: https://github.com/gltf-rs/gltf/pull/394
+            if let Some(transform) = tex.texture_transform()
+            {
+                let tex = &data.texture_normal.as_mut().unwrap().item;
+                apply_texture_transform(&transform, tex.clone());
+            }
+            */
         }
     }
 
@@ -1247,6 +1279,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             {
                 set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Specular);
                 data.texture_specular = Some(TextureState::new(texture));
+
+                if let Some(transform) = specular_tex.texture_transform()
+                {
+                    let tex = &data.texture_specular.as_mut().unwrap().item;
+
+                    apply_texture_transform(&transform, tex.clone());
+                }
             }
         }
     }
@@ -1284,6 +1323,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Reflectivity);
             data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
+            if let Some(transform) = metallic_roughness_tex.texture_transform()
+            {
+                let tex = &data.texture_reflectivity.as_mut().unwrap().item;
+
+                apply_texture_transform(&transform, tex.clone());
+            }
+
             // add texture to clearable textures
             clear_textures.push(texture.clone());
         }
@@ -1314,6 +1360,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Roughness);
             data.texture_roughness = Some(TextureState::new(tex_arc));
 
+            if let Some(transform) = metallic_roughness_tex.texture_transform()
+            {
+                let tex = &data.texture_roughness.as_mut().unwrap().item;
+
+                apply_texture_transform(&transform, tex.clone());
+            }
+
             // add texture to clearable textures
             clear_textures.push(texture.clone());
         }
@@ -1329,6 +1382,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
         {
             set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientEmissive);
             data.texture_ambient = Some(TextureState::new(texture));
+
+            if let Some(transform) = tex.texture_transform()
+            {
+                let tex = &data.texture_ambient.as_mut().unwrap().item;
+
+                apply_texture_transform(&transform, tex.clone());
+            }
         }
     }
 
@@ -1355,6 +1415,15 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
 
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientOcclusion);
             data.texture_ambient_occlusion = Some(TextureState::new(tex_arc));
+
+            /*
+            // uncomment when this is merged: https://github.com/gltf-rs/gltf/pull/394
+            if let Some(transform) = ao_gltf_tex.texture_transform()
+            {
+                let tex = &data.texture_ambient_occlusion.as_mut().unwrap().item;
+                apply_texture_transform(&transform, tex.clone());
+            }
+            */
 
             // add texture to clearable textures
             clear_textures.push(texture.clone());

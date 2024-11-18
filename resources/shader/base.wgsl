@@ -73,43 +73,45 @@ struct VertexInput
 {
     @builtin(vertex_index) index: u32,
     @location(0) position: vec3<f32>,
-    @location(1) tex_coords: vec2<f32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) tangent: vec3<f32>,
-    @location(4) bitangent: vec3<f32>,
+    @location(1) tex_coords_0_1: vec4<f32>,
+    @location(2) tex_coords_2_3: vec4<f32>,
+    @location(3) normal: vec3<f32>,
+    @location(4) tangent: vec3<f32>,
+    @location(5) bitangent: vec3<f32>,
 
-    @location(5) joints: vec4<u32>,
-    @location(6) weights: vec4<f32>,
+    @location(6) joints: vec4<u32>,
+    @location(7) weights: vec4<f32>,
 };
 
 struct InstanceInput
 {
-    @location(7) model_matrix_0: vec4<f32>,
-    @location(8) model_matrix_1: vec4<f32>,
-    @location(9) model_matrix_2: vec4<f32>,
-    @location(10) model_matrix_3: vec4<f32>,
+    @location(8) model_matrix_0: vec4<f32>,
+    @location(9) model_matrix_1: vec4<f32>,
+    @location(10) model_matrix_2: vec4<f32>,
+    @location(11) model_matrix_3: vec4<f32>,
 
-    @location(11) color: vec4<f32>,
-    @location(12) highlight: f32,
-    @location(13) locked: f32,
+    @location(12) color: vec4<f32>,
+    @location(13) highlight: f32,
+    @location(14) locked: f32,
 };
 
 struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
-    @location(1) position: vec3<f32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) bitangent: vec3<f32>,
-    @location(4) tangent: vec3<f32>,
+    @location(0) tex_coords_0_1: vec4<f32>,
+    @location(1) tex_coords_2_3: vec4<f32>,
+    @location(2) position: vec3<f32>,
+    @location(3) normal: vec3<f32>,
+    @location(4) bitangent: vec3<f32>,
+    @location(5) tangent: vec3<f32>,
 
-    @location(5) view_dir: vec3<f32>,
+    @location(6) view_dir: vec3<f32>,
 
-    @location(6) color: vec4<f32>,
-    @location(7) highlight: f32,
-    @location(8) locked: f32,
+    @location(7) color: vec4<f32>,
+    @location(8) highlight: f32,
+    @location(9) locked: f32,
 
-    @location(9) weights: vec4<f32>, // just for debugging
+    @location(10) weights: vec4<f32>, // just for debugging
 };
 
 // ****************************** inputs / bindings ******************************
@@ -305,7 +307,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
-    out.tex_coords = model.tex_coords;
+    out.tex_coords_0_1 = model.tex_coords_0_1;
+    out.tex_coords_2_3 = model.tex_coords_2_3;
 
     out.position = world_position.xyz / world_position.w;
     out.normal = normal;
@@ -325,36 +328,56 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
 // ****************************** fragment ******************************
 
+struct TextureTransform
+{
+    @location(0) offset: vec2<f32>,
+    @location(1) scale: vec2<f32>,
+    @location(2) rotation: vec3<f32>,
+    @location(3) uv_index: u32,
+};
+
 @group(0) @binding(0)
 var<uniform> material: MaterialUniform;
 
 @group(0) @binding(1) var t_ambient: texture_2d<f32>;
 @group(0) @binding(2) var s_ambient: sampler;
+
 @group(0) @binding(3) var t_base: texture_2d<f32>;
 @group(0) @binding(4) var s_base: sampler;
+
 @group(0) @binding(5) var t_specular: texture_2d<f32>;
 @group(0) @binding(6) var s_specular: sampler;
+
 @group(0) @binding(7) var t_normal: texture_2d<f32>;
 @group(0) @binding(8) var s_normal: sampler;
+
 @group(0) @binding(9) var t_alpha: texture_2d<f32>;
 @group(0) @binding(10) var s_alpha: sampler;
+
 @group(0) @binding(11) var t_roughness: texture_2d<f32>;
 @group(0) @binding(12) var s_roughness: sampler;
+
 @group(0) @binding(13) var t_ambient_occlusion: texture_2d<f32>;
 @group(0) @binding(14) var s_ambient_occlusion: sampler;
+
 @group(0) @binding(15) var t_reflectivity: texture_2d<f32>;
 @group(0) @binding(16) var s_reflectivity: sampler;
+
 @group(0) @binding(17) var t_shininess: texture_2d<f32>;
 @group(0) @binding(18) var s_shininess: sampler;
+
 @group(0) @binding(19) var t_environment: texture_2d<f32>;
 @group(0) @binding(20) var s_environment: sampler;
 
 @group(0) @binding(21) var t_custom0: texture_2d<f32>;
 @group(0) @binding(22) var s_custom0: sampler;
+
 @group(0) @binding(23) var t_custom1: texture_2d<f32>;
 @group(0) @binding(24) var s_custom1: sampler;
+
 @group(0) @binding(25) var t_custom2: texture_2d<f32>;
 @group(0) @binding(26) var s_custom2: sampler;
+
 @group(0) @binding(27) var t_custom3: texture_2d<f32>;
 @group(0) @binding(28) var s_custom3: sampler;
 
@@ -410,7 +433,7 @@ fn easeInQuint(x: f32) -> f32
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    var uv = in.tex_coords;
+    var uv = in.tex_coords_0_1.xy;
 
     // base color
     var object_color = material.base_color * in.color;

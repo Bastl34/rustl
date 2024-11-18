@@ -1,8 +1,7 @@
-use crate::{state::{scene::components::mesh::{Mesh, MeshData}, helper::render_item::RenderItem}, render_item_impl_default};
+use crate::{state::{scene::components::mesh::MeshData, helper::render_item::RenderItem}, render_item_impl_default};
 
 use super::wgpu::WGpu;
-use gltf::mesh::util::joints;
-use nalgebra::{ComplexField, Point2, Vector2, Vector3};
+use nalgebra::{Point2, Vector3};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -10,7 +9,9 @@ use wgpu::util::DeviceExt;
 pub struct Vertex
 {
     position: [f32; 3],
-    tex_coords: [f32; 2],
+
+    tex_coords_0_1: [f32; 4],
+    tex_coords_2_3: [f32; 4],
 
     normal: [f32; 3],
     tangent: [f32; 3],
@@ -20,21 +21,23 @@ pub struct Vertex
     weights: [f32; 4],
 }
 
-pub const VERTEX_ATTRIBUTES_AMOUNT: usize = 7;
+pub const VERTEX_ATTRIBUTES_AMOUNT: usize = 8;
 
 impl Vertex
 {
     const ATTRIBS: [wgpu::VertexAttribute; VERTEX_ATTRIBUTES_AMOUNT] = wgpu::vertex_attr_array!
     [
         0 => Float32x3,
-        1 => Float32x2,
 
-        2 => Float32x3,
+        1 => Float32x4,
+        2 => Float32x4,
+
         3 => Float32x3,
         4 => Float32x3,
+        5 => Float32x3,
 
-        5 => Uint32x4,
-        6 => Float32x4
+        6 => Uint32x4,
+        7 => Float32x4
     ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
@@ -78,14 +81,44 @@ impl VertexBuffer
             let n = mesh_data.normals[i];
 
             // no uvs found -> use empty uv
-            let uv;
-            if mesh_data.uvs_1.len() == 0
+            let uv_0;
+            if mesh_data.uvs_0.len() == 0
             {
-                uv = Point2::<f32>::new(0.0, 0.0);
+                uv_0 = Point2::<f32>::new(0.0, 0.0);
             }
             else
             {
-                uv = mesh_data.uvs_1[i];
+                uv_0 = mesh_data.uvs_0[i];
+            }
+
+            let uv_1;
+            if mesh_data.uvs_1.len() == 0
+            {
+                uv_1 = Point2::<f32>::new(0.0, 0.0);
+            }
+            else
+            {
+                uv_1 = mesh_data.uvs_1[i];
+            }
+
+            let uv_2;
+            if mesh_data.uvs_2.len() == 0
+            {
+                uv_2 = Point2::<f32>::new(0.0, 0.0);
+            }
+            else
+            {
+                uv_2 = mesh_data.uvs_2[i];
+            }
+
+            let uv_3;
+            if mesh_data.uvs_3.len() == 0
+            {
+                uv_3 = Point2::<f32>::new(0.0, 0.0);
+            }
+            else
+            {
+                uv_3 = mesh_data.uvs_3[i];
             }
 
             let mut tangent = n.cross(&Vector3::<f32>::new(0.0, 1.0, 0.0));
@@ -121,7 +154,19 @@ impl VertexBuffer
             vertices.push(Vertex
             {
                 position: [v.x, v.y, v.z],
-                tex_coords: [uv.x, 1.0 - uv.y], // flip y because in wgpu y-axis is pointing up (not down as in images)
+
+                // flip y because in wgpu y-axis is pointing up (not down as in images)
+                tex_coords_0_1:
+                [
+                    uv_0.x, 1.0 - uv_0.y,
+                    uv_1.x, 1.0 - uv_1.y
+                ],
+                tex_coords_2_3:
+                [
+                    uv_2.x, 1.0 - uv_2.y,
+                    uv_3.x, 1.0 - uv_3.y
+                ],
+
                 normal: [n.x, n.y, n.z],
                 tangent: [tangent.x, tangent.y, tangent.z],
                 bitangent: [bitangent.x, bitangent.y, bitangent.z],
