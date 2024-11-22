@@ -1,9 +1,51 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
+use wgpu::{util::DeviceExt, BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
 
 use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct TextureTransform
+{
+    pub offset: [f32; 2],
+    pub scale: [f32; 2],
+    pub rotation: f32,
+
+    pub uv_index: u32,
+
+    pub _padding: [f32; 2]
+}
+
+impl TextureTransform
+{
+    pub fn new(scene_texture: &crate::state::scene::texture::Texture) -> Self
+    {
+        let data = scene_texture.get_data();
+
+        Self
+        {
+            offset: [data.transform.offset.x, data.transform.offset.y],
+            scale: [data.transform.scale.x, data.transform.scale.y],
+            rotation: data.transform.rotation,
+            uv_index: data.transform.uv_index,
+            _padding: [0.0, 0.0],
+        }
+    }
+
+    pub fn default() -> Self
+    {
+        Self
+        {
+            offset: [0.0, 0.0],
+            scale: [1.0, 1.0],
+            rotation: 0.0,
+            uv_index: 0,
+            _padding: [0.0, 0.0],
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum TextureFormat
@@ -26,7 +68,7 @@ pub struct Texture
 
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
+    sampler: wgpu::Sampler
 }
 
 impl RenderItem for Texture
@@ -153,7 +195,7 @@ impl Texture
 
             texture: texture,
             view: texture_view,
-            sampler: sampler,
+            sampler: sampler
         }
     }
 
@@ -223,7 +265,7 @@ impl Texture
 
             texture: texture,
             view: texture_view,
-            sampler: sampler,
+            sampler: sampler
         }
     }
 

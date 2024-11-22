@@ -1,35 +1,38 @@
 use std::{mem::swap, collections::HashMap};
 
+use gltf::json::extensions::texture;
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
-use crate::{state::{helper::render_item::{RenderItem, get_render_item, RenderItemType}, scene::{components::{material::{Material, TextureType, ALL_TEXTURE_TYPES, TextureState}, component::Component}, texture::TextureItem}}, render_item_impl_default};
+use crate::{render_item_impl_default, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, scene::{components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}, texture::TextureItem}}};
 
-use super::{wgpu::WGpu, uniform, texture::{Texture, TextureFormat}};
+use super::{texture::{Texture, TextureFormat, TextureTransform}, uniform, wgpu::WGpu};
 
 //TODO: future: compile shaders for each texture combination to prevent branching/if statements
 
 /*
     textures:
 
-    0: reserved (to match bind group id)
+    0: reserved (material buffer)
+    1: reserved (texture transform array)
 
-    1: ambient
-    2: base (albedo)
-    3: specular
-    4: normal
-    5: alpha
-    6: roughness
-    7: ambient occlusion
-    8: reflectivity
-    9: shininess
-    10: environment
+    2: ambient
+    3: base (albedo)
+    4: specular
+    5: normal
+    6: alpha
+    7: roughness
+    8: ambient occlusion
+    9: reflectivity
+    10: shininess
+    11: environment
 
-    11: custom 0
-    12: custom 1
-    13: custom 2
-    14: custom 3
+    12: custom 0
+    13: custom 1
+    14: custom 2
+    15: custom 3
 
-    15: depth
+    // additional textures
+    16: depth
 */
 
 //pub const ADDITIONAL_START_INDEX: u32 = 20;
@@ -56,6 +59,7 @@ pub struct MaterialUniform
 
     pub unlit: u32,
 
+    pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
 
     pub __padding: [u32; 3]
@@ -83,6 +87,19 @@ impl MaterialUniform
         if material.is_texture_enabled(TextureType::Custom1)                            { textures_used |= 1 << 12; }
         if material.is_texture_enabled(TextureType::Custom2)                            { textures_used |= 1 << 13; }
         if material.is_texture_enabled(TextureType::Custom3)                            { textures_used |= 1 << 14; }
+
+        let mut texture_transforms = [TextureTransform::default(); TEXTURE_AMOUNT];
+
+        for (i, texture_type) in ALL_TEXTURE_TYPES.iter().enumerate()
+        {
+            let texture = material.get_texture_by_type(*texture_type);
+
+            if let Some(texture) = texture
+            {
+                let texture = texture.item.read().unwrap();
+                texture_transforms[i] = TextureTransform::new(&texture);
+            }
+        }
 
         MaterialUniform
         {
@@ -129,6 +146,8 @@ impl MaterialUniform
             roughness: material_data.roughness,
             receive_shadow: material_data.receive_shadow as u32,
             unlit: material_data.unlit_shading as u32,
+
+            texture_transforms,
             textures_used: textures_used,
 
             __padding: [0, 0, 0]
@@ -176,13 +195,13 @@ impl MaterialBuffer
             bind_group: None
         };
 
-        buffer.to_buffer(wgpu, material, default_env_map.clone(), additional_textures);
+        buffer.to_buffers(wgpu, material, default_env_map.clone(), additional_textures);
         buffer.create_binding_groups(wgpu, material, default_env_map, additional_textures);
 
         buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
+    pub fn to_buffers(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let mut material_uniform = MaterialUniform::new(material, default_env_map.is_some());
 
@@ -215,11 +234,6 @@ impl MaterialBuffer
     }
     */
 
-    pub fn get_buffer(&self) -> &wgpu::Buffer
-    {
-        &self.buffer
-    }
-
     pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
         let device = wgpu.device();
@@ -230,8 +244,9 @@ impl MaterialBuffer
         let mut bind_id = 0;
 
         // ********* material buffer *********
-        layout_group_vec.push(uniform::uniform_bind_group_layout_entry(bind_id, true, true));
-        group_vec.push(uniform::uniform_bind_group(bind_id, &self.get_buffer()));
+        layout_group_vec.push(uniform::uniform_bind_group_layout_entry(bind_id, false, true));
+        group_vec.push(uniform::uniform_bind_group(bind_id, &self.buffer));
+
         bind_id += 1;
 
         // ********* textures *********

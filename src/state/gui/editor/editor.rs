@@ -6,6 +6,8 @@ use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal, approx_equal_vec, approx_zero_vec3, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{self, InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
+use self::math::approx_zero;
+
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, main_frame};
 
 const OBJECTS_DIR: &str = "objects/";
@@ -786,7 +788,7 @@ impl Editor
         }
     }
 
-    pub fn find_fransform_component(&mut self, state: &mut State) -> ComponentItem
+    pub fn find_transform_component(&mut self, state: &mut State) -> ComponentItem
     {
         // ********** find transform component for node/instance **********
         let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
@@ -852,7 +854,7 @@ impl Editor
 
     pub fn set_edit_mode(&mut self, state: &mut State)
     {
-        // if its in rotation mode -> just end rotation mode
+        // if its in rotation mode -> just end rotation mode on left click
         if let Some(EditMode::Rotate(start_pos, _, _, _)) = self.editor_state.edit_mode
         {
             if state.input_manager.mouse.is_pressed(MouseButton::Left)
@@ -944,7 +946,6 @@ impl Editor
             }
         }
 
-        let angle_steps = PI / 8.0;
         let factor = 0.01;
 
         let edit_mode = self.editor_state.edit_mode.unwrap();
@@ -997,123 +998,145 @@ impl Editor
             },
             EditMode::Rotate(_, x, y, z) =>
             {
-                let mut applied = false;
-
-                let edit_transformation = self.find_fransform_component(state);
-
-                let mut rotation_vec = Vector3::<f32>::zeros();
-                let mut rotation_pos = Vector3::<f32>::zeros();
-
-                if x
+                if self.rotate_object(state, movement, x, y, z, true)
                 {
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
-                    {
-                        if movement.z.abs() >= angle_steps
-                        {
-                            let sign = movement.z.signum();
-                            rotation_vec.x = angle_steps * sign;
-                            applied = true;
-                        }
-                    }
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
-                    {
-                        component_downcast!(edit_transformation, Transformation);
-
-                        if movement.z.abs() >= angle_steps
-                        {
-                            let sign = movement.z.signum();
-                            rotation_pos.x = edit_transformation.get_data().rotation.x + angle_steps * sign;
-                            rotation_pos.x = snap_to_grid(rotation_pos.x, angle_steps);
-
-                            applied = true;
-                        }
-                    }
-                    else
-                    {
-                        rotation_vec.x = movement.z;
-                        applied = true;
-                    }
-                }
-
-                if y
-                {
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
-                    {
-                        if movement.x.abs() >= angle_steps
-                        {
-                            let sign = movement.x.signum();
-                            rotation_vec.y = angle_steps * sign;
-                            applied = true;
-                        }
-                    }
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
-                    {
-                        component_downcast!(edit_transformation, Transformation);
-
-                        if movement.x.abs() >= angle_steps
-                        {
-                            let sign = movement.x.signum();
-                            rotation_pos.y = edit_transformation.get_data().rotation.y + angle_steps * sign;
-                            rotation_pos.y = snap_to_grid(rotation_pos.y, angle_steps);
-
-                            applied = true;
-                        }
-                    }
-                    else
-                    {
-                        rotation_vec.y = movement.x;
-                        applied = true;
-                    }
-                }
-
-                if z
-                {
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
-                    {
-                        if movement.x.abs() >= angle_steps
-                        {
-                            let sign = movement.x.signum();
-                            rotation_vec.z = -angle_steps * sign;
-                            applied = true;
-                        }
-                    }
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
-                    {
-                        component_downcast!(edit_transformation, Transformation);
-
-                        if movement.x.abs() >= angle_steps
-                        {
-                            let sign = movement.x.signum();
-                            rotation_pos.z = edit_transformation.get_data().rotation.z + angle_steps * sign;
-                            rotation_pos.z = snap_to_grid(rotation_pos.z, angle_steps);
-
-                            applied = true;
-                        }
-                    }
-                    else
-                    {
-                        rotation_vec.z = -movement.x;
-                        applied = true;
-                    }
-                }
-
-                if applied
-                {
-                    if !approx_zero_vec3(&rotation_vec)
-                    {
-                        component_downcast_mut!(edit_transformation, Transformation);
-                        edit_transformation.apply_rotation(rotation_vec);
-                    }
-                    else if !approx_zero_vec3(&rotation_pos)
-                    {
-                        component_downcast_mut!(edit_transformation, Transformation);
-                        edit_transformation.set_rotation(rotation_pos);
-                    }
-
                     self.editor_state.edit_mode = Some(EditMode::Rotate(pointer_pos, x, y, z));
                 }
             },
         }
+
+        // rotate with mouse wheel
+        if !approx_zero(state.input_manager.mouse.wheel_delta_y)
+        {
+            let delta = state.input_manager.mouse.wheel_delta_y.to_radians() * 0.1;
+            let movement = Vector3::<f32>::new(delta, delta, delta);
+            self.rotate_object(state, movement, false, true, false, false);
+
+            // "consume" mouse wheel
+            state.input_manager.mouse.wheel_delta_y = 0.0;
+        }
+
+    }
+
+    pub fn rotate_object(&mut self, state: &mut State, movement: Vector3<f32>, apply_x: bool, apply_y: bool, apply_z: bool, movement_check: bool) -> bool
+    {
+        let angle_steps = PI / 8.0;
+
+        let edit_transformation = self.find_transform_component(state);
+
+        let mut use_rotation_vec = false;
+        let mut rotation_vec = Vector3::<f32>::zeros();
+
+        let mut use_rotation_pos = false;
+        let mut rotation_pos = Vector3::<f32>::zeros();
+
+        if apply_x
+        {
+            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+            {
+                if movement.z.abs() >= angle_steps || !movement_check
+                {
+                    let sign = movement.z.signum();
+                    rotation_vec.x = angle_steps * sign;
+
+                    use_rotation_vec = true;
+                }
+            }
+            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            {
+                component_downcast!(edit_transformation, Transformation);
+
+                if movement.z.abs() >= angle_steps || !movement_check
+                {
+                    let sign = movement.z.signum();
+                    rotation_pos.x = edit_transformation.get_data().rotation.x + angle_steps * sign;
+                    rotation_pos.x = snap_to_grid(rotation_pos.x, angle_steps);
+
+                    use_rotation_pos = true;
+                }
+            }
+            else
+            {
+                rotation_vec.x = movement.z;
+                use_rotation_vec = true;
+            }
+        }
+
+        if apply_y
+        {
+            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+            {
+                if movement.x.abs() >= angle_steps || !movement_check
+                {
+                    let sign = movement.x.signum();
+                    rotation_vec.y = angle_steps * sign;
+
+                    use_rotation_vec = true;
+                }
+            }
+            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            {
+                component_downcast!(edit_transformation, Transformation);
+
+                if movement.x.abs() >= angle_steps || !movement_check
+                {
+                    let sign = movement.x.signum();
+                    rotation_pos.y = edit_transformation.get_data().rotation.y + angle_steps * sign;
+                    rotation_pos.y = snap_to_grid(rotation_pos.y, angle_steps);
+
+                    use_rotation_pos = true;
+                }
+            }
+            else
+            {
+                rotation_vec.y = movement.x;
+                use_rotation_vec = true;
+            }
+        }
+
+        if apply_z
+        {
+            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+            {
+                if movement.x.abs() >= angle_steps || !movement_check
+                {
+                    let sign = movement.x.signum();
+                    rotation_vec.z = -angle_steps * sign;
+                    use_rotation_vec = true;
+                }
+            }
+            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            {
+                component_downcast!(edit_transformation, Transformation);
+
+                if movement.x.abs() >= angle_steps || !movement_check
+                {
+                    let sign = movement.x.signum();
+                    rotation_pos.z = edit_transformation.get_data().rotation.z + angle_steps * sign;
+                    rotation_pos.z = snap_to_grid(rotation_pos.z, angle_steps);
+
+                    use_rotation_pos = true;
+                }
+            }
+            else
+            {
+                rotation_vec.z = -movement.x;
+                use_rotation_vec = true;
+            }
+        }
+
+        if use_rotation_vec
+        {
+            component_downcast_mut!(edit_transformation, Transformation);
+            edit_transformation.apply_rotation(rotation_vec);
+        }
+        else if use_rotation_pos
+        {
+            component_downcast_mut!(edit_transformation, Transformation);
+            edit_transformation.set_rotation(rotation_pos);
+        }
+
+        use_rotation_vec || use_rotation_pos
     }
 
     pub fn drag_and_drop_object(&mut self, state: &mut State, apply_x: bool, apply_y: bool, apply_z: bool)
@@ -1236,7 +1259,7 @@ impl Editor
         }
 
         // ********** find transform component for node/instance **********
-        let edit_transformation = self.find_fransform_component(state);
+        let edit_transformation = self.find_transform_component(state);
 
         // ********** re-apply saved movement (without snapping) **********
         if let Some(selected_object_position) = self.editor_state.selected_object_position

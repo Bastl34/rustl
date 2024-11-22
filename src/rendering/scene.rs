@@ -303,7 +303,7 @@ impl Scene
 
                 {
                     let render_item = get_render_item_mut::<MaterialBuffer>(render_item.as_mut().unwrap());
-                    render_item.to_buffer(wgpu, material, default_env_map.clone(), None);
+                    render_item.to_buffers(wgpu, material, default_env_map.clone(), None);
                     render_item.create_binding_groups(wgpu, material, default_env_map.clone(), None);
                 }
 

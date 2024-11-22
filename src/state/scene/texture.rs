@@ -40,9 +40,9 @@ pub enum MipmapSamplingFilterType
 pub struct TextureTransform
 {
     pub offset: Vector2::<f32>,
+    pub scale: Vector2::<f32>,
     pub rotation: f32,
 
-    pub scale: Vector2::<f32>,
     pub uv_index: u32,
 }
 
@@ -53,8 +53,9 @@ impl TextureTransform
         TextureTransform
         {
             offset: Vector2::<f32>::new(0.0, 0.0),
-            rotation: 0.0,
             scale: Vector2::<f32>::new(1.0, 1.0),
+            rotation: 0.0,
+
             uv_index: 0,
         }
     }

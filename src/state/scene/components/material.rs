@@ -1,8 +1,3 @@
-use std::f32::consts::PI;
-use std::sync::{RwLock, Arc};
-use std::any::Any;
-
-use egui::RichText;
 use nalgebra::{Vector3, Vector4};
 use strum_macros::{Display, EnumIter};
 
@@ -10,7 +5,7 @@ use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
-use crate::{state::scene::texture::{TextureItem, Texture}, helper};
+use crate::{state::scene::texture::TextureItem, helper};
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -41,7 +36,8 @@ pub enum TextureType
     Custom3
 }
 
-pub const ALL_TEXTURE_TYPES: [TextureType; 14] =
+pub const TEXTURE_AMOUNT: usize = 14; // without additional textures
+pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
 [
     TextureType::AmbientEmissive,
     TextureType::Base,

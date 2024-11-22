@@ -53,12 +53,15 @@ impl Mouse
 
         let button_states = button_vec.iter().map(|_key| { PressState::new() }).collect::<Vec<_>>();
 
+        let mut point = InputPoint::new(0);
+        point.pos = Some(Point2::<f32>::new(0.0, 0.0));
+
         Self
         {
             visible: ChangeTracker::new(true),
             buttons: button_states,
 
-            point: InputPoint::new(0),
+            point: point,
 
             last_active_button: MouseButton::Unkown,
 
@@ -163,13 +166,13 @@ impl Mouse
 
     pub fn set_wheel_delta_x(&mut self, delta: f32)
     {
-        self.wheel_delta_x = delta;
+        self.wheel_delta_x += delta;
         self.point.last_action = generic::get_millis();
     }
 
     pub fn set_wheel_delta_y(&mut self, delta: f32)
     {
-        self.wheel_delta_y = delta;
+        self.wheel_delta_y += delta;
         self.point.last_action = generic::get_millis();
     }
 

@@ -993,6 +993,20 @@ impl MainInterface
             if changed
             {
                 self.window.set_cursor_visible(*visible);
+
+                if *visible
+                {
+                    _ = self.window.set_cursor_grab(CursorGrabMode::None);
+                }
+                else
+                {
+                    self.window.set_cursor_grab(CursorGrabMode::Confined)
+                    .or_else(|_e| self.window.set_cursor_grab(CursorGrabMode::Locked))
+                    .unwrap_or_else(|e|
+                    {
+                        dbg!("Failed to grab position: {:?}", e);
+                    });
+                }
             }
         }
 
@@ -1175,23 +1189,7 @@ impl MainInterface
     {
         let global_state = &mut *(self.state.borrow_mut());
 
-        let (visible, change) = global_state.input_manager.mouse.visible.consume_clone();
-
-        if change
-        {
-            if visible
-            {
-                _ = self.window.set_cursor_grab(CursorGrabMode::None);
-            }
-            else
-            {
-                self.window.set_cursor_grab(CursorGrabMode::Confined)
-                .or_else(|_e| self.window.set_cursor_grab(CursorGrabMode::Locked))
-                .unwrap();
-            }
-        }
-
-        // still needed for windows
+        // center mouse (needed on windows)
         if !*global_state.input_manager.mouse.visible.get_ref() && !is_mac()
         {
             let window_size = self.window.inner_size();
