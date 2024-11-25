@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{sync::{Arc, RwLock}, collections::VecDeque};
 
 use crate::state::state::State;

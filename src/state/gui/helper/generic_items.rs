@@ -1,4 +1,4 @@
-use egui::{Ui, Color32, RichText, Align2, Id};
+use egui::{Ui, Color32, RichText, Align2};
 
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {

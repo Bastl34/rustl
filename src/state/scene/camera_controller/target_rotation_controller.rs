@@ -3,7 +3,7 @@ use std::{f32::consts::PI, sync::Arc};
 use nalgebra::{Vector2, Vector3, Point3};
 use parry3d::query::Ray;
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}, platform}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 

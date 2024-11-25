@@ -6,7 +6,7 @@ use super::editor_state::EditorState;
 
 const CHART_PADDING_FACTOR: f32 = 1.1;
 
-pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // https://github.com/emilk/egui/blob/master/crates/egui_demo_lib/src/demo/plot_demo.rs#L888
 
@@ -64,7 +64,7 @@ pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     });
 }
 
-pub fn create_statistic(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let mut textures = 0;
     let mut materials = 0;

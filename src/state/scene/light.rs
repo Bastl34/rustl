@@ -1,8 +1,8 @@
-use std::{f32::consts::PI, cell::RefCell};
+use std::cell::RefCell;
 
-use nalgebra::{zero, Point3, Vector3};
+use nalgebra::{Point3, Vector3};
 
-use crate::{state::helper::render_item::{RenderItemOption}, helper::change_tracker::ChangeTracker};
+use crate::helper::change_tracker::ChangeTracker;
 
 pub type LightItem = Box<Light>;
 

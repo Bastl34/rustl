@@ -1,9 +1,8 @@
-use std::any::Any;
 
 use egui::RichText;
-use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
+use nalgebra::{Vector3, Matrix4, Rotation3, Vector4, UnitQuaternion, Quaternion};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{gui::helper::info_box::info_box_with_body, scene::node::NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::scene::node::NodeItem};
 
 use super::component::{Component, ComponentBase};
 

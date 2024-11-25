@@ -1,7 +1,6 @@
-use egui::Color32;
 use nalgebra::{Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::{instance::InstanceItem, node::{InstanceItemArc, NodeItem}}};
+use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::{InstanceItemArc, NodeItem}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -304,9 +303,9 @@ impl Component for TransformationAnimation
         ui.horizontal(|ui|
         {
             ui.label("Keyboard key: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(60.0);
 
                 let mut new_key = 0;

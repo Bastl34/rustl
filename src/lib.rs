@@ -69,7 +69,7 @@ mod state
         {
             pub(crate) mod scene_controller;
             pub(crate) mod generic_controller;
-            pub(crate) mod character_controller;
+            pub(crate) mod char_controller;
         }
 
         pub(crate) mod camera_controller

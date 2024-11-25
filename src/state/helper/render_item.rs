@@ -1,4 +1,4 @@
-use std::{any::Any};
+use std::any::Any;
 
 pub type RenderItemType = Box<dyn RenderItem + Send + Sync>;
 pub type RenderItemOption = Option<Box<dyn RenderItem + Send + Sync>>;

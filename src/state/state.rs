@@ -132,7 +132,7 @@ impl State
         cam_controller.push(("Target Rotation Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController::default()) }));
 
         let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];
-        scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::character_controller::CharacterController::default()) }));
+        scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::char_controller::CharacterController::default()) }));
         scene_controller.push(("Generic Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::generic_controller::GenericController::default()) }));
 
         Self

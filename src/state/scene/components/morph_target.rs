@@ -85,7 +85,7 @@ impl Component for MorphTarget
         None
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
     {
 
     }

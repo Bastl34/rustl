@@ -4,7 +4,7 @@ use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collection
 use gltf::{Gltf, texture, animation::util::ReadOutputs, iter::{Animations, Skins}};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use nalgebra::{DimRange, Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
+use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
@@ -557,7 +557,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     let component_id = id_manager.write().unwrap().get_next_component_id();
                     //let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
-                    let mut morph_target = MorphTarget::new(component_id, name, i as u32);
+                    let morph_target = MorphTarget::new(component_id, name, i as u32);
 
                     let mesh_component_data = mesh_component.get_data_mut().get_mut();
                     mesh_component_data.morph_target_positions.push(target.0.clone());

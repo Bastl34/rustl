@@ -31,7 +31,7 @@ impl SceneController for GenericController
     {
     }
 
-    fn cleanup_node(&mut self, node: crate::state::scene::node::NodeItem) -> bool
+    fn cleanup_node(&mut self, _node: crate::state::scene::node::NodeItem) -> bool
     {
         false
     }

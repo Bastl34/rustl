@@ -1,9 +1,9 @@
-use std::{sync::{RwLock, Arc}, fmt::format};
+use std::sync::{RwLock, Arc};
 
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Vector3};
 
-use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{camera_controller::fly_controller::FlyController, node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";

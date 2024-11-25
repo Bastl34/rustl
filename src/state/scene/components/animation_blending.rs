@@ -251,7 +251,7 @@ impl Component for AnimationBlending
         ui.horizontal(|ui|
         {
             ui.label("From: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("from")).selected_text(from_name.clone()).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("from")).selected_text(from_name.clone()).show_ui(ui, |ui|
             {
                 changed = ui.selectable_value(&mut from, 0, "").changed() || changed;
                 for animation in &animations
@@ -264,7 +264,7 @@ impl Component for AnimationBlending
         ui.horizontal(|ui|
         {
             ui.label("To: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("to")).selected_text(to_name.clone()).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("to")).selected_text(to_name.clone()).show_ui(ui, |ui|
             {
                 changed = ui.selectable_value(&mut to, 0, "").changed() || changed;
                 for animation in &animations

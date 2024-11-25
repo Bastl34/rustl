@@ -1,10 +1,9 @@
 use std::{mem::swap, f32::consts::PI};
 
-use egui::{RichText, Color32};
-use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
-use parry3d::{either::Either::Right, query::Ray};
+use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3};
+use parry3d::query::Ray;
 
-use crate::{helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::{gui::editor::editor_state::BottomPanel, helper::render_item::RenderItemOption}};
+use crate::{helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
 
 use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}};
 
@@ -504,15 +503,15 @@ impl Camera
         ui.horizontal(|ui|
         {
             ui.label("Viewport Offset:");
-            changed = ui.add(egui::DragValue::new(&mut viewport_x).clamp_range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut viewport_y).clamp_range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_x).range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_y).range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Viewport Size:");
-            changed = ui.add(egui::DragValue::new(&mut viewport_width).clamp_range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut viewport_height).clamp_range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_width).range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_height).range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
         });
 
         ui.horizontal(|ui|

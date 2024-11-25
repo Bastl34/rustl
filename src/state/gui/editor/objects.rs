@@ -1,9 +1,8 @@
-use std::{fmt::format, sync::{Arc, RwLock}};
+use std::sync::Arc;
 
 use egui::{Ui, RichText, Color32};
-use nalgebra::DimName;
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::{Component, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_scene_mut_and_wait, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -97,7 +96,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                 let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
 
-                let mut toggle = ui.toggle_value(&mut selection, heading);
+                let toggle = ui.toggle_value(&mut selection, heading);
 
                 if toggle.clicked()
                 {
@@ -770,7 +769,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     }
 }
 
-pub fn create_instance_settings(editor_state: &mut EditorState, state: &mut State, scene_id: u64, node_arc: NodeItem, instance_id: u64 , ui: &mut Ui)
+pub fn create_instance_settings(_editor_state: &mut EditorState, _state: &mut State, _scene_id: u64, node_arc: NodeItem, instance_id: u64 , ui: &mut Ui)
 {
     let node = node_arc.read().unwrap();
     let instance = node.find_instance_by_id(instance_id);

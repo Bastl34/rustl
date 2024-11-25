@@ -1,5 +1,4 @@
 use egui::{Ui, ScrollArea, Id, Color32, RichText};
-use wgpu::Color;
 
 use crate::state::{gui::helper::generic_items::separator_colored, state::State};
 
@@ -16,7 +15,7 @@ pub fn create_asset_section(editor_state: &mut EditorState, state: &mut State, u
     });
 }
 
-pub fn create_asset_tree(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_asset_tree(editor_state: &mut EditorState, _state: &mut State, ui: &mut Ui)
 {
     ui.scope(|ui|
     {
@@ -33,7 +32,7 @@ pub fn create_asset_tree(editor_state: &mut EditorState, state: &mut State, ui: 
     });
 }
 
-pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_asset_list(editor_state: &mut EditorState, _state: &mut State, ui: &mut Ui)
 {
     let items = match editor_state.asset_type
     {

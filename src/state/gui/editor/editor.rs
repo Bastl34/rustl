@@ -1,10 +1,10 @@
-use std::{cell::RefCell, f32::consts::PI, f64::consts::E, sync::{Arc, RwLock}};
+use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal, approx_equal_vec, approx_zero_vec3, snap_to_grid, snap_to_grid_vec3}, platform}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::{fly_controller::FlyController, target_rotation_controller::TargetRotationController}, components::{alpha::Alpha, component::{Component, ComponentItem}, transformation::Transformation, transformation_animation::TransformationAnimation}, light::Light, manager::id_manager, node::{self, InstanceItemArc, Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::fly_controller::FlyController, components::{component::ComponentItem, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -1320,7 +1320,7 @@ impl Editor
                 true
             };
 
-            let pick_predicate_grid_only = move |node: NodeItem, check_instance_id: Option<u64>| -> bool
+            let pick_predicate_grid_only = move |node: NodeItem, _check_instance_id: Option<u64>| -> bool
             {
                 node.read().unwrap().name == "grid"
             };
@@ -1334,7 +1334,7 @@ impl Editor
 
             let mut bottom_center_screen_space = None;
 
-            let (scene, node, _instance) = self.editor_state.get_selected_node(state);
+            let (scene, _node, _instance) = self.editor_state.get_selected_node(state);
             let scene = scene.unwrap();
             for camera in &scene.cameras
             {

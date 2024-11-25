@@ -1,5 +1,5 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{util::DeviceExt, BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
+use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
 
 use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
 

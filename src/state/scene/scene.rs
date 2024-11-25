@@ -1,13 +1,13 @@
-use std::{borrow::BorrowMut, cell::RefCell, clone, collections::{HashMap, HashSet}, mem::swap, sync::{Arc, RwLock}, vec};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, mem::swap, sync::{Arc, RwLock}};
 
 use anyhow::Ok;
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::{self, Component}, sound::Sound}}};
+use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::Component, sound::Sound}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh, sound}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{self, SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
@@ -430,7 +430,7 @@ impl Scene
 
             let mut all_nodes: Option<Vec<Arc<RwLock<Box<Node>>>>> = None;
 
-            if let Some(node_id) = from_node_id
+            if from_node_id.is_some()
             {
                 if let Some(node) = &node
                 {

@@ -1,8 +1,7 @@
-use std::f32::consts::PI;
 
-use nalgebra::{Point3, Vector2, Vector3};
+use nalgebra::{Point3, Vector3};
 
-use crate::{camera_controller_impl_default, component_downcast, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec2}}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, components::transformation::Transformation, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, component_downcast, helper::{change_tracker::ChangeTracker, math::{self}}, input::input_manager::InputManager, state::scene::{camera::CameraData, components::transformation::Transformation, node::NodeItem, scene::Scene}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 

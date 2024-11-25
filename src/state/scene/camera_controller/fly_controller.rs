@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use nalgebra::{Vector2, Vector3};
-use parry3d::{query::Ray, shape::Ball};
+use parry3d::query::Ray;
 
 use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 

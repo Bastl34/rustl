@@ -1,7 +1,6 @@
 use std::fs;
 
 use cfg_if::cfg_if;
-use log::info;
 
 use crate::helper::file::get_dirname;
 

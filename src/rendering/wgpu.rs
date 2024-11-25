@@ -3,7 +3,7 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{helper::{image::brga_to_rgba, platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
+use crate::{helper::{platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 

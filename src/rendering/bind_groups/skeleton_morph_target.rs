@@ -1,6 +1,6 @@
 use wgpu::{BindGroupLayout, BindGroup};
 
-use crate::{rendering::{light::LightBuffer, camera::CameraBuffer, wgpu::WGpu, uniform, scene::Scene, morph_target::MorphTarget, skeleton::SkeletonBuffer}, state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{rendering::{wgpu::WGpu, uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer}, state::helper::render_item::RenderItem, render_item_impl_default};
 
 pub struct SkeletonMorphTargetBindGroup
 {

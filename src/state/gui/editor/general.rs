@@ -11,7 +11,7 @@ pub fn create_general_settings(editor_state: &mut EditorState, state: &mut State
     create_audio_settings(editor_state, state, ui);
 }
 
-pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // general rendering settings
     collapse_with_title(ui, "render_settings", true, "📷 Rendering Settings", None, |ui|
@@ -104,7 +104,7 @@ pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut Sta
             let mut changed = false;
             egui::ComboBox::from_label("px").selected_text(format!("{current:?}")).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 //ui.set_min_width(60.0);
 
                 for item in possibilities
@@ -124,7 +124,7 @@ pub fn create_rendering_settings(editor_state: &mut EditorState, state: &mut Sta
     });
 }
 
-pub fn create_audio_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_audio_settings(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // general rendering settings
     collapse_with_title(ui, "audio_settings", true, "🔊 Audio Settings", None, |ui|

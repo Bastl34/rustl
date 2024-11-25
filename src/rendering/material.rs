@@ -1,6 +1,5 @@
 use std::{mem::swap, collections::HashMap};
 
-use gltf::json::extensions::texture;
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
 use crate::{render_item_impl_default, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, scene::{components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}, texture::TextureItem}}};

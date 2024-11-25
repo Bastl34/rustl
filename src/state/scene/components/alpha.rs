@@ -1,6 +1,6 @@
-use std::{any::Any, sync::{Arc, RwLock}};
+use std::sync::{Arc, RwLock};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::change_tracker::ChangeTracker, state::scene::node::{InstanceItemArc, NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
 
 use super::component::{ComponentBase, Component};
 
