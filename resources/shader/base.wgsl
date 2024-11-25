@@ -603,6 +603,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                     default {}
                 }
             }
+            else
+            {
+                intensity = lights[i].intensity;
+            }
 
             intensity = min(intensity, 1.0);
 
