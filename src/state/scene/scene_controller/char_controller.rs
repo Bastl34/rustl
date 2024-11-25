@@ -12,6 +12,8 @@ const FADE_SPEED: f32 = 0.1;
 
 const MOVEMENT_SPEED: f32 = 0.03;
 const MOVEMENT_SPEED_FAST: f32 = 0.12;
+const FLY_SPEED: f32 = 0.09;
+const FLY_SPEED_FAST: f32 = 0.24;
 
 const ROTATION_SPEED: f32 = 0.06;
 
@@ -65,6 +67,8 @@ pub struct CharacterController
 
     pub movement_speed: f32,
     pub movement_speed_fast: f32,
+    pub fly_speed: f32,
+    pub fly_speed_fast: f32,
 
     pub rotation_speed: f32,
 
@@ -80,6 +84,8 @@ pub struct CharacterController
     pub gravity: f32,
     pub jump_force: f32,
     pub max_fall_speed: f32,
+
+    pub fly_mode: bool,
 
     pub physics: bool, // very simple at the moment
     pub falling: bool,
@@ -125,6 +131,8 @@ impl CharacterController
 
             movement_speed: MOVEMENT_SPEED,
             movement_speed_fast: MOVEMENT_SPEED_FAST,
+            fly_speed: FLY_SPEED,
+            fly_speed_fast: FLY_SPEED_FAST,
 
             rotation_speed: ROTATION_SPEED,
 
@@ -140,6 +148,8 @@ impl CharacterController
             gravity: GRAVITY,
             jump_force: JUMP_FORCE,
             max_fall_speed: MAX_FALL_SPEED,
+
+            fly_mode: false,
 
             physics: true,
             falling: false,
@@ -677,6 +687,28 @@ impl SceneController for CharacterController
 
         let mut is_action = self.is_action();
 
+        // ********** fly mode **********
+        if input_manager.keyboard.is_pressed(Key::Y)
+        {
+            self.fly_mode = !self.fly_mode;
+
+            if self.fly_mode
+            {
+                self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, true, false, false);
+            }
+
+            if let Some(cam) = scene.get_active_camera_mut()
+            {
+                if let Some(controller) = cam.controller.as_mut()
+                {
+                    if let Some(controller) = controller.as_any_mut().downcast_mut::<TargetRotationController>()
+                    {
+                        controller.collision_check = !self.fly_mode;
+                    }
+                }
+            }
+        }
+
         // ********** first person mode **********
         let mut is_first_person = false;
         if let Some(cam) = scene.get_active_camera()
@@ -701,41 +733,41 @@ impl SceneController for CharacterController
         {
             if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
-                if !is_jumping && !is_rolling && !is_action && !self.falling
+                if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
                     self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, false, false);
                 }
 
-                movement.z = self.movement_speed;
+                movement.z = if self.fly_mode { self.fly_speed } else { self.movement_speed };
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
-                if !is_jumping && !is_rolling && !is_action && !self.falling
+                if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
                     self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, true, false);
                 }
-                movement.z = -self.movement_speed;
+                movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
-                if !is_jumping && !is_rolling && !is_action && !self.falling
+                if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
                     self.start_animation(CharAnimationType::Run, 0, AnimationMixing::Fade, true, false, false);
                 }
 
-                movement.z = self.movement_speed_fast;
+                movement.z = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                 has_change = true;
             }
             else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
-                if !is_jumping && !is_rolling && !is_action && !self.falling
+                if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
                     self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, true, false);
                 }
 
-                movement.z = -self.movement_speed;
+                movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
             }
         }
@@ -753,13 +785,19 @@ impl SceneController for CharacterController
                 {
                     if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
-                        self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, true, false, false);
-                        movement.x = -self.movement_speed_fast;
+                        if !self.fly_mode
+                        {
+                            self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, true, false, false);
+                        }
+                        movement.x = if self.fly_mode { -self.fly_speed_fast } else { -self.movement_speed_fast };
                     }
                     else
                     {
-                        self.start_animation(CharAnimationType::StrafeLeftWalk, 0, AnimationMixing::Fade, true, false, false);
-                        movement.x = -self.movement_speed;
+                        if !self.fly_mode
+                        {
+                            self.start_animation(CharAnimationType::StrafeLeftWalk, 0, AnimationMixing::Fade, true, false, false);
+                        }
+                        movement.x = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                     }
                 }
 
@@ -775,13 +813,19 @@ impl SceneController for CharacterController
                 {
                     if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
-                        self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, true, false, false);
-                        movement.x = self.movement_speed_fast;
+                        if !self.fly_mode
+                        {
+                            self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, true, false, false);
+                        }
+                        movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                     }
                     else
                     {
-                        self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, true, false, false);
-                        movement.x = self.movement_speed;
+                        if !self.fly_mode
+                        {
+                            self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, true, false, false);
+                        }
+                        movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                     }
                 }
 
@@ -789,20 +833,49 @@ impl SceneController for CharacterController
             }
         }
 
+        // ********** up/down **********
+        if input_manager.keyboard.is_holding(Key::C) && self.fly_mode
+        {
+            if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            {
+                movement.y = -self.movement_speed_fast;
+            }
+            else
+            {
+                movement.y = -self.movement_speed;
+            }
+
+            has_change = true;
+        }
+
+        if input_manager.keyboard.is_holding(Key::Space) && self.fly_mode
+        {
+            if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            {
+                movement.y = self.movement_speed_fast;
+            }
+            else
+            {
+                movement.y = self.movement_speed;
+            }
+
+            has_change = true;
+        }
+
         // ********** jump **********
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, false, false, true);
             has_change = true;
         }
         // ********** crouch **********
-        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
+        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, false, false, false);
             has_change = true;
         }
         // ********** roll **********
-        else if input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling
+        else if input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
             if movement.z > 0.0
             {
@@ -816,7 +889,7 @@ impl SceneController for CharacterController
             has_change = true;
         }
         // ********** action **********
-        else if approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing
+        else if approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
             if input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, false, false, true); has_change = true;}
             if input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, false, false, true); has_change = true;}
@@ -825,7 +898,7 @@ impl SceneController for CharacterController
             if input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, false, false, true); has_change = true;}
         }
         // ********** stop **********
-        else if input_manager.keyboard.is_pressed_no_wait(Key::Escape)
+        else if input_manager.keyboard.is_pressed_no_wait(Key::Escape) && !self.fly_mode
         {
             self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, false, false, false);
             has_change = true;
@@ -838,7 +911,7 @@ impl SceneController for CharacterController
         is_rolling = self.is_rolling();
 
         // ********** idle **********
-        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C)
+        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, true, false, false);
         }
@@ -867,7 +940,7 @@ impl SceneController for CharacterController
          */
 
         // ********** "physics" **********
-        if self.physics && (!approx_zero_vec3(&movement) || !self.update_only_on_move)
+        if self.physics && (!approx_zero_vec3(&movement) || !self.update_only_on_move) && !self.fly_mode
         {
             if let Some(transformation) = &self.transformation
             {
@@ -980,9 +1053,9 @@ impl SceneController for CharacterController
                         movement_in_direction += movement_frame_scale.z * self.direction.normalize();
                     }
 
-                    let yMovement = Vector3::<f32>::new(0.0, movement.y, 0.0);
+                    let y_movement = Vector3::<f32>::new(0.0, movement.y, 0.0);
 
-                    let res = movement_in_direction + yMovement;
+                    let res = movement_in_direction + y_movement;
 
                     transformation.apply_translation(res);
                 }
@@ -1073,6 +1146,18 @@ impl SceneController for CharacterController
 
         ui.horizontal(|ui|
         {
+            ui.label("Fly Speed: ");
+            ui.add(egui::Slider::new(&mut self.fly_speed, 0.0..=0.5).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Fly Speed Fast: ");
+            ui.add(egui::Slider::new(&mut self.fly_speed_fast, 0.0..=0.5).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("Rotation Speed: ");
             ui.add(egui::Slider::new(&mut self.rotation_speed, 0.0..=0.5).fixed_decimals(2));
         });
@@ -1119,6 +1204,13 @@ impl SceneController for CharacterController
         {
             ui.label("Max Fall Speed: ");
             ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=10.0).fixed_decimals(2));
+        });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut self.fly_mode, "Fly Mode");
         });
 
         ui.separator();

@@ -12,6 +12,7 @@ use winit::event::ElementState;
 use winit::keyboard::ModifiersKeyState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
+use crate::component_downcast_mut;
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::concurrency::thread::spawn_thread;
@@ -26,7 +27,11 @@ use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::scene::camera::Camera;
+use crate::state::scene::components::animation::Animation;
+use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
+use crate::state::scene::node::Node;
+use crate::state::scene::scene_controller::char_controller::CharacterController;
 use crate::state::scene::utilities::scene_utils::{self, execute_on_scene_mut_and_wait};
 use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 
@@ -522,7 +527,7 @@ impl MainInterface
                 }));
                 */
 
-                let nodes = scene_utils::load_object("scenes/Sponza_fixed.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("scenes/Sponza_fixed.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
                 //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -555,7 +560,7 @@ impl MainInterface
 
                 //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
-                /*
+
                 let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
                 let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -642,7 +647,6 @@ impl MainInterface
                         transform.set_rotation(Vector3::<f32>::new(0.0, -2.618, 0.0));
                     }
                 }));
-                */
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
