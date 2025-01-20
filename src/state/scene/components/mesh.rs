@@ -5,6 +5,8 @@ use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, sh
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
 
+use colored::Colorize;
+
 use super::component::{Component, ComponentBase};
 
 pub const JOINTS_LIMIT: usize = 4;
@@ -67,7 +69,18 @@ impl MeshData
         let triangle = [Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0)];
         let indices: [u32; 3] = [0, 1, 2];
 
-        self.mesh = TriMesh::new(triangle.to_vec(), [indices].to_vec());
+        let mesh_res = TriMesh::new(triangle.to_vec(), [indices].to_vec());
+
+        match mesh_res
+        {
+            Ok(mesh) => self.mesh = mesh,
+            Err(e) =>
+            {
+                println!("{}", (format!("error loading mesh: {}", e)).red());
+                self.mesh = TriMesh::new(vec![], vec![]).unwrap();
+            }
+
+        }
 
         self.b_box = Aabb::new_invalid();
 
@@ -90,9 +103,21 @@ impl Mesh
 {
     pub fn new_with_data(id: u64, name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Vector3<f32>>, normals_indices: Vec<[u32; 3]>) -> Mesh
     {
+        let mesh_res = TriMesh::new(vertices.clone(), indices.clone());
+
+        let mesh = match mesh_res
+        {
+            Ok(mesh) => mesh,
+            Err(e) =>
+            {
+                println!("{}", (format!("error loading mesh: {}", e)).red());
+                TriMesh::new(vec![], vec![]).unwrap()
+            }
+        };
+
         let mesh_data = MeshData
         {
-            mesh: TriMesh::new(vertices.clone(), indices.clone()),
+            mesh: mesh,
 
             vertices: vertices,
             indices: indices,
@@ -252,7 +277,7 @@ impl Mesh
             Point3::<f32>::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
         }).collect::<Vec<Point3<f32>>>();
 
-        let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
+        let mesh = TriMesh::new(vertices.clone(), data.indices.clone()).unwrap();
 
         let trans = Isometry3::<f32>::identity();
         data.b_box_skin = Some(mesh.aabb(&trans));
@@ -370,7 +395,7 @@ impl Mesh
             Point3::<f32>::new(skinned_pos.x, skinned_pos.y, skinned_pos.z)
         }).collect::<Vec<Point3<f32>>>();
 
-        let mesh = TriMesh::new(vertices.clone(), data.indices.clone());
+        let mesh = TriMesh::new(vertices.clone(), data.indices.clone()).unwrap();
 
         // run intersection test
         let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
@@ -430,7 +455,7 @@ impl Mesh
         }
 
         // clear trimesh and rebuild
-        data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone());
+        data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone()).unwrap();
 
         self.calc_bbox();
     }
@@ -479,7 +504,18 @@ impl Mesh
             data.normals_indices.push([i0, i1, i2]);
         }
 
-        data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone());
+        let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());;
+        let mesh = match mesh_res
+        {
+            Ok(mesh) => mesh,
+            Err(e) =>
+            {
+                println!("{}", (format!("error loading mesh: {}", e)).red());
+                TriMesh::new(vec![], vec![]).unwrap()
+            }
+        };
+
+        data.mesh = mesh;
 
         self.calc_bbox();
     }
@@ -575,7 +611,17 @@ impl Mesh
             }
 
             // create mesh
-            data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone());
+            let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());
+            let mesh = match mesh_res
+            {
+                Ok(mesh) => mesh,
+                Err(e) =>
+                {
+                    println!("{}", (format!("error loading mesh: {}", e)).red());
+                    TriMesh::new(vec![], vec![]).unwrap()
+                }
+            };
+            data.mesh = mesh;
         }
 
         self.calc_bbox();

@@ -13,7 +13,7 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
     }
 
     let mut frame = egui::Frame::group(ui.style()).fill(background_color);
-    frame.inner_margin = egui::Margin::same(2.0);
+    frame.inner_margin = egui::Margin::same(2);
 
     frame.show(ui, |ui|
     {

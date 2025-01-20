@@ -93,9 +93,9 @@ pub fn create_asset_list(editor_state: &mut EditorState, _state: &mut State, ui:
 
                     let shadow = egui::Shadow
                     {
-                        offset: [2.0, 2.0].into(),
-                        blur: 4.0,
-                        spread: 2.0,
+                        offset: [2, 2].into(),
+                        blur: 4,
+                        spread: 2,
                         color: egui::Color32::from_black_alpha(180),
                         //color: egui::Color32::from_white_alpha(180)
                     };

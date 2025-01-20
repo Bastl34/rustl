@@ -34,7 +34,7 @@ impl WGpu
             //instance_desc.backends = wgpu::Backends::DX12;
         }
 
-        let instance = wgpu::Instance::new(instance_desc);
+        let instance = wgpu::Instance::new(&instance_desc);
         //let surface = unsafe { instance.create_surface(window) }.unwrap();
         let surface = instance.create_surface(window.clone()).unwrap();
 
