@@ -158,7 +158,7 @@ impl State
                 msaa: ChangeTracker::new(8),
 
                 distance_sorting: true,
-                create_mipmaps: false,
+                create_mipmaps: true,
                 max_texture_resolution: None
             },
 

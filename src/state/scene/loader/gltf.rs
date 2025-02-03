@@ -41,6 +41,11 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
         let tex = load_texture_byte_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, &bytes, gltf_texture.name().unwrap_or("unknown"), extension);
         apply_texture_filtering_settings(tex.clone(), &gltf_texture, create_mipmaps);
 
+        if tex.read().unwrap().get_data().mipmapping && tex.read().unwrap().get_data().mipmap_cache.is_none()
+        {
+            tex.write().unwrap().create_mipmap_cache();
+        }
+
         loaded_textures.push((tex, gltf_texture.index()));
     }
 
@@ -1317,6 +1322,12 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             }
             let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), reflectivity_tex, tex_name.as_str());
 
+            // create mipmap cache
+            if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
+            {
+                tex_arc.write().unwrap().create_mipmap_cache();
+            }
+
             apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
 
@@ -1353,6 +1364,12 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
                 roughness_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 1, max_texture_resolution);
             }
             let tex_arc = insert_texture_or_reuse(scene_id, main_queue.clone(), roughness_tex, tex_name.as_str());
+
+            // create mipmap cache
+            if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
+            {
+                tex_arc.write().unwrap().create_mipmap_cache();
+            }
 
             apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
@@ -1409,6 +1426,12 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
                 ao_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 0, max_texture_resolution);
             }
             let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), ao_tex, tex_name.as_str());
+
+            // create mipmap cache
+            if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
+            {
+                tex_arc.write().unwrap().create_mipmap_cache();
+            }
 
             apply_texture_filtering_settings(tex_arc.clone(), &ao_gltf_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;

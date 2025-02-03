@@ -65,6 +65,7 @@ pub struct TextureData
 {
     pub preview: DynamicImage,
     pub image: DynamicImage,
+    pub mipmap_cache: Option<Vec<DynamicImage>>,
 
     pub width: u64,
     pub height: u64,
@@ -107,6 +108,7 @@ impl Texture
         {
             preview: DynamicImage::new_rgba8(0,0),
             image: DynamicImage::new_rgba8(0,0),
+            mipmap_cache: None,
 
             width: 0,
             height: 0,
@@ -188,6 +190,7 @@ impl Texture
 
             preview: Self::create_preview(&image),
             image: image,
+            mipmap_cache: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -256,6 +259,7 @@ impl Texture
 
             preview: Self::create_preview(&image),
             image: image,
+            mipmap_cache: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -278,6 +282,13 @@ impl Texture
             egui_preview: None,
             render_item: None
         }
+    }
+
+    pub fn create_mipmap_cache(&mut self)
+    {
+        let mipmaps = self.create_mipmap_levels();
+
+        self.get_data_mut().get_mut().mipmap_cache = Some(mipmaps);
     }
 
     pub fn create_mipmap_levels(&self) -> Vec<DynamicImage>
@@ -434,6 +445,15 @@ impl Texture
         // preview
         bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
 
+        // mipmaps
+        if let Some(cache) = &self.get_data().mipmap_cache
+        {
+            for mipmap in cache
+            {
+                bytes += (mipmap.width() * mipmap.height() * self.channels()) as u64;
+            }
+        }
+
         bytes
     }
 
@@ -582,6 +602,10 @@ impl Texture
         let mut changed = false;
 
         changed = ui.checkbox(&mut mipmapping, "use mipmap").changed() || changed;
+        if ui.button("generate mipmap cache").on_hover_text("Generate mipmap cache for this texture").clicked()
+        {
+            self.create_mipmap_cache();
+        };
 
         ui.horizontal(|ui|
         {

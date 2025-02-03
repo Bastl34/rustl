@@ -91,7 +91,14 @@ impl Texture
         let mut mipmaps = vec![];
         if scene_texture.get_data().mipmapping
         {
-            mipmaps = scene_texture.create_mipmap_levels();
+            if let Some(mipmap_cache) = &scene_texture.get_data().mipmap_cache
+            {
+                mipmaps = mipmap_cache.clone();
+            }
+            else
+            {
+                mipmaps = scene_texture.create_mipmap_levels();
+            }
         }
 
         let wgpu_format;
