@@ -171,6 +171,7 @@ mod helper
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
     pub(crate) mod easing;
+    pub(crate) mod stopwatch;
 }
 
 mod resources

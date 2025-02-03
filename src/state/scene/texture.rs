@@ -602,10 +602,16 @@ impl Texture
         let mut changed = false;
 
         changed = ui.checkbox(&mut mipmapping, "use mipmap").changed() || changed;
-        if ui.button("generate mipmap cache").on_hover_text("Generate mipmap cache for this texture").clicked()
+
+        ui.horizontal(|ui|
         {
-            self.create_mipmap_cache();
-        };
+            ui.set_max_width(50.0);
+
+            if ui.button("generate mipmap cache").on_hover_text("Generate mipmap cache for this texture").clicked()
+            {
+                self.create_mipmap_cache();
+            };
+        });
 
         ui.horizontal(|ui|
         {
@@ -620,7 +626,6 @@ impl Texture
                 changed = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::CatmullRom, "CatmullRom").changed() || changed;
             });
         });
-
 
         ui.horizontal(|ui|
         {

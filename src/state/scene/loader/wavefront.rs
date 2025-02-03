@@ -228,6 +228,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -243,6 +249,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -258,6 +270,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -273,6 +291,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -288,6 +312,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -303,6 +333,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
