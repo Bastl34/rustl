@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{mem::swap, f32::consts::PI};
 
 use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3};
@@ -12,7 +14,7 @@ const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
 const DEFAULT_CAM_DIR: Vector3::<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 
 //pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(1.0, 0.0, 2.0);
-pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(-0.5, 0.5, 1.0);
+//pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(-0.5, 0.5, 1.0);
 
 const DEFAULT_LEFT_EAR_POS: Point3<f32> = Point3::<f32>::new(-1.0, 0.0, 0.0);
 const DEFAULT_RIGHT_EAR_POS: Point3<f32> = Point3::<f32>::new(1.0, 0.0, 0.0);

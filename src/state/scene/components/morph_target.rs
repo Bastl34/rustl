@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, state::scene::node::NodeItem};
 

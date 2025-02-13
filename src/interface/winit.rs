@@ -2,7 +2,7 @@ use winit::keyboard::KeyLocation;
 
 use crate::input::{keyboard::Key, mouse::MouseButton};
 
-pub fn winit_map_key(logical_key: &winit::keyboard::Key, physical_key: &winit::keyboard::PhysicalKey, location: winit::keyboard::KeyLocation) -> Key
+pub fn winit_map_key(logical_key: &winit::keyboard::Key, location: winit::keyboard::KeyLocation) -> Key
 {
     // https://github.com/rust-windowing/winit/blob/master/src/platform_impl/android/keycodes.rs
 

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use nalgebra::{Vector3, Vector4};
 
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::{InstanceItemArc, NodeItem}};

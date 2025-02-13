@@ -1,4 +1,6 @@
-use crate::{helper::stopwatch::StopWatch, render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}};
+#![allow(dead_code)]
+
+use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}};
 
 use super::wgpu::WGpu;
 use nalgebra::{Point2, Vector3};

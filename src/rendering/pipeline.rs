@@ -11,8 +11,6 @@ pub struct Pipeline
     pub name: String,
     pub fragment_attachment: bool,
 
-    max_lights: u32,
-
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
 }
@@ -40,8 +38,6 @@ impl Pipeline
         {
             name: name.to_string(),
             fragment_attachment,
-
-            max_lights: max_lights,
 
             shader,
             pipeline: None,

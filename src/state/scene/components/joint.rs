@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 
 use nalgebra::Matrix4;
 
@@ -10,7 +11,7 @@ pub struct JointData
 {
     pub root_joint: bool,
     pub local_trans: Matrix4<f32>,
-    pub full_joint_trans: Matrix4<f32>,
+    //pub full_joint_trans: Matrix4<f32>,
     pub inverse_bind_trans: Matrix4<f32>,
     //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
@@ -34,7 +35,7 @@ impl Joint
         let data = JointData
         {
             root_joint: false,
-            full_joint_trans: Matrix4::<f32>::identity(),
+            //full_joint_trans: Matrix4::<f32>::identity(),
             local_trans: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
             //inverse_bind_trans_calculated: Matrix4::<f32>::identity(),

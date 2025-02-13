@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
 

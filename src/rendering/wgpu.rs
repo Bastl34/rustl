@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
+use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
 use crate::{helper::{platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
 
@@ -17,7 +17,6 @@ pub struct WGpu
     msaa_texture: Option<wgpu::Texture>,
 
     surface_config: SurfaceConfiguration,
-    pub surface_caps: SurfaceCapabilities,
 }
 
 impl WGpu
@@ -99,7 +98,6 @@ impl WGpu
             width: dimensions.width,
             height: dimensions.height,
             present_mode: present_mode,
-            //alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
             view_formats: vec![],
@@ -147,7 +145,6 @@ impl WGpu
             msaa_samples,
             msaa_texture: None,
             queue,
-            surface_caps,
             surface_config
         };
 
@@ -350,10 +347,10 @@ impl WGpu
         encoder.copy_texture_to_buffer
         (
             texture.as_image_copy(),
-            wgpu::ImageCopyBuffer
+            wgpu::TexelCopyBufferInfo
             {
                 buffer: &output_buffer,
-                layout: wgpu::ImageDataLayout
+                layout: wgpu::TexelCopyBufferLayout
                 {
                     offset: 0,
                     bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),

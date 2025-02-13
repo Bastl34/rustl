@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::mem;
 use std::sync::{Arc, RwLock};

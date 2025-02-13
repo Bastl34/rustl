@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use egui::FullOutput;
@@ -36,7 +38,7 @@ impl EGui
         Self
         {
             ctx: ctx,
-            renderer: Renderer::new(device, surface_cfg.format, None, 1, dithering),
+            renderer: Renderer::new(&device, surface_cfg.format, None, 1, dithering),
             ui_state: ui_state,
             screen_descriptor: ScreenDescriptor
             {

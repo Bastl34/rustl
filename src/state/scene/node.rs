@@ -750,6 +750,27 @@ impl Node
         None
     }
 
+    pub fn find_child_node_by_regex(&self, regex: &str) -> Option<NodeItem>
+    {
+        let regex_item: Regex = Regex::new(regex).unwrap();
+
+        for node in &self.nodes
+        {
+            if regex_item.is_match(&node.read().unwrap().name)
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = node.read().unwrap().find_child_node_by_regex(regex);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+        None
+    }
+
     pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
     {
         for node in nodes

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 
 use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
@@ -504,7 +505,7 @@ impl Mesh
             data.normals_indices.push([i0, i1, i2]);
         }
 
-        let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());;
+        let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());
         let mesh = match mesh_res
         {
             Ok(mesh) => mesh,

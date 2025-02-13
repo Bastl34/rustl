@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
 
 use nalgebra::{Point3, Vector3, Vector4};
@@ -227,7 +229,6 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
                     let scale = if is_almost_integer(z_pos) { integer_grid_line_scale } else { 1.0 };
 
                     let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-                    let uuid = uuid::Uuid::new_v4().to_string();
                     let mut transformation = Transformation::identity(component_id, "Transform");
                     transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, z_pos));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);

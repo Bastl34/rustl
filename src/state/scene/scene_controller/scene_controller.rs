@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::any::Any;
 
 use crate::{state::scene::node::NodeItem, input::input_manager::InputManager};

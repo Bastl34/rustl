@@ -91,7 +91,7 @@ impl ExecutionQueue
 
     pub fn run_first(queue: Arc<RwLock<ExecutionQueue>>, state: &mut State)
     {
-        let mut front = None;
+        let front ;
         {
             front = queue.write().unwrap().queue.pop_front();
         }

@@ -83,7 +83,6 @@ impl CameraController for FlyController
     fn update(&mut self, _node: Option<NodeItem>, scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;
-        let mut last_eye_pos = None;
 
         // ******************** angle/rotation ********************
         let mut angle_velocity = Vector2::<f32>::zeros();
@@ -250,7 +249,6 @@ impl CameraController for FlyController
         if !approx_zero_vec3(&movement)
         {
             let cam_data = cam_data.get_ref();
-            last_eye_pos = Some(cam_data.eye_pos.clone());
 
             let dir = cam_data.dir.normalize();
             let up = cam_data.up.normalize();

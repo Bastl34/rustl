@@ -182,7 +182,7 @@ fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: 
     ui.label("▓").on_hover_text("Grid");
     egui::ComboBox::from_label("units").selected_text(format!("{grid_size:?}")).show_ui(ui, |ui|
     {
-        ui.style_mut().wrap = Some(false);
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
 
         changed = ui.selectable_value(&mut grid_size, 0.05, "0.05").changed() || changed;
         changed = ui.selectable_value(&mut grid_size, 0.0625, "0.0625").changed() || changed;

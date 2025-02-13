@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use nalgebra::Matrix4;
 use wgpu::{BindGroup, util::DeviceExt};
 use colored::Colorize;

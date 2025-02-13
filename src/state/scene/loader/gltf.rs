@@ -1454,7 +1454,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
     }
 
     // backface culling
-    data.backface_cullig = !gltf_material.double_sided();
+    data.backface_culling = !gltf_material.double_sided();
 
     // index of refraction
     if let Some(ior) = gltf_material.ior()

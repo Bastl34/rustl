@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::get_delta_t}};
 
 use super::scene_controller::SceneController;
 
@@ -19,13 +21,11 @@ const ROTATION_SPEED: f32 = 0.06;
 
 const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 
-const GRAVITY: f32 = 0.3;
-//const GRAVITY: f32 = 0.981;
-//const GRAVITY: f32 = 0.0981;
+const GRAVITY: f32 = 9.81;
 const JUMP_FORCE: f32 = 5.0;
-const MAX_FALL_SPEED: f32 = 1.0;
+const MAX_FALL_SPEED: f32 = 30.0; // maybe 50 which is more like the real world max human fall velocity
 
-const FALL_HEIGHT: f32 = 2.0;
+const FALL_VELOCITY: f32 = 6.0;
 const FALL_STOP_HEIGHT: f32 = 0.1;
 const BODY_OFFSET: f32 = 0.5;
 
@@ -75,12 +75,13 @@ pub struct CharacterController
     pub rotation_follow: bool,
     pub direction: Vector3<f32>,
 
-    pub fall_height: f32,
+    pub fall_velocity: f32,
     pub fall_stop_height: f32,
     pub body_offset: f32,
     pub rotation_offset: f32,
 
     pub current_y_velocity: f32,
+
     pub gravity: f32,
     pub jump_force: f32,
     pub max_fall_speed: f32,
@@ -139,7 +140,7 @@ impl CharacterController
             rotation_follow: false,
             direction: CHARACTER_DIRECTION,
 
-            fall_height: FALL_HEIGHT,
+            fall_velocity: FALL_VELOCITY,
             fall_stop_height: FALL_STOP_HEIGHT,
             body_offset: BODY_OFFSET,
             rotation_offset: 0.0,
@@ -152,7 +153,7 @@ impl CharacterController
             fly_mode: false,
 
             physics: true,
-            falling: false,
+            falling: true,
 
             strafe: false,
 
@@ -281,6 +282,19 @@ impl CharacterController
             self.animation_fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
             self.animation_fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
             self.animation_actions = node.find_animations_by_regex("(?i)action.*");
+
+            // set jump animation in place
+            if let Some(jump_animation) = &self.animation_jump
+            {
+                if let Some(animation_node) = self.animation_node.clone()
+                {
+                    let animation_node = animation_node.read().unwrap();
+                    let root_node_arc = animation_node.find_child_node_by_regex("(?i)(root)|(hips)|(spine)");
+
+                    component_downcast_mut!(jump_animation, Animation);
+                    jump_animation.in_place_joint_node = root_node_arc.clone();
+                }
+            }
         }
 
         // transformation animation
@@ -296,10 +310,7 @@ impl CharacterController
             {
                 let transformation = node.find_component::<Transformation>().unwrap();
                 self.transformation = Some(transformation.clone());
-
-                component_downcast_mut!(transformation, Transformation);
             }
-
         }
 
         self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, true, false, false);
@@ -677,7 +688,6 @@ impl SceneController for CharacterController
 
         let mut has_change = false;
 
-        let all_keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::Escape];
         let mut movement = Vector3::<f32>::zeros();
         let mut rotation = Vector3::<f32>::zeros();
 
@@ -866,6 +876,7 @@ impl SceneController for CharacterController
         if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, false, false, true);
+            self.current_y_velocity = self.jump_force;
             has_change = true;
         }
         // ********** crouch **********
@@ -945,14 +956,14 @@ impl SceneController for CharacterController
             if let Some(transformation) = &self.transformation
             {
                 let mut pos;
-                let down;
+                let down_dir;
                 {
                     component_downcast_mut!(transformation, Transformation);
                     let transform_data = transformation.get_data();
 
                     pos = Point3::<f32>::new(transform_data.position.x, transform_data.position.y, transform_data.position.z);
                     pos.y += self.body_offset;
-                    down = Vector3::new(0.0, -1.0, 0.0);
+                    down_dir = Vector3::new(0.0, -1.0, 0.0);
                 }
 
                 let character_node = node.clone();
@@ -966,45 +977,67 @@ impl SceneController for CharacterController
                     !is_char_node
                 };
 
-                let ray = Ray::new(pos, down);
+                let ray = Ray::new(pos, down_dir);
                 let pick_res = scene.multi_pick(&ray, false, false, Some(Arc::new(predicate_func)));
 
                 if let Some(first_pick) = pick_res.first()
                 {
-                    let distance = first_pick.time_of_impact - self.body_offset;
+                    let ground_distance = first_pick.time_of_impact - self.body_offset;
 
-                    //if self.falling && approx_zero(distance)
-                    if self.falling && distance.abs() <= 0.1
+                    let delta_t = get_delta_t(frame_scale);
+
+                    self.current_y_velocity -= self.gravity * delta_t;
+                    self.current_y_velocity = self.current_y_velocity.clamp(-self.max_fall_speed, self.max_fall_speed);
+
+                    if is_landing
                     {
-                        self.start_animation(CharAnimationType::FallLanding, 0, AnimationMixing::Fade, false, false, true);
+                        self.current_y_velocity = 0.0;
+                    }
+
+                    let mut moving = self.current_y_velocity * delta_t;
+
+                    // move up if the avatar would otherwise will be stuck in the ground
+                    if ground_distance < 0.0 && !is_jumping
+                    {
+                        movement.y -= ground_distance;
+                        self.current_y_velocity = 0.0;
                         self.falling = false;
                     }
-
-                    // move up
-                    if distance < 0.0
+                    // standard fall down movement
+                    else
                     {
-                        movement.y -= distance;
-                    }
-                    // move down
-                    else if !is_jumping
-                    {
-                        if distance > self.fall_height || self.falling
+                        if !is_jumping
                         {
-                            if !is_rolling
+                            if self.current_y_velocity < -self.fall_velocity || self.falling
                             {
-                                self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, false, false, false);
+                                if !is_rolling
+                                {
+                                    self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, false, false, false);
+                                }
+                                self.falling = true;
                             }
-                            self.falling = true;
+                            else
+                            {
+                                self.falling = false;
+                            }
                         }
 
-                        let mut down = self.gravity * frame_scale;
 
-                        if down > distance
+                        // do not move more than ground distance
+                        if moving < -ground_distance
                         {
-                            down = distance;
+                            // if velocity is high enough, start landing animation
+                            if !is_jumping && self.current_y_velocity < -self.fall_velocity && !is_landing
+                            {
+                                self.start_animation(CharAnimationType::FallLanding, 0, AnimationMixing::Fade, false, false, true);
+                            }
+
+                            moving = -ground_distance;
+                            self.current_y_velocity = 0.0;
+                            self.falling = false;
                         }
 
-                        movement.y -= down;
+                        movement.y += moving;
                     }
                 }
             }
@@ -1176,8 +1209,8 @@ impl SceneController for CharacterController
 
         ui.horizontal(|ui|
         {
-            ui.label("Fall Height: ");
-            ui.add(egui::Slider::new(&mut self.fall_height, 0.0..=10.0).fixed_decimals(2));
+            ui.label("Fall Velocity: ");
+            ui.add(egui::Slider::new(&mut self.fall_velocity, 0.0..=20.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
@@ -1203,7 +1236,7 @@ impl SceneController for CharacterController
         ui.horizontal(|ui|
         {
             ui.label("Max Fall Speed: ");
-            ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=10.0).fixed_decimals(2));
+            ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=100.0).fixed_decimals(1));
         });
 
         ui.separator();

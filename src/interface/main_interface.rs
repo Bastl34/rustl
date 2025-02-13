@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
@@ -37,8 +39,6 @@ use crate::state::state::{State, StateItem, FPS_CHART_VALUES, REFERENCE_UPDATE_F
 
 use super::gilrs::{gilrs_event, gilrs_initialize};
 use super::winit::winit_map_key;
-
-const FPS_CHART_FACTOR: f32 = 25.0;
 
 pub struct MainInterface
 {
@@ -1039,9 +1039,9 @@ impl MainInterface
 
             match event
             {
-                winit::event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } =>
+                winit::event::WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } =>
                 {
-                    let key = winit_map_key(&event.logical_key, &event.physical_key, event.location);
+                    let key = winit_map_key(&event.logical_key, event.location);
 
                     if event.state == ElementState::Pressed
                     {

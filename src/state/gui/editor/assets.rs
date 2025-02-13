@@ -135,7 +135,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, _state: &mut State, ui:
                             {
                                 apply_available_size(ui);
 
-                                let mut frame = egui::Frame::default().fill(bg_color).rounding(2.0).shadow(shadow).outer_margin(margin);
+                                let mut frame = egui::Frame::default().fill(bg_color).corner_radius(2.0).shadow(shadow).outer_margin(margin);
                                 if is_being_dragged
                                 {
                                     frame = frame.fill(highlight_color).stroke(egui::Stroke::new(2.0, highlight_color));

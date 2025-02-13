@@ -6,8 +6,6 @@ use crate::{component_downcast, helper::concurrency::{execution_queue::Execution
 
 use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
-const FROM_FILE_COLOR: Color32 = Color32::from_rgb(80, 20, 20);
-
 pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
     for node_arc in nodes
@@ -949,7 +947,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 is_sound = component.as_any().downcast_ref::<Sound>().is_some();
             }
 
-            //let bg_color = if from_file { Some(FROM_FILE_COLOR) } else { None };
             let bg_color = None;
 
             generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
@@ -1103,7 +1100,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         is_sound = component.as_any().downcast_ref::<Sound>().is_some();
                     }
 
-                    //let bg_color = if from_file { Some(FROM_FILE_COLOR) } else { None };
                     let bg_color = None;
 
                     generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|

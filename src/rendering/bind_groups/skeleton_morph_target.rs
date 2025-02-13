@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use wgpu::{BindGroupLayout, BindGroup};
 
 use crate::{rendering::{wgpu::WGpu, uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer}, state::helper::render_item::RenderItem, render_item_impl_default};

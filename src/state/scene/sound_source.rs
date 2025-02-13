@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{fs, io::Cursor, sync::{Arc, RwLock}};
 
 use crate::{helper::{self}, output::audio_device::AudioDeviceItem};

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::sync::{RwLock, Arc};
 
 use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};

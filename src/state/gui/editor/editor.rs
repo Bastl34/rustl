@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
@@ -1180,8 +1182,8 @@ impl Editor
         let pos_delta = pointer_velocity;
 
         // ********** get selection **********
-        let mut selected_scene_id = None;
-        let mut selected_node = None;
+        let selected_scene_id;
+        let selected_node;
         {
             let (scene, node, _) = self.editor_state.get_selected_node(state);
 

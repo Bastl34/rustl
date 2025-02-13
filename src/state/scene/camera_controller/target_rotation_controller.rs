@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{f32::consts::PI, sync::Arc};
 
 use nalgebra::{Vector2, Vector3, Point3};

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 
 use instant::Instant;
@@ -5,7 +7,7 @@ use nalgebra::Vector3;
 
 use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
 
-use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::{SceneControllerBase, SceneControllerBox}, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -14,6 +16,11 @@ pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
 pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
+
+pub fn get_delta_t(frame_scale: f32) -> f32
+{
+    frame_scale / REFERENCE_UPDATE_FRAMES
+}
 
 pub struct AdapterFeatures
 {

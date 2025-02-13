@@ -106,12 +106,12 @@ pub fn cubic_spline_interpolate_vec3
 (
     interpolation_time: f32,
     delta_time: f32,
-    prev_input_tangent: &Vector3::<f32>,
+    _prev_input_tangent: &Vector3::<f32>,
     prev_keyframe_value: &Vector3::<f32>,
     prev_output_tangent: &Vector3::<f32>,
     next_input_tangent: &Vector3::<f32>,
     next_keyframe_value: &Vector3::<f32>,
-    next_output_tangent: &Vector3::<f32>
+    _next_output_tangent: &Vector3::<f32>
 ) -> Vector3::<f32>
 {
     let t = interpolation_time;
@@ -131,12 +131,12 @@ pub fn cubic_spline_interpolate_vec4
 (
     interpolation_time: f32,
     delta_time: f32,
-    prev_input_tangent: &Vector4::<f32>,
+    _prev_input_tangent: &Vector4::<f32>,
     prev_keyframe_value: &Vector4::<f32>,
     prev_output_tangent: &Vector4::<f32>,
     next_input_tangent: &Vector4::<f32>,
     next_keyframe_value: &Vector4::<f32>,
-    next_output_tangent: &Vector4::<f32>
+    _next_output_tangent: &Vector4::<f32>
 ) -> Vector4::<f32> {
     let t = interpolation_time;
     let t2 = t * t;
@@ -161,7 +161,7 @@ pub fn cubic_spline_interpolate_vec
     prev_output_tangent: &Vec::<f32>,
     next_input_tangent: &Vec::<f32>,
     next_keyframe_value: &Vec::<f32>,
-    next_output_tangent: &Vec::<f32>
+    _next_output_tangent: &Vec::<f32>
 ) -> Vec::<f32> {
     let t = interpolation_time;
     let t2 = t * t;

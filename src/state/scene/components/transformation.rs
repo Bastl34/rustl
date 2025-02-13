@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 
 use egui::RichText;
 use nalgebra::{Vector3, Matrix4, Rotation3, Vector4, UnitQuaternion, Quaternion};

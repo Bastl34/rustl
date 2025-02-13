@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{cell::RefCell, collections::{HashMap, HashSet}, mem::swap, sync::{Arc, RwLock}};
 
 use anyhow::Ok;
@@ -1295,7 +1297,7 @@ impl Scene
             component_downcast!(material, Material);
             let material_data = material.get_data();
 
-            let solid = !material_data.backface_cullig;
+            let solid = !material_data.backface_culling;
 
             let mut joint_matrices = vec![];
             if node.skin.len() > 0

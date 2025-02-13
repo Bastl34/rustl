@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use nalgebra::{Vector3, Vector4};
 use strum_macros::{Display, EnumIter};
 
@@ -117,14 +119,12 @@ pub struct MaterialData
     pub receive_shadow: bool,
     pub shadow_softness: f32,
 
-    pub monte_carlo: bool,
-
     pub roughness: f32, //degree in rad (max PI/2)
 
     pub smooth_shading: bool,
 
     pub reflection_only: bool,
-    pub backface_cullig: bool
+    pub backface_culling: bool
 }
 
 pub struct Material
@@ -176,12 +176,10 @@ impl Material
 
             roughness: 0.0,
 
-            monte_carlo: true,
-
             smooth_shading: true,
 
             reflection_only: false,
-            backface_cullig: true,
+            backface_culling: true,
         };
 
         Material
@@ -204,7 +202,7 @@ impl Material
     pub fn apply_diff_without_textures(&mut self, new_mat: &Material)
     {
         let default_material = Material::new(0, "");
-        let default_material_data = new_mat.get_data();
+        let default_material_data = default_material.get_data();
 
         let new_mat_data = new_mat.get_data();
 
@@ -259,12 +257,10 @@ impl Material
 
         if !helper::math::approx_equal(default_material_data.roughness, new_mat_data.roughness) { data.roughness = new_mat_data.roughness; }
 
-        if default_material_data.monte_carlo != new_mat_data.monte_carlo { data.monte_carlo = new_mat_data.monte_carlo; }
-
         if default_material_data.smooth_shading != new_mat_data.smooth_shading { data.smooth_shading = new_mat_data.smooth_shading; }
 
         if default_material_data.reflection_only != new_mat_data.reflection_only { data.reflection_only = new_mat_data.reflection_only; }
-        if default_material_data.backface_cullig != new_mat_data.backface_cullig { data.backface_cullig = new_mat_data.backface_cullig; }
+        if default_material_data.backface_culling != new_mat_data.backface_culling { data.backface_culling = new_mat_data.backface_culling; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -350,12 +346,10 @@ impl Material
 
         println!("roughness: {:?}", data.roughness);
 
-        println!("monte_carlo: {:?}", data.monte_carlo);
-
         println!("smooth_shading: {:?}", data.smooth_shading);
 
         println!("reflection_only: {:?}", data.reflection_only);
-        println!("backface_cullig: {:?}", data.backface_cullig);
+        println!("backface_culling: {:?}", data.backface_culling);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -698,10 +692,9 @@ impl Component for Material
 
         let mut shadow_softness;
         let mut roughness;
-        let mut monte_carlo;
         let mut smooth_shading;
         let mut reflection_only;
-        let mut backface_cullig;
+        let mut backface_culling;
 
         let mut ambient_color;
         let mut base_color;
@@ -724,10 +717,9 @@ impl Component for Material
 
             shadow_softness = data.shadow_softness;
             roughness = data.roughness;
-            monte_carlo = data.monte_carlo;
             smooth_shading = data.smooth_shading;
             reflection_only = data.reflection_only;
-            backface_cullig = data.backface_cullig;
+            backface_culling = data.backface_culling;
 
             let r = (data.ambient_color.x * 255.0) as u8;
             let g = (data.ambient_color.y * 255.0) as u8;
@@ -771,10 +763,9 @@ impl Component for Material
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
-        apply_settings = ui.checkbox(&mut monte_carlo, "monte carlo").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut smooth_shading, "smooth shading").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut reflection_only, "reflection only").changed() || apply_settings;
-        apply_settings = ui.checkbox(&mut backface_cullig, "backface cullig").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut backface_culling, "backface cullig").changed() || apply_settings;
 
         ui.horizontal(|ui|
         {
@@ -822,10 +813,9 @@ impl Component for Material
 
             data.shadow_softness = shadow_softness;
             data.roughness = roughness;
-            data.monte_carlo = monte_carlo;
             data.smooth_shading = smooth_shading;
             data.reflection_only = reflection_only;
-            data.backface_cullig = backface_cullig;
+            data.backface_culling = backface_culling;
 
             let r = ((ambient_color.r() as f32) / 255.0).clamp(0.0, 1.0);
             let g = ((ambient_color.g() as f32) / 255.0).clamp(0.0, 1.0);
