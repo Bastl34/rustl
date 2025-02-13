@@ -21,7 +21,7 @@ const ROTATION_SPEED: f32 = 0.06;
 
 const CHARACTER_DIRECTION: Vector3<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 
-const GRAVITY: f32 = 9.81;
+const EARTH_GRAVITY: f32 = 9.81;
 const JUMP_FORCE: f32 = 5.0;
 const MAX_FALL_SPEED: f32 = 30.0; // maybe 50 which is more like the real world max human fall velocity
 
@@ -146,7 +146,7 @@ impl CharacterController
             rotation_offset: 0.0,
 
             current_y_velocity: 0.0,
-            gravity: GRAVITY,
+            gravity: EARTH_GRAVITY,
             jump_force: JUMP_FORCE,
             max_fall_speed: MAX_FALL_SPEED,
 
@@ -313,7 +313,7 @@ impl CharacterController
             }
         }
 
-        self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, true, false, false);
+        self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, 1.0, true, false, false);
     }
 
     fn get_animation(&self, animation: CharAnimationType, index: usize) -> Option<ComponentItem>
@@ -562,7 +562,7 @@ impl CharacterController
         false
     }
 
-    fn start_animation(&mut self, animation: CharAnimationType, index: usize, mix_type: AnimationMixing, looped: bool, reverse: bool, reset_time: bool)
+    fn start_animation(&mut self, animation: CharAnimationType, index: usize, mix_type: AnimationMixing, animation_speed: f32, looped: bool, reverse: bool, reset_time: bool)
     {
         if self.node.is_none()
         {
@@ -619,6 +619,7 @@ impl CharacterController
             component_downcast_mut!(animation_item, Animation);
             animation_item.looped = looped;
             animation_item.reverse = reverse;
+            animation_item.speed = animation_speed;
 
             if reset_time
             {
@@ -704,7 +705,7 @@ impl SceneController for CharacterController
 
             if self.fly_mode
             {
-                self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, true, false, false);
+                self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, 1.0, true, false, false);
             }
 
             if let Some(cam) = scene.get_active_camera_mut()
@@ -745,7 +746,7 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, false, false);
+                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, 1.0, true, false, false);
                 }
 
                 movement.z = if self.fly_mode { self.fly_speed } else { self.movement_speed };
@@ -755,7 +756,7 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, true, false);
+                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, 1.0, true, true, false);
                 }
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
@@ -764,7 +765,7 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Run, 0, AnimationMixing::Fade, true, false, false);
+                    self.start_animation(CharAnimationType::Run, 0, AnimationMixing::Fade, 1.0, true, false, false);
                 }
 
                 movement.z = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
@@ -774,7 +775,7 @@ impl SceneController for CharacterController
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
-                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, true, true, false);
+                    self.start_animation(CharAnimationType::Walk, 0, AnimationMixing::Fade, 1.0, true, true, false);
                 }
 
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
@@ -797,7 +798,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, true, false, false);
+                            self.start_animation(CharAnimationType::StrafeLeftRun, 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { -self.fly_speed_fast } else { -self.movement_speed_fast };
                     }
@@ -805,7 +806,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeLeftWalk, 0, AnimationMixing::Fade, true, false, false);
+                            self.start_animation(CharAnimationType::StrafeLeftWalk, 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                     }
@@ -825,7 +826,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, true, false, false);
+                            self.start_animation(CharAnimationType::StrafeRightRun, 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                     }
@@ -833,7 +834,7 @@ impl SceneController for CharacterController
                     {
                         if !self.fly_mode
                         {
-                            self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, true, false, false);
+                            self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
                         movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                     }
@@ -875,14 +876,15 @@ impl SceneController for CharacterController
         // ********** jump **********
         if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
-            self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, false, false, true);
+            let animation_speed = self.gravity / EARTH_GRAVITY;
+            self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, animation_speed, false, false, true);
             self.current_y_velocity = self.jump_force;
             has_change = true;
         }
         // ********** crouch **********
         else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
-            self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, false, false, false);
+            self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, 1.0, false, false, false);
             has_change = true;
         }
         // ********** roll **********
@@ -890,11 +892,11 @@ impl SceneController for CharacterController
         {
             if movement.z > 0.0
             {
-                self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, false, false, true);
+                self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, 1.0, false, false, true);
             }
             else
             {
-                self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, false, true, true);
+                self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, 1.0, false, true, true);
             }
 
             has_change = true;
@@ -902,16 +904,16 @@ impl SceneController for CharacterController
         // ********** action **********
         else if approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key3) { self.start_animation(CharAnimationType::Action, 2, AnimationMixing::Fade, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key4) { self.start_animation(CharAnimationType::Action, 3, AnimationMixing::Fade, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key3) { self.start_animation(CharAnimationType::Action, 2, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key4) { self.start_animation(CharAnimationType::Action, 3, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
         }
         // ********** stop **********
         else if input_manager.keyboard.is_pressed_no_wait(Key::Escape) && !self.fly_mode
         {
-            self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, false, false, false);
+            self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, 1.0, false, false, false);
             has_change = true;
         }
 
@@ -924,7 +926,7 @@ impl SceneController for CharacterController
         // ********** idle **********
         if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !self.fly_mode
         {
-            self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, true, false, false);
+            self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, 1.0, true, false, false);
         }
 
         /*
@@ -1012,7 +1014,7 @@ impl SceneController for CharacterController
                             {
                                 if !is_rolling
                                 {
-                                    self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, false, false, false);
+                                    self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, 1.0, false, false, false);
                                 }
                                 self.falling = true;
                             }
@@ -1029,7 +1031,7 @@ impl SceneController for CharacterController
                             // if velocity is high enough, start landing animation
                             if !is_jumping && self.current_y_velocity < -self.fall_velocity && !is_landing
                             {
-                                self.start_animation(CharAnimationType::FallLanding, 0, AnimationMixing::Fade, false, false, true);
+                                self.start_animation(CharAnimationType::FallLanding, 0, AnimationMixing::Fade, 1.0, false, false, true);
                             }
 
                             moving = -ground_distance;
@@ -1224,7 +1226,7 @@ impl SceneController for CharacterController
         ui.horizontal(|ui|
         {
             ui.label("Gravity: ");
-            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=1.0).fixed_decimals(2));
+            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=20.0).fixed_decimals(2));
         });
 
         ui.horizontal(|ui|
