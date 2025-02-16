@@ -20,7 +20,7 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 
@@ -422,7 +422,22 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     let root_node_clone = root_node.clone();
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
-        scene.add_node(root_node_clone.clone());
+        if let Some(parent_node_id) = parent_node_id
+        {
+            let parent_node = scene.find_node_by_id(parent_node_id);
+            if let Some(parent_node) = parent_node
+            {
+                Node::add_node(parent_node.clone(), root_node_clone.clone());
+            }
+            else
+            {
+                dbg!("can not find parent node by id");
+            }
+        }
+        else
+        {
+            scene.add_node(root_node_clone.clone());
+        }
     }));
 
     for scene_node in &scene_nodes

@@ -7,7 +7,7 @@ use nalgebra::{Point3, Vector3, Vector4};
 use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, math::is_almost_integer}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::{Component, ComponentItem}, material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
@@ -20,11 +20,11 @@ pub fn load_object(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return wavefront::load(path, scene_id, parent_node_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return gltf::load(path, scene_id, parent_node_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
 
     Ok(vec![])
@@ -168,7 +168,7 @@ pub fn insert_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, te
 
 }
 
-pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
+pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
 {
     let integer_grid_line_scale = 3.0;
 
@@ -179,8 +179,8 @@ pub fn create_grid(scene_id: u64, main_queue: ExecutionQueueItem, id_manager: Id
 
     let size = amount as f32 * spacing;
 
-    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
+    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
+    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
@@ -552,7 +552,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
 
 pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
 {
-    let animations = load_object(path, scene_id, main_queue.clone(), id_manager.clone(), false, true, false, 0);
+    let animations = load_object(path, scene_id, None, main_queue.clone(), id_manager.clone(), false, true, false, 0);
 
     if let Err(animations) = animations
     {

@@ -62,6 +62,7 @@ pub struct CharacterController
     base: SceneControllerBase,
 
     pub node_name: String,
+    pub cam_name: String,
 
     pub fade_speed: f32,
 
@@ -90,6 +91,7 @@ pub struct CharacterController
 
     pub physics: bool, // very simple at the moment
     pub falling: bool,
+    pub grounded: bool,
 
     pub strafe: bool,
 
@@ -127,6 +129,7 @@ impl CharacterController
             base: SceneControllerBase::new("Character Controller".to_string(), "🏃".to_string()),
 
             node_name: "".to_string(),
+            cam_name: "".to_string(),
 
             fade_speed: FADE_SPEED,
 
@@ -154,6 +157,7 @@ impl CharacterController
 
             physics: true,
             falling: true,
+            grounded: false,
 
             strafe: false,
 
@@ -183,22 +187,31 @@ impl CharacterController
         }
     }
 
-    pub fn auto_setup(&mut self, scene: &mut crate::state::scene::scene::Scene, character_node: &str)
+    pub fn auto_setup(&mut self, scene: &mut crate::state::scene::scene::Scene, character_node: &str, cam_name: &str) -> Option<String>
     {
         let id_manager = scene.id_manager.clone();
         let node = scene.find_node_by_name(character_node);
-        let cam = scene.get_active_camera_mut();
+
+        let cam;
+        if cam_name.is_empty()
+        {
+            cam = scene.get_active_camera_mut();
+        }
+        else
+        {
+            cam = scene.get_camera_by_name_mut(cam_name);
+        }
 
         if node.is_none()
         {
             println!("auto setup failed - node not found");
-            return;
+            return Some("auto setup failed - node not found".to_string());
         }
 
         if cam.is_none()
         {
             println!("auto setup failed - camera not found");
-            return;
+            return Some("auto setup failed - camera not found".to_string());
         }
 
         self.node = Some(node.unwrap());
@@ -314,6 +327,8 @@ impl CharacterController
         }
 
         self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, 1.0, true, false, false);
+
+        None
     }
 
     fn get_animation(&self, animation: CharAnimationType, index: usize) -> Option<ComponentItem>
@@ -874,7 +889,7 @@ impl SceneController for CharacterController
         }
 
         // ********** jump **********
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
+        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && self.grounded
         {
             let animation_speed = self.gravity / EARTH_GRAVITY;
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, animation_speed, false, false, true);
@@ -1004,6 +1019,7 @@ impl SceneController for CharacterController
                         movement.y -= ground_distance;
                         self.current_y_velocity = 0.0;
                         self.falling = false;
+                        self.grounded = true;
                     }
                     // standard fall down movement
                     else
@@ -1037,6 +1053,11 @@ impl SceneController for CharacterController
                             moving = -ground_distance;
                             self.current_y_velocity = 0.0;
                             self.falling = false;
+                            self.grounded = true;
+                        }
+                        else
+                        {
+                            self.grounded = false;
                         }
 
                         movement.y += moving;
@@ -1151,11 +1172,18 @@ impl SceneController for CharacterController
             ui.text_edit_singleline(&mut self.node_name);
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("Camera Target Name: ");
+            ui.label("ℹ").on_hover_text("leave empty for main active camera");
+            ui.text_edit_singleline(&mut self.cam_name);
+        });
+
         ui.vertical(|ui|
         {
             if ui.button("Run Auto Setup").clicked()
             {
-                self.auto_setup(scene, self.node_name.clone().as_str());
+                self.auto_setup(scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
             }
         });
 

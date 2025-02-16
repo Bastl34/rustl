@@ -724,6 +724,16 @@ impl Scene
         self.cameras.iter_mut().find(|cam|{ cam.id == id })
     }
 
+    pub fn get_camera_by_name(&self, name: &str) -> Option<&CameraItem>
+    {
+        self.cameras.iter().find(|cam|{ cam.name == name })
+    }
+
+    pub fn get_camera_by_name_mut(&mut self, name: &str) -> Option<&mut CameraItem>
+    {
+        self.cameras.iter_mut().find(|cam|{ cam.name == name })
+    }
+
     pub fn delete_camera_by_id(&mut self, id: u64) -> bool
     {
         let len = self.cameras.len();

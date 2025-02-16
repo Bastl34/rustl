@@ -9,7 +9,7 @@ use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instan
 pub struct Pipeline
 {
     pub name: String,
-    pub fragment_attachment: bool,
+    pub fragment_attachment: bool, // TODO: currently not implemented
 
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
@@ -22,7 +22,7 @@ impl RenderItem for Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32) -> Pipeline
     {
         let shader;
         {
@@ -43,7 +43,7 @@ impl Pipeline
             pipeline: None,
         };
 
-        pipe.create(wgpu, bind_group_layouts, depth_stencil, fragment_attachment, samples);
+        pipe.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
 
         pipe
     }
@@ -59,7 +59,7 @@ impl Pipeline
         shader
     }
 
-    pub fn create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -72,14 +72,17 @@ impl Pipeline
             push_constant_ranges: &[],
         });
 
+        // front to back is the default
+        let depth_compare_func = if depth_compare { wgpu::CompareFunction::Less } else { wgpu::CompareFunction::Always };
+
         let mut depth_stencil_state = None;
         if depth_stencil
         {
             depth_stencil_state = Some(wgpu::DepthStencilState
             {
                 format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // front to back
+                depth_write_enabled: depth_write,
+                depth_compare: depth_compare_func,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             });
@@ -171,11 +174,11 @@ impl Pipeline
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn re_create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
         dbg!("recreating pipeline");
 
-        self.create(wgpu, bind_group_layouts, depth_stencil, fragment_attachment, samples);
+        self.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
     }
 
     pub fn create_shader(device: &Device, name: &str, shader_source: &String) -> ShaderModule

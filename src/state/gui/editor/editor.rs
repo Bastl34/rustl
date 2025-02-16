@@ -261,9 +261,15 @@ impl Editor
                 let main_queue_clone = state.main_thread_execution_queue.clone();
                 let id_manager_clone = scene.id_manager.clone();
 
+                let mut editor_utils_node_id = None;
+                if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
+                {
+                    editor_utils_node_id = Some(editor_utils_node.read().unwrap().id);
+                }
+
                 spawn_thread(move ||
                 {
-                    scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                    scene_utils::create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
                 });
 
                 self.editor_state.grid_recreate = false;
@@ -1492,6 +1498,7 @@ impl Editor
         let main_queue = state.main_thread_execution_queue.clone();
 
         let mut scene_id = None;
+        let mut editor_utils_node_id = None;
         let mut id_manager = None;
         for scene in &mut state.scenes
         {
@@ -1501,6 +1508,11 @@ impl Editor
             if self.editor_state.asset_type == AssetType::Scene
             {
                 scene.clear();
+            }
+
+            if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
+            {
+                editor_utils_node_id = Some(editor_utils_node.read().unwrap().id);
             }
 
             break;
@@ -1523,7 +1535,7 @@ impl Editor
         {
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                scene_utils::create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
             });
         };
 
@@ -1547,7 +1559,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, main_queue.clone(), id_manager.clone(), reuse_materials, object_only, create_mipmaps, max_tex_res);
+            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), id_manager.clone(), reuse_materials, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {

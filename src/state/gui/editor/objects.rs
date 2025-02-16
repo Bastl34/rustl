@@ -639,7 +639,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut locked: bool;
         let mut root_node: bool;
         let mut render_children_first;
+        let mut depth_test;
+        let mut depth_write;
         let mut alpha_index;
+        let mut render_group_id;
         let mut pick_bbox_first;
         let mut name;
         {
@@ -648,7 +651,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             locked = node.locked;
             root_node = node.root_node;
             render_children_first = node.settings.render_children_first;
+            depth_test = node.settings.depth_test;
+            depth_write = node.settings.depth_write;
             alpha_index = node.settings.alpha_index;
+            render_group_id = node.settings.render_group_id;
             pick_bbox_first = node.settings.pick_bbox_first;
             name = node.name.clone();
         }
@@ -663,10 +669,19 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
         changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
+        changed = ui.checkbox(&mut depth_test, "depth test").changed() || changed;
+        changed = ui.checkbox(&mut depth_write, "depth write").changed() || changed;
         ui.horizontal(|ui|
         {
             ui.label("alpha index: ");
+            ui.label("ℹ").on_hover_text("rendering index for transparent objects");
             changed = ui.add(egui::DragValue::new(&mut alpha_index).speed(1)).changed() || changed;
+        });
+        ui.horizontal(|ui|
+        {
+            ui.label("render group id: ");
+            ui.label("ℹ").on_hover_text("rendering order for all objects (higher number means rendered later)");
+            changed = ui.add(egui::DragValue::new(&mut render_group_id).speed(1)).changed() || changed;
         });
         changed = ui.checkbox(&mut pick_bbox_first, "pick bbox first").changed() || changed;
 
@@ -678,6 +693,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.root_node = root_node;
             node.settings.render_children_first = render_children_first;
             node.settings.alpha_index = alpha_index;
+            node.settings.depth_test = depth_test;
+            node.settings.depth_write = depth_write;
+            node.settings.render_group_id = render_group_id;
             node.settings.pick_bbox_first = pick_bbox_first;
             node.name = name;
         }
