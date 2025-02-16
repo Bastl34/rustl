@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use egui::{Ui, Color32};
 
 pub fn info_box(ui: &mut Ui, text: &str)

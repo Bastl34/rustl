@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{keyboard::Keyboard, mouse::Mouse, gamepad::Gamepad};
+use super::{gamepad::Gamepad, keyboard::Keyboard, mouse::Mouse, touch::Touch};
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum InputType
@@ -8,6 +8,7 @@ pub enum InputType
     Mouse,
     Keyboard,
     Gamepad,
+    Touch,
     Unkown
 }
 
@@ -16,6 +17,7 @@ pub struct InputManager
     pub keyboard: Keyboard,
     pub mouse: Mouse,
     pub gamepads: HashMap<usize, Gamepad>,
+    pub touch: Touch,
 
     pub last_input_device: InputType
 }
@@ -29,6 +31,7 @@ impl InputManager
             keyboard: Keyboard::new(),
             mouse: Mouse::new(),
             gamepads: HashMap::new(),
+            touch: Touch::new(),
 
             last_input_device: InputType::Unkown
         }
@@ -44,6 +47,10 @@ impl InputManager
         {
             self.last_input_device = InputType::Mouse;
         }
+        else if self.touch.has_input()
+        {
+            self.last_input_device = InputType::Touch;
+        }
 
         for (_, gamepad) in &self.gamepads
         {
@@ -56,6 +63,7 @@ impl InputManager
 
         self.keyboard.update_states();
         self.mouse.update_states();
+        self.touch.update_states();
 
         for (_, gamepad) in &mut self.gamepads
         {
@@ -67,6 +75,7 @@ impl InputManager
     {
         self.keyboard.reset();
         self.mouse.reset();
+        self.touch.reset();
 
         for (_, gamepad) in &mut self.gamepads
         {

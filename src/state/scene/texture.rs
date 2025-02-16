@@ -1,7 +1,9 @@
+#![allow(dead_code)]
+
 use std::sync::{RwLock, Arc};
 
 use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};
-use nalgebra::Vector4;
+use nalgebra::{Vector2, Vector4};
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
@@ -36,15 +38,43 @@ pub enum MipmapSamplingFilterType
     Lanczos3,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct TextureTransform
+{
+    pub offset: Vector2::<f32>,
+    pub scale: Vector2::<f32>,
+    pub rotation: f32,
+
+    pub uv_index: u32,
+}
+
+impl TextureTransform
+{
+    pub fn default() -> TextureTransform
+    {
+        TextureTransform
+        {
+            offset: Vector2::<f32>::new(0.0, 0.0),
+            scale: Vector2::<f32>::new(1.0, 1.0),
+            rotation: 0.0,
+
+            uv_index: 0,
+        }
+    }
+}
+
 pub struct TextureData
 {
     pub preview: DynamicImage,
     pub image: DynamicImage,
+    pub mipmap_cache: Option<Vec<DynamicImage>>,
 
     pub width: u64,
     pub height: u64,
 
     pub mipmapping: bool,
+
+    pub transform: TextureTransform,
 
     pub mipmap_sampling_type: MipmapSamplingFilterType,
 
@@ -61,6 +91,8 @@ pub struct TextureData
 pub struct Texture
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
 
@@ -78,11 +110,14 @@ impl Texture
         {
             preview: DynamicImage::new_rgba8(0,0),
             image: DynamicImage::new_rgba8(0,0),
+            mipmap_cache: None,
 
             width: 0,
             height: 0,
 
             mipmapping: false,
+
+            transform: TextureTransform::default(),
 
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
@@ -99,6 +134,8 @@ impl Texture
         Texture
         {
             id: 0,
+            uuid: uuid::Uuid::new_v4().to_string(),
+
             name: "empty".to_string(),
             hash: "".to_string(),
 
@@ -109,7 +146,7 @@ impl Texture
         }
     }
 
-    pub fn new(id: u64, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
+    pub fn new(id: u64, uuid: String, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
     {
         let image;
 
@@ -147,12 +184,15 @@ impl Texture
 
             mipmapping: false,
 
+            transform: TextureTransform::default(),
+
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
             has_transparency: has_transparency,
 
             preview: Self::create_preview(&image),
             image: image,
+            mipmap_cache: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -165,6 +205,8 @@ impl Texture
         Texture
         {
             id,
+            uuid,
+
             name: name.to_string(),
             hash,
 
@@ -175,7 +217,7 @@ impl Texture
         }
     }
 
-    pub fn new_from_image_channel(id: u64, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
+    pub fn new_from_image_channel(id: u64, uuid: String, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
     {
         let width = texture.width();
         let height = texture.height();
@@ -213,10 +255,13 @@ impl Texture
 
             mipmapping: false,
 
+            transform: data.transform.clone(),
+
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
             preview: Self::create_preview(&image),
             image: image,
+            mipmap_cache: None,
 
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
@@ -229,6 +274,8 @@ impl Texture
         Texture
         {
             id,
+            uuid,
+
             name: name.to_string(),
             hash,
 
@@ -237,6 +284,13 @@ impl Texture
             egui_preview: None,
             render_item: None
         }
+    }
+
+    pub fn create_mipmap_cache(&mut self)
+    {
+        let mipmaps = self.create_mipmap_levels();
+
+        self.get_data_mut().get_mut().mipmap_cache = Some(mipmaps);
     }
 
     pub fn create_mipmap_levels(&self) -> Vec<DynamicImage>
@@ -393,6 +447,15 @@ impl Texture
         // preview
         bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
 
+        // mipmaps
+        if let Some(cache) = &self.get_data().mipmap_cache
+        {
+            for mipmap in cache
+            {
+                bytes += (mipmap.width() * mipmap.height() * self.channels()) as u64;
+            }
+        }
+
         bytes
     }
 
@@ -497,6 +560,7 @@ impl Texture
         let format = if self.channels() == 1 { "Gray" } else { "RGBA" };
 
         ui.label(format!("{}x{}, {}, {} mips, {:.2} MB", data.width, data.height, format, self.get_mipmap_levels_amount(), gpu_size));
+        ui.label(format!("has transparency: {}", data.has_transparency));
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)
@@ -512,6 +576,11 @@ impl Texture
         let mut min_filter;
         let mut mipmap_filter;
 
+        let mut uv_offset;
+        let mut uv_scale;
+        let mut uv_rotation_deg;
+        let mut uv_index;
+
         {
             let data = self.data.get_ref();
 
@@ -525,37 +594,51 @@ impl Texture
             mag_filter = data.mag_filter;
             min_filter = data.min_filter;
             mipmap_filter = data.mipmap_filter;
+
+            uv_offset = data.transform.offset;
+            uv_scale = data.transform.scale;
+            uv_rotation_deg = data.transform.rotation.to_degrees();
+            uv_index = data.transform.uv_index;
         }
 
-        let mut apply_settings = false;
+        let mut changed = false;
 
-        apply_settings = ui.checkbox(&mut mipmapping, "use mipmap").changed() || apply_settings;
+        changed = ui.checkbox(&mut mipmapping, "use mipmap").changed() || changed;
+
+        ui.horizontal(|ui|
+        {
+            ui.set_max_width(50.0);
+
+            if ui.button("generate mipmap cache").on_hover_text("Generate mipmap cache for this texture").clicked()
+            {
+                self.create_mipmap_cache();
+            };
+        });
 
         ui.horizontal(|ui|
         {
             ui.label("Mipmap Sample Type:");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("mipmap_sampling_type")).selected_text(format!("{mipmap_sampling_type:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_sampling_type")).selected_text(format!("{mipmap_sampling_type:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Nearest, "Nearest").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Triangle, "Triangle").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Lanczos3, "Lanczos3").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Gaussian, "Gaussian").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::CatmullRom, "CatmullRom").changed() || apply_settings;
+                changed = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Nearest, "Nearest").changed() || changed;
+                changed = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Triangle, "Triangle").changed() || changed;
+                changed = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Lanczos3, "Lanczos3").changed() || changed;
+                changed = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::Gaussian, "Gaussian").changed() || changed;
+                changed = ui.selectable_value(& mut mipmap_sampling_type, MipmapSamplingFilterType::CatmullRom, "CatmullRom").changed() || changed;
             });
         });
-
 
         ui.horizontal(|ui|
         {
             ui.label("Address Mode U:");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || changed;
             });
         });
 
@@ -563,12 +646,12 @@ impl Texture
         {
             ui.label("Address Mode V:");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || changed;
             });
         });
 
@@ -576,12 +659,12 @@ impl Texture
         {
             ui.label("Address Mode W:");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || apply_settings;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || changed;
             });
         });
 
@@ -589,10 +672,10 @@ impl Texture
         {
             ui.label("Mag Filter: ");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
             });
         });
 
@@ -600,10 +683,10 @@ impl Texture
         {
             ui.label("Min Filter: ");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
             });
         });
 
@@ -611,14 +694,35 @@ impl Texture
         {
             ui.label("Mipmap Filter: ");
 
-            egui::ComboBox::from_id_source(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
             {
-                apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || apply_settings;
+                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
             });
         });
 
-        if apply_settings
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("UV Offset:");
+            changed = ui.add(egui::DragValue::new(&mut uv_offset.x).speed(0.001).prefix("u: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut uv_offset.y).speed(0.001).prefix("v: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("UV Scale:");
+            changed = ui.add(egui::DragValue::new(&mut uv_scale.x).speed(0.001).prefix("u: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut uv_scale.y).speed(0.001).prefix("v: ")).changed() || changed;
+        });
+
+        changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
+
+        changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
+
+
+        if changed
         {
             let data = self.get_data_mut().get_mut();
 
@@ -632,6 +736,11 @@ impl Texture
             data.mag_filter = mag_filter;
             data.min_filter = min_filter;
             data.mipmap_filter = mipmap_filter;
+
+            data.transform.offset = uv_offset;
+            data.transform.scale = uv_scale;
+            data.transform.rotation = uv_rotation_deg.to_radians();
+            data.transform.uv_index = uv_index;
         }
     }
 

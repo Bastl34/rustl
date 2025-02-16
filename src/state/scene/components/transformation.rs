@@ -1,9 +1,9 @@
-use std::any::Any;
+#![allow(dead_code)]
 
 use egui::RichText;
-use nalgebra::{Vector3, Matrix4, Rotation3, Matrix3, Vector4, UnitQuaternion, Quaternion};
+use nalgebra::{Vector3, Matrix4, Rotation3, Vector4, UnitQuaternion, Quaternion};
 
-use crate::{component_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::{scene::node::NodeItem, gui::helper::info_box::info_box_with_body}, component_impl_no_update};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::scene::node::NodeItem};
 
 use super::component::{Component, ComponentBase};
 
@@ -68,7 +68,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -106,7 +106,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -144,7 +144,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -457,6 +457,28 @@ impl Transformation
         self.calc_transform();
     }
 
+    pub fn set_rotation(&mut self, rotation: Vector3<f32>)
+    {
+        let data = self.data.get_mut();
+
+        data.rotation = rotation;
+
+        if !data.transform_vectors
+        {
+            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
+            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
+            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
+
+            let mut rotation = rotation_z;
+            rotation = rotation * rotation_y;
+            rotation = rotation * rotation_x;
+
+            data.trans = data.trans * rotation;
+        }
+
+        self.calc_transform();
+    }
+
     pub fn apply_rotation_quaternion(&mut self, rotation: Vector4<f32>)
     {
         let data = self.data.get_mut();
@@ -510,6 +532,7 @@ impl Component for Transformation
 {
     component_impl_default!();
     component_impl_no_update!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {

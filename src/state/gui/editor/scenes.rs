@@ -2,7 +2,7 @@ use std::mem::swap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{state::State, scene::{scene::Scene, components::{mesh::Mesh, material::TextureType}}, gui::helper::generic_items::{collapse_with_title, self}}, component_downcast, helper::concurrency::thread::spawn_thread};
+use crate::{component_downcast, helper::concurrency::thread::spawn_thread, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene}, state::State}};
 
 use super::{editor_state::EditorState, dialogs::load_texture_dialog};
 
@@ -31,6 +31,9 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
     let mut instances_amout = 0;
     let mut meshes_amout = 0;
+    let mut nodes_solid_amout = 0;
+    let mut nodes_transparent_amout = 0;
+
     let mut vertices_amout = 0;
     let mut indices_amout = 0;
 
@@ -49,6 +52,19 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
             meshes_amout += 1;
             vertices_amout += mesh.get_data().vertices.len();
             indices_amout += mesh.get_data().indices.len();
+        }
+
+        if let Some(material) = node.find_component::<Material>()
+        {
+            component_downcast!(material, Material);
+            if material.has_transparency()
+            {
+                nodes_transparent_amout += 1;
+            }
+            else
+            {
+                nodes_solid_amout += 1;
+            }
         }
     }
 
@@ -70,6 +86,16 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     {
         ui.label(RichText::new("🎬 scene").strong());
         ui.label(format!(" ⚫ nodes: {}", all_nodes.len()));
+
+        ui.horizontal(|ui|
+        {
+            ui.add_space(16.0);
+            ui.vertical(|ui|
+            {
+                ui.label(format!(" ⚫ solid: {}", nodes_solid_amout));
+                ui.label(format!(" ⚫ transparent: {}", nodes_transparent_amout));
+            });
+        });
         ui.label(format!(" ⚫ instances: {}", instances_amout));
         ui.label(format!(" ⚫ materials: {}", scene.materials.len()));
         ui.label(format!(" ⚫ textures: {}", scene.textures.len()));

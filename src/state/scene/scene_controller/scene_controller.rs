@@ -1,4 +1,6 @@
-use std::{any::Any, sync::{Arc, RwLock}};
+#![allow(dead_code)]
+
+use std::any::Any;
 
 use crate::{state::scene::node::NodeItem, input::input_manager::InputManager};
 
@@ -12,6 +14,7 @@ pub trait SceneController: Any
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn cleanup(&mut self);
+    fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
 
     fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene);
 

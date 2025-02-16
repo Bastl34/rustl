@@ -43,7 +43,7 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
 
             egui::ComboBox::from_label("").selected_text(current_component_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(40.0);
 
                 for (component_id, (component_name, component_instantiable, _)) in state.registered_components.iter().enumerate()
@@ -110,7 +110,7 @@ pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mu
 
             egui::ComboBox::from_label("").selected_text(current_component_name).width(180.0).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(40.0);
 
                 for (id, controller) in state.registered_camera_controller.iter().enumerate()
@@ -147,7 +147,7 @@ pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mu
 pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_add_scene_controller = editor_state.dialog_add_scene_controller;
-    let mut post_controller = editor_state.add_scene_controller_post;
+    let post_controller = editor_state.add_scene_controller_post;
 
     modal_with_title(ctx, &mut dialog_add_scene_controller, "Add Controller", |ui|
     {
@@ -161,7 +161,7 @@ pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut
 
             egui::ComboBox::from_label("").selected_text(current_component_name).width(180.0).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(40.0);
 
                 for (id, controller) in state.registered_scene_controller.iter().enumerate()

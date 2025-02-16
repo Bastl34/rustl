@@ -31,6 +31,11 @@ impl SceneController for GenericController
     {
     }
 
+    fn cleanup_node(&mut self, _node: crate::state::scene::node::NodeItem) -> bool
+    {
+        false
+    }
+
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, _input_manager: &mut InputManager, _frame_scale: f32) -> bool
     {
         let mut updated = false;
@@ -77,7 +82,7 @@ impl SceneController for GenericController
         updated
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene)
+    fn ui(&mut self, ui: &mut egui::Ui, _scene: &mut crate::state::scene::scene::Scene)
     {
         ui.label("Features:");
         ui.label(" ⚫ update skin bbox on each animation");

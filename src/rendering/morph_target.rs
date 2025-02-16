@@ -293,7 +293,7 @@ impl MorphTarget
 
         queue.write_texture
         (
-            wgpu::ImageCopyTexture
+            wgpu::TexelCopyTextureInfo
             {
                 texture: &self.texture,
                 mip_level: 0,
@@ -301,7 +301,7 @@ impl MorphTarget
                 aspect: wgpu::TextureAspect::All,
             },
             morph_data.as_bytes(),
-            wgpu::ImageDataLayout
+            wgpu::TexelCopyBufferLayout
             {
                 offset: 0,
                 bytes_per_row: Some((FLOATS_PER_PIXEL * std::mem::size_of::<f32>()) as u32 * self.width),

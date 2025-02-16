@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::math::approx_zero, input::input_manager::InputManager, state::{scene::node::NodeItem, state::REFERENCE_UPDATE_FRAMES}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::approx_zero, input::input_manager::InputManager, state::{scene::node::NodeItem, state::REFERENCE_UPDATE_FRAMES}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
@@ -24,7 +24,7 @@ impl AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
-            base: ComponentBase::new(id, name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
 
             from,
             to,
@@ -41,7 +41,7 @@ impl AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
-            base: ComponentBase::new(id, name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
 
             from: None,
             to: None,
@@ -59,6 +59,7 @@ impl Component for AnimationBlending
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -250,7 +251,7 @@ impl Component for AnimationBlending
         ui.horizontal(|ui|
         {
             ui.label("From: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("from")).selected_text(from_name.clone()).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("from")).selected_text(from_name.clone()).show_ui(ui, |ui|
             {
                 changed = ui.selectable_value(&mut from, 0, "").changed() || changed;
                 for animation in &animations
@@ -263,7 +264,7 @@ impl Component for AnimationBlending
         ui.horizontal(|ui|
         {
             ui.label("To: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("to")).selected_text(to_name.clone()).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("to")).selected_text(to_name.clone()).show_ui(ui, |ui|
             {
                 changed = ui.selectable_value(&mut to, 0, "").changed() || changed;
                 for animation in &animations

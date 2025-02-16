@@ -1,8 +1,7 @@
-use egui::{Ui, Color32, RichText, Align2, Id};
+use egui::{Ui, Color32, RichText, Align2};
 
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
-
     let background_color;
     if let Some(color) = bg_color
     {
@@ -14,7 +13,7 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
     }
 
     let mut frame = egui::Frame::group(ui.style()).fill(background_color);
-    frame.inner_margin = egui::Margin::same(2.0);
+    frame.inner_margin = egui::Margin::same(2);
 
     frame.show(ui, |ui|
     {
@@ -59,61 +58,12 @@ pub fn modal_with_title<R>(ctx: &egui::Context, open: &mut bool, title: &str, bo
         .show(ctx, body);
 }
 
-pub fn drag_item(ui: &mut Ui, id: Id, body: impl FnOnce(&mut Ui))
+pub fn separator_colored(ui: &mut Ui, color: Color32, height: f32)
 {
-    let is_being_dragged = ui.memory(|mem| mem.is_being_dragged(id));
+    let available_width = ui.available_width();
 
-    if !is_being_dragged
-    {
-        let response = ui.scope(body).response;
+    let (rect, _response) = ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::hover());
 
-        // Check for drags:
-        let response = ui.interact(response.rect, id, egui::Sense::drag());
-        if response.hovered()
-        {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-        }
-    }
-    else
-    {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-
-        let layer_id = egui::LayerId::new(egui::Order::Tooltip, id);
-        let response = ui.with_layer_id(layer_id, body).response;
-
-        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos()
-        {
-            let delta = pointer_pos - response.rect.center();
-            ui.ctx().translate_layer(layer_id, delta);
-        }
-    }
+    let painter = ui.painter();
+    painter.rect_filled(rect, 0.0, color);
 }
-
-/*
-pub fn enable_drag(ui: &mut Ui, response: &egui::Response, id: Id)
-{
-    let is_being_dragged = ui.memory(|mem| mem.is_being_dragged(id));
-
-    if !is_being_dragged
-    {
-        // Check for drags:
-        let response = ui.interact(response.rect, id, egui::Sense::drag());
-        if response.hovered()
-        {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-        }
-    }
-    else
-    {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-
-        let layer_id = egui::LayerId::new(egui::Order::Tooltip, id);
-
-        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos()
-        {
-            let delta = pointer_pos - response.rect.center();
-            ui.ctx().translate_layer(layer_id, delta);
-        }
-    }
-}
-*/

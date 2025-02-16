@@ -1,7 +1,9 @@
-use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{Device, Queue, Surface, SurfaceCapabilities, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
+use std::sync::Arc;
 
-use crate::{helper::{image::brga_to_rgba, platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
+use image::{DynamicImage, ImageBuffer, Rgba};
+use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
+
+use crate::{helper::{platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -9,18 +11,17 @@ pub struct WGpu
 {
     device: Device,
     queue: Queue,
-    surface: Surface,
+    surface: Surface<'static>,
 
     msaa_samples: u32,
     msaa_texture: Option<wgpu::Texture>,
 
     surface_config: SurfaceConfiguration,
-    pub surface_caps: SurfaceCapabilities,
 }
 
 impl WGpu
 {
-    pub async fn new(window: &winit::window::Window, state: &mut State) -> Self
+    pub async fn new(window: Arc<winit::window::Window>, state: &mut State) -> Self
     {
         let dimensions = window.inner_size();
 
@@ -32,8 +33,9 @@ impl WGpu
             //instance_desc.backends = wgpu::Backends::DX12;
         }
 
-        let instance = wgpu::Instance::new(instance_desc);
-        let surface = unsafe { instance.create_surface(window) }.unwrap();
+        let instance = wgpu::Instance::new(&instance_desc);
+        //let surface = unsafe { instance.create_surface(window) }.unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions
         {
@@ -59,9 +61,9 @@ impl WGpu
             {
                 label: None,
                 //features: wgpu::Features::empty(),
-                features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
-                limits: if cfg!(target_arch = "wasm32")
+                required_limits: if cfg!(target_arch = "wasm32")
                 {
                     wgpu::Limits::downlevel_webgl2_defaults()
                 }
@@ -69,6 +71,7 @@ impl WGpu
                 {
                     wgpu::Limits::default()
                 },
+                memory_hints: Default::default(),
             },
             None,
         )
@@ -95,10 +98,10 @@ impl WGpu
             width: dimensions.width,
             height: dimensions.height,
             present_mode: present_mode,
-            //alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2, // 1: lower latency, 2: higher throughput
         };
 
         surface.configure(&device, &surface_config);
@@ -131,7 +134,6 @@ impl WGpu
             wgpu::Backend::Vulkan => state.adapter.backend = "Vulkan".to_string(),
             wgpu::Backend::Metal => state.adapter.backend = "Metal".to_string(),
             wgpu::Backend::Dx12 => state.adapter.backend = "Dx12".to_string(),
-            wgpu::Backend::Dx11 => state.adapter.backend = "Dx11".to_string(),
             wgpu::Backend::Gl => state.adapter.backend = "Gl".to_string(),
             wgpu::Backend::BrowserWebGpu => state.adapter.backend = "BrowserWebGpu".to_string(),
         }
@@ -143,7 +145,6 @@ impl WGpu
             msaa_samples,
             msaa_texture: None,
             queue,
-            surface_caps,
             surface_config
         };
 
@@ -220,7 +221,7 @@ impl WGpu
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>, CommandEncoder)
+    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>)
     {
         // TODO: this can timeout
         // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
@@ -246,24 +247,37 @@ impl WGpu
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
         let mut msaa_view = None;
         if self.msaa_texture.is_some()
         {
             msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
         }
 
-        (output, view, msaa_view, encoder)
+        (output, view, msaa_view)
     }
 
-    pub fn end_render(&mut self, output: SurfaceTexture, encoder: CommandEncoder)
+    pub fn create_command_encoder(&mut self) -> CommandEncoder
     {
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default())
+    }
+
+    pub fn submit_commands(&mut self, encoders: Vec<CommandEncoder>)
+    {
+        let command_buffers: Vec<wgpu::CommandBuffer> = encoders
+            .into_iter()
+            .map(|encoder| encoder.finish())
+            .collect();
+
+        self.queue.submit(command_buffers);
+    }
+
+    pub fn end_render(&mut self, output: SurfaceTexture)
+    {
         output.present();
     }
 
-    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>, CommandEncoder)
+
+    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
     {
         let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
 
@@ -316,9 +330,8 @@ impl WGpu
 
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        (buffer_dimensions, output_buffer, texture, view, msaa_texture_view, encoder)
+        (buffer_dimensions, output_buffer, texture, view, msaa_texture_view)
     }
 
     pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
@@ -334,10 +347,10 @@ impl WGpu
         encoder.copy_texture_to_buffer
         (
             texture.as_image_copy(),
-            wgpu::ImageCopyBuffer
+            wgpu::TexelCopyBufferInfo
             {
                 buffer: &output_buffer,
-                layout: wgpu::ImageDataLayout
+                layout: wgpu::TexelCopyBufferLayout
                 {
                     offset: 0,
                     bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),
@@ -347,7 +360,7 @@ impl WGpu
             texture_extent,
         );
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(vec![encoder]);
 
         // read buffer
         let slice: wgpu::BufferSlice = output_buffer.slice(..);
@@ -365,5 +378,4 @@ impl WGpu
         //brga_to_rgba(img)
         img
     }
-
 }

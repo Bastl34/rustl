@@ -20,7 +20,7 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 
@@ -228,6 +228,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -243,6 +249,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -258,6 +270,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -273,6 +291,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -288,6 +312,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -303,6 +333,12 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                         let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                         {
                             let mut tex = tex.write().unwrap();
+
+                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            {
+                                tex.create_mipmap_cache();
+                            }
+
                             let tex_data = tex.get_data_mut().get_mut();
                             tex_data.mipmapping = create_mipmaps;
                         }
@@ -339,7 +375,9 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
             let id = id_manager.write().unwrap().get_next_node_id();
             loaded_ids.push(id);
 
-            let node_arc = Node::new(id, m.name.as_str());
+            let uuid = uuid::Uuid::new_v4().to_string();
+
+            let node_arc = Node::new(id, uuid, m.name.as_str());
             {
                 let mut node = node_arc.write().unwrap();
                 node.add_component(Arc::new(RwLock::new(Box::new(item))));
@@ -350,7 +388,8 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
                 let instance_id = id_manager.write().unwrap().get_next_instance_id();
-                node.create_default_instance(node_arc.clone(), instance_id);
+                let uuid = uuid::Uuid::new_v4().to_string();
+                node.create_default_instance(node_arc.clone(), instance_id, uuid);
             }
 
             scene_nodes.push(node_arc)
@@ -360,7 +399,8 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     let node_id = id_manager.write().unwrap().get_next_node_id();
     loaded_ids.push(node_id);
 
-    let root_node = Node::new(node_id, resource_name.as_str());
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let root_node = Node::new(node_id, uuid, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(path.to_string());
 
@@ -382,7 +422,22 @@ pub fn load(path: &str, scene_id: u64, main_queue: ExecutionQueueItem, id_manage
     let root_node_clone = root_node.clone();
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
-        scene.add_node(root_node_clone.clone());
+        if let Some(parent_node_id) = parent_node_id
+        {
+            let parent_node = scene.find_node_by_id(parent_node_id);
+            if let Some(parent_node) = parent_node
+            {
+                Node::add_node(parent_node.clone(), root_node_clone.clone());
+            }
+            else
+            {
+                dbg!("can not find parent node by id");
+            }
+        }
+        else
+        {
+            scene.add_node(root_node_clone.clone());
+        }
     }));
 
     for scene_node in &scene_nodes

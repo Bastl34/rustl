@@ -1,9 +1,53 @@
+#![allow(dead_code)]
+
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
 
-use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct TextureTransform
+{
+    pub offset: [f32; 2],
+    pub scale: [f32; 2],
+    pub rotation: f32,
+
+    pub uv_index: u32,
+
+    pub _padding: [f32; 2]
+}
+
+impl TextureTransform
+{
+    pub fn new(scene_texture: &crate::state::scene::texture::Texture) -> Self
+    {
+        let data = scene_texture.get_data();
+
+        Self
+        {
+            offset: [data.transform.offset.x, data.transform.offset.y],
+            scale: [data.transform.scale.x, data.transform.scale.y],
+            rotation: data.transform.rotation,
+            uv_index: data.transform.uv_index,
+            _padding: [0.0, 0.0],
+        }
+    }
+
+    pub fn default() -> Self
+    {
+        Self
+        {
+            offset: [0.0, 0.0],
+            scale: [1.0, 1.0],
+            rotation: 0.0,
+            uv_index: 0,
+            _padding: [0.0, 0.0],
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum TextureFormat
@@ -26,7 +70,7 @@ pub struct Texture
 
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
+    sampler: wgpu::Sampler
 }
 
 impl RenderItem for Texture
@@ -49,7 +93,14 @@ impl Texture
         let mut mipmaps = vec![];
         if scene_texture.get_data().mipmapping
         {
-            mipmaps = scene_texture.create_mipmap_levels();
+            if let Some(mipmap_cache) = &scene_texture.get_data().mipmap_cache
+            {
+                mipmaps = mipmap_cache.clone();
+            }
+            else
+            {
+                mipmaps = scene_texture.create_mipmap_levels();
+            }
         }
 
         let wgpu_format;
@@ -91,7 +142,7 @@ impl Texture
         // upload texture
         queue.write_texture
         (
-            wgpu::ImageCopyTexture
+            wgpu::TexelCopyTextureInfo
             {
                 texture: &texture,
                 mip_level: 0,
@@ -99,7 +150,7 @@ impl Texture
                 aspect: wgpu::TextureAspect::All,
             },
             scene_texture.raw_data(),
-            wgpu::ImageDataLayout
+            wgpu::TexelCopyBufferLayout
             {
                 offset: 0,
                 bytes_per_row: Some(scene_texture.width() * channels),
@@ -120,7 +171,7 @@ impl Texture
 
             queue.write_texture
             (
-                wgpu::ImageCopyTexture
+                wgpu::TexelCopyTextureInfo
                 {
                     texture: &texture,
                     mip_level: i as u32 + 1,
@@ -128,7 +179,7 @@ impl Texture
                     aspect: wgpu::TextureAspect::All,
                 },
                 mipmap.as_bytes(),
-                wgpu::ImageDataLayout
+                wgpu::TexelCopyBufferLayout
                 {
                     offset: 0,
                     bytes_per_row: Some(mipmap.width() * channels),
@@ -153,7 +204,7 @@ impl Texture
 
             texture: texture,
             view: texture_view,
-            sampler: sampler,
+            sampler: sampler
         }
     }
 
@@ -223,7 +274,7 @@ impl Texture
 
             texture: texture,
             view: texture_view,
-            sampler: sampler,
+            sampler: sampler
         }
     }
 
@@ -373,7 +424,7 @@ impl Texture
         // upload
         queue.write_texture
         (
-            wgpu::ImageCopyTexture
+            wgpu::TexelCopyTextureInfo
             {
                 texture: &self.texture,
                 mip_level: 0,
@@ -488,17 +539,17 @@ impl Texture
 
         encoder.copy_texture_to_buffer
         (
-            wgpu::ImageCopyTexture
+            wgpu::TexelCopyTextureInfo
             {
                 texture: &self.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::ImageCopyBuffer
+            wgpu::TexelCopyBufferInfo
             {
                 buffer: &output_buffer,
-                layout: wgpu::ImageDataLayout
+                layout: wgpu::TexelCopyBufferLayout
                 {
                     offset: 0,
                     bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),

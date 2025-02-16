@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use std::f32::consts::PI;
 
 use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
 use parry3d::query::Ray;
@@ -10,6 +9,15 @@ pub fn approx_equal(a: f32, b: f32) -> bool
     let decimal_places = 6;
 
     let factor = 10.0f32.powi(decimal_places as i32);
+    let a = (a * factor).trunc();
+    let b = (b * factor).trunc();
+
+    a == b
+}
+
+pub fn approx_equal_with_decimal_places(a: f32, b: f32, decimal_places: i32) -> bool
+{
+    let factor = 10.0f32.powi(decimal_places);
     let a = (a * factor).trunc();
     let b = (b * factor).trunc();
 
@@ -46,6 +54,12 @@ pub fn approx_one_vec3(value: &Vector3::<f32>) -> bool
 {
     let one = Vector3::<f32>::new(1.0, 1.0, 1.0);
     approx_equal_vec(value, &one)
+}
+
+pub fn is_almost_integer(value: f32) -> bool
+{
+    let tolerance = 1e-6;
+    (value - value.round()).abs() < tolerance
 }
 
 pub fn interpolate(a: f32, b: f32, f: f32) -> f32
@@ -92,12 +106,12 @@ pub fn cubic_spline_interpolate_vec3
 (
     interpolation_time: f32,
     delta_time: f32,
-    prev_input_tangent: &Vector3::<f32>,
+    _prev_input_tangent: &Vector3::<f32>,
     prev_keyframe_value: &Vector3::<f32>,
     prev_output_tangent: &Vector3::<f32>,
     next_input_tangent: &Vector3::<f32>,
     next_keyframe_value: &Vector3::<f32>,
-    next_output_tangent: &Vector3::<f32>
+    _next_output_tangent: &Vector3::<f32>
 ) -> Vector3::<f32>
 {
     let t = interpolation_time;
@@ -117,12 +131,12 @@ pub fn cubic_spline_interpolate_vec4
 (
     interpolation_time: f32,
     delta_time: f32,
-    prev_input_tangent: &Vector4::<f32>,
+    _prev_input_tangent: &Vector4::<f32>,
     prev_keyframe_value: &Vector4::<f32>,
     prev_output_tangent: &Vector4::<f32>,
     next_input_tangent: &Vector4::<f32>,
     next_keyframe_value: &Vector4::<f32>,
-    next_output_tangent: &Vector4::<f32>
+    _next_output_tangent: &Vector4::<f32>
 ) -> Vector4::<f32> {
     let t = interpolation_time;
     let t2 = t * t;
@@ -147,7 +161,7 @@ pub fn cubic_spline_interpolate_vec
     prev_output_tangent: &Vec::<f32>,
     next_input_tangent: &Vec::<f32>,
     next_keyframe_value: &Vec::<f32>,
-    next_output_tangent: &Vec::<f32>
+    _next_output_tangent: &Vec::<f32>
 ) -> Vec::<f32> {
     let t = interpolation_time;
     let t2 = t * t;
@@ -234,4 +248,41 @@ pub fn calculate_normal(v1: &Point3<f32>, v2: &Point3<f32>, v3: &Point3<f32>) ->
 
     let normal = vec_1.cross(&vec_2);
     normal.normalize()
+}
+
+pub fn snap_to_grid(value: f32, grid_size: f32) -> f32
+{
+    let lower_bound = (value / grid_size).floor() * grid_size;
+    let upper_bound = (value / grid_size).ceil() * grid_size;
+
+    let lower_distance = (value - lower_bound).abs();
+    let upper_distance = (value - upper_bound).abs();
+
+    if lower_distance < upper_distance
+    {
+        lower_bound
+    }
+    else
+    {
+        upper_bound
+    }
+}
+
+pub fn snap_to_grid_vec2(value: Vector2<f32>, grid_size: f32) -> Vector2<f32>
+{
+    let mut vec = value.clone();
+    vec.x = snap_to_grid(vec.x, grid_size);
+    vec.y = snap_to_grid(vec.y, grid_size);
+
+    vec
+}
+
+pub fn snap_to_grid_vec3(value: Vector3<f32>, grid_size: f32) -> Vector3<f32>
+{
+    let mut vec = value.clone();
+    vec.x = snap_to_grid(vec.x, grid_size);
+    vec.y = snap_to_grid(vec.y, grid_size);
+    vec.z = snap_to_grid(vec.z, grid_size);
+
+    vec
 }

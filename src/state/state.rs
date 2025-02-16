@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
 
 use instant::Instant;
@@ -5,7 +7,7 @@ use nalgebra::Vector3;
 
 use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
 
-use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::{SceneControllerBase, SceneControllerBox}, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -14,6 +16,11 @@ pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
 pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
+
+pub fn get_delta_t(frame_scale: f32) -> f32
+{
+    frame_scale / REFERENCE_UPDATE_FRAMES
+}
 
 pub struct AdapterFeatures
 {
@@ -57,7 +64,7 @@ pub struct Statistics
     pub fps_absolute: u32,
     pub fps_chart: Vec<u32>,
 
-    pub frame_update_time: u128,
+    pub frame_update_time: u128, // micros
     pub frame_scale: f32,
 
     pub frame_time: f32,
@@ -125,13 +132,14 @@ impl State
         components.push(("Morph Target Animation".to_string(), crate::state::scene::components::morph_target_animation::MorphTargetAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
         components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
         components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(id, name)))) }));
+        components.push(("Delay".to_string(), crate::state::scene::components::delay::Delay::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::delay::Delay::new_empty(id, name)))) }));
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
         cam_controller.push(("Target Rotation Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController::default()) }));
 
         let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];
-        scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::character_controller::CharacterController::default()) }));
+        scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::char_controller::CharacterController::default()) }));
         scene_controller.push(("Generic Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::generic_controller::GenericController::default()) }));
 
         Self
@@ -157,7 +165,7 @@ impl State
                 msaa: ChangeTracker::new(8),
 
                 distance_sorting: true,
-                create_mipmaps: false,
+                create_mipmaps: true,
                 max_texture_resolution: None
             },
 

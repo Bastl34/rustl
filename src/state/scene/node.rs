@@ -1,4 +1,6 @@
-use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock}};
+#![allow(dead_code)]
+
+use std::sync::{Arc, RwLock};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Point3, Vector4};
@@ -6,7 +8,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::{self, Alpha}, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::NodeExtras};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::Extras};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -16,18 +18,31 @@ const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got
 pub struct NodeSettings
 {
     pub render_children_first: bool,
-    pub alpha_index: u64, // this can be used to influence the sorting (for rendering)
+    pub alpha_index: u64, // this can be used to influence the alpha sorting (for transparent objects rendering)
+    pub render_group_id: u64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
+
+    pub depth_test: bool,
+    pub depth_write: bool,
 
     pub pick_bbox_first: bool,
+}
+
+pub struct NodeUpdateResult
+{
+    pub delete_nodes: Vec<u64>,
 }
 
 pub struct Node
 {
     pub id: u64,
+    pub uuid: String,
+
+    pub source: Option<String>,
+
     pub name: String,
     pub visible: bool,
+    pub locked: bool,
     pub root_node: bool,
-    pub source: Option<String>,
 
     pub settings: NodeSettings,
 
@@ -35,11 +50,9 @@ pub struct Node
 
     pub skin: Vec<NodeItem>,
 
-    pub extras: NodeExtras,
+    pub extras: Extras,
 
     pub nodes: Vec<NodeItem>,
-    //pub instances: ChangeTracker<Vec<RefCell<ChangeTracker<InstanceItem>>>>,
-    //pub instances: ChangeTracker<Vec<RefCell<InstanceItem>>>,
     pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
 
     pub components: Vec<ComponentItem>,
@@ -50,24 +63,34 @@ pub struct Node
 
     // bounding box
     b_box_node_index: usize,
+
+    delete_later_request: bool,
 }
 
 impl Node
 {
-    pub fn new(id: u64, name: &str) -> NodeItem
+    pub fn new(id: u64, uuid: String, name: &str) -> NodeItem
     {
         let node = Self
         {
             id: id,
+            uuid,
+
+            source: None,
+
             name: name.to_string(),
             visible: true,
+            locked: false,
             root_node: false,
-            source: None,
 
             settings: NodeSettings
             {
                 render_children_first: false,
                 alpha_index: 0,
+                render_group_id: 0,
+
+                depth_write: true,
+                depth_test: true,
 
                 pick_bbox_first: true,
             },
@@ -78,7 +101,7 @@ impl Node
 
             skin: vec![],
 
-            extras: NodeExtras::new(),
+            extras: Extras::new(),
 
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
@@ -87,7 +110,9 @@ impl Node
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
 
-            b_box_node_index: 0
+            b_box_node_index: 0,
+
+            delete_later_request: false
         };
 
         Arc::new(RwLock::new(Box::new(node)))
@@ -105,6 +130,39 @@ impl Node
             // remove cyclic reference to parent
             node.parent = None;
         }
+    }
+
+    pub fn remove_node_from_components(node: NodeItem, node_to_remove: NodeItem)
+    {
+        let mut components;
+        {
+            let node = node.read().unwrap();
+
+            components = node.components.clone();
+
+            for instance in node.instances.get_ref()
+            {
+                let instance = instance.read().unwrap();
+                components.append(&mut instance.components.clone());
+            }
+        }
+
+        for component in &mut components
+        {
+            component.write().unwrap().cleanup_node(node_to_remove.clone());
+        }
+
+        // child nodes
+        let node = node.read().unwrap();
+        for child in &node.nodes
+        {
+            Self::remove_node_from_components(child.clone(), node_to_remove.clone());
+        }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 
     pub fn add_node(node: NodeItem, child_node: NodeItem)
@@ -191,6 +249,11 @@ impl Node
         }
     }
 
+    pub fn has_mesh(&self) -> bool
+    {
+        self.find_component::<Mesh>().is_some()
+    }
+
     pub fn get_mesh(&self) -> Option<ComponentItem>
     {
         self.find_component::<Mesh>()
@@ -201,7 +264,7 @@ impl Node
         self.find_components::<Mesh>()
     }
 
-    pub fn get_bounding_info(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_world_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -214,6 +277,16 @@ impl Node
         for instance in self.instances.get_ref()
         {
             let instance = instance.read().unwrap();
+
+            // check for matching instance id
+            if let Some(instance_id) = instance_id
+            {
+                if instance_id != instance.id
+                {
+                    continue;
+                }
+            }
+
             let transform = instance.calculate_transform();
 
             for mesh in &meshes
@@ -260,7 +333,7 @@ impl Node
         {
             for node in &self.nodes
             {
-                if let Some(predicate) = predicate
+                if let Some(predicate) = &predicate
                 {
                     if !predicate(node.clone())
                     {
@@ -269,7 +342,7 @@ impl Node
                 }
 
                 let node = node.read().unwrap();
-                let child_min_max = node.get_bounding_info(recursive, predicate);
+                let child_min_max = node.get_world_bounding_info(instance_id, recursive, predicate.clone());
 
                 if let Some(child_min_max) = child_min_max
                 {
@@ -296,9 +369,9 @@ impl Node
         None
     }
 
-    pub fn get_bbox_center(&self, recursive: bool, predicate: &Option<Box<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
+    pub fn get_world_bbox_center(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
-        let bounding_info = self.get_bounding_info(recursive, predicate);
+        let bounding_info = self.get_world_bounding_info(instance_id, recursive, predicate);
 
         if let Some(bounding_info) = bounding_info
         {
@@ -353,6 +426,61 @@ impl Node
         }
 
         self.has_parent(node)
+    }
+
+    pub fn has_parent_id(&self, parent_node_id: u64) -> bool
+    {
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            let parent_clone = parent.clone();
+
+            if let Some(parent) = parent
+            {
+                if parent.read().unwrap().id == parent_node_id
+                {
+                    return true;
+                }
+            }
+
+            parent = parent_clone.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
+    }
+
+    pub fn has_parent_id_or_is_equal(&self, node_id: u64) -> bool
+    {
+        if self.id == node_id
+        {
+            return true;
+        }
+
+        self.has_parent_id(node_id)
+    }
+
+    pub fn is_locked(&self) -> bool
+    {
+        if self.locked
+        {
+            return true;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if parent.read().unwrap().locked
+                {
+                    return true;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
     }
 
     pub fn has_changed_instance_data(&self) -> bool
@@ -451,6 +579,58 @@ impl Node
         }
     }
 
+    /*
+    pub fn get_full_transform_inverse(&self) -> Matrix4<f32>
+    {
+        let (node_transform, node_parent_inheritance) = self.get_transform();
+        let mut parent_inverse_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = &self.parent
+        {
+            let parent_node = parent_node.read().unwrap();
+            parent_inverse_trans = parent_node.get_full_transform_inverse();
+        }
+
+        if node_parent_inheritance
+        {
+            node_transform.try_inverse().unwrap() * parent_inverse_trans
+        }
+        else
+        {
+            node_transform.try_inverse().unwrap()
+        }
+    }
+    */
+
+    pub fn get_full_transform_inverse(&self) -> Matrix4<f32>
+    {
+        let full_transform = self.get_full_transform();
+
+        full_transform.try_inverse().unwrap()
+    }
+
+    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.get_full_transform_inverse();
+
+        trans * vec
+    }
+
+    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans = self.get_full_transform();
+
+        trans * vec
+    }
+
+    pub fn transform_from_node_to_local(&self, vec: &Vector4<f32>, node: NodeItem) -> Vector4<f32>
+    {
+        let node = node.read().unwrap();
+        let global_vec = node.transform_local_to_global(vec);
+
+        self.transform_global_to_local(&global_vec)
+    }
+
     fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
     {
         let joint_component = self.find_component::<Joint>();
@@ -509,7 +689,12 @@ impl Node
         Some(joints)
     }
 
-    pub fn get_morph_targets_vec(&self) -> Option<Vec<f32>>
+    pub fn has_morph_target_weights(&self) -> bool
+    {
+        self.find_component::<MorphTarget>().is_some()
+    }
+
+    pub fn get_morph_target_weights_vec(&self) -> Option<Vec<f32>>
     {
         let morph_components = self.find_components::<MorphTarget>();
 
@@ -532,6 +717,66 @@ impl Node
         let morph_targets: Vec<f32> = morph_target_weights.iter().map(|morph_target| morph_target.1).collect();
 
         Some(morph_targets)
+    }
+
+    pub fn find_child_node_by_id(&self, id: u64) -> Option<NodeItem>
+    {
+        for node in &self.nodes
+        {
+            if node.read().unwrap().id == id
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result: Option<Arc<RwLock<Box<Node>>>> = node.read().unwrap().find_child_node_by_id(id);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_child_node_by_name(&self, name: &str) -> Option<NodeItem>
+    {
+        for node in &self.nodes
+        {
+            if node.read().unwrap().name == name
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = node.read().unwrap().find_child_node_by_name(name);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+        None
+    }
+
+    pub fn find_child_node_by_regex(&self, regex: &str) -> Option<NodeItem>
+    {
+        let regex_item: Regex = Regex::new(regex).unwrap();
+
+        for node in &self.nodes
+        {
+            if regex_item.is_match(&node.read().unwrap().name)
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = node.read().unwrap().find_child_node_by_regex(regex);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+        None
     }
 
     pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
@@ -564,7 +809,7 @@ impl Node
             }
 
             // check child nodes
-            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name);
             if result.is_some()
             {
                 return result;
@@ -584,7 +829,27 @@ impl Node
             }
 
             // check child nodes
-            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name.clone());
+            let result = Node::find_node_by_name(&node.read().unwrap().nodes, name);
+            if result.is_some()
+            {
+                return result;
+            }
+        }
+
+        None
+    }
+
+    pub fn find_mesh_node_by_ids(nodes: &Vec<NodeItem>, ids: &Vec<u64>) -> Option<NodeItem>
+    {
+        for node in nodes
+        {
+            if ids.contains(&node.read().unwrap().id) && node.read().unwrap().find_component::<Mesh>().is_some()
+            {
+                return Some(node.clone());
+            }
+
+            // check child nodes
+            let result = Node::find_mesh_node_by_ids(&node.read().unwrap().nodes, ids);
             if result.is_some()
             {
                 return result;
@@ -691,6 +956,46 @@ impl Node
         }
 
         None
+    }
+
+    pub fn find_animations_by_regex(&self, regex: &str) -> Vec<ComponentItem>
+    {
+        let regex = Regex::new(regex).unwrap();
+
+        let mut animations_found: Vec<ComponentItem> = vec![];
+
+        // first check on the item itself
+        let animations = self.find_components::<Animation>();
+
+        for animation in animations
+        {
+            let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+            if regex.is_match(&componen_name)
+            {
+                animations_found.push(animation.clone());
+            }
+        }
+
+        // second check on nodes
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in all_nodes
+        {
+            let node = node.read().unwrap();
+            let animations = node.find_components::<Animation>();
+
+            for animation in animations
+            {
+                let componen_name = animation.read().unwrap().get_base().name.clone().to_lowercase();
+
+                if regex.is_match(&componen_name)
+                {
+                    animations_found.push(animation.clone());
+                }
+            }
+        }
+
+        animations_found
     }
 
     pub fn find_animation_by_include_exclude(&self, include: &Vec<String>, exclude: &Vec<String>) -> Option<ComponentItem>
@@ -810,6 +1115,35 @@ impl Node
         }
     }
 
+    pub fn re_target_animations_to_child_nodes(&mut self) -> bool
+    {
+        let all_animations = self.get_all_animations();
+
+        let mut all_animations_retarteted = true;
+
+        for animation in all_animations
+        {
+            component_downcast_mut!(animation, Animation);
+            for channel in &mut animation.channels
+            {
+                let target_name = channel.target.read().unwrap().name.clone();
+                let target_node_candidate = self.find_child_node_by_name(target_name.as_str());
+
+                if let Some(target_node_candidate) = target_node_candidate
+                {
+                    channel.target = target_node_candidate.clone();
+                }
+                else
+                {
+                    all_animations_retarteted = false;
+                    println!("warning: not target found for {}", target_name);
+                }
+            }
+        }
+
+        all_animations_retarteted
+    }
+
     pub fn get_alpha(&self) -> (f32, bool)
     {
         let alpha_components = self.find_components::<Alpha>();
@@ -880,11 +1214,12 @@ impl Node
         !is_not_empty
     }
 
-    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64)
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64, uuid: String)
     {
         let instance = Instance::new
         (
             instance_id,
+            uuid,
             "instance".to_string(),
             self_node_item
         );
@@ -897,7 +1232,7 @@ impl Node
         self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
     }
 
-    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
     {
         // ***** copy all components *****
         let all_components;
@@ -965,33 +1300,31 @@ impl Node
                 let mut node = node.write().unwrap();
                 node.instances.force_change();
             }
+        }
 
-            // consume alpha and transform manually (not prevent useless updates)
-            /*
-            let node_read = node.read().unwrap();
-            let transform_component = node_read.find_component::<Transformation>();
-            let alpha_component = node_read.find_component::<Alpha>();
-
-            if let Some(transform_component) = transform_component
+        // check for delete later
+        let mut delete_nodes = vec![];
+        {
+            let node = node.read().unwrap();
+            if node.delete_later_request
             {
-                component_downcast_mut!(transform_component, Transformation);
-                transform_component.get_data_mut().consume();
+                delete_nodes.push(node.id);
             }
-
-            if let Some(alpha_component) = alpha_component
-            {
-                component_downcast_mut!(alpha_component, Alpha);
-                alpha_component.get_data_mut().consume();
-            }
-             */
         }
 
         // ***** update childs *****
         let node_read = node.read().unwrap();
         for child_node in &node_read.nodes
         {
-            Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
+            let mut update_result = Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
+
+            if update_result.delete_nodes.len() > 0
+            {
+                delete_nodes.append(&mut update_result.delete_nodes);
+            }
         }
+
+        NodeUpdateResult { delete_nodes:  delete_nodes}
     }
 
 
@@ -1076,7 +1409,7 @@ impl Node
         }
 
         self.clear_instances();
-        self.create_default_instance(node, instance_id);
+        self.create_default_instance(node, instance_id, uuid::Uuid::new_v4().to_string());
 
         true
     }
@@ -1131,7 +1464,7 @@ impl Node
         self.instances.get_mut().clear();
     }
 
-    pub fn delete_node_by_id(&mut self, id: u64) -> bool
+    pub fn delete_child_node_by_id(&mut self, id: u64) -> bool
     {
         {
             let node = Node::find_node_by_id(&self.nodes, id);
@@ -1161,7 +1494,7 @@ impl Node
         // if not found -> check children
         for node in &self.nodes
         {
-            let deleted = node.write().unwrap().delete_node_by_id(id);
+            let deleted = node.write().unwrap().delete_child_node_by_id(id);
 
             if deleted
             {

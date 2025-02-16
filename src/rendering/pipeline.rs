@@ -9,9 +9,7 @@ use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instan
 pub struct Pipeline
 {
     pub name: String,
-    pub fragment_attachment: bool,
-
-    max_lights: u32,
+    pub fragment_attachment: bool, // TODO: currently not implemented
 
     shader: ShaderModule,
     pipeline: Option<wgpu::RenderPipeline>,
@@ -24,7 +22,7 @@ impl RenderItem for Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32) -> Pipeline
     {
         let shader;
         {
@@ -41,13 +39,11 @@ impl Pipeline
             name: name.to_string(),
             fragment_attachment,
 
-            max_lights: max_lights,
-
             shader,
             pipeline: None,
         };
 
-        pipe.create(wgpu, bind_group_layouts, depth_stencil, fragment_attachment, samples);
+        pipe.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
 
         pipe
     }
@@ -63,7 +59,7 @@ impl Pipeline
         shader
     }
 
-    pub fn create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -76,14 +72,17 @@ impl Pipeline
             push_constant_ranges: &[],
         });
 
+        // front to back is the default
+        let depth_compare_func = if depth_compare { wgpu::CompareFunction::Less } else { wgpu::CompareFunction::Always };
+
         let mut depth_stencil_state = None;
         if depth_stencil
         {
             depth_stencil_state = Some(wgpu::DepthStencilState
             {
                 format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // front to back
+                depth_write_enabled: depth_write,
+                depth_compare: depth_compare_func,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             });
@@ -110,8 +109,8 @@ impl Pipeline
                 alpha: wgpu::BlendComponent
                 {
                     operation: wgpu::BlendOperation::Add,
-                    src_factor: wgpu::BlendFactor::One,
-                    dst_factor: wgpu::BlendFactor::One,
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                 },
                 //alpha: wgpu::BlendComponent::REPLACE,
             }),
@@ -124,8 +123,9 @@ impl Pipeline
             fragment_state = Some(wgpu::FragmentState
             {
                 module: &self.shader,
-                entry_point: "fs_main",
-                targets: fragment_targets
+                entry_point: Some("fs_main"),
+                targets: fragment_targets,
+                compilation_options: Default::default(),
             });
         }
 
@@ -136,12 +136,13 @@ impl Pipeline
             vertex: wgpu::VertexState
             {
                 module: &self.shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:
                 &[
                     Vertex::desc(),
                     Instance::desc()
                 ],
+                compilation_options: Default::default(),
             },
             fragment: fragment_state,
             primitive: wgpu::PrimitiveState
@@ -149,8 +150,8 @@ impl Pipeline
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back), // backface culling
-                //cull_mode: None,
+                //cull_mode: Some(wgpu::Face::Back), // backface culling
+                cull_mode: None,
                 // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
                 // or Features::POLYGON_MODE_POINT
                 polygon_mode: wgpu::PolygonMode::Fill,
@@ -167,16 +168,17 @@ impl Pipeline
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+            cache: None,
         });
 
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, fragment_attachment: bool, samples: u32)
+    pub fn re_create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
         dbg!("recreating pipeline");
 
-        self.create(wgpu, bind_group_layouts, depth_stencil, fragment_attachment, samples);
+        self.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
     }
 
     pub fn create_shader(device: &Device, name: &str, shader_source: &String) -> ShaderModule

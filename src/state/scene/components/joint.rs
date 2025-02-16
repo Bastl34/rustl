@@ -1,17 +1,17 @@
-use std::collections::{HashSet, HashMap};
+#![allow(dead_code)]
 
-use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3, Vector4};
+use nalgebra::Matrix4;
 
-use crate::{component_downcast, component_impl_default, component_impl_no_update_instance, helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::scene::node::NodeItem};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, state::scene::node::NodeItem};
 
-use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
+use super::{component::{ComponentBase, Component}, transformation::Transformation};
 
 
 pub struct JointData
 {
     pub root_joint: bool,
     pub local_trans: Matrix4<f32>,
-    pub full_joint_trans: Matrix4<f32>,
+    //pub full_joint_trans: Matrix4<f32>,
     pub inverse_bind_trans: Matrix4<f32>,
     //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
@@ -35,7 +35,7 @@ impl Joint
         let data = JointData
         {
             root_joint: false,
-            full_joint_trans: Matrix4::<f32>::identity(),
+            //full_joint_trans: Matrix4::<f32>::identity(),
             local_trans: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
             //inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
@@ -48,7 +48,7 @@ impl Joint
 
         let joint = Joint
         {
-            base: ComponentBase::new(id, name.to_string(), "Joint".to_string(), "🕱".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Joint".to_string(), "🕱".to_string()),
             data: ChangeTracker::new(data)
         };
 
@@ -138,7 +138,7 @@ impl Joint
         self.get_data_mut().get_mut().local_trans = local_trans;
     }
 
-    fn get_full_inverse_bind_transform(node: NodeItem) -> Matrix4<f32>
+    fn get_full_transform_inverse_bind_transform(node: NodeItem) -> Matrix4<f32>
     {
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();
@@ -156,7 +156,7 @@ impl Joint
                 //if parent.read().unwrap().find_component::<Joint>().is_some()
                 if !parent.read().unwrap().root_node
                 {
-                    let parent_inverse_bindpose_matrix = Self::get_full_inverse_bind_transform(parent.clone());
+                    let parent_inverse_bindpose_matrix = Self::get_full_transform_inverse_bind_transform(parent.clone());
                     inverse_bindpose_matrix = parent_inverse_bindpose_matrix * inverse_bindpose_matrix;
                 }
             }
@@ -172,6 +172,7 @@ impl Component for Joint
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -209,7 +210,7 @@ impl Component for Joint
 
         }
 
-        //let inverse_bind_transform = Self::get_full_inverse_bind_transform(node.clone());
+        //let inverse_bind_transform = Self::get_full_transform_inverse_bind_transform(node.clone());
         //self.get_data_mut().get_mut().inverse_bind_trans_calculated = inverse_bind_transform;
     }
 

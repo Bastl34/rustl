@@ -1,16 +1,13 @@
-use std::f32::consts::PI;
-use std::sync::{RwLock, Arc};
-use std::any::Any;
+#![allow(dead_code)]
 
-use egui::RichText;
 use nalgebra::{Vector3, Vector4};
 use strum_macros::{Display, EnumIter};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
-use crate::{component_impl_default, component_impl_no_update, component_impl_set_enabled};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
-use crate::{state::scene::texture::{TextureItem, Texture}, helper};
+use crate::{state::scene::texture::TextureItem, helper};
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -41,7 +38,8 @@ pub enum TextureType
     Custom3
 }
 
-pub const ALL_TEXTURE_TYPES: [TextureType; 14] =
+pub const TEXTURE_AMOUNT: usize = 14; // without additional textures
+pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
 [
     TextureType::AmbientEmissive,
     TextureType::Base,
@@ -91,6 +89,7 @@ pub struct MaterialData
     pub specular_color: Vector3<f32>,
 
     pub highlight_color: Vector3<f32>,
+    pub locked_color: Vector3<f32>,
 
     pub texture_ambient: Option<TextureState>,
     pub texture_base: Option<TextureState>,
@@ -120,14 +119,12 @@ pub struct MaterialData
     pub receive_shadow: bool,
     pub shadow_softness: f32,
 
-    pub monte_carlo: bool,
-
     pub roughness: f32, //degree in rad (max PI/2)
 
     pub smooth_shading: bool,
 
     pub reflection_only: bool,
-    pub backface_cullig: bool
+    pub backface_culling: bool
 }
 
 pub struct Material
@@ -146,7 +143,8 @@ impl Material
             base_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             specular_color: Vector3::<f32>::new(0.8, 0.8, 0.8),
 
-            highlight_color: Vector3::<f32>::new(1.0, 0.0, 0.0),
+            highlight_color: Vector3::<f32>::new(0.0, 1.0, 0.0),
+            locked_color: Vector3::<f32>::new(1.0, 0.0, 0.0),
 
             texture_ambient: None,
             texture_base: None,
@@ -178,17 +176,15 @@ impl Material
 
             roughness: 0.0,
 
-            monte_carlo: true,
-
             smooth_shading: true,
 
             reflection_only: false,
-            backface_cullig: true,
+            backface_culling: true,
         };
 
         Material
         {
-            base: ComponentBase::new(id, name.to_string(), "Material".to_string(), "🎨".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Material".to_string(), "🎨".to_string()),
             data: ChangeTracker::new(material_data)
         }
     }
@@ -206,7 +202,7 @@ impl Material
     pub fn apply_diff_without_textures(&mut self, new_mat: &Material)
     {
         let default_material = Material::new(0, "");
-        let default_material_data = new_mat.get_data();
+        let default_material_data = default_material.get_data();
 
         let new_mat_data = new_mat.get_data();
 
@@ -261,12 +257,10 @@ impl Material
 
         if !helper::math::approx_equal(default_material_data.roughness, new_mat_data.roughness) { data.roughness = new_mat_data.roughness; }
 
-        if default_material_data.monte_carlo != new_mat_data.monte_carlo { data.monte_carlo = new_mat_data.monte_carlo; }
-
         if default_material_data.smooth_shading != new_mat_data.smooth_shading { data.smooth_shading = new_mat_data.smooth_shading; }
 
         if default_material_data.reflection_only != new_mat_data.reflection_only { data.reflection_only = new_mat_data.reflection_only; }
-        if default_material_data.backface_cullig != new_mat_data.backface_cullig { data.backface_cullig = new_mat_data.backface_cullig; }
+        if default_material_data.backface_culling != new_mat_data.backface_culling { data.backface_culling = new_mat_data.backface_culling; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -352,12 +346,10 @@ impl Material
 
         println!("roughness: {:?}", data.roughness);
 
-        println!("monte_carlo: {:?}", data.monte_carlo);
-
         println!("smooth_shading: {:?}", data.smooth_shading);
 
         println!("reflection_only: {:?}", data.reflection_only);
-        println!("backface_cullig: {:?}", data.backface_cullig);
+        println!("backface_culling: {:?}", data.backface_culling);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -381,6 +373,14 @@ impl Material
             TextureType::Custom1 => { data.texture_custom1 = None; },
             TextureType::Custom2 => { data.texture_custom2 = None; },
             TextureType::Custom3 => { data.texture_custom3 = None; },
+        }
+    }
+
+    pub fn remove_all_textures(&mut self)
+    {
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            self.remove_texture(texture_type);
         }
     }
 
@@ -466,7 +466,7 @@ impl Material
             }
         }
 
-        if approx_equal(data.alpha, 1.0)
+        if !approx_equal(data.alpha, 1.0)
         {
             return true;
         }
@@ -528,6 +528,20 @@ impl Material
         }
 
         tex
+    }
+
+    pub fn get_all_textures(&self) -> Vec<TextureItem>
+    {
+        let mut textures = vec![];
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if let Some(texture) = self.get_texture_by_type(texture_type)
+            {
+                textures.push(texture.item.clone());
+            }
+        }
+
+        textures
     }
 
     pub fn has_texture(&self, tex_type: TextureType) -> bool
@@ -646,6 +660,7 @@ impl Component for Material
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -677,15 +692,15 @@ impl Component for Material
 
         let mut shadow_softness;
         let mut roughness;
-        let mut monte_carlo;
         let mut smooth_shading;
         let mut reflection_only;
-        let mut backface_cullig;
+        let mut backface_culling;
 
         let mut ambient_color;
         let mut base_color;
         let mut specular_color;
         let mut highlight_color;
+        let mut locked_color;
 
         {
             let data = self.data.get_ref();
@@ -702,10 +717,9 @@ impl Component for Material
 
             shadow_softness = data.shadow_softness;
             roughness = data.roughness;
-            monte_carlo = data.monte_carlo;
             smooth_shading = data.smooth_shading;
             reflection_only = data.reflection_only;
-            backface_cullig = data.backface_cullig;
+            backface_culling = data.backface_culling;
 
             let r = (data.ambient_color.x * 255.0) as u8;
             let g = (data.ambient_color.y * 255.0) as u8;
@@ -726,9 +740,16 @@ impl Component for Material
             let g = (data.highlight_color.y * 255.0) as u8;
             let b = (data.highlight_color.z * 255.0) as u8;
             highlight_color = egui::Color32::from_rgb(r, g, b);
+
+            let r = (data.locked_color.x * 255.0) as u8;
+            let g = (data.locked_color.y * 255.0) as u8;
+            let b = (data.locked_color.z * 255.0) as u8;
+            locked_color = egui::Color32::from_rgb(r, g, b);
         }
 
         let mut apply_settings = false;
+
+        ui.label(format!("has transparency: {}", self.has_transparency()));
 
         apply_settings = ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).text("alpha")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut shininess, 0.0..=1000.0).text("shininess")).changed() || apply_settings;
@@ -742,10 +763,9 @@ impl Component for Material
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
-        apply_settings = ui.checkbox(&mut monte_carlo, "monte carlo").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut smooth_shading, "smooth shading").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut reflection_only, "reflection only").changed() || apply_settings;
-        apply_settings = ui.checkbox(&mut backface_cullig, "backface cullig").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut backface_culling, "backface cullig").changed() || apply_settings;
 
         ui.horizontal(|ui|
         {
@@ -771,6 +791,11 @@ impl Component for Material
             apply_settings = ui.color_edit_button_srgba(&mut highlight_color).changed() || apply_settings;
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("lock color:");
+            apply_settings = ui.color_edit_button_srgba(&mut locked_color).changed() || apply_settings;
+        });
 
         if apply_settings
         {
@@ -788,10 +813,9 @@ impl Component for Material
 
             data.shadow_softness = shadow_softness;
             data.roughness = roughness;
-            data.monte_carlo = monte_carlo;
             data.smooth_shading = smooth_shading;
             data.reflection_only = reflection_only;
-            data.backface_cullig = backface_cullig;
+            data.backface_culling = backface_culling;
 
             let r = ((ambient_color.r() as f32) / 255.0).clamp(0.0, 1.0);
             let g = ((ambient_color.g() as f32) / 255.0).clamp(0.0, 1.0);

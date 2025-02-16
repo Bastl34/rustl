@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use wgpu::{BindGroupLayout, BindGroup};
 
 use crate::{rendering::{light::LightBuffer, camera::CameraBuffer, wgpu::WGpu, uniform, scene::Scene}, state::helper::render_item::RenderItem, render_item_impl_default};

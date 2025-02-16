@@ -1,6 +1,6 @@
-use rustl::start;
+use rustl::run;
 
 fn main()
 {
-    pollster::block_on(start());
+    run();
 }

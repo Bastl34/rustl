@@ -32,7 +32,9 @@ pub struct PressState
     last_press_time: u64,
     holding_time: u64,
 
-    holding_state: bool
+    pub first_action_frame: u64,
+
+    holding_state: bool,
 }
 
 impl PressState
@@ -53,6 +55,8 @@ impl PressState
             last_press_time: 0,
             holding_time: 0,
 
+            first_action_frame: 0,
+
             holding_state: false
         }
     }
@@ -62,6 +66,7 @@ impl PressState
         self.holding_state = false;
 
         self.first_action_time = 0;
+        self.first_action_frame = 0;
 
         if reset_last_pressed_time
         {
@@ -87,7 +92,7 @@ impl PressState
         self.holding_time = get_millis() as u64 - self.first_action_time;
     }
 
-    pub fn update(&mut self, status: bool)
+    pub fn update(&mut self, status: bool, frame: u64)
     {
         // do not update if the state is the same
         if self.holding_state == status
@@ -105,17 +110,20 @@ impl PressState
             if self.first_action_time == 0
             {
                 self.first_action_time = get_millis();
+                self.first_action_frame = frame;
             }
         }
         else
         {
             self.holding_state = false;
+            self.holding_value = 0.0;
             self.first_action_time = 0;
+            self.first_action_frame = 0;
             self.last_press_time = 0;
         }
     }
 
-    pub fn update_float(&mut self, value: f32)
+    pub fn update_float(&mut self, value: f32, frame: u64)
     {
         self.determine_holding_time();
 
@@ -127,12 +135,14 @@ impl PressState
             if self.first_action_time == 0
             {
                 self.first_action_time = get_millis();
+                self.first_action_frame = frame;
             }
         }
         else
         {
             self.holding_state = false;
             self.first_action_time = 0;
+            self.first_action_frame = 0;
             self.last_press_time = 0;
         }
     }
@@ -165,14 +175,14 @@ impl PressState
 
                 if self.reset_on_pressed
                 {
-                    self.update(false);
+                    self.update(false, 0);
                 }
 
                 return PressStateType::Pressed;
             }
         }
         // do not wait until key is released -> for instant key press action
-        else if (!wait_until_key_release || self.reset_on_pressed) && self.holding_state
+        else if (!wait_until_key_release || self.reset_on_pressed) && self.holding_state && self.holding_time > 0
         {
             if self.last_press_time + self.min_diff_time < get_millis()
             {
@@ -181,7 +191,7 @@ impl PressState
 
                 if self.reset_on_pressed
                 {
-                    self.update(false);
+                    self.update(false, 0);
                 }
 
                 return PressStateType::Pressed;
@@ -189,6 +199,11 @@ impl PressState
         }
 
         PressStateType::NotPressed
+    }
+
+    pub fn was_consumed(&self) -> bool
+    {
+        self.holding() && self.holding_time == 0
     }
 
     pub fn holding(&self) -> bool

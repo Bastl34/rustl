@@ -1,7 +1,8 @@
-use egui::Color32;
+#![allow(dead_code)]
+
 use nalgebra::{Vector3, Vector4};
 
-use crate::{helper::{change_tracker::ChangeTracker, self}, component_impl_default, state::{scene::{node::{NodeItem, InstanceItemArc}, instance::InstanceItem}}, component_downcast, component_downcast_mut, input::{input_manager::InputManager, keyboard::{Key, get_keys_as_string_vec}}};
+use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::{InstanceItemArc, NodeItem}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -42,7 +43,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
             data: ChangeTracker::new(data),
 
             keyboard_key: None,
@@ -70,7 +71,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
+            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
             data: ChangeTracker::new(data),
 
             keyboard_key: None,
@@ -156,6 +157,7 @@ impl TransformationAnimation
 impl Component for TransformationAnimation
 {
     component_impl_default!();
+    component_impl_no_cleanup_node!();
 
     fn instantiable() -> bool
     {
@@ -303,9 +305,9 @@ impl Component for TransformationAnimation
         ui.horizontal(|ui|
         {
             ui.label("Keyboard key: ");
-            egui::ComboBox::from_id_source(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("keyboad_id")).selected_text(current_key_name).show_ui(ui, |ui|
             {
-                ui.style_mut().wrap = Some(false);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.set_min_width(60.0);
 
                 let mut new_key = 0;

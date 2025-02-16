@@ -1,12 +1,12 @@
 use egui::{Ui, Color32, RichText, Stroke};
-use egui_plot::{BarChart, Bar, Corner, Legend, Plot, Line, PlotPoints, LineStyle, PlotPoint, Text};
+use egui_plot::{Corner, Legend, Plot, Line, PlotPoints, LineStyle, PlotPoint, Text};
 
 use crate::state::state::State;
 use super::editor_state::EditorState;
 
 const CHART_PADDING_FACTOR: f32 = 1.1;
 
-pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // https://github.com/emilk/egui/blob/master/crates/egui_demo_lib/src/demo/plot_demo.rs#L888
 
@@ -42,11 +42,10 @@ pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     let plot = Plot::new("FPS")
         .legend(legend)
-        .y_axis_width(4)
+        .y_axis_min_width(4.0)
         .show_axes(false)
         .show_grid(true)
-        .auto_bounds_x()
-        .auto_bounds_y()
+        .auto_bounds(egui::Vec2b::new(true, true))
         .include_y(fps_upper)
         .allow_drag(false)
         .allow_zoom(false)
@@ -65,7 +64,7 @@ pub fn create_chart(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     });
 }
 
-pub fn create_statistic(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let mut textures = 0;
     let mut materials = 0;

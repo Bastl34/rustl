@@ -62,13 +62,14 @@ mod state
             pub(crate) mod morph_target_animation;
             pub(crate) mod animation_blending;
             pub(crate) mod sound;
+            pub(crate) mod delay;
         }
 
         pub(crate) mod scene_controller
         {
             pub(crate) mod scene_controller;
             pub(crate) mod generic_controller;
-            pub(crate) mod character_controller;
+            pub(crate) mod char_controller;
         }
 
         pub(crate) mod camera_controller
@@ -132,6 +133,7 @@ pub(crate) mod input
 
     pub(crate) mod keyboard;
     pub(crate) mod mouse;
+    pub(crate) mod touch;
     pub(crate) mod gamepad;
 }
 
@@ -169,6 +171,7 @@ mod helper
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
     pub(crate) mod easing;
+    pub(crate) mod stopwatch;
 }
 
 mod resources
@@ -180,7 +183,7 @@ mod resources
 use wasm_bindgen::prelude::*;
 
 #[cfg_attr(target_arch="wasm32", wasm_bindgen(start))]
-pub async fn start()
+pub fn run()
 {
-    window::window::start().await;
+    window::window::run();
 }

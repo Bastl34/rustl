@@ -1,10 +1,11 @@
+#![allow(dead_code)]
+
 use std::{mem::swap, f32::consts::PI};
 
-use egui::{RichText, Color32};
-use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
-use parry3d::{either::Either::Right, query::Ray};
+use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3};
+use parry3d::query::Ray;
 
-use crate::{helper::{change_tracker::ChangeTracker, math::approx_equal}, input::input_manager::InputManager, state::{gui::editor::editor_state::BottomPanel, helper::render_item::RenderItemOption}};
+use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
 
 use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}};
 
@@ -13,7 +14,7 @@ const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
 const DEFAULT_CAM_DIR: Vector3::<f32> = Vector3::<f32>::new(0.0, 0.0, -1.0);
 
 //pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(1.0, 0.0, 2.0);
-pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(-0.5, 0.5, 1.0);
+//pub const OBLIQUE_CAM_POS: Vector3::<f32> = Vector3::<f32>::new(-0.5, 0.5, 1.0);
 
 const DEFAULT_LEFT_EAR_POS: Point3<f32> = Point3::<f32>::new(-1.0, 0.0, 0.0);
 const DEFAULT_RIGHT_EAR_POS: Point3<f32> = Point3::<f32>::new(1.0, 0.0, 0.0);
@@ -94,6 +95,8 @@ pub struct CameraData
 pub struct Camera
 {
     pub id: u64,
+    pub uuid: String,
+
     pub name: String,
     pub enabled: bool,
 
@@ -108,11 +111,13 @@ pub struct Camera
 
 impl Camera
 {
-    pub fn new(id: u64, name: String) -> Camera
+    pub fn new(id: u64, uuid: String, name: String) -> Camera
     {
         Camera
         {
-            id: id,
+            id,
+            uuid,
+
             name: name,
             enabled: true,
 
@@ -390,6 +395,23 @@ impl Camera
         ray
     }
 
+    pub fn get_viewport_coordinates_from_point(&self, point: &Point3<f32>, width: u32, height: u32) -> Point2<f32>
+    {
+        let data = self.get_data();
+
+        let w = data.viewport_width as f32 * width as f32;
+        let h = data.viewport_height as f32 * height as f32;
+
+        let camera_point = data.view.transform_point(&point);
+        let clip_space_point = data.projection.transform_point(&camera_point);
+
+        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32;
+        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32;
+
+        // reduce by 0.5 because the point was the center of the pixel
+        Point2::new(screen_x - 0.5, screen_y - 0.5)
+    }
+
     pub fn get_left_right_ear_positions(&self) -> (Point3::<f32>, Point3<f32>)
     {
         let left = self.get_data().left_ear_pos;
@@ -483,15 +505,26 @@ impl Camera
         ui.horizontal(|ui|
         {
             ui.label("Viewport Offset:");
-            changed = ui.add(egui::DragValue::new(&mut viewport_x).clamp_range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut viewport_y).clamp_range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_x).range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_y).range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
         });
 
         ui.horizontal(|ui|
         {
             ui.label("Viewport Size:");
-            changed = ui.add(egui::DragValue::new(&mut viewport_width).clamp_range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut viewport_height).clamp_range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_width).range(0.0..=1.0).speed(0.01).prefix("x: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut viewport_height).range(0.0..=1.0).speed(0.01).prefix("y: ")).changed() || changed;
+
+            // prevent empty viewport
+            if approx_zero(viewport_width)
+            {
+                viewport_width = 0.001;
+            }
+
+            if approx_zero(viewport_height)
+            {
+                viewport_height = 0.001;
+            }
         });
 
         ui.horizontal(|ui|

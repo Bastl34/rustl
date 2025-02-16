@@ -1,6 +1,8 @@
-use std::{sync::{RwLockReadGuard, Arc, RwLock}, mem::swap, vec};
+use std::{collections::HashMap, mem::swap, sync::{Arc, RwLock, RwLockReadGuard}, vec};
 
 use nalgebra::{Point3, distance_squared};
+use strum::EnumCount;
+use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
 use crate::{component_downcast, component_downcast_mut, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
@@ -9,6 +11,7 @@ use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, c
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 
+#[derive(Copy, Clone)]
 pub struct RenderData<'a>
 {
     node: &'a RwLockReadGuard<'a, Box<Node>>,
@@ -43,6 +46,19 @@ impl SceneUniform
     }
 }
 
+#[derive(EnumCount)]
+pub enum PipelineType
+{
+    Depth = 0,
+    DepthNoCompare,
+    DepthNoWrite,
+    DepthNoWriteNoCompare,
+    Color,
+    ColorNoCompare,
+    ColorNoWrite,
+    ColorNoWriteNoCompare,
+}
+
 pub struct Scene
 {
     clear_color: wgpu::Color,
@@ -53,8 +69,7 @@ pub struct Scene
     samples: u32,
     pub distance_sorting: bool,
 
-    depth_pipe: Option<Pipeline>,
-    color_pipe: Option<Pipeline>,
+    pipelines: Vec<Pipeline>,
 
     buffer: wgpu::Buffer,
 
@@ -63,7 +78,7 @@ pub struct Scene
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
-    empty_skeleton_morph: SkeletonMorphTargetBindGroup,
+    empty_skeleton_morph_group: SkeletonMorphTargetBindGroup,
 }
 
 impl RenderItem for Scene
@@ -76,13 +91,13 @@ impl Scene
     pub fn new(wgpu: &mut WGpu, state: &mut State, scene: &mut crate::state::scene::scene::Scene, samples: u32) -> Scene
     {
         // shader source
-        let color_shader = resources::load_string("shader/phong.wgsl").unwrap();
+        let color_shader = resources::load_string("shader/base.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
 
-        let empty_skeleton_morph = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
+        let empty_skeleton_morph_group = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
 
         let mut render_scene = Self
         {
@@ -94,8 +109,7 @@ impl Scene
             samples,
             distance_sorting: true,
 
-            color_pipe: None,
-            depth_pipe: None,
+            pipelines: vec![],
 
             buffer: create_empty_buffer(wgpu),
 
@@ -105,7 +119,7 @@ impl Scene
             empty_skeleton,
             empty_morph_target,
 
-            empty_skeleton_morph
+            empty_skeleton_morph_group
         };
 
         render_scene.to_buffer(wgpu, scene);
@@ -170,13 +184,19 @@ impl Scene
         ];
 
         // ********** depth pass **********
-        if !re_create
+        if !re_create || self.pipelines.len() < PipelineType::COUNT
         {
-            self.depth_pipe = Some(Pipeline::new(wgpu, "depth pipe", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, 1));
+            self.pipelines.push(Pipeline::new(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1));
+            self.pipelines.push(Pipeline::new(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1));
+            self.pipelines.push(Pipeline::new(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1));
+            self.pipelines.push(Pipeline::new(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1));
         }
         else
         {
-            self.depth_pipe.as_mut().unwrap().re_create(wgpu, &bind_group_layouts, true, true, 1);
+            self.pipelines.get_mut(PipelineType::Depth as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, true, true, 1);
+            self.pipelines.get_mut(PipelineType::DepthNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, true, true, 1);
+            self.pipelines.get_mut(PipelineType::DepthNoWrite as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, false, true, 1);
+            self.pipelines.get_mut(PipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, false, true, 1);
         }
 
         // ********** color pass **********
@@ -185,11 +205,17 @@ impl Scene
 
         if !re_create
         {
-            self.color_pipe = Some(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, self.samples));
+            self.pipelines.push(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples));
+            self.pipelines.push(Pipeline::new(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples));
+            self.pipelines.push(Pipeline::new(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples));
+            self.pipelines.push(Pipeline::new(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples));
         }
         else
         {
-            self.color_pipe.as_mut().unwrap().re_create(wgpu, &bind_group_layouts, true, true, self.samples);
+            self.pipelines.get_mut(PipelineType::Color as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, true, true, self.samples);
+            self.pipelines.get_mut(PipelineType::ColorNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, true, true, self.samples);
+            self.pipelines.get_mut(PipelineType::ColorNoWrite as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, false, true, self.samples);
+            self.pipelines.get_mut(PipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
         }
     }
 
@@ -302,7 +328,7 @@ impl Scene
 
                 {
                     let render_item = get_render_item_mut::<MaterialBuffer>(render_item.as_mut().unwrap());
-                    render_item.to_buffer(wgpu, material, default_env_map.clone(), None);
+                    render_item.to_buffers(wgpu, material, default_env_map.clone(), None);
                     render_item.create_binding_groups(wgpu, material, default_env_map.clone(), None);
                 }
 
@@ -440,7 +466,7 @@ impl Scene
                     let mesh = node.find_component::<crate::state::scene::components::mesh::Mesh>();
                     if let Some(mesh) = mesh
                     {
-                        let weights = node.get_morph_targets_vec();
+                        let weights = node.get_morph_target_weights_vec();
 
                         if let Some(weights) = weights
                         {
@@ -921,7 +947,10 @@ impl Scene
             meshes_read.push(mesh_read);
         }
 
-        let mut render_data = Vec::with_capacity(materials_read.len());
+        // solid_objects and transparent_objects
+        // TODO: use vec instead?
+        let mut render_groups: HashMap<u64, (Vec<RenderData>, Vec<RenderData>)> = HashMap::new();
+
         for (i, material) in materials_read.iter().enumerate()
         {
             let mat;
@@ -947,7 +976,6 @@ impl Scene
                     continue;
                 }
 
-
                 let mut mesh_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
                 for mesh in meshes
                 {
@@ -962,7 +990,6 @@ impl Scene
                 mesh_middle.x /= len_f32;
                 mesh_middle.y /= len_f32;
                 mesh_middle.z /= len_f32;
-
 
                 if let Some(instance_render_item) = node.instance_render_item.as_ref()
                 {
@@ -989,19 +1016,35 @@ impl Scene
                 has_transparency = mat.has_transparency();
             }
 
-            render_data.push
-            (
-                RenderData
-                {
-                    node: nodes_read.get(i).unwrap(),
-                    material: mat,
-                    meshes: meshes,
+            let node = nodes_read.get(i).unwrap();
+            let render_group_id = node.settings.render_group_id;
 
-                    has_transparency: has_transparency,
-                    alpha_index: node.settings.alpha_index,
-                    middle: item_middle
-                }
-            );
+            let item = RenderData
+            {
+                node,
+                material: mat,
+                meshes: meshes,
+
+                has_transparency: has_transparency,
+                alpha_index: node.settings.alpha_index,
+                middle: item_middle
+            };
+
+            if !render_groups.contains_key(&render_group_id)
+            {
+                render_groups.insert(render_group_id, (vec![], vec![]));
+            }
+
+            let (solid_objects, transparent_objects) = render_groups.get_mut(&render_group_id).unwrap();
+
+            if has_transparency
+            {
+                transparent_objects.push(item);
+            }
+            else
+            {
+                solid_objects.push(item);
+            }
         }
 
         let mut draw_calls: u32 = 0;
@@ -1016,27 +1059,31 @@ impl Scene
             // sort
             if self.distance_sorting
             {
-
                 let cam_pos = cam_data.eye_pos;
-                render_data.sort_by(|a, b|
-                {
-                    if a.has_transparency != b.has_transparency
-                    {
-                        b.has_transparency.cmp(&a.has_transparency)
-                    }
-                    else if a.alpha_index != b.alpha_index
-                    {
-                        a.alpha_index.cmp(&b.alpha_index)
-                    }
-                    else
-                    {
-                        // we do not need the exact distance here - squared is fine
-                        let a_dist = distance_squared(&a.middle, &cam_pos);
-                        let b_dist = distance_squared(&b.middle, &cam_pos);
 
-                        b_dist.partial_cmp(&a_dist).unwrap()
-                    }
-                });
+                // sorting based on the "previous" transparent_objects vec - its not cloned
+                for (_, (_, transparent_objects)) in &mut render_groups
+                {
+                    transparent_objects.sort_by(|a, b|
+                    {
+                        if a.has_transparency != b.has_transparency
+                        {
+                            b.has_transparency.cmp(&a.has_transparency)
+                        }
+                        else if a.alpha_index != b.alpha_index
+                        {
+                            a.alpha_index.cmp(&b.alpha_index)
+                        }
+                        else
+                        {
+                            // we do not need the exact distance here - squared is fine
+                            let a_dist = distance_squared(&a.middle, &cam_pos);
+                            let b_dist = distance_squared(&b.middle, &cam_pos);
+
+                            b_dist.partial_cmp(&a_dist).unwrap()
+                        }
+                    });
+                }
             }
 
             let clear;
@@ -1045,6 +1092,14 @@ impl Scene
             // get bind groups
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
+
+            // transparent objects are added to the back. so solid objects are rendered first
+            let mut render_data = Vec::with_capacity(materials_read.len());
+            for (_, (solid_objects, transparent_objects)) in &mut render_groups
+            {
+                render_data.extend(solid_objects.iter().cloned());
+                render_data.extend(transparent_objects.iter().cloned());
+            }
 
             draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
@@ -1069,7 +1124,8 @@ impl Scene
         // todo: replace with internal texture?
         let render_pass_view = view;
 
-        let mut color_attachments: &[Option<RenderPassColorAttachment>] = &[
+        //let mut color_attachments: &[Option<RenderPassColorAttachment>] = &[
+        let color_attachments: &[Option<RenderPassColorAttachment>] = &[
             Some(wgpu::RenderPassColorAttachment
             {
                 view: render_pass_view,
@@ -1083,10 +1139,12 @@ impl Scene
         ];
 
         // TODO get rid of this
+        /*
         if !self.depth_pipe.as_ref().unwrap().fragment_attachment
         {
             color_attachments = &[];
         }
+        */
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -1114,7 +1172,7 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.depth_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
+        self.draw_phase(&mut render_pass, false, nodes, light_cam_bind_group)
     }
 
     pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
@@ -1174,10 +1232,10 @@ impl Scene
 
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &self.color_pipe.as_ref().unwrap(), nodes, light_cam_bind_group)
+        self.draw_phase(&mut render_pass, true, nodes, light_cam_bind_group)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, pipeline: &'a Pipeline, nodes: &'a Vec<RenderData>, light_cam_bind_group: &'a BindGroup) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, color_pipeline: bool, nodes: &'a Vec<RenderData>, light_cam_bind_group: &'a BindGroup) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -1217,7 +1275,51 @@ impl Scene
                     let instance_render_item = node.instance_render_item.as_ref().unwrap();
                     let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                    pass.set_pipeline(&pipeline.get());
+                    if node.settings.depth_test && node.settings.depth_write
+                    {
+                        if color_pipeline
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::Color as usize].get());
+                        }
+                        else
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::Depth as usize].get());
+                        }
+                    }
+                    else if !node.settings.depth_test && node.settings.depth_write
+                    {
+                        if color_pipeline
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::ColorNoCompare as usize].get());
+                        }
+                        else
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::DepthNoCompare as usize].get());
+                        }
+                    }
+                    else if node.settings.depth_test && !node.settings.depth_write
+                    {
+                        if color_pipeline
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWrite as usize].get());
+                        }
+                        else
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWrite as usize].get());
+                        }
+                    }
+                    else
+                    {
+                        if color_pipeline
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWriteNoCompare as usize].get());
+                        }
+                        else
+                        {
+                            pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWriteNoCompare as usize].get());
+                        }
+                    }
+
                     pass.set_bind_group(0, material_bind_group, &[]);
                     pass.set_bind_group(1, light_cam_bind_group, &[]);
 
@@ -1230,7 +1332,7 @@ impl Scene
                     }
                     else
                     {
-                        pass.set_bind_group(2, &self.empty_skeleton_morph.bind_group, &[]);
+                        pass.set_bind_group(2, &self.empty_skeleton_morph_group.bind_group, &[]);
                     }
 
                     pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
