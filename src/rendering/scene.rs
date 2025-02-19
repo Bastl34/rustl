@@ -920,17 +920,16 @@ impl Scene
 
             if node_meshes.len() > 0
             {
+                nodes_read.push(read_node);
+                meshes.push(node_meshes);
+
                 if let Some(mat) = mat
                 {
-                    nodes_read.push(read_node);
                     materials.push(mat);
-                    meshes.push(node_meshes);
                 }
                 else
                 {
-                    nodes_read.push(read_node);
                     materials.push(default_material_arc.clone());
-                    meshes.push(node_meshes);
                 }
             }
         }
@@ -948,8 +947,8 @@ impl Scene
         }
 
         // solid_objects and transparent_objects
-        // TODO: use vec instead?
-        let mut render_groups: HashMap<u64, (Vec<RenderData>, Vec<RenderData>)> = HashMap::new();
+        let mut render_groups: Vec<(Vec<RenderData>, Vec<RenderData>)> = vec![];
+        let mut group_map: HashMap<u64, usize> = HashMap::new();
 
         for (i, material) in materials_read.iter().enumerate()
         {
@@ -1030,12 +1029,23 @@ impl Scene
                 middle: item_middle
             };
 
-            if !render_groups.contains_key(&render_group_id)
+            let i;
+
+            if let Some(&index) = group_map.get(&render_group_id)
             {
-                render_groups.insert(render_group_id, (vec![], vec![]));
+                i = index;
+            }
+            else
+            {
+                let index = render_groups.len();
+                group_map.insert(render_group_id, index);
+                render_groups.push((vec![], vec![]));
+
+                i = index;
             }
 
-            let (solid_objects, transparent_objects) = render_groups.get_mut(&render_group_id).unwrap();
+            //let (solid_objects, transparent_objects) = render_groups.get_mut(&render_group_id).unwrap();
+            let (solid_objects, transparent_objects) = render_groups.get_mut(i).unwrap();
 
             if has_transparency
             {
@@ -1062,7 +1072,7 @@ impl Scene
                 let cam_pos = cam_data.eye_pos;
 
                 // sorting based on the "previous" transparent_objects vec - its not cloned
-                for (_, (_, transparent_objects)) in &mut render_groups
+                for (_, transparent_objects) in &mut render_groups
                 {
                     transparent_objects.sort_by(|a, b|
                     {
@@ -1095,7 +1105,7 @@ impl Scene
 
             // transparent objects are added to the back. so solid objects are rendered first
             let mut render_data = Vec::with_capacity(materials_read.len());
-            for (_, (solid_objects, transparent_objects)) in &mut render_groups
+            for (solid_objects, transparent_objects) in &mut render_groups
             {
                 render_data.extend(solid_objects.iter().cloned());
                 render_data.extend(transparent_objects.iter().cloned());

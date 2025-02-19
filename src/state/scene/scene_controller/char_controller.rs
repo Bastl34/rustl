@@ -1040,7 +1040,6 @@ impl SceneController for CharacterController
                             }
                         }
 
-
                         // do not move more than ground distance
                         if moving < -ground_distance
                         {
