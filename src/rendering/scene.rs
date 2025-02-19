@@ -1029,22 +1029,12 @@ impl Scene
                 middle: item_middle
             };
 
-            let i;
-
-            if let Some(&index) = group_map.get(&render_group_id)
+            let i = *group_map.entry(render_group_id).or_insert_with(||
             {
-                i = index;
-            }
-            else
-            {
-                let index = render_groups.len();
-                group_map.insert(render_group_id, index);
                 render_groups.push((vec![], vec![]));
+                render_groups.len() - 1
+            });
 
-                i = index;
-            }
-
-            //let (solid_objects, transparent_objects) = render_groups.get_mut(&render_group_id).unwrap();
             let (solid_objects, transparent_objects) = render_groups.get_mut(i).unwrap();
 
             if has_transparency
