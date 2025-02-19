@@ -35,7 +35,15 @@ impl WGpu
 
         let instance = wgpu::Instance::new(&instance_desc);
         //let surface = unsafe { instance.create_surface(window) }.unwrap();
-        let surface = instance.create_surface(window.clone()).unwrap();
+        let surface = instance.create_surface(window.clone());
+
+        if let Err(surface_error) = &surface
+        {
+            dbg!(surface_error);
+            panic!("Failed to create surface");
+        }
+
+        let surface = surface.unwrap();
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions
         {

@@ -1055,7 +1055,7 @@ impl SceneController for CharacterController
                             self.falling = false;
                             self.grounded = true;
                         }
-                        else
+                        else if ground_distance > self.body_offset // if the avatar is not on the ground with some offset
                         {
                             self.grounded = false;
                         }
