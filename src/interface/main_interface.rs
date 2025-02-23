@@ -799,19 +799,33 @@ impl MainInterface
             let current_time = state.stats.fps_timer.elapsed().as_millis();
             state.stats.fps += 1;
 
-            if current_time / 1000 > state.stats.last_time / 1000
+            if current_time / 1000 > state.stats.last_time / 1000 && state.stats.frame_times.len() > 0
             {
                 state.stats.last_time = state.stats.fps_timer.elapsed().as_millis();
 
+                // average fps
                 state.stats.last_fps = state.stats.fps;
-                state.stats.fps_chart.push(state.stats.last_fps);
-                if state.stats.fps_chart.len() > FPS_CHART_VALUES
+                state.stats.fps_average_chart.push_back(state.stats.last_fps);
+
+                // 1% low fps
+                let mut sorted_times: Vec<f32> = state.stats.frame_times.iter().map(|x| *x).collect();
+                sorted_times.sort_by(|a, b| b.partial_cmp(a).unwrap());
+
+                let one_percent_index = (sorted_times.len() as f32 * 0.01).ceil() as usize;
+                let one_percent_slowest_time = sorted_times.get(one_percent_index.saturating_sub(1)).copied().unwrap_or(*sorted_times.last().unwrap());
+
+                state.stats.last_fps_1_percent_low = (1_000_000.0 / one_percent_slowest_time) as u32;
+                state.stats.fps_1_percent_low_chart.push_back(state.stats.last_fps_1_percent_low);
+
+                if state.stats.fps_average_chart.len() > FPS_CHART_VALUES
                 {
-                    state.stats.fps_chart.remove(0);
+                    state.stats.fps_average_chart.pop_front();
+                    state.stats.fps_1_percent_low_chart.pop_front();
                 }
 
-                self.window.set_title(format!("{} | FPS: {}", &self.window_title, state.stats.last_fps).as_str());
+                self.window.set_title(format!("{} | FPS: {} (1%L: {})", &self.window_title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
                 state.stats.fps = 0;
+                state.stats.frame_times.clear();
             }
 
             // frame scale
@@ -1019,6 +1033,7 @@ impl MainInterface
         {
             let state = &mut *(self.state.borrow_mut());
             state.stats.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.frame_times.push_back(frame_time.elapsed().as_micros() as f32);
 
             state.stats.fps_absolute = (1000.0 / (state.stats.engine_render_time + state.stats.engine_update_time)) as u32;
 

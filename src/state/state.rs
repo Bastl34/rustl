@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, rc::Rc, sync::{RwLock, Arc}};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc, sync::{Arc, RwLock}};
 
 use instant::Instant;
 use nalgebra::Vector3;
@@ -61,13 +61,16 @@ pub struct Statistics
     pub last_time: u128,
     pub fps: u32,
     pub last_fps: u32,
+    pub last_fps_1_percent_low: u32, //1% low
     pub fps_absolute: u32,
-    pub fps_chart: Vec<u32>,
+    pub fps_average_chart: VecDeque<u32>,
+    pub fps_1_percent_low_chart: VecDeque<u32>,
 
     pub frame_update_time: u128, // micros
     pub frame_scale: f32,
 
-    pub frame_time: f32,
+    pub frame_time: f32, // in ms
+    pub frame_times: VecDeque<f32>, // micros (only last second)
 
     pub engine_update_time: f32,
     pub engine_render_time: f32,
@@ -206,8 +209,11 @@ impl State
                 last_time: 0,
                 fps: 0,
                 last_fps: 0,
+                last_fps_1_percent_low: 0,
                 fps_absolute: 0,
-                fps_chart: vec![0; 100],
+                fps_average_chart: VecDeque::from(vec![0; 100]),
+                fps_1_percent_low_chart: VecDeque::from(vec![0; 100]),
+                frame_times: VecDeque::from(vec![]),
 
                 frame_update_time: 0,
                 frame_scale: 0.0,

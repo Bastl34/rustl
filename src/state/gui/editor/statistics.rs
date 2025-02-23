@@ -10,7 +10,8 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
 {
     // https://github.com/emilk/egui/blob/master/crates/egui_demo_lib/src/demo/plot_demo.rs#L888
 
-    let fps_points: PlotPoints = state.stats.fps_chart.iter().enumerate().map(|(i, value)|
+    // ********** fps **********
+    let fps_points: PlotPoints = state.stats.fps_average_chart.iter().enumerate().map(|(i, value)|
     {
         [
             i as f64,
@@ -30,10 +31,32 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
 
     let fps = Line::new(fps_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Solid).name("FPS");
 
+    // ********** fps 1% low **********
+    let fps_1pl_points: PlotPoints = state.stats.fps_1_percent_low_chart.iter().enumerate().map(|(i, value)|
+    {
+        [
+            i as f64,
+            *value as f64
+        ]
+    }).collect();
+
+    let mut color = Color32::GREEN;
+    if state.stats.last_fps_1_percent_low < 29
+    {
+        color = Color32::RED;
+    }
+    else if state.stats.last_fps_1_percent_low < 59
+    {
+        color = Color32::YELLOW;
+    }
+
+    let fps_1pl = Line::new(fps_1pl_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Dashed { length: 2.0 }).name("1%L");
+
+    // ********** draw **********
     let legend = Legend::default().position(Corner::LeftTop);
 
     let mut max_fps = 0;
-    for fps in &state.stats.fps_chart
+    for fps in &state.stats.fps_average_chart
     {
         max_fps = max_fps.max(*fps);
     }
@@ -55,10 +78,11 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
     plot.show(ui, |plot_ui|
     {
         plot_ui.line(fps);
+        plot_ui.line(fps_1pl);
 
         // last FPS entry
         let fps = format!("{:.1}", state.stats.last_fps);
-        let pos = (state.stats.fps_chart.len() + 5) as f32;
+        let pos = (state.stats.fps_average_chart.len() + 5) as f32;
         let text = RichText::new(fps).strong().size(12.0);
         plot_ui.text(Text::new(PlotPoint::new(pos, state.stats.last_fps), text).name("FPS"));
     });
@@ -76,6 +100,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
 
     ui.label(RichText::new("ℹ Info").strong());
     ui.label(format!(" ⚫ fps: {}", state.stats.last_fps));
+    ui.label(format!(" ⚫ fps 1% low: {}", state.stats.last_fps_1_percent_low));
     ui.label(format!(" ⚫ absolute fps: {}", state.stats.fps_absolute));
     ui.label(format!(" ⚫ frame time: {:.3} ms", state.stats.frame_time));
 
