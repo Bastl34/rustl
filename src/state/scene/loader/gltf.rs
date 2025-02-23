@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
 
 
 pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -1246,6 +1246,22 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
     let base_color = gltf_material.pbr_metallic_roughness().base_color_factor();
     data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
     data.alpha = base_color[3];
+
+    data.blend_mode = match gltf_material.alpha_mode()
+    {
+        gltf::material::AlphaMode::Blend => BlendMode::Blend,
+        gltf::material::AlphaMode::Mask => BlendMode::Mask,
+        gltf::material::AlphaMode::Opaque => BlendMode::Opaque
+    };
+
+    data.alpha_cutoff = gltf_material.alpha_cutoff();
+
+    //default alpha cutoff is 0.5 for mask blend mode
+    // https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/AlphaBlendModeTest/README.md#problem-no-default-cutoff
+    if data.blend_mode == BlendMode::Mask && data.alpha_cutoff.is_none()
+    {
+        data.alpha_cutoff = Some(0.5);
+    }
 
     // base/albedo texture
     if let Some(tex) = gltf_material.pbr_metallic_roughness().base_color_texture()

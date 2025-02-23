@@ -47,7 +47,11 @@ pub struct MaterialUniform
     pub highlight_color: [f32; 4],
     pub locked_color: [f32; 4],
 
+    pub blend_mode: u32,
+
     pub alpha: f32,
+    pub alpha_cutoff: f32,
+
     pub shininess: f32,
     pub reflectivity: f32,
     pub refraction_index: f32,
@@ -58,10 +62,12 @@ pub struct MaterialUniform
 
     pub unlit: u32,
 
+    pub _padding1: [u32; 2],
+
     pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
 
-    pub __padding: [u32; 3]
+    pub _padding2: [u32; 3]
 }
 
 impl MaterialUniform
@@ -137,7 +143,11 @@ impl MaterialUniform
                 material_data.locked_color.z,
                 1.0,
             ],
+
+            blend_mode: material_data.blend_mode as u32,
             alpha: material_data.alpha,
+            alpha_cutoff: material_data.alpha_cutoff.unwrap_or(0.0),
+
             shininess: material_data.shininess,
             reflectivity: material_data.reflectivity,
             refraction_index: material_data.refraction_index,
@@ -149,7 +159,8 @@ impl MaterialUniform
             texture_transforms,
             textures_used: textures_used,
 
-            __padding: [0, 0, 0]
+            _padding1: [0, 0],
+            _padding2: [0, 0, 0],
         }
     }
 }

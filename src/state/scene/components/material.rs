@@ -38,6 +38,14 @@ pub enum TextureType
     Custom3
 }
 
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter)]
+pub enum BlendMode
+{
+    Opaque,
+    Mask,
+    Blend
+}
+
 pub const TEXTURE_AMOUNT: usize = 14; // without additional textures
 pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
 [
@@ -107,7 +115,10 @@ pub struct MaterialData
     pub texture_custom2: Option<TextureState>,
     pub texture_custom3: Option<TextureState>,
 
+    pub blend_mode: BlendMode,
+
     pub alpha: f32,
+    pub alpha_cutoff: Option<f32>,
     pub shininess: f32,
     pub reflectivity: f32,
     pub refraction_index: f32,
@@ -162,7 +173,10 @@ impl Material
             texture_custom2: None,
             texture_custom3: None,
 
+            blend_mode: BlendMode::Blend,
+
             alpha: 1.0,
+            alpha_cutoff: None,
             shininess: 150.0,
             reflectivity: 0.0,
             refraction_index: 1.0,
@@ -680,7 +694,10 @@ impl Component for Material
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
         // material settings
+        let mut blend_mode;
         let mut alpha;
+        let mut alpha_cutoff;
+
         let mut shininess;
         let mut reflectivity;
         let mut refraction_index;
@@ -705,7 +722,10 @@ impl Component for Material
         {
             let data = self.data.get_ref();
 
+            blend_mode = data.blend_mode;
             alpha = data.alpha;
+            alpha_cutoff = data.alpha_cutoff.unwrap_or(0.0);
+
             shininess = data.shininess;
             reflectivity = data.reflectivity;
             refraction_index = data.refraction_index;
@@ -751,7 +771,20 @@ impl Component for Material
 
         ui.label(format!("has transparency: {}", self.has_transparency()));
 
+        ui.horizontal(|ui|
+        {
+            ui.label("Blend Mode:");
+            apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Blend, "Blend").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Mask, "Mask").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut blend_mode, BlendMode::Opaque, "Opaque").changed() || apply_settings;
+        });
+
         apply_settings = ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).text("alpha")).changed() || apply_settings;
+        if blend_mode == BlendMode::Mask
+        {
+            apply_settings = ui.add(egui::Slider::new(&mut alpha_cutoff, 0.0..=1.0).text("alpha cutoff")).changed() || apply_settings;
+        }
+
         apply_settings = ui.add(egui::Slider::new(&mut shininess, 0.0..=1000.0).text("shininess")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut reflectivity, 0.0..=1.0).text("reflectivity")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut refraction_index, 1.0..=5.0).text("refraction index")).changed() || apply_settings;
@@ -801,7 +834,18 @@ impl Component for Material
         {
             let data = self.get_data_mut().get_mut();
 
+            data.blend_mode = blend_mode;
             data.alpha = alpha;
+
+            if blend_mode == BlendMode::Mask
+            {
+                data.alpha_cutoff = Some(alpha_cutoff);
+            }
+            else
+            {
+                data.alpha_cutoff = None;
+            }
+
             data.shininess = shininess;
             data.reflectivity = reflectivity;
             data.refraction_index = refraction_index;

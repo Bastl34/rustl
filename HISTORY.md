@@ -1,6 +1,12 @@
 # History
 Here are some screenshots which are showing the development progress.
 
+# 2025-02-23
+* Alpha Cutoff
+
+<img src="history/2025-02-23.png" width="720">
+<br><br>
+
 # 2024-09-09
 * Editor Improvements (Copy/Paste, Asset selection, Grid based movement)
 

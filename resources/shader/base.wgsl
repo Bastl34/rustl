@@ -326,7 +326,10 @@ struct MaterialUniform
     highlight_color: vec4<f32>,
     locked_color: vec4<f32>,
 
+    blend_mode: u32,
     alpha: f32,
+    alpha_cutoff: f32,
+
     shininess: f32,
     reflectivity: f32,
     refraction_index: f32,
@@ -336,6 +339,8 @@ struct MaterialUniform
     receive_shadow: u32,
 
     unlit_shading: u32,
+
+    _padding1: vec2<u32>,
 
     texture_transforms: array<TextureTransform, TEXTURE_AMOUNT>,
     textures_used: u32
@@ -758,6 +763,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         let uv = transform_uv(uv, TEXTURE_INDEX_ALPHA);
         let tex_color = textureSample(tex_alpha, tex_alpha_sampler, uv);
         alpha *= tex_color.x;
+    }
+
+    if (material.blend_mode == 0u) // Opaque
+    {
+        alpha = 1.0;
+    }
+    else if (material.blend_mode == 1u) // Mask
+    {
+        if (alpha < material.alpha_cutoff)
+        {
+            discard;
+        }
+        else
+        {
+            alpha = 1.0;
+        }
     }
 
     // distance based blending out

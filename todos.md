@@ -8,8 +8,7 @@ todo:
  * dead lock while loading an object/scene (just sometimes)
  * optimize shader - do not use empty morph targets or animation weights
  * action management
- * dynamic shader pipelines (backface culling, depth test/write)
- * alpha cutoff (https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/AlphaBlendModeTest/README.md)
+ * dynamic shader pipelines (backface culling, depth test/write, blending)
 
 done:
  * winit + wgpu update
@@ -42,3 +41,4 @@ done:
  * normal map: rotation/transformation is not applied correctly
  * json based extras
  * ortho cam
+ * alpha cutoff (https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/AlphaBlendModeTest/README.md)
