@@ -85,6 +85,9 @@ impl Editor
 
             // edit mode
             self.move_object(state);
+
+            // update gizmos
+            self.update_gizmos(state);
         }
     }
 
@@ -312,6 +315,55 @@ impl Editor
                     }
                 }
             }
+        }
+    }
+
+    pub fn update_gizmos(&mut self, state: &mut State)
+    {
+        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
+
+        if scene.is_none() || node.is_none()
+        {
+            return;
+        }
+
+        let scene = scene.unwrap();
+
+        // find translation gizmo node
+        let gizmo_translation = scene.find_node_by_name("gizmo_translation");
+
+        if gizmo_translation.is_none()
+        {
+            return;
+        }
+
+        let transform;
+        if let Some(instance_id) = instance_id
+        {
+            let node = node.unwrap();
+            let node = node.read().unwrap();
+            let instance = node.find_instance_by_id(instance_id).unwrap();
+            let instance = instance.read().unwrap();
+            transform = instance.calculate_transform();
+        }
+        else
+        {
+            let node = node.unwrap();
+            let node = node.read().unwrap();
+            transform = node.get_full_transform();
+        }
+
+        // get pos from transform
+        let pos = transform.column(3).xyz();
+
+        let gizmo_translation = gizmo_translation.unwrap();
+        let gizmo_translation = gizmo_translation.write().unwrap();
+        let transform_component = gizmo_translation.find_component::<Transformation>();
+
+        if let Some(transform_component) = transform_component
+        {
+            component_downcast_mut!(transform_component, Transformation);
+            transform_component.set_translation(pos);
         }
     }
 

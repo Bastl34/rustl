@@ -771,7 +771,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     }
     else if (material.blend_mode == 1u) // Mask
     {
-        if (alpha < material.alpha_cutoff)
+        if (alpha <= material.alpha_cutoff)
         {
             discard;
         }

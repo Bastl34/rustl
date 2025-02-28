@@ -485,7 +485,6 @@ impl MainInterface
             let scene_id = scene.id.clone();
             let id_manager = scene.id_manager.clone();
             let id_manager_clone = scene.id_manager.clone();
-            let id_manager_thread = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
             let grid_size = self.editor_gui.editor_state.grid_size;
@@ -511,6 +510,8 @@ impl MainInterface
             {
                 let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
+                let id_manager_thread = id_manager_clone.clone();
+
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
                     if let Ok(gizmo_nodes) = &gizmo_nodes
@@ -519,6 +520,16 @@ impl MainInterface
                         {
                             if let Some(node) = scene.find_node_by_id(*node_id)
                             {
+                                if node.read().unwrap().root_node
+                                {
+                                    node.write().unwrap().name = "gizmo_translation".to_string();
+                                    if node.read().unwrap().find_component::<Transformation>().is_none()
+                                    {
+                                        let component_id = id_manager_thread.write().unwrap().get_next_component_id();
+                                        node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
+                                    }
+                                }
+
                                 node.write().unwrap().settings.render_group_id = 1;
                                 node.write().unwrap().settings.depth_write = false;
                                 node.write().unwrap().settings.depth_test = false;
