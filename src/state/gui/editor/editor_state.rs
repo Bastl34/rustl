@@ -374,6 +374,7 @@ impl EditorState
         self.selected_object.clear();
         self.selected_scene_id = None;
         self.selected_type = SelectionType::None;
+        self.selected_gizmo = None;
     }
 
     pub fn de_select_current_item_from_scene(&mut self, scene: &mut Scene)
@@ -408,6 +409,7 @@ impl EditorState
         self.selected_object.clear();
         self.selected_scene_id = None;
         self.selected_type = SelectionType::None;
+        self.selected_gizmo = None;
     }
 
     pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)

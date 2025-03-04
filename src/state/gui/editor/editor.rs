@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::fly_controller::FlyController, components::{component::ComponentItem, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::fly_controller::FlyController, components::{component::ComponentItem, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -14,6 +14,8 @@ use super::{editor_state::{AssetType, EditMode, EditorState, GizmoTypeAndAxis, P
 
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
+
+const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 
 pub struct Editor
 {
@@ -324,6 +326,7 @@ impl Editor
         let height = state.height;
 
         let input_active = state.input_manager.mouse.is_holding(MouseButton::Left)  || state.input_manager.touch.has_touches();
+        let first_action = state.input_manager.mouse.is_first_action(MouseButton::Left, state.stats.frame) || state.input_manager.touch.is_first_action(state.stats.frame);
 
         // reset state if needed
         if self.editor_state.selected_gizmo.is_some() && !input_active
@@ -364,6 +367,7 @@ impl Editor
         }
 
         let scene = scene.unwrap();
+        let node = node.unwrap();
 
         // ******************** translation gizmo ********************
         let gizmo_translation = scene.find_node_by_name("gizmo_translation");
@@ -371,7 +375,7 @@ impl Editor
         {
             // ********** pointer input **********
             // set gizmo state based on axis
-            if input_active && self.editor_state.selected_gizmo.is_none()
+            if first_action && self.editor_state.selected_gizmo.is_none()
             {
                 gizmo_translation.write().unwrap().set_pickable(true);
 
@@ -425,16 +429,21 @@ impl Editor
                         {
                             if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
                             {
+                                ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last, width, height));
+                                ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos, width, height));
+
+                                let xy_plane = Vector3::new(0.0, 0.0, 1.0);
+                                let xz_plane = Vector3::new(0.0, 1.0, 0.0);
+                                // let yz_plane = Vector3::new(1.0, 0.0, 0.0);
+
                                 plane_normal = match selected_gizmo
                                 {
-                                    Some(GizmoTypeAndAxis::TranslateX) => Some(Vector3::new(0.0, 0.0, 1.0)), // YZ-Ebene
-                                    Some(GizmoTypeAndAxis::TranslateY) => Some(Vector3::new(0.0, 0.0, 1.0)), // XZ-Ebene
-                                    Some(GizmoTypeAndAxis::TranslateZ) => Some(Vector3::new(0.0, 1.0, 0.0)), // XY-Ebene
+                                    Some(GizmoTypeAndAxis::TranslateX) => Some(xy_plane),
+                                    Some(GizmoTypeAndAxis::TranslateY) => Some(xy_plane),
+                                    Some(GizmoTypeAndAxis::TranslateZ) => Some(xz_plane),
                                     _ => None,
                                 };
 
-                                ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last, width, height));
-                                ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos, width, height));
                                 break;
                             }
                         }
@@ -455,15 +464,29 @@ impl Editor
                                 _ => Vector3::<f32>::zeros()
                             };
 
-                            let movement_vec = p1 - p0;
+                            let vec = p1 - p0;
+                            let movement_vec = match self.editor_state.selected_gizmo
+                            {
+                                Some(GizmoTypeAndAxis::TranslateX) => Vector3::new(vec.x, 0.0, 0.0),
+                                Some(GizmoTypeAndAxis::TranslateY) => Vector3::new(0.0, vec.y, 0.0),
+                                Some(GizmoTypeAndAxis::TranslateZ) => Vector3::new(0.0, 0.0, vec.z),
+                                _ => Vector3::<f32>::zeros()
+                            };
+
                             let movement_length = movement_vec.dot(&axis);
-                            let world_movement = axis * movement_length;
+                            let mut world_movement = axis * movement_length;
 
                             {
+                                world_movement.x = world_movement.x.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                                world_movement.y = world_movement.y.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                                world_movement.z = world_movement.z.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+
+                                let world_movement_vec = Vector4::<f32>::new(world_movement.x, world_movement.y, world_movement.z, 0.0);
+                                let local_movement = node.read().unwrap().transform_global_to_local(&world_movement_vec);
+
                                 let edit_transformation = self.find_transform_component(state);
                                 component_downcast_mut!(edit_transformation, Transformation);
-
-                                edit_transformation.apply_translation(world_movement);
+                                edit_transformation.apply_translation(local_movement.xyz());
                             }
                         }
                     }
@@ -474,7 +497,6 @@ impl Editor
             let transform;
             if let Some(instance_id) = instance_id
             {
-                let node = node.unwrap();
                 let node = node.read().unwrap();
                 let instance = node.find_instance_by_id(instance_id).unwrap();
                 let instance = instance.read().unwrap();
@@ -482,7 +504,6 @@ impl Editor
             }
             else
             {
-                let node = node.unwrap();
                 let node = node.read().unwrap();
                 transform = node.get_full_transform();
             }
