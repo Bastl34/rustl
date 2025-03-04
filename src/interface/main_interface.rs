@@ -533,6 +533,7 @@ impl MainInterface
                                 node.write().unwrap().settings.render_group_id = 1;
                                 node.write().unwrap().settings.depth_write = false;
                                 node.write().unwrap().settings.depth_test = false;
+                                node.write().unwrap().pickable = false;
 
                                 if let Some(material) = node.read().unwrap().find_component::<Material>()
                                 {
@@ -650,11 +651,14 @@ impl MainInterface
                     }
 
                     // add camera controller and run auto setup
+                    /*
                     let mut controller = CharacterController::default();
                     controller.auto_setup(scene, "avatar3", "");
                     scene.pre_controller.push(Box::new(controller));
+                    */
 
                     // set pos for fall test
+                    /*
                     if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
                     {
                         let avatar_root = avatar_root.read().unwrap();
@@ -663,6 +667,7 @@ impl MainInterface
                         transform.set_translation(Vector3::<f32>::new(21.980, 22.845, 6.331));
                         transform.set_rotation(Vector3::<f32>::new(0.0, -2.618, 0.0));
                     }
+                     */
                 }));
 
                 let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();

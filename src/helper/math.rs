@@ -286,3 +286,27 @@ pub fn snap_to_grid_vec3(value: Vector3<f32>, grid_size: f32) -> Vector3<f32>
 
     vec
 }
+
+pub fn ray_plane_intersection(ray: &Ray, plane_normal: Vector3<f32>, plane_point: Point3<f32>) -> Option<Point3<f32>>
+{
+    let ray_dir = ray.dir.normalize();
+    let ray_origin = ray.origin;
+
+    let d = plane_normal.dot(&plane_point.coords);
+    let denominator = plane_normal.dot(&ray_dir);
+
+    // parallel
+    if denominator.abs() < 1e-6
+    {
+        return None;
+    }
+
+    let t = (d - plane_normal.dot(&ray_origin.coords)) / denominator;
+
+    if !t.is_finite() || t < 0.0
+    {
+        return None;
+    }
+
+    Some(ray_origin + ray_dir * t)
+}

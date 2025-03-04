@@ -2,7 +2,7 @@
 
 use std::{mem::swap, f32::consts::PI};
 
-use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3};
+use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
 
 use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
@@ -177,6 +177,21 @@ impl Camera
     pub fn get_data_tracker(&self) -> &ChangeTracker<CameraData>
     {
         &self.data
+    }
+
+    pub fn get_forward(&self) -> Vector3<f32>
+    {
+        self.get_data().dir
+    }
+
+    pub fn get_up(&self) -> Vector3<f32>
+    {
+        self.get_data().up
+    }
+
+    pub fn get_right(&self) -> Vector3<f32>
+    {
+        self.get_forward().cross(&self.get_up())
     }
 
     pub fn get_data_mut(&mut self) -> &mut ChangeTracker<CameraData>
@@ -362,6 +377,30 @@ impl Camera
         }
 
         false
+    }
+
+    pub fn screen_to_world(&self, point: &Point2<f32>, width: u32, height: u32) -> Vector3<f32>
+    {
+        let data = self.get_data();
+
+        let x_f = point.x as f32;
+        let y_f = point.y as f32;
+
+        let w = data.viewport_width as f32 * width as f32;
+        let h = data.viewport_height as f32 * height as f32;
+
+        //map x/y to -1 <=> +1
+        let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
+        let sensor_y = ((y_f + 0.5) / h) * 2.0 - 1.0;
+
+        let normalized_pos = Vector4::<f32>::new(sensor_x, sensor_y, 0.0, 1.0);
+
+        let mut camera_space = data.projection_inverse * normalized_pos;
+        camera_space /= camera_space.w;
+
+        let world_space = data.view_inverse * camera_space;
+
+        world_space.xyz()
     }
 
     pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>, width: u32, height: u32) -> Ray

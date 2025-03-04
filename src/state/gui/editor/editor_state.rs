@@ -13,6 +13,21 @@ const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum GizmoTypeAndAxis
+{
+    TranslateX,
+    TranslateY,
+    TranslateZ,
+    RotateX,
+    RotateY,
+    RotateZ,
+    ScaleX,
+    ScaleY,
+    ScaleZ,
+    ScaleUniform,
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
 {
@@ -116,6 +131,7 @@ pub struct EditorState
     pub selected_type: SelectionType,
     pub selected_object: String,
     pub selected_object_position: Option<Vector3<f32>>,
+    pub selected_gizmo: Option<GizmoTypeAndAxis>,
 
     pub copy_asset: Option<String>,
 
@@ -175,6 +191,7 @@ impl EditorState
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
             selected_object_position: None,
+            selected_gizmo: None,
 
             copy_asset: None,
 

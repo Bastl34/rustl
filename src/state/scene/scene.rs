@@ -1146,7 +1146,7 @@ impl Scene
             let node = node_arc.read().unwrap();
 
             // early "return" check
-            if !node.visible
+            if !node.visible || !node.pickable
             {
                 continue;
             }

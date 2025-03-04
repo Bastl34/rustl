@@ -110,7 +110,7 @@ impl Touch
         }
     }
 
-    pub fn is_any_touch_holding(&self) -> bool
+    pub fn is_any_touch_stationary(&self) -> bool
     {
         for touch in &self.touches
         {

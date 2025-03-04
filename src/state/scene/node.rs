@@ -42,6 +42,7 @@ pub struct Node
     pub name: String,
     pub visible: bool,
     pub locked: bool,
+    pub pickable: bool,
     pub root_node: bool,
 
     pub settings: NodeSettings,
@@ -81,6 +82,7 @@ impl Node
             name: name.to_string(),
             visible: true,
             locked: false,
+            pickable: true,
             root_node: false,
 
             settings: NodeSettings
@@ -481,6 +483,23 @@ impl Node
         }
 
         false
+    }
+
+    pub fn set_pickable(&mut self, pickable: bool)
+    {
+        self.pickable = pickable;
+        let all_childs = Scene::list_all_child_nodes(&self.nodes);
+        for child_node in all_childs
+        {
+            let mut child_node = child_node.write().unwrap();
+            child_node.pickable = pickable;
+
+            for instance in child_node.instances.get_ref()
+            {
+                let mut instance = instance.write().unwrap();
+                instance.pickable = pickable;
+            }
+        }
     }
 
     pub fn has_changed_instance_data(&self) -> bool
