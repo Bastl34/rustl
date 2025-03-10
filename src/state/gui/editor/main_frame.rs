@@ -151,6 +151,9 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
             ui.separator();
 
+            // gizmo
+            ui.toggle_value(&mut editor_state.gizmo, RichText::new("🕂").size(icon_size)).on_hover_text("use gizmo");
+
             // fly camera
             ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
 

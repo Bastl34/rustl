@@ -106,6 +106,7 @@ pub struct EditorState
     pub try_mode: bool,
     pub selectable: bool,
     pub fly_camera: bool,
+    pub gizmo: bool,
 
     pub pick_mode: PickType,
 
@@ -132,6 +133,7 @@ pub struct EditorState
     pub selected_object: String,
     pub selected_object_position: Option<Vector3<f32>>,
     pub selected_gizmo: Option<GizmoTypeAndAxis>,
+    pub selected_object_position_gizmo: Option<Vector3<f32>>,
 
     pub copy_asset: Option<String>,
 
@@ -166,6 +168,7 @@ impl EditorState
             try_mode: false,
             selectable: true,
             fly_camera: true,
+            gizmo: true,
 
             pick_mode: PickType::None,
 
@@ -192,6 +195,7 @@ impl EditorState
             selected_object: String::new(), // type_nodeID/elementID_instanceID
             selected_object_position: None,
             selected_gizmo: None,
+            selected_object_position_gizmo: None,
 
             copy_asset: None,
 

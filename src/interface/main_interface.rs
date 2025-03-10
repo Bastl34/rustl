@@ -85,11 +85,7 @@ impl MainInterface
         //let egui = EGui::new(event_loop, wgpu.device(), wgpu.surface_config(), &window);
         let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
-        let mut editor_gui = Editor::new();
-        {
-            let state = & *(state.borrow());
-            editor_gui.init(state, &egui);
-        }
+        let editor_gui = Editor::new();
 
         let gilrs_res = Gilrs::new();
         let mut gilrs = None;
@@ -141,6 +137,9 @@ impl MainInterface
         {
             gilrs_initialize(state, gilrs);
         }
+
+        // init editor
+        self.editor_gui.init(state, &self.egui);
     }
 
     pub fn window(&self) -> &Window
@@ -487,63 +486,15 @@ impl MainInterface
             let id_manager_clone = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
-            let grid_size = self.editor_gui.editor_state.grid_size;
-            let grid_amount = self.editor_gui.editor_state.grid_amount;
-
-            let editor_utils_id = scene.add_empty_node("editor utils", None).read().unwrap().id;
-
             //scene.update(&mut state.input_manager, state.frame_scale);
             state.scenes.push(Box::new(scene));
 
-
-            let main_queue_clone = main_queue.clone();
-            spawn_thread(move ||
-            {
-                scene_utils::create_grid(scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager.clone(), grid_amount, grid_size);
-            });
-            //scene_utils::create_grid(&mut scene, 1, 1.0);
 
             let main_queue_clone = main_queue.clone();
             let audio_device = state.audio_device.clone();
 
             spawn_thread(move ||
             {
-                let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-
-                let id_manager_thread = id_manager_clone.clone();
-
-                execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
-                {
-                    if let Ok(gizmo_nodes) = &gizmo_nodes
-                    {
-                        for node_id in gizmo_nodes
-                        {
-                            if let Some(node) = scene.find_node_by_id(*node_id)
-                            {
-                                if node.read().unwrap().root_node
-                                {
-                                    node.write().unwrap().name = "gizmo_translation".to_string();
-                                    if node.read().unwrap().find_component::<Transformation>().is_none()
-                                    {
-                                        let component_id = id_manager_thread.write().unwrap().get_next_component_id();
-                                        node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
-                                    }
-                                }
-
-                                node.write().unwrap().settings.render_group_id = 1;
-                                node.write().unwrap().settings.depth_write = false;
-                                node.write().unwrap().settings.depth_test = false;
-                                node.write().unwrap().pickable = false;
-
-                                if let Some(material) = node.read().unwrap().find_component::<Material>()
-                                {
-                                    component_downcast_mut!(material, Material);
-                                    material.get_data_mut().get_mut().unlit_shading = true;
-                                }
-                            }
-                        }
-                    }
-                }));
 
                 //let nodes = scene_utils::load_object("scenes/Sponza_fixed.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
 
