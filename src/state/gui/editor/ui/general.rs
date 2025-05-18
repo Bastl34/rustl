@@ -3,7 +3,7 @@ use nalgebra::Vector3;
 
 use crate::state::{state::State, gui::helper::generic_items::collapse_with_title};
 
-use super::editor_state::EditorState;
+use super::super::editor_state::EditorState;
 
 pub fn create_general_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {

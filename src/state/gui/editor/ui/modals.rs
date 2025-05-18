@@ -1,6 +1,6 @@
 use crate::state::{state::State, gui::helper::generic_items::modal_with_title};
 
-use super::editor_state::EditorState;
+use super::super::editor_state::EditorState;
 
 pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {

@@ -235,6 +235,7 @@ impl Transformation
                 let rotation_y  = Rotation3::from_euler_angles(0.0, data.rotation.y, 0.0).to_homogeneous();
                 let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, data.rotation.z).to_homogeneous();
 
+                // yaw, pitch, roll
                 rotation = rotation_z;
                 rotation = rotation * rotation_y;
                 rotation = rotation * rotation_x;
@@ -333,14 +334,7 @@ impl Transformation
 
             if let Some(rotation) = rotation
             {
-                let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
-                let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
-                let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
-
-                let mut rotation = rotation_z;
-                rotation = rotation * rotation_y;
-                rotation = rotation * rotation_x;
-
+                let rotation = Self::get_rotation_matrix_from_vector(rotation);
                 rotation_mat = rotation;
             }
 
@@ -435,6 +429,31 @@ impl Transformation
         self.apply_scale(Vector3::<f32>::new(scale, scale, scale), multiply);
     }
 
+    pub fn set_scale(&mut self, scale: Vector3<f32>)
+    {
+        let data = self.data.get_mut();
+
+        data.scale = scale;
+
+        // if its zero -> inverse matrix can not be calculated
+        if math::approx_zero(data.scale.x) { data.scale.x = 0.00000001; }
+        if math::approx_zero(data.scale.y) { data.scale.y = 0.00000001; }
+        if math::approx_zero(data.scale.z) { data.scale.z = 0.00000001; }
+
+        if !data.transform_vectors
+        {
+            let scale = Matrix4::new_nonuniform_scaling(&scale);
+            data.trans = scale;
+
+            // if its zero -> inverse matrix can not be calculated
+            if math::approx_zero(data.trans[(0, 0)]) { data.trans[(0, 0)] = 0.00000001; }
+            if math::approx_zero(data.trans[(1, 1)]) { data.trans[(1, 1)] = 0.00000001; }
+            if math::approx_zero(data.trans[(2, 2)]) { data.trans[(2, 2)] = 0.00000001; }
+        }
+
+        self.calc_transform();
+    }
+
     pub fn apply_rotation(&mut self, rotation: Vector3<f32>)
     {
         let data = self.data.get_mut();
@@ -443,14 +462,7 @@ impl Transformation
 
         if !data.transform_vectors
         {
-            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
-            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
-            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
-
-            let mut rotation = rotation_z;
-            rotation = rotation * rotation_y;
-            rotation = rotation * rotation_x;
-
+            let rotation = Self::get_rotation_matrix_from_vector(rotation);
             data.trans = data.trans * rotation;
         }
 
@@ -465,21 +477,87 @@ impl Transformation
 
         if !data.transform_vectors
         {
-            let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
-            let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
-            let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
-
-            let mut rotation = rotation_z;
-            rotation = rotation * rotation_y;
-            rotation = rotation * rotation_x;
-
+            let rotation = Self::get_rotation_matrix_from_vector(rotation);
             data.trans = data.trans * rotation;
         }
 
         self.calc_transform();
     }
 
-    pub fn apply_rotation_quaternion(&mut self, rotation: Vector4<f32>)
+    /*
+    pub fn apply_rotation_quaternion_based(&mut self, rotation: Vector3<f32>)
+    {
+        let data = self.data.get_mut();
+
+        let current = UnitQuaternion::from_euler_angles(data.rotation.x, data.rotation.y, data.rotation.z);
+        let new = UnitQuaternion::from_euler_angles(rotation.x, rotation.y, rotation.z);
+
+        let new_rotation = current * new;
+        let euler_angles = new_rotation.euler_angles();
+        data.rotation = Vector3::new(euler_angles.0, euler_angles.1, euler_angles.2);
+
+        if !data.transform_vectors
+        {
+            let rotation = Self::get_rotation_matrix_from_vector(rotation);
+            data.trans = data.trans * rotation;
+        }
+
+        self.calc_transform();
+    }
+     */
+
+    /*
+    pub fn apply_global_rotation(&mut self, global_rotation: Vector3<f32>)
+    {
+        let global_quat = UnitQuaternion::from_euler_angles(global_rotation.x, global_rotation.y, global_rotation.z);
+
+        let rotation_matrix = self.get_data().trans.fixed_view::<3, 3>(0, 0);
+        let current_rotation = UnitQuaternion::from_matrix(&rotation_matrix.into());
+
+        // Wende die globale Rotation an
+        let new_rotation = global_quat * current_rotation;
+
+        // Konvertiere Quaternion zurück zu Euler-Winkeln
+        let (x, y, z) = new_rotation.euler_angles();
+        self.set_rotation(Vector3::new(x, y, z));
+    }
+    */
+
+    /*
+    pub fn apply_from_rotaion_matrix(&mut self, matrix: Matrix4<f32>)
+    {
+        matrix.svd()
+        let rotation = matrix.fixed_slice::<3, 3>(0, 0).into_owned().euler_angles();
+
+        let global_quat = UnitQuaternion::from_euler_angles(global_rotation.x, global_rotation.y, global_rotation.z);
+
+        let rotation_matrix = self.get_data().trans.fixed_view::<3, 3>(0, 0);
+        let current_rotation = UnitQuaternion::from_matrix(&rotation_matrix.into());
+
+        // Wende die globale Rotation an
+        let new_rotation = global_quat * current_rotation;
+
+        // Konvertiere Quaternion zurück zu Euler-Winkeln
+        let (x, y, z) = new_rotation.euler_angles();
+        self.set_rotation(Vector3::new(x, y, z));
+    }
+     */
+
+    pub fn get_rotation_matrix_from_vector(rotation: Vector3<f32>) -> Matrix4<f32>
+    {
+        let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
+        let rotation_y  = Rotation3::from_euler_angles(0.0, rotation.y, 0.0).to_homogeneous();
+        let rotation_z  = Rotation3::from_euler_angles(0.0, 0.0, rotation.z).to_homogeneous();
+
+        // yaw, pitch, roll
+        let mut rotation = rotation_z;
+        rotation = rotation * rotation_y;
+        rotation = rotation * rotation_x;
+
+        rotation
+    }
+
+    pub fn apply_rotation_quaternion(&mut self, rotation: Vector4<f32>, local: bool)
     {
         let data = self.data.get_mut();
 
@@ -490,10 +568,93 @@ impl Transformation
         else
         {
             let data_rot_quat = data.rotation_quat.as_mut().unwrap();
-            data_rot_quat.x += rotation.x;
-            data_rot_quat.y += rotation.y;
-            data_rot_quat.z += rotation.z;
-            data_rot_quat.w += rotation.w;
+
+            let new_rotation = UnitQuaternion::new_normalize(Quaternion::new(rotation.w, rotation.x, rotation.y, rotation.z));
+            let current_rotation = UnitQuaternion::new_normalize(Quaternion::new(data_rot_quat.w, data_rot_quat.x, data_rot_quat.y, data_rot_quat.z));
+
+            // local vs global rotation: just the multiplication orde rmatters
+            // https://discussions.unity.com/t/understanding-rotations-in-local-and-world-space-quaternions/487221/2
+
+            let new_rot_quat = if local
+            {
+                // local rotation
+                (current_rotation * new_rotation).quaternion().coords
+            }
+            else
+            {
+                // global rotation
+                (new_rotation * current_rotation).quaternion().coords
+            };
+
+            data_rot_quat.x = new_rot_quat.x;
+            data_rot_quat.y = new_rot_quat.y;
+            data_rot_quat.z = new_rot_quat.z;
+            data_rot_quat.w = new_rot_quat.w;
+        }
+
+        if approx_zero_vec4(data.rotation_quat.as_ref().unwrap())
+        {
+            // quaterion = 0 is not supported / working -> otherwise a inverse transform can not be created
+            data.rotation_quat.as_mut().unwrap().w = 0.00000001;
+        }
+
+        if !data.transform_vectors
+        {
+            if let Some(data_rotation_quat) = data.rotation_quat.as_ref()
+            {
+                let quaternion = UnitQuaternion::new_normalize
+                (
+                    Quaternion::new
+                    (
+                        data_rotation_quat.w,
+                        data_rotation_quat.x,
+                        data_rotation_quat.y,
+                        data_rotation_quat.z,
+                    )
+                );
+
+                let rotation: Rotation3<f32> = quaternion.into();
+                let rotation = rotation.to_homogeneous();
+
+                if local
+                {
+                    // local rotation
+                    data.trans = data.trans * rotation;
+                }
+                else
+                {
+                    // global rotation
+                    data.trans = rotation * data.trans;
+                };
+            }
+        }
+
+        self.calc_transform();
+    }
+
+    pub fn set_rotation_quaternion(&mut self, rotation: Vector4<f32>)
+    {
+        let data = self.data.get_mut();
+
+        if data.rotation_quat.is_none()
+        {
+            data.rotation_quat = Some(rotation)
+        }
+        else
+        {
+            let data_rot_quat = data.rotation_quat.as_mut().unwrap();
+
+            let new_rotation = UnitQuaternion::new_normalize(Quaternion::new(rotation.w, rotation.x, rotation.y, rotation.z));
+
+            // local vs global rotation: just the multiplication orde rmatters
+            // https://discussions.unity.com/t/understanding-rotations-in-local-and-world-space-quaternions/487221/2
+
+            let new_rot_quat = new_rotation.quaternion().coords;
+
+            data_rot_quat.x = new_rot_quat.x;
+            data_rot_quat.y = new_rot_quat.y;
+            data_rot_quat.z = new_rot_quat.z;
+            data_rot_quat.w = new_rot_quat.w;
         }
 
         if approx_zero_vec4(data.rotation_quat.as_ref().unwrap())
@@ -525,6 +686,39 @@ impl Transformation
         }
 
         self.calc_transform();
+    }
+
+    pub fn convert_quaternion_to_euler_angles(&mut self)
+    {
+        let data = self.get_data_mut().get_mut();
+
+        if let Some(rotation_quat) = &data.rotation_quat
+        {
+            let quaternion = UnitQuaternion::new_normalize
+            (
+                Quaternion::new
+                (
+                    rotation_quat.w,
+                    rotation_quat.x,
+                    rotation_quat.y,
+                    rotation_quat.z,
+                )
+            );
+
+            let (x, y, z) = quaternion.euler_angles();
+            data.rotation = Vector3::new(x, y, z);
+            data.rotation_quat = None;
+        }
+    }
+
+    pub fn convert_euler_angles_to_quaternion(&mut self)
+    {
+        let data = self.get_data_mut().get_mut();
+
+        let rotation_quat = UnitQuaternion::from_euler_angles(data.rotation.x, data.rotation.y, data.rotation.z);
+
+        data.rotation_quat = Some(Vector4::<f32>::new(rotation_quat.coords.x, rotation_quat.coords.y, rotation_quat.coords.z, rotation_quat.coords.w));
+        data.rotation = Vector3::zeros();
     }
 }
 
@@ -667,6 +861,18 @@ impl Component for Transformation
                         rot_quat = Some(Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0));
                         changed = true;
                     }
+                }
+
+                ui.separator();
+
+                if ui.button("convert euler to quaternion").clicked()
+                {
+                    self.convert_euler_angles_to_quaternion();
+                }
+
+                if ui.button("convert quaternion to euler").clicked()
+                {
+                    self.convert_quaternion_to_euler_angles();
                 }
             });
         }

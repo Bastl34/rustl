@@ -147,7 +147,7 @@ impl TransformationAnimation
             {
                 if !helper::math::approx_zero_vec4(&rotation_quat)
                 {
-                    transform_component.apply_rotation_quaternion(rotation_quat);
+                    transform_component.apply_rotation_quaternion(rotation_quat, true);
                 }
             }
         }

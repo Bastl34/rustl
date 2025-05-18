@@ -3,10 +3,10 @@
 use std::sync::{Arc, RwLock};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
-use nalgebra::{Matrix4, Point3, Vector4};
+use nalgebra::{Matrix3, Matrix4, Point3, UnitQuaternion, Vector3, Vector4};
 use regex::Regex;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_rotation_only}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::Extras};
 
@@ -385,6 +385,13 @@ impl Node
         None
     }
 
+    pub fn is_name_matching_regex(&self, regex: &str) -> bool
+    {
+        let regex_item: Regex = Regex::new(regex).unwrap();
+
+        regex_item.is_match(&self.name)
+    }
+
     pub fn parent_amount(&self) -> u32
     {
         let mut parent_amount = 0;
@@ -628,27 +635,63 @@ impl Node
         full_transform.try_inverse().unwrap()
     }
 
-    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    pub fn transform_vec_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
     {
-        let trans = self.get_full_transform_inverse();
+        let trans_inverse = self.get_full_transform_inverse();
 
-        trans * vec
+        trans_inverse * vec
     }
 
-    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    pub fn transform_vec_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
     {
         let trans = self.get_full_transform();
 
         trans * vec
     }
 
-    pub fn transform_from_node_to_local(&self, vec: &Vector4<f32>, node: NodeItem) -> Vector4<f32>
+    pub fn transform_vec_from_node_to_local(&self, vec: &Vector4<f32>, node: NodeItem) -> Vector4<f32>
     {
         let node = node.read().unwrap();
-        let global_vec = node.transform_local_to_global(vec);
+        let global_vec = node.transform_vec_local_to_global(vec);
 
-        self.transform_global_to_local(&global_vec)
+        self.transform_vec_global_to_local(&global_vec)
     }
+
+    /*
+    pub fn transform_rot_global_to_local(&self, euler_angles: &Vector3<f32>) -> Vector3<f32>
+    {
+        //let trans_inverse = self.get_full_transform_inverse();
+        let trans_inverse = self.get_full_transform();
+
+        // get rotationsmatrix (just upper 3x3 matrix)
+        let rotation_matrix = Matrix3::from_iterator(trans_inverse.fixed_view::<3, 3>(0, 0).iter().cloned());
+
+        let global_rotation = UnitQuaternion::from_euler_angles(euler_angles.x, euler_angles.y, euler_angles.z);
+        let local_rotation = UnitQuaternion::from_matrix(&rotation_matrix) * global_rotation;
+
+        let (local_x, local_y, local_z) = local_rotation.euler_angles();
+
+        Vector3::new(local_x, local_y, local_z)
+    }
+
+    pub fn transform_rot_global_to_local_quat(&self, rotation: &UnitQuaternion<f32>) -> UnitQuaternion<f32>
+    {
+        let trans_inverse = self.get_full_transform_inverse();
+
+        // get rotationsmatrix (just upper 3x3 matrix)
+        let rotation_matrix = Matrix3::from_iterator(trans_inverse.fixed_view::<3, 3>(0, 0).iter().cloned());
+
+        UnitQuaternion::from_matrix(&rotation_matrix) * rotation
+    }
+
+    pub fn transform_rotation_only_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans_inverse = self.get_full_transform_inverse();
+        let only_rotation = extract_rotation_only(&trans_inverse);
+
+        only_rotation * vec
+    }
+     */
 
     fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
     {

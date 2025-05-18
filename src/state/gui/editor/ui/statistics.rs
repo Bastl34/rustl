@@ -2,7 +2,7 @@ use egui::{Ui, Color32, RichText, Stroke};
 use egui_plot::{Corner, Legend, Plot, Line, PlotPoints, LineStyle, PlotPoint, Text};
 
 use crate::state::state::State;
-use super::editor_state::EditorState;
+use super::super::editor_state::EditorState;
 
 const CHART_PADDING_FACTOR: f32 = 1.1;
 

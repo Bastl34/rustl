@@ -2,7 +2,7 @@ use egui::{Ui, RichText, Color32};
 
 use crate::state::{scene::camera::CameraItem, state::State, gui::helper::generic_items::{collapse_with_title, self}};
 
-use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u64)
 {

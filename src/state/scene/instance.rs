@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::extract_rotation_only}, input::input_manager::InputManager};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -408,6 +408,14 @@ impl Instance
         let global_vec = instance.transform_local_to_global(vec);
 
         self.transform_global_to_local(&global_vec)
+    }
+
+    pub fn transform_rotation_only_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    {
+        let trans_inverse = self.calculate_inverse_transform();
+        let only_rotation = extract_rotation_only(&trans_inverse);
+
+        only_rotation * vec
     }
 
     pub fn calculate_alpha(&self) -> f32

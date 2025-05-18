@@ -2,7 +2,7 @@ use egui::{Ui, ScrollArea, Id, Color32, RichText};
 
 use crate::state::{gui::helper::generic_items::separator_colored, state::State};
 
-use super::editor_state::{EditorState, AssetType};
+use super::super::editor_state::{EditorState, AssetType};
 
 pub fn create_asset_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {

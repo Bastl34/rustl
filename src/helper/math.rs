@@ -310,3 +310,79 @@ pub fn ray_plane_intersection(ray: &Ray, plane_normal: Vector3<f32>, plane_point
 
     Some(ray_origin + ray_dir * t)
 }
+
+pub fn signed_angle_between_points(origin: &Point3<f32>, p1: &Point3<f32>, p2: &Point3<f32>, reference_axis: &Vector3<f32>) -> f32
+{
+    let v1 = p1.coords - origin.coords;
+    let v2 = p2.coords - origin.coords;
+
+    let dot_product = v1.dot(&v2);
+    let magnitude_product = v1.norm() * v2.norm();
+
+    if magnitude_product == 0.0
+    {
+        return 0.0;
+    }
+
+    let cos_theta = (dot_product / magnitude_product).clamp(-1.0, 1.0);
+    let angle = cos_theta.acos(); // always positive
+
+    // get direction
+    let cross_product = v1.cross(&v2);
+    let direction = cross_product.dot(&reference_axis);
+
+    if direction < 0.0
+    {
+        -angle
+    }
+    else
+    {
+        angle
+    }
+}
+
+pub fn extract_rotation_only(matrix: &Matrix4<f32>) -> Matrix4<f32>
+{
+    // Extract the first 3 columns (x, y, z axes)
+    let mut x = matrix.fixed_view::<3, 1>(0, 0).into_owned();
+    let mut y = matrix.fixed_view::<3, 1>(0, 1).into_owned();
+    let mut z = matrix.fixed_view::<3, 1>(0, 2).into_owned();
+
+    // Remove scaling by normalizing the column vectors
+    x.normalize_mut();
+    y.normalize_mut();
+    z.normalize_mut();
+
+    // New matrix with only rotation, without scaling and without translation
+    Matrix4::new
+    (
+        x.x, y.x, z.x, 0.0,
+        x.y, y.y, z.y, 0.0,
+        x.z, y.z, z.z, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    )
+}
+
+pub fn extract_rotation_as_euler_vec(matrix: &Matrix4<f32>) -> Vector3<f32>
+{
+    let rotation = extract_rotation_only(matrix);
+
+    let sy = -rotation[(2, 0)];
+
+    // normal calculation
+    if sy.abs() < 1.0 - std::f32::EPSILON
+    {
+        let pitch = sy.asin();
+        let roll = rotation[(2, 1)].atan2(rotation[(2, 2)]);
+        let yaw = rotation[(1, 0)].atan2(rotation[(0, 0)]);
+        Vector3::new(roll, pitch, yaw) // (X, Y, Z)
+    }
+    // gimbal lock
+    else
+    {
+        let pitch = sy.asin();
+        let roll = 0.0;
+        let yaw = (-rotation[(0, 1)]).atan2(rotation[(1, 1)]);
+        Vector3::new(roll, pitch, yaw)
+    }
+}

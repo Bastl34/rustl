@@ -4,18 +4,17 @@ use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
-use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
+use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{scene::{camera::Camera, camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
 use self::math::approx_zero;
 
-use super::{editor_state::{AssetType, EditMode, EditorState, GizmoTypeAndAxis, PickType, SelectionType, SettingsPanel}, main_frame};
+use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
+use crate::state::gui::editor::ui::main_frame;
 
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
-
-const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 
 pub struct Editor
 {
@@ -56,62 +55,10 @@ impl Editor
         {
             state.scenes.get_mut(0).unwrap()
         };
-        let scene_id = scene.id.clone();
 
         let editor_utils_id = scene.add_empty_node("editor utils", None).read().unwrap().id;
 
-        let grid_size = self.editor_state.grid_size;
-        let grid_amount = self.editor_state.grid_amount;
-
-        let id_manager = scene.id_manager.clone();
-        let main_queue = state.main_thread_execution_queue.clone();
-        let main_queue_clone = main_queue.clone();
-        let id_manager_clone = scene.id_manager.clone();
-
-        spawn_thread(move ||
-        {
-            let id_manager_thread = id_manager_clone.clone();
-
-            scene_utils::create_grid(scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager.clone(), grid_amount, grid_size);
-
-            let gizmo_nodes = scene_utils::load_object("objects/gizmo/gizmo.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-
-            let main_queue_clone = main_queue.clone();
-            execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
-            {
-                if let Ok(gizmo_nodes) = &gizmo_nodes
-                {
-                    for node_id in gizmo_nodes
-                    {
-                        if let Some(node) = scene.find_node_by_id(*node_id)
-                        {
-                            if node.read().unwrap().root_node
-                            {
-                                node.write().unwrap().name = "gizmo_translation".to_string();
-                                if node.read().unwrap().find_component::<Transformation>().is_none()
-                                {
-                                    let component_id = id_manager_thread.write().unwrap().get_next_component_id();
-                                    node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
-                                }
-
-                                node.write().unwrap().visible = false;
-                            }
-
-                            node.write().unwrap().settings.render_group_id = 1;
-                            node.write().unwrap().settings.depth_write = false;
-                            node.write().unwrap().settings.depth_test = false;
-                            node.write().unwrap().pickable = false;
-
-                            if let Some(material) = node.read().unwrap().find_component::<Material>()
-                            {
-                                component_downcast_mut!(material, Material);
-                                material.get_data_mut().get_mut().unlit_shading = true;
-                            }
-                        }
-                    }
-                }
-            }));
-        });
+        create_gizmo_objects(&mut self.editor_state, state, editor_utils_id);
     }
 
     pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -156,7 +103,7 @@ impl Editor
             self.set_edit_mode(state);
 
             // update gizmos
-            self.update_gizmos(state);
+            update_gizmos(&mut self.editor_state, state);
 
             // select/pick objects
             self.select_object(state);
@@ -396,305 +343,6 @@ impl Editor
         }
     }
 
-    pub fn update_gizmo_visibility(&mut self, state: &mut State)
-    {
-        let (_, node, _) = self.editor_state.get_selected_node(state);
-
-        for scene in &mut state.scenes
-        {
-            let gizmo_translation = scene.find_node_by_name("gizmo_translation");
-
-            if let Some(gizmo_translation) = gizmo_translation
-            {
-                gizmo_translation.write().unwrap().visible = self.editor_state.gizmo && node.is_some();
-            }
-        }
-    }
-
-    pub fn update_gizmos(&mut self, state: &mut State)
-    {
-        self.update_gizmo_visibility(state);
-
-        if !self.editor_state.gizmo
-        {
-            return;
-        }
-
-        let width = state.width;
-        let height = state.height;
-        let grid_size = self.editor_state.grid_size;
-
-        let input_active = state.input_manager.mouse.is_holding(MouseButton::Left)  || state.input_manager.touch.has_touches();
-        let first_action = state.input_manager.mouse.is_first_action(MouseButton::Left, state.stats.frame) || state.input_manager.touch.is_first_action(state.stats.frame);
-
-        // reset state if needed
-        if self.editor_state.selected_gizmo.is_some() && !input_active
-        {
-            self.editor_state.selected_gizmo = None;
-
-            let (scene, _, _) = self.editor_state.get_selected_node(state);
-            if let Some(scene) = scene
-            {
-                Self::apply_fly_camera_move_state(scene, true);
-            }
-        }
-
-        // pointer position
-        let mut pointer_pos = state.input_manager.mouse.point.pos;
-        let mut pointer_pos_last = state.input_manager.mouse.point.last_pos;
-
-        if let Some(touch) = state.input_manager.touch.get_first_touch()
-        {
-            pointer_pos = touch.pos;
-            pointer_pos_last = touch.last_pos;
-        }
-
-        if pointer_pos.is_none() || pointer_pos_last.is_none()
-        {
-            return;
-        }
-
-        let pointer_pos = pointer_pos.unwrap();
-        let pointer_pos_last = pointer_pos_last.unwrap();
-
-        // get scene
-        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
-
-        if scene.is_none() || node.is_none()
-        {
-            return;
-        }
-
-        let scene = scene.unwrap();
-        let node = node.unwrap();
-
-        // ******************** translation gizmo ********************
-        let gizmo_translation = scene.find_node_by_name("gizmo_translation");
-        if let Some(gizmo_translation) = gizmo_translation
-        {
-            // ********** pointer input **********
-            // set gizmo state based on axis
-            if first_action && self.editor_state.selected_gizmo.is_none()
-            {
-                gizmo_translation.write().unwrap().set_pickable(true);
-
-                let pick_res = self.pick_node(state, gizmo_translation.clone(), state.input_manager.mouse.point.pos.unwrap());
-                if let Some((_, pick_res)) = pick_res
-                {
-                    let axis = pick_res.node.read().unwrap().name.clone();
-                    self.editor_state.selected_gizmo = match axis.as_str()
-                    {
-                        "x" => Some(GizmoTypeAndAxis::TranslateX),
-                        "y" => Some(GizmoTypeAndAxis::TranslateY),
-                        "z" => Some(GizmoTypeAndAxis::TranslateZ),
-                        _ => None
-                    };
-                }
-
-                gizmo_translation.write().unwrap().set_pickable(false);
-                self.editor_state.selected_object_position_gizmo = None;
-            }
-
-            // ********** move object **********
-            if input_active && self.editor_state.selected_gizmo.is_some()
-            {
-                {
-                    let (scene, _, _) = self.editor_state.get_selected_node(state);
-                    let scene = scene.unwrap();
-                    Self::apply_fly_camera_move_state(scene, false);
-                }
-
-                // ********** re-apply saved movement (without snapping) **********
-                {
-                    let edit_transformation = self.find_transform_component(state);
-
-                    // ********** re-apply saved movement (without snapping) **********
-                    if let Some(selected_object_position_gizmo) = self.editor_state.selected_object_position_gizmo
-                    {
-                        component_downcast_mut!(edit_transformation, Transformation);
-                        edit_transformation.set_translation(selected_object_position_gizmo);
-                    }
-            }
-
-                let mut gizmo_pos = Point3::<f32>::new(0.0, 0.0, 0.0);
-                let gizmo_translation = gizmo_translation.read().unwrap();
-                let transform_component = gizmo_translation.find_component::<Transformation>();
-
-                if let Some(transform_component) = transform_component
-                {
-                    component_downcast!(transform_component, Transformation);
-                    gizmo_pos = transform_component.get_data().position.into();
-                }
-
-                {
-                    let plane_origin = gizmo_pos;
-                    let mut plane_normal = None;
-
-                    let mut ray_last = None;
-                    let mut ray_now = None;
-
-                    {
-                        let selected_gizmo = self.editor_state.selected_gizmo.clone();
-
-                        let (scene, _, _) = self.editor_state.get_selected_node(state);
-                        for camera in &scene.unwrap().cameras
-                        {
-                            if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
-                            {
-                                ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last, width, height));
-                                ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos, width, height));
-
-                                let xy_plane = Vector3::new(0.0, 0.0, 1.0);
-                                let xz_plane = Vector3::new(0.0, 1.0, 0.0);
-                                // let yz_plane = Vector3::new(1.0, 0.0, 0.0);
-
-                                plane_normal = match selected_gizmo
-                                {
-                                    Some(GizmoTypeAndAxis::TranslateX) => Some(xy_plane),
-                                    Some(GizmoTypeAndAxis::TranslateY) => Some(xy_plane),
-                                    Some(GizmoTypeAndAxis::TranslateZ) => Some(xz_plane),
-                                    _ => None,
-                                };
-
-                                break;
-                            }
-                        }
-                    }
-
-                    if let (Some(plane_normal), Some(ray_last), Some(ray_now)) = (plane_normal, ray_last, ray_now)
-                    {
-                        let p0 = math::ray_plane_intersection(&ray_last, plane_normal, plane_origin);
-                        let p1 = math::ray_plane_intersection(&ray_now, plane_normal, plane_origin);
-
-                        if let (Some(p0), Some(p1)) = (p0, p1)
-                        {
-                            let axis = match self.editor_state.selected_gizmo
-                            {
-                                Some(GizmoTypeAndAxis::TranslateX) => Vector3::<f32>::new(1.0, 0.0, 0.0),
-                                Some(GizmoTypeAndAxis::TranslateY) => Vector3::<f32>::new(0.0, 1.0, 0.0),
-                                Some(GizmoTypeAndAxis::TranslateZ) => Vector3::<f32>::new(0.0, 0.0, 1.0),
-                                _ => Vector3::<f32>::zeros()
-                            };
-
-                            let vec = p1 - p0;
-                            let movement_vec = match self.editor_state.selected_gizmo
-                            {
-                                Some(GizmoTypeAndAxis::TranslateX) => Vector3::new(vec.x, 0.0, 0.0),
-                                Some(GizmoTypeAndAxis::TranslateY) => Vector3::new(0.0, vec.y, 0.0),
-                                Some(GizmoTypeAndAxis::TranslateZ) => Vector3::new(0.0, 0.0, vec.z),
-                                _ => Vector3::<f32>::zeros()
-                            };
-
-                            let movement_length = movement_vec.dot(&axis);
-                            let mut delta_world = axis * movement_length;
-
-                            {
-                                if let Some(selected_object_position_gizmo) = self.editor_state.selected_object_position_gizmo.as_mut()
-                                {
-                                    selected_object_position_gizmo.x += delta_world.x;
-                                    selected_object_position_gizmo.y += delta_world.y;
-                                    selected_object_position_gizmo.z += delta_world.z;
-                                }
-                                else
-                                {
-                                    let edit_transformation = self.find_transform_component(state);
-                                    component_downcast!(edit_transformation, Transformation);
-
-                                    let pos = edit_transformation.get_data().position.clone() + delta_world;
-                                    self.editor_state.selected_object_position_gizmo = Some(pos);
-                                }
-                            }
-
-                            // ********** without snap **********
-                            {
-                                delta_world.x = delta_world.x.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-                                delta_world.y = delta_world.y.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-                                delta_world.z = delta_world.z.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-
-                                // parent: because the rotation/scale of a local transform is applied otherwise to the position. which will result in movement in the wrong direction
-                                let local_movement = self.transform_to_parent_local(instance_id.clone(), node.clone(), delta_world);
-
-                                let edit_transformation = self.find_transform_component(state);
-                                component_downcast_mut!(edit_transformation, Transformation);
-                                edit_transformation.apply_translation(local_movement.xyz());
-                            }
-
-                            // ********** snap to grid center **********
-                            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
-                            {
-                                let bounding_info = node.read().unwrap().get_world_bounding_info(instance_id, true, None);
-                                if let Some((b_min, b_max)) = bounding_info
-                                {
-                                    let center = b_min + (b_max - b_min) / 2.0;
-
-                                    let new_x = snap_to_grid(center.x, grid_size);
-                                    let new_y = snap_to_grid(center.y, grid_size);
-                                    let new_z = snap_to_grid(center.z, grid_size);
-
-                                    let delta = Vector3::<f32>::new(new_x - center.x, new_y - center.y, new_z - center.z);
-                                    let delta = self.transform_to_parent_local(instance_id.clone(), node.clone(), delta);
-
-                                    let edit_transformation = self.find_transform_component(state);
-                                    component_downcast_mut!(edit_transformation, Transformation);
-
-                                    edit_transformation.apply_translation(delta);
-                                }
-                            }
-                            // ********** bottom left snapping **********
-                            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
-                            {
-                                let bounding_info = node.read().unwrap().get_world_bounding_info(instance_id, true, None);
-                                if let Some((b_min, b_max)) = bounding_info
-                                {
-                                    let bottom_left = Vector3::<f32>::new(b_min.x, b_min.y, b_max.z);
-
-                                    let new_x = snap_to_grid(bottom_left.x, grid_size);
-                                    let new_y = snap_to_grid(bottom_left.y, grid_size);
-                                    let new_z = snap_to_grid(bottom_left.z, grid_size);
-
-                                    let delta = Vector3::<f32>::new(new_x - bottom_left.x, new_y - bottom_left.y, new_z - bottom_left.z);
-                                    let delta = self.transform_to_parent_local(instance_id.clone(), node.clone(), delta);
-
-                                    let edit_transformation = self.find_transform_component(state);
-                                    component_downcast_mut!(edit_transformation, Transformation);
-
-                                    edit_transformation.apply_translation(delta);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ********** move gizmo **********
-            let transform;
-            if let Some(instance_id) = instance_id
-            {
-                let node = node.read().unwrap();
-                let instance = node.find_instance_by_id(instance_id).unwrap();
-                let instance = instance.read().unwrap();
-                transform = instance.calculate_transform();
-            }
-            else
-            {
-                let node = node.read().unwrap();
-                transform = node.get_full_transform();
-            }
-
-            // get pos from transform
-            let pos = transform.column(3).xyz();
-
-            let gizmo_translation = gizmo_translation.write().unwrap();
-            let transform_component = gizmo_translation.find_component::<Transformation>();
-
-            if let Some(transform_component) = transform_component
-            {
-                component_downcast_mut!(transform_component, Transformation);
-                transform_component.set_translation(pos);
-            }
-        }
-    }
-
     pub fn select_object(&mut self, state: &mut State)
     {
         if self.editor_state.selected_gizmo.is_some()
@@ -723,7 +371,7 @@ impl Editor
 
                 if let Some(pos) = pos
                 {
-                    let pick_res = self.pick(state, pos, false, None);
+                    let pick_res = pick(state, pos, false, None);
 
                     if let Some(pick_res) = pick_res
                     {
@@ -985,152 +633,6 @@ impl Editor
         }
     }
 
-    pub fn pick(&self, state: &State, pos: Point2::<f32>, allow_grid_picking: bool, predicate: Option<PickPredicate>) -> Option<(u64, ScenePickRes)>
-    {
-        let scenes = &state.scenes;
-        let width = state.width;
-        let height = state.height;
-
-        let mut hit: Option<ScenePickRes> = None;
-        let mut scene_id: u64 = 0;
-
-        for scene in scenes
-        {
-            let set_grid_picking = |scene: &Box<Scene>, state: bool|
-            {
-                // find grid
-                let grid = scene.find_mesh_node_by_name("grid");
-
-                if let Some(grid) = grid
-                {
-                    let mut grid = grid.write().unwrap();
-                    let grid_instance = grid.instances.get_mut().first();
-                    if let Some(grid_instance) = grid_instance
-                    {
-                        grid_instance.write().unwrap().pickable = state;
-                    }
-                }
-            };
-
-            /*
-            if allow_grid_picking
-            {
-                set_grid_picking(scene, true);
-            }
-            */
-
-            for camera in &scene.cameras
-            {
-                // check if click is insight
-                if camera.is_point_in_viewport(&pos)
-                {
-                    let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
-
-                    let mut grid_hit = None;
-                    if allow_grid_picking
-                    {
-                        let grid = scene.find_mesh_node_by_name("grid");
-                        if let Some(grid) = grid
-                        {
-                            set_grid_picking(scene, true);
-                            grid_hit = scene.pick_node(grid, &ray, false, true, predicate.clone());
-                            set_grid_picking(scene, false);
-                        }
-                    }
-
-                    let scene_hit = scene.pick(&ray, false, false, predicate.clone());
-
-                    //dbg!(scene_hit.is_some());
-                    //dbg!(grid_hit.is_some());
-
-                    // check if grid hit is closer or scene hit
-                    let mut new_hit = grid_hit;
-                    if let Some(scene_hit_ref) = scene_hit.as_ref()
-                    {
-                        if let Some(new_hit_ref) = new_hit.as_ref()
-                        {
-                            if scene_hit_ref.time_of_impact < new_hit_ref.time_of_impact
-                            {
-                                new_hit = scene_hit;
-                            }
-                        }
-                        else
-                        {
-                            new_hit = scene_hit;
-                        }
-                    }
-
-                    //dbg!(new_hit.is_some());
-
-                    let mut save_hit = false;
-
-                    if let Some(new_hit) = new_hit.as_ref()
-                    {
-                        if let Some(hit) = hit.as_ref()
-                        {
-                            // check if the new hit is near
-                            if new_hit.time_of_impact < hit.time_of_impact
-                            {
-                                save_hit = true;
-                            }
-                        }
-                        else
-                        {
-                            save_hit = true;
-                        }
-                    }
-
-                    if save_hit
-                    {
-                        hit = new_hit;
-                        scene_id = scene_id;
-                    }
-                }
-            }
-
-            /*
-            if allow_grid_picking
-            {
-                set_grid_picking(scene, false);
-            }
-            */
-        }
-
-        if let Some(hit) = hit
-        {
-            return Some((scene_id, hit));
-        }
-
-        None
-    }
-
-    pub fn pick_node(&self, state: &State, node: NodeItem, pos: Point2::<f32>) -> Option<(u64, ScenePickRes)>
-    {
-        let scenes = &state.scenes;
-        let width = state.width;
-        let height = state.height;
-
-        for scene in scenes
-        {
-            for camera in &scene.cameras
-            {
-                // check if click is insight
-                if camera.is_point_in_viewport(&pos)
-                {
-                    let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
-                    let hit = scene.pick_node(node.clone(), &ray, false, false, None);
-
-                    if let Some(hit) = hit
-                    {
-                        return Some((scene.id, hit));
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
     pub fn apply_internal_asset_drag(&mut self, state: &mut State, ctx: &egui::Context)
     {
         if let Some(drag_id) = &self.editor_state.drag_id
@@ -1160,112 +662,6 @@ impl Editor
     {
         let pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
         self.load_asset(state, path, pos);
-    }
-
-    pub fn apply_fly_camera_move_state(scene: &mut Scene, state: bool)
-    {
-        for camera in &mut scene.cameras
-        {
-            if !camera.enabled
-            {
-                continue;
-            }
-
-            if let Some(controller) = &mut camera.controller
-            {
-                if let Some(controller) = controller.as_any_mut().downcast_mut::<FlyController>()
-                {
-                    controller.mouse_movement = state;
-                }
-            }
-        }
-    }
-
-    pub fn find_transform_component(&mut self, state: &mut State) -> ComponentItem
-    {
-        // ********** find transform component for node/instance **********
-        let (scene, node, instance_id) = self.editor_state.get_selected_node(state);
-
-        let scene = scene.unwrap();
-        let node = node.unwrap();
-
-        let edit_transformation: ComponentItem;
-
-        if let Some(instance_id) = instance_id
-        {
-            let instance_transform;
-            {
-                let node = node.read().unwrap();
-                let instance = node.find_instance_by_id(instance_id).unwrap();
-                let instance = instance.read().unwrap();
-                instance_transform = instance.find_component::<Transformation>();
-            }
-
-            if let Some(instance_transform) = instance_transform
-            {
-                edit_transformation = instance_transform.clone();
-            }
-            else
-            {
-                let node = node.read().unwrap();
-                let instance = node.find_instance_by_id(instance_id).unwrap() ;
-                let mut instance = instance.write().unwrap();
-                let id = scene.id_manager.write().unwrap().get_next_component_id();
-
-                instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
-
-                let transformation = instance.find_component::<Transformation>().unwrap();
-                edit_transformation = transformation.clone();
-            }
-        }
-        else
-        {
-            let node_transform;
-            {
-                let node = node.read().unwrap();
-                node_transform = node.find_component::<Transformation>();
-            }
-
-            if let Some(node_transform) = node_transform
-            {
-                edit_transformation = node_transform.clone();
-            }
-            else
-            {
-                let mut node = node.write().unwrap();
-                let id = scene.id_manager.write().unwrap().get_next_component_id();
-
-                node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
-
-                let transformation = node.find_component::<Transformation>().unwrap();
-                edit_transformation = transformation.clone();
-            }
-        }
-
-        edit_transformation
-    }
-
-    pub fn transform_to_parent_local(&self, instance_id: Option<u64>, selected_node: NodeItem, vec: Vector3<f32>) -> Vector3<f32>
-    {
-        let mut vec = vec;
-
-        if instance_id.is_some()
-        {
-            let node = selected_node.read().unwrap();
-            vec = node.transform_global_to_local(&Vector4::<f32>::new(vec.x, vec.y, vec.z, 0.0)).xyz();
-        }
-        else
-        {
-            let node = selected_node.read().unwrap();
-
-            if let Some(parent) = &node.parent
-            {
-                let parent = parent.read().unwrap();
-                vec = parent.transform_global_to_local(&Vector4::<f32>::new(vec.x, vec.y, vec.z, 0.0)).xyz();
-            }
-        }
-
-        vec
     }
 
     pub fn set_edit_mode(&mut self, state: &mut State)
@@ -1444,7 +840,7 @@ impl Editor
     {
         let angle_steps = PI / 8.0;
 
-        let edit_transformation = self.find_transform_component(state);
+        let edit_transformation = find_transform_component(&mut self.editor_state, state);
 
         let mut use_rotation_vec = false;
         let mut rotation_vec = Vector3::<f32>::zeros();
@@ -1576,7 +972,7 @@ impl Editor
             // re-allow fly camera state
             for scene in &mut state.scenes
             {
-                Self::apply_fly_camera_move_state(scene, true);
+                apply_fly_camera_move_state(scene, true);
             }
 
             return;
@@ -1632,7 +1028,7 @@ impl Editor
 
         if !self.editor_state.edit_moving && (state.input_manager.mouse.is_first_action(MouseButton::Left, engine_frame) || state.input_manager.mouse.is_first_action(MouseButton::Right, engine_frame) || state.input_manager.touch.is_first_action(engine_frame))
         {
-            let pick_res = self.pick(state, pos, false, None);
+            let pick_res = pick(state, pos, false, None);
 
             if let Some(pick_res) = pick_res
             {
@@ -1657,7 +1053,7 @@ impl Editor
         if !self.editor_state.edit_moving
         {
             let (scene, _, _) = self.editor_state.get_selected_node(state);
-            Self::apply_fly_camera_move_state(scene.unwrap(), true);
+            apply_fly_camera_move_state(scene.unwrap(), true);
 
             return;
         }
@@ -1675,13 +1071,13 @@ impl Editor
             let scene = scene.unwrap();
 
             // stop fly camera from moving
-            Self::apply_fly_camera_move_state(scene, false);
+            apply_fly_camera_move_state(scene, false);
 
             instance_id = instance;
         }
 
         // ********** find transform component for node/instance **********
-        let edit_transformation = self.find_transform_component(state);
+        let edit_transformation = find_transform_component(&mut self.editor_state, state);
 
         // ********** re-apply saved movement (without snapping) **********
         if let Some(selected_object_position) = self.editor_state.selected_object_position
@@ -1777,11 +1173,11 @@ impl Editor
             let pick_res: Option<(u64, ScenePickRes)>;
             if self.editor_state.drag_and_drop_grid_only
             {
-                pick_res = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate_grid_only)));
+                pick_res = pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate_grid_only)));
             }
             else
             {
-                pick_res = self.pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate)));
+                pick_res = pick(state, new_bottom_center, true, Some(Arc::new(pick_predicate)));
             }
 
             if let Some(pick_res) = pick_res
@@ -1804,7 +1200,7 @@ impl Editor
         let mut delta = pick_pos - bottom_center;
 
         // parent: because the rotation/scale of a local transform is applied otherwise to the position. which will result in movement in the wrong direction
-        delta = self.transform_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
+        delta = transform_vec_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
 
         // ********** save not snapped position **********
         if let Some(selected_object_position) = self.editor_state.selected_object_position.as_mut()
@@ -1836,7 +1232,7 @@ impl Editor
                 let new_z = snap_to_grid(center.z, grid_size);
 
                 let delta = Vector3::<f32>::new(new_x - center.x, 0.0, new_z - center.z);
-                let delta = self.transform_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
+                let delta = transform_vec_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
 
                 component_downcast_mut!(edit_transformation, Transformation);
 
@@ -1855,7 +1251,7 @@ impl Editor
                 let new_z = snap_to_grid(bottom_left.z, grid_size);
 
                 let delta = Vector3::<f32>::new(new_x - bottom_left.x, 0.0, new_z - bottom_left.z);
-                let delta = self.transform_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
+                let delta = transform_vec_to_parent_local(instance_id.clone(), selected_node.clone(), delta);
 
                 component_downcast_mut!(edit_transformation, Transformation);
 
@@ -1911,7 +1307,7 @@ impl Editor
         };
 
         // pick
-        let pick_res = self.pick(state, pos, true, None);
+        let pick_res = pick(state, pos, true, None);
 
         let mut pos = None;
         if let Some(pick_res) = pick_res

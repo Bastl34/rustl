@@ -6,7 +6,7 @@ use rfd::FileDialog;
 
 use crate::{state::{state::State, gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{texture::TextureItem, components::{material::Material, component::Component}}}, component_downcast};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
 pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std::string::String, TextureItem>, ui: &mut Ui, scene_id: u64)
 {

@@ -107,19 +107,25 @@ mod state
         {
             pub(crate) mod editor;
             pub(crate) mod editor_state;
-            pub(crate) mod main_frame;
-            pub(crate) mod modals;
-            pub(crate) mod dialogs;
-            pub(crate) mod statistics;
-            pub(crate) mod cameras;
-            pub(crate) mod objects;
-            pub(crate) mod materials;
-            pub(crate) mod lights;
-            pub(crate) mod scenes;
-            pub(crate) mod general;
-            pub(crate) mod textures;
-            pub(crate) mod sound;
-            pub(crate) mod assets;
+            pub(crate) mod helper;
+            pub(crate) mod gizmo;
+
+            pub(crate) mod ui
+            {
+                pub(crate) mod main_frame;
+                pub(crate) mod modals;
+                pub(crate) mod dialogs;
+                pub(crate) mod statistics;
+                pub(crate) mod cameras;
+                pub(crate) mod objects;
+                pub(crate) mod materials;
+                pub(crate) mod lights;
+                pub(crate) mod scenes;
+                pub(crate) mod general;
+                pub(crate) mod textures;
+                pub(crate) mod sound;
+                pub(crate) mod assets;
+            }
         }
     }
 }

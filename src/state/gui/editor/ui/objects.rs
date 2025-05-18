@@ -4,7 +4,7 @@ use egui::{Ui, RichText, Color32};
 
 use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
-use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {

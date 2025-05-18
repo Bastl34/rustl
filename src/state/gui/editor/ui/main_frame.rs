@@ -11,7 +11,7 @@ use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 
 use super::assets::create_asset_section;
 use super::cameras::{build_camera_list, create_camera_settings};
-use super::editor_state::{SelectionType, BottomPanel};
+use super::super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
@@ -144,7 +144,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             }
 
             // try out mode
-            if ui.toggle_value(&mut try_out, RichText::new("🚀").size(icon_size)).on_hover_text("try out").changed()
+            if ui.toggle_value(&mut try_out, RichText::new("🎮").size(icon_size)).on_hover_text("try out").changed()
             {
                 editor_state.set_try_mode(state, try_out);
             };
@@ -152,7 +152,34 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             ui.separator();
 
             // gizmo
-            ui.toggle_value(&mut editor_state.gizmo, RichText::new("🕂").size(icon_size)).on_hover_text("use gizmo");
+            if ui.toggle_value(&mut editor_state.gizmo_scale, RichText::new("🕂").size(icon_size)).on_hover_text("use scale gizmo").clicked()
+            {
+                if editor_state.gizmo_scale
+                {
+                    editor_state.gizmo_position = false;
+                    editor_state.gizmo_rotation = false;
+                }
+            }
+
+            if ui.toggle_value(&mut editor_state.gizmo_rotation, RichText::new("↻").size(icon_size)).on_hover_text("use rotation gizmo").clicked()
+            {
+                if editor_state.gizmo_rotation
+                {
+                    editor_state.gizmo_position = false;
+                    editor_state.gizmo_scale = false;
+                }
+            }
+
+            if ui.toggle_value(&mut editor_state.gizmo_position, RichText::new("⬌").size(icon_size)).on_hover_text("use position gizmo").clicked()
+            {
+                if editor_state.gizmo_position
+                {
+                    editor_state.gizmo_rotation = false;
+                    editor_state.gizmo_scale = false;
+                }
+            }
+
+            ui.separator();
 
             // fly camera
             ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
