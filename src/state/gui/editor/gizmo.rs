@@ -1,14 +1,17 @@
-use std::sync::{Arc, RwLock};
+use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::{ transform_vec_to_parent_local}, scene::{components::{material::Material, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::{transform_vec_to_parent_local}, scene::{components::{material::Material, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
 
 use super::{editor_state::{EditorState, GizmoTypeAndAxis}, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node}};
 
 const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_MIN: f32 = 0.01;
+const GIZMO_SCALE_STEP: f32 = 0.1;
+
+const GIZMO_ROTATION_STEP: f32 = PI / 16.0;
 
 pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, editor_utils_id: u64)
 {
@@ -429,7 +432,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
     let parent_transform = get_parent_world_transform_from_selected_node(editor_state, state);
     let parent_world_rotation_only = extract_rotation_only(&parent_transform);
 
-    let (scene, node, instance_id) = editor_state.get_selected_node(state);
+    let (scene, _, _) = editor_state.get_selected_node(state);
     let scene = scene.unwrap();
 
     let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
@@ -569,19 +572,17 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                         {
                             rotation_vec = editor_state.selected_object_gizmo_value.unwrap();
 
-                            let rotation_step = PI / 16.0;
-
                             if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateX)
                             {
-                                rotation_vec.x = snap_to_grid(rotation_vec.x, rotation_step);
+                                rotation_vec.x = snap_to_grid(rotation_vec.x, GIZMO_ROTATION_STEP);
                             }
                             else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateY)
                             {
-                                rotation_vec.y = snap_to_grid(rotation_vec.y, rotation_step);
+                                rotation_vec.y = snap_to_grid(rotation_vec.y, GIZMO_ROTATION_STEP);
                             }
                             else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateZ)
                             {
-                                rotation_vec.z = snap_to_grid(rotation_vec.z, rotation_step);
+                                rotation_vec.z = snap_to_grid(rotation_vec.z, GIZMO_ROTATION_STEP);
                             }
                         }
 
@@ -783,25 +784,23 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
                     {
                         let mut scale_vec = editor_state.selected_object_gizmo_value.unwrap();
 
-                        let scale_step = 0.1;
-
                         if uniform_scale
                         {
-                            scale_vec.x = snap_to_grid(scale_vec.x, scale_step);
-                            scale_vec.y = snap_to_grid(scale_vec.y, scale_step);
-                            scale_vec.z = snap_to_grid(scale_vec.z, scale_step);
+                            scale_vec.x = snap_to_grid(scale_vec.x, GIZMO_SCALE_STEP);
+                            scale_vec.y = snap_to_grid(scale_vec.y, GIZMO_SCALE_STEP);
+                            scale_vec.z = snap_to_grid(scale_vec.z, GIZMO_SCALE_STEP);
                         }
                         else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::ScaleX)
                         {
-                            scale_vec.x = snap_to_grid(scale_vec.x, scale_step);
+                            scale_vec.x = snap_to_grid(scale_vec.x, GIZMO_SCALE_STEP);
                         }
                         else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::ScaleY)
                         {
-                            scale_vec.y = snap_to_grid(scale_vec.y, scale_step);
+                            scale_vec.y = snap_to_grid(scale_vec.y, GIZMO_SCALE_STEP);
                         }
                         else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::ScaleZ)
                         {
-                            scale_vec.z = snap_to_grid(scale_vec.z, scale_step);
+                            scale_vec.z = snap_to_grid(scale_vec.z, GIZMO_SCALE_STEP);
                         }
 
                         let edit_transformation = find_transform_component(editor_state, state);
