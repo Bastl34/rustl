@@ -11,12 +11,12 @@ simple_logger = "5.0"
 log = "0.4"
 cfg-if = "1"
 wgpu = "24.0"
-bytemuck = { version = "1.20", features = [ "derive" ] }
+bytemuck = { version = "1.23", features = [ "derive" ] }
 instant = "0.1"
-winit = "0.30.9"
+winit = "0.30.10"
 anyhow = "1.0"
 nalgebra = "0.33"
-sha256 = "1.5.0"
+sha256 = "1.6.0"
 colored = "3.0.0"
 base64 = "0.22"
 strum = "0.27"
@@ -30,10 +30,10 @@ gilrs = { version = "0.11", features = ["wgi"]}
 take_mut = "0.2"
 uuid = {version = "1.15", features = ["v4"] }
 
-parry3d = "0.18"
+parry3d = "0.21"
 bvh = "0.11.0"
 
-arboard = "3.4.1"
+arboard = "3.5.0"
 
 tobj = { version = "4.0", features = ["async"]}
 
@@ -73,7 +73,7 @@ pollster = "0.4.0"
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.12"
-wgpu = { version = "24.0.0", features = ["webgl"]}
+wgpu = { version = "25.0.0", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
