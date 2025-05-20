@@ -340,12 +340,12 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                         _ => Vector3::<f32>::zeros()
                     };
 
-                    let mut delta_world = movement_vec;
-                    delta_world.x = delta_world.x.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-                    delta_world.y = delta_world.y.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-                    delta_world.z = delta_world.z.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                    let mut movement_vec = movement_vec;
+                    movement_vec.x = movement_vec.x.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                    movement_vec.y = movement_vec.y.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                    movement_vec.z = movement_vec.z.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
 
-                    let local_transform  = transform_vec_to_parent_local(instance_id.clone(), node.clone(), delta_world);
+                    let local_transform  = transform_vec_to_parent_local(instance_id.clone(), node.clone(), movement_vec);
 
                     {
                         if let Some(selected_object_gizmo_value) = editor_state.selected_object_gizmo_value.as_mut()
@@ -540,73 +540,53 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                         _ => Vector3::<f32>::zeros()
                     };
 
-                    if let Some(selected_object_gizmo_value) = editor_state.selected_object_gizmo_value.as_mut()
+                    // ********** apply rotation **********
                     {
-                        selected_object_gizmo_value.x += rotation_vec.x;
-                        selected_object_gizmo_value.y += rotation_vec.y;
-                        selected_object_gizmo_value.z += rotation_vec.z;
-                    }
-                    else
-                    {
-                        let edit_transformation = find_transform_component(editor_state, state);
-                        component_downcast!(edit_transformation, Transformation);
-
-                        let mut rotation = rotation_vec;
-                        rotation.x += edit_transformation.get_data().rotation.x;
-                        rotation.y += edit_transformation.get_data().rotation.y;
-                        rotation.z += edit_transformation.get_data().rotation.z;
-                        editor_state.selected_object_gizmo_value = Some(rotation);
-                    }
-
-                    {
-                        /*
-                        let snapping = state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo);
-
-                        let mut rotation_vec;
-                        // ********** without snap **********
-                        if !snapping
-                        {
-                            rotation_vec = editor_state.selected_object_gizmo_value.unwrap();
-                        }
-                        else
-                        {
-                            rotation_vec = editor_state.selected_object_gizmo_value.unwrap();
-
-                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateX)
-                            {
-                                rotation_vec.x = snap_to_grid(rotation_vec.x, GIZMO_ROTATION_STEP);
-                            }
-                            else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateY)
-                            {
-                                rotation_vec.y = snap_to_grid(rotation_vec.y, GIZMO_ROTATION_STEP);
-                            }
-                            else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateZ)
-                            {
-                                rotation_vec.z = snap_to_grid(rotation_vec.z, GIZMO_ROTATION_STEP);
-                            }
-                        }
-
                         let edit_transformation = find_transform_component(editor_state, state);
                         component_downcast_mut!(edit_transformation, Transformation);
 
                         let rotation_quat = UnitQuaternion::from_euler_angles(rotation_vec.x, rotation_vec.y, rotation_vec.z);
 
-                        edit_transformation.convert_euler_angles_to_quaternion();
-                        //edit_transformation.apply_rotation_quaternion(*rotation_quat.as_vector(), false);
-                        edit_transformation.set_rotation_quaternion(*rotation_quat.as_vector());
-                        edit_transformation.convert_quaternion_to_euler_angles();
-                         */
-
-
-                        // WORKS BETTER
-                        let edit_transformation = find_transform_component(editor_state, state);
-                        component_downcast_mut!(edit_transformation, Transformation);
-
-                        let rotation_quat = UnitQuaternion::from_euler_angles(rotation_vec.x, rotation_vec.y, rotation_vec.z);
+                        if let Some(selected_object_gizmo_value) = editor_state.selected_object_gizmo_value.as_mut()
+                        {
+                            edit_transformation.get_data_mut().get_mut().rotation = selected_object_gizmo_value.clone();
+                        }
 
                         edit_transformation.convert_euler_angles_to_quaternion();
                         edit_transformation.apply_rotation_quaternion(*rotation_quat.as_vector(), false);
                         edit_transformation.convert_quaternion_to_euler_angles();
+                    }
+
+                    // ********** save **********
+                    {
+                        let edit_transformation = find_transform_component(editor_state, state);
+                        component_downcast!(edit_transformation, Transformation);
+
+                        editor_state.selected_object_gizmo_value = Some(edit_transformation.get_data().rotation.clone());
+                    }
+
+                    // ********** snap if needed **********
+                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+                    {
+                        let edit_transformation = find_transform_component(editor_state, state);
+                        component_downcast_mut!(edit_transformation, Transformation);
+
+                        let rotation_vec = &mut edit_transformation.get_data_mut().get_mut().rotation;
+
+                        if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateX)
+                        {
+                            rotation_vec.x = snap_to_grid(rotation_vec.x, GIZMO_ROTATION_STEP);
+                        }
+                        else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateY)
+                        {
+                            rotation_vec.y = snap_to_grid(rotation_vec.y, GIZMO_ROTATION_STEP);
+                        }
+                        else if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::RotateZ)
+                        {
+                            rotation_vec.z = snap_to_grid(rotation_vec.z, GIZMO_ROTATION_STEP);
+                        }
+
+                        edit_transformation.calc_transform();
                     }
                 }
             }
