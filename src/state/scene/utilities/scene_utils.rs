@@ -185,12 +185,13 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
         // ********** renaming **********
+        // origin lines
         if let Some(root) = loaded_ids_origin.get(0)
         {
             if let Some(root_node) = scene.find_node_by_id(*root)
             {
                 {
-                    root_node.write().unwrap().name = "grid origin".to_string();
+                    root_node.write().unwrap().name = "grid origin root".to_string();
                 }
 
                 // move to front
@@ -200,12 +201,28 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                 }
             }
         }
+        for (i, id) in loaded_ids_origin.iter().enumerate()
+        {
+            // 0 is already checked/renamed
+            if i == 0 { continue; }
 
+            if let Some(node) = scene.find_node_by_id(*id)
+            {
+                if node.read().unwrap().name == "grid"
+                {
+                    // ranem to origin -> otherwise lookups to "grid" will fail and result the wrong node
+                    node.write().unwrap().name = "grid origin".to_string();
+                }
+            }
+        }
+
+
+        // grid itself
         if let Some(root) = loaded_ids_grid.get(0)
         {
             if let Some(root_node) = scene.find_node_by_id(*root)
             {
-                root_node.write().unwrap().name = "grid".to_string();
+                root_node.write().unwrap().name = "grid root".to_string();
 
                 // move to front
                 if let Some(parent) = &root_node.read().unwrap().parent
