@@ -826,7 +826,7 @@ impl Editor
         // rotate with mouse wheel
         if !approx_zero(state.input_manager.mouse.wheel_delta_y)
         {
-            let delta = state.input_manager.mouse.wheel_delta_y.to_radians() * 0.1;
+            let delta = state.input_manager.mouse.wheel_delta_y.signum() * PI / 16.0;
             let movement = Vector3::<f32>::new(delta, delta, delta);
             self.rotate_object(state, movement, false, true, false, false);
 

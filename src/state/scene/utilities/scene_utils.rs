@@ -185,19 +185,33 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
         // ********** renaming **********
+        if let Some(root) = loaded_ids_origin.get(0)
+        {
+            if let Some(root_node) = scene.find_node_by_id(*root)
+            {
+                {
+                    root_node.write().unwrap().name = "grid origin".to_string();
+                }
+
+                // move to front
+                if let Some(parent) = &root_node.read().unwrap().parent
+                {
+                    parent.write().unwrap().move_to_front(root_node.clone());
+                }
+            }
+        }
+
         if let Some(root) = loaded_ids_grid.get(0)
         {
             if let Some(root_node) = scene.find_node_by_id(*root)
             {
                 root_node.write().unwrap().name = "grid".to_string();
-            }
-        }
 
-        if let Some(root) = loaded_ids_origin.get(0)
-        {
-            if let Some(root_node) = scene.find_node_by_id(*root)
-            {
-                root_node.write().unwrap().name = "grid origin".to_string();
+                // move to front
+                if let Some(parent) = &root_node.read().unwrap().parent
+                {
+                    parent.write().unwrap().move_to_front(root_node.clone());
+                }
             }
         }
 

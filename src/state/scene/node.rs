@@ -180,6 +180,48 @@ impl Node
         }
     }
 
+    pub fn move_to_front(&mut self, node: NodeItem)
+    {
+        let nodes_amount = self.nodes.len();
+        if nodes_amount == 0
+        {
+            return;
+        }
+
+        self.nodes.retain(|child_node|
+        {
+            child_node.read().unwrap().id != node.read().unwrap().id
+        });
+
+        if self.nodes.len() == nodes_amount
+        {
+            return;
+        }
+
+        self.nodes.insert(0, node.clone());
+    }
+
+    pub fn move_to_back(&mut self, node: NodeItem)
+    {
+        let nodes_amount = self.nodes.len();
+        if nodes_amount == 0
+        {
+            return;
+        }
+
+        self.nodes.retain(|child_node|
+        {
+            child_node.read().unwrap().id != node.read().unwrap().id
+        });
+
+        if self.nodes.len() == nodes_amount
+        {
+            return;
+        }
+
+        self.nodes.push(node.clone());
+    }
+
     pub fn set_parent(node: NodeItem, new_parent: NodeItem)
     {
         // remove from old node list
