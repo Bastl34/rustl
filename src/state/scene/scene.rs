@@ -127,6 +127,12 @@ impl Scene
         &mut self.data
     }
 
+    pub fn get_node_amount_recursive(&self) -> usize
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        all_nodes.len()
+    }
+
     pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         // check moved nodes (if a node has a parent -> remove it from scene nodes)
@@ -917,6 +923,70 @@ impl Scene
             return false;
         }
 
+        if delete_textures && !delete_materials
+        {
+            println!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
+        }
+
+        // ********** delete materials **********
+        let mut materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+        if delete_materials
+        {
+            let mut all_nodes_to_delete;
+            {
+                let delete_node = self.find_node_by_id(id);
+                let delete_node_arc = delete_node.unwrap();
+                let delete_node = delete_node_arc.read().unwrap();
+
+                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
+                all_nodes_to_delete.push(delete_node_arc.clone());
+            }
+
+            // find all affecting
+            let mut possible_materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+            for node in all_nodes_to_delete
+            {
+                let mut node_materials = vec![];
+
+                {
+                    let node = node.read().unwrap();
+
+                    for material in node.find_components::<Material>()
+                    {
+                        let material_id = material.read().unwrap().id();
+                        possible_materials_to_delete.insert(material_id, material.clone());
+                        node_materials.push(material_id);
+                    }
+                }
+
+                let mut node = node.write().unwrap();
+                for material_id in node_materials
+                {
+                    node.remove_component_by_id(material_id);
+                }
+            }
+
+            let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+            for (material_id, _) in &possible_materials_to_delete
+            {
+                let mut usage = 0;
+                for node in &all_nodes
+                {
+                    let node = node.read().unwrap();
+                    if node.find_component_by_id(*material_id).is_some()
+                    {
+                        usage += 1;
+                    }
+                }
+
+                if usage == 0
+                {
+                    materials_to_delete.insert(*material_id, possible_materials_to_delete.get(material_id).unwrap().clone());
+                    self.delete_material_by_id(*material_id);
+                }
+            }
+        }
+
         // ********** delete textures **********
         if delete_textures
         {
@@ -934,21 +1004,17 @@ impl Scene
             let mut textures_to_delete: HashSet<u64> = HashSet::new();
 
             // find all textures from materials and delete them from materials
-            for node in all_nodes_to_delete
+            for (_material_id, material) in &materials_to_delete
             {
-                let node = node.read().unwrap();
-                for material in node.find_components::<Material>()
+                component_downcast_mut!(material, Material);
+                let textures = material.get_all_textures();
+                for texture in &textures
                 {
-                    component_downcast_mut!(material, Material);
-                    let textures = material.get_all_textures();
-                    for texture in &textures
-                    {
-                        let texture_id = texture.read().unwrap().id;
-                        textures_to_delete.insert(texture_id);
-                    }
-
-                    material.remove_all_textures();
+                    let texture_id = texture.read().unwrap().id;
+                    textures_to_delete.insert(texture_id);
                 }
+
+                material.remove_all_textures();
             }
 
             // delete textures if not in use anymore
@@ -967,64 +1033,6 @@ impl Scene
                 if usage == 0
                 {
                     self.delete_texture_by_id(texture_id);
-                }
-            }
-        }
-
-        // ********** delete materials **********
-        if delete_materials
-        {
-            let mut all_nodes_to_delete;
-            {
-                let delete_node = self.find_node_by_id(id);
-                let delete_node_arc = delete_node.unwrap();
-                let delete_node = delete_node_arc.read().unwrap();
-
-                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
-                all_nodes_to_delete.push(delete_node_arc.clone());
-            }
-
-            // find all affecting
-            let mut materials_to_delete: HashSet<u64> = HashSet::new();
-
-            for node in all_nodes_to_delete
-            {
-                let mut node_materials = vec![];
-
-                {
-                    let node = node.read().unwrap();
-
-                    for material in node.find_components::<Material>()
-                    {
-                        let material_id = material.read().unwrap().id();
-                        materials_to_delete.insert(material_id);
-                        node_materials.push(material_id);
-                    }
-                }
-
-                let mut node = node.write().unwrap();
-                for material_id in node_materials
-                {
-                    node.remove_component_by_id(material_id);
-                }
-            }
-
-            let all_nodes = Scene::list_all_child_nodes(&self.nodes);
-            for material_id in materials_to_delete
-            {
-                let mut usage = 0;
-                for node in &all_nodes
-                {
-                    let node = node.read().unwrap();
-                    if node.find_component_by_id(material_id).is_some()
-                    {
-                        usage += 1;
-                    }
-                }
-
-                if usage == 0
-                {
-                    self.delete_material_by_id(material_id);
                 }
             }
         }

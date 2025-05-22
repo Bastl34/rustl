@@ -464,7 +464,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive())).color(Color32::LIGHT_GREEN).strong());
 
                 if toggle.clicked()
                 {
@@ -507,7 +507,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
 
-                let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("📷 Cameras ({})", scene.cameras.len())).color(Color32::LIGHT_RED).strong());
 
                 if toggle.clicked()
                 {
@@ -548,7 +548,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("💡 Lights ({})", scene.lights.get_ref().len())).color(Color32::YELLOW).strong());
 
                 if toggle.clicked()
                 {
@@ -589,7 +589,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Material { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", scene.materials.len())).color(Color32::GOLD).strong()).clicked()
                 {
                     if selection
                     {
@@ -619,7 +619,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", scene.textures.len())).color(Color32::LIGHT_BLUE).strong()).clicked()
                 {
                     if selection
                     {
@@ -649,7 +649,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("🔊 Sounds").color(Color32::LIGHT_GRAY).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", scene.sound_sources.len())).color(Color32::LIGHT_GRAY).strong()).clicked()
                 {
                     if selection
                     {
