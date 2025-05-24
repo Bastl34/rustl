@@ -84,6 +84,7 @@ mod state
         {
             pub(crate) mod scene_utils;
             pub(crate) mod extras;
+            pub(crate) mod tags;
         }
 
         pub(crate) mod texture;
@@ -109,6 +110,7 @@ mod state
             pub(crate) mod editor_state;
             pub(crate) mod helper;
             pub(crate) mod gizmo;
+            pub(crate) mod grid;
 
             pub(crate) mod ui
             {

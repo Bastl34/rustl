@@ -15,8 +15,11 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let material = material.read().unwrap();
             let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
 
+            let is_internal = material.get_base().tags.contains("internal");
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_nodes);
+
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }

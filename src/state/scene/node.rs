@@ -8,7 +8,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::Extras};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::{extras::Extras, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -52,6 +52,7 @@ pub struct Node
     pub skin: Vec<NodeItem>,
 
     pub extras: Extras,
+    pub tags: Tags,
 
     pub nodes: Vec<NodeItem>,
     pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
@@ -104,6 +105,7 @@ impl Node
             skin: vec![],
 
             extras: Extras::new(),
+            tags: Tags::new(),
 
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
@@ -306,6 +308,11 @@ impl Node
     pub fn get_meshes(&self) -> Vec<ComponentItem>
     {
         self.find_components::<Mesh>()
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool
+    {
+        self.tags.contains(tag)
     }
 
     pub fn get_world_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>

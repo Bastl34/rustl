@@ -29,7 +29,7 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
         color = Color32::YELLOW;
     }
 
-    let fps = Line::new(fps_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Solid).name("FPS");
+    let fps = Line::new("fps", fps_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Solid).name("FPS");
 
     // ********** fps 1% low **********
     let fps_1pl_points: PlotPoints = state.stats.fps_1_percent_low_chart.iter().enumerate().map(|(i, value)|
@@ -50,7 +50,7 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
         color = Color32::YELLOW;
     }
 
-    let fps_1pl = Line::new(fps_1pl_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Dashed { length: 2.0 }).name("1%L");
+    let fps_1pl = Line::new("fps 1% low", fps_1pl_points).color(color).stroke(Stroke::new(2.0, color)).style(LineStyle::Dashed { length: 2.0 }).name("1%L");
 
     // ********** draw **********
     let legend = Legend::default().position(Corner::LeftTop);
@@ -84,7 +84,7 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
         let fps = format!("{:.1}", state.stats.last_fps);
         let pos = (state.stats.fps_average_chart.len() + 5) as f32;
         let text = RichText::new(fps).strong().size(12.0);
-        plot_ui.text(Text::new(PlotPoint::new(pos, state.stats.last_fps), text).name("FPS"));
+        plot_ui.text(Text::new("last fps", PlotPoint::new(pos, state.stats.last_fps), text).name("FPS"));
     });
 }
 

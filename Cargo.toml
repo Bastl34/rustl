@@ -10,10 +10,10 @@ crate-type = ["cdylib", "rlib"]
 simple_logger = "5.0"
 log = "0.4"
 cfg-if = "1"
-wgpu = "24.0"
+wgpu = "25.0"
 bytemuck = { version = "1.23", features = [ "derive" ] }
 instant = "0.1"
-winit = "0.30.10"
+winit = "0.30.11"
 anyhow = "1.0"
 nalgebra = "0.33"
 sha256 = "1.6.0"
@@ -53,20 +53,20 @@ gltf = { version = "1.4", features = [
 image = { version = "0.25", default-features = false, features = [ "png", "jpeg"] }
 # image = "0.24.5"
 
-egui = "0.31"
-egui-wgpu = "0.31"
-egui_plot = "0.31"
-#egui = { git = "https://github.com/emilk/egui", branch = "master"  }
-#egui-wgpu = { git = "https://github.com/emilk/egui", branch = "master" }
-#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+#egui = "0.31"
+#egui-wgpu = "0.31"
+#egui_plot = "0.31"
+egui = { git = "https://github.com/emilk/egui", branch = "main"  }
+egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
+egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
 
-#[patch.crates-io]
-#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
-#egui = { git = "https://github.com/emilk/egui", branch = "master" }
+[patch.crates-io]
+egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+egui = { git = "https://github.com/emilk/egui", branch = "main" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.31"
-#egui-winit = { git ="https://github.com/emilk/egui", branch = "master" }
+#egui-winit = "0.31"
+egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
 pollster = "0.4.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -84,8 +84,8 @@ web-sys = { version = "0.3", features = [
 ]}
 wasm_thread = { version = "0.3", features = ["es_modules"]}
 
-#egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "master", features = [
-egui-winit = { version = "0.31", default-features = false, features = [
+egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
+#egui-winit = { version = "0.31", default-features = false, features = [
   "links",
 ] }
 

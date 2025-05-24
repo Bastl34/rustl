@@ -94,6 +94,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         //});
     });
 
+
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
     {
@@ -404,6 +405,13 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.toggle_value(&mut editor_state.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
     });
 
+    ui.horizontal(|ui|
+    {
+        ui.checkbox(&mut editor_state.show_internal_nodes, "Show Editor Nodes").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+    });
+
+    ui.separator();
+
     let exec_queue = state.main_thread_execution_queue.clone();
 
     for scene in &mut state.scenes
@@ -438,7 +446,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     if ui.button("Clear").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.clear();
                     }
                 });
@@ -464,7 +472,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive())).color(Color32::LIGHT_GREEN).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive())).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
 
                 if toggle.clicked()
                 {
@@ -485,7 +493,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 {
                     if ui.button("⊞ Add New Node").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.add_empty_node("Node", None);
                     }
                 });
@@ -528,7 +536,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 {
                     if ui.button("Add New Camera").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.add_empty_camera("Camera");
                     }
                 });
@@ -569,7 +577,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 {
                     if ui.button("Add New Light").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.add_empty_light("Light");
                     }
                 });

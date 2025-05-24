@@ -569,7 +569,7 @@ impl Texture
         // ********** read buffer **********
         let slice = output_buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| ());
-        wgpu.device().poll(wgpu::Maintain::Wait);
+        wgpu.device().poll(wgpu::PollType::Wait).unwrap();
 
         // ********** remove padding **********
         let padded_data = slice.get_mapped_range();

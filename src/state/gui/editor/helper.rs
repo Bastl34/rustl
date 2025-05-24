@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Vector3, Vector4};
 
-use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}}, state::State};
+use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::State};
 
 use super::editor_state::EditorState;
 
@@ -309,4 +309,29 @@ pub fn transform_vec_to_parent_local(instance_id: Option<u64>, selected_node: No
     }
 
     vec
+}
+
+pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
+{
+    let utils_node = scene.find_node_by_name("editor utils");
+
+    if utils_node.is_none()
+    {
+        return;
+    }
+
+    let utils_node = utils_node.unwrap();
+    let utils_node = utils_node.read().unwrap();
+    let all_child_nodes = Scene::list_all_child_nodes(&utils_node.nodes);
+
+    for node in all_child_nodes
+    {
+        let node = node.read().unwrap();
+        let materials = node.find_components::<Material>();
+        for material in materials
+        {
+            let mut material = material.write().unwrap();
+            material.get_base_mut().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+        }
+    }
 }

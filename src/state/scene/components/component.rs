@@ -8,6 +8,7 @@ use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
+use crate::state::scene::utilities::tags::Tags;
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -74,6 +75,7 @@ pub struct ComponentBase
     pub info: Option<String>,
 
     pub extras: Extras,
+    pub tags: Tags,
 
     pub from_file: bool,
 
@@ -98,6 +100,7 @@ impl ComponentBase
             info: None,
 
             extras: Extras::new(),
+            tags: Tags::new(),
 
             from_file: false,
 
@@ -122,6 +125,7 @@ impl ComponentBase
             info: from.info.clone(),
 
             extras: from.extras.clone(),
+            tags: from.tags.clone(),
 
             from_file: false,
 

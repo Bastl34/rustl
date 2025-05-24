@@ -80,8 +80,8 @@ impl WGpu
                     wgpu::Limits::default()
                 },
                 memory_hints: Default::default(),
+                trace: wgpu::Trace::Off,
             },
-            None,
         )
         .await
         .unwrap();
@@ -138,7 +138,7 @@ impl WGpu
 
         match adapter_info.backend
         {
-            wgpu::Backend::Empty => state.adapter.backend = "Empty".to_string(),
+            wgpu::Backend::Noop => state.adapter.backend = "Noop".to_string(),
             wgpu::Backend::Vulkan => state.adapter.backend = "Vulkan".to_string(),
             wgpu::Backend::Metal => state.adapter.backend = "Metal".to_string(),
             wgpu::Backend::Dx12 => state.adapter.backend = "Dx12".to_string(),
@@ -373,7 +373,7 @@ impl WGpu
         // read buffer
         let slice: wgpu::BufferSlice = output_buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| ());
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::Wait).unwrap();
 
         // remove padding
         let padded_data = slice.get_mapped_range();

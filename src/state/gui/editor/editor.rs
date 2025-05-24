@@ -6,11 +6,11 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
 use self::math::approx_zero;
 
-use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
+use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::state::gui::editor::ui::main_frame;
 
 const OBJECTS_DIR: &str = "objects/";
@@ -56,7 +56,12 @@ impl Editor
             state.scenes.get_mut(0).unwrap()
         };
 
-        let editor_utils_id = scene.add_empty_node("editor utils", None).read().unwrap().id;
+        let editor_utils = scene.add_empty_node("editor utils", None);
+        {
+            editor_utils.write().unwrap().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+        }
+
+        let editor_utils_id = editor_utils.read().unwrap().id;
 
         create_gizmo_objects(&mut self.editor_state, state, editor_utils_id);
     }
@@ -297,7 +302,7 @@ impl Editor
 
                 spawn_thread(move ||
                 {
-                    scene_utils::create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                    create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
                 });
 
                 self.editor_state.grid_recreate = false;
@@ -1302,7 +1307,7 @@ impl Editor
         {
             spawn_thread(move ||
             {
-                scene_utils::create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
             });
         };
 

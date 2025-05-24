@@ -131,8 +131,11 @@ pub struct EditorState
 
     pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
+    pub show_internal_nodes: bool,
 
     pub component_filter: String,
+
+    pub tag_input: String,
 
     pub selected_scene_id: Option<u64>,
     pub selected_type: SelectionType,
@@ -196,8 +199,11 @@ impl EditorState
 
             hierarchy_expand_all: true,
             hierarchy_filter: String::new(),
+            show_internal_nodes: false,
 
             component_filter: String::new(),
+
+            tag_input: String::new(),
 
             selected_scene_id: None,
             selected_type: SelectionType::None,

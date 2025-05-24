@@ -2,9 +2,9 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::{transform_vec_to_parent_local}, scene::{components::{material::Material, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
 
-use super::{editor_state::{EditorState, GizmoTypeAndAxis}, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node}};
+use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
 const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_CLAMP: f32 = 10.0;
@@ -35,7 +35,7 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
     {
         let id_manager_thread = id_manager_clone.clone();
 
-        scene_utils::create_grid(scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager.clone(), grid_amount, grid_size);
+        create_grid(scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager.clone(), grid_amount, grid_size);
 
         let pos = scene_utils::load_object("objects/gizmo/gizmo_pos.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
         let rot = scene_utils::load_object("objects/gizmo/gizmo_rot.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
@@ -110,9 +110,15 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
                     {
                         component_downcast_mut!(material, Material);
                         material.get_data_mut().get_mut().unlit_shading = true;
+
+                        material.get_data_mut().get_mut().alpha = 0.8;
+                        material.get_data_mut().get_mut().blend_mode = BlendMode::Blend;
                     }
                 }
             }
+
+            // run internal tagging
+            set_internal_tag_for_utils_nodes(scene);
         }));
     });
 }
