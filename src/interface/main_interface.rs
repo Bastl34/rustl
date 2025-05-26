@@ -33,6 +33,7 @@ use crate::state::scene::components::animation::Animation;
 use crate::state::scene::components::material::Material;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
+use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::char_controller::CharacterController;
 use crate::state::scene::utilities::scene_utils::{self, execute_on_scene_mut_and_wait};
@@ -206,7 +207,7 @@ impl MainInterface
             /*
             for i in 0..4
             {
-                let cam_id = scene.id_manager.get_next_camera_id();
+                let cam_id = id_manager::get_next_camera_id();
                 let mut cam = Camera::new(cam_id, format!("cam {}", i).to_string());
                 let cam_data = cam.get_data_mut().get_mut();
                 cam_data.fovy = 45.0f32.to_radians();
@@ -227,12 +228,12 @@ impl MainInterface
             // ********** light **********
             /*
             {
-                let light_id = scene.id_manager.get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
             {
-                let light_id = scene.id_manager.get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
@@ -242,13 +243,13 @@ impl MainInterface
             // helmet
             /*
             {
-                let light_id = scene.id_manager.get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 
             {
-                let cam_id = scene.id_manager.get_next_camera_id();
+                let cam_id = id_manager::get_next_camera_id();
                 let mut cam = Camera::new(cam_id, "cam".to_string());
                 cam.fovy = 23.0f32.to_radians();
                 cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
@@ -266,13 +267,13 @@ impl MainInterface
 
             /*
             {
-                let light_id = scene.id_manager.get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 
             {
-                let cam_id = scene.id_manager.get_next_camera_id();
+                let cam_id = id_manager::get_next_camera_id();
                 let mut cam = Camera::new(cam_id, "cam".to_string());
                 cam.fovy = 23.0f32.to_radians();
                 cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
@@ -288,13 +289,13 @@ impl MainInterface
             // corset
             /*
             {
-                let light_id = scene.id_manager.get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 200.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
 
             {
-                let cam_id = scene.id_manager.get_next_camera_id();
+                let cam_id = id_manager::get_next_camera_id();
                 let mut cam = Camera::new(cam_id, "cam".to_string());
                 cam.fovy = 23.0f32.to_radians();
                 cam.eye_pos = Point3::<f32>::new(4.2011, 2.7027438, 3.71161);
@@ -324,7 +325,7 @@ impl MainInterface
                 let node = scene.nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();
-                node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                node.add_component(Box::new(Transformation::identity(id_manager::get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 0.0, -15.0));
 
                 //node.remove_component_by_type::<Transformation>();
@@ -335,15 +336,15 @@ impl MainInterface
                 let node = scene.nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();
-                node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                node.add_component(Box::new(Transformation::identity(id_manager::get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(4.0, 4.0, 4.0));
                 node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, 15.0, -30.0));
 
                 //node.remove_component_by_type::<Transformation>();
             }
 
-            let node1 = Node::new(scene.id_manager.get_next_node_id(), "test1");
-            let node2 = Node::new(scene.id_manager.get_next_node_id(), "test2");
+            let node1 = Node::new(id_manager::get_next_node_id(), "test1");
+            let node2 = Node::new(id_manager::get_next_node_id(), "test2");
 
             scene.add_node(node1.clone());
             Node::add_node(node1, node2);
@@ -352,10 +353,10 @@ impl MainInterface
             /*
             scene.clear_empty_nodes();
 
-            let root_node = Node::new(scene.id_manager.get_next_node_id(), "root node");
+            let root_node = Node::new(id_manager::get_next_node_id(), "root node");
             {
                 let mut root_node = root_node.write().unwrap();
-                root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(scene.id_manager.get_next_component_id(), "Alpha Test", 1.0)))));
+                root_node.add_component(Arc::new(RwLock::new(Box::new(Alpha::new(id_manager::get_next_component_id(), "Alpha Test", 1.0)))));
             }
 
             for node in &scene.nodes
@@ -377,11 +378,11 @@ impl MainInterface
 
                     let mut instance = instance.borrow_mut();
                     let instance = instance.get_mut();
-                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(scene.id_manager.get_next_component_id(), "Transform")))));
+                    instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id_manager::get_next_component_id(), "Transform")))));
 
-                    instance.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                    instance.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_manager::get_next_component_id(), "Transform Animation", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
                 }
-                //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                //node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_manager::get_next_component_id(), Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.01, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
             }
              */
 
@@ -389,8 +390,8 @@ impl MainInterface
             if let Some(train) = scene.find_node_by_name("Train")
             {
                 let mut node = train.write().unwrap();
-                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(scene.id_manager.get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_manager::get_next_component_id(), "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+                node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_manager::get_next_component_id(), "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
 
                 let components_len = node.components.len();
                 {
@@ -411,7 +412,7 @@ impl MainInterface
             // add light
             //if scene.lights.get_ref().len() == 0
             {
-                let light_id = scene.id_manager.get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
             }
@@ -421,7 +422,7 @@ impl MainInterface
             // add camera
             if scene.cameras.len() == 0
             {
-                let mut cam = Camera::new(scene.id_manager.get_next_camera_id(), "Cam".to_string());
+                let mut cam = Camera::new(id_manager::get_next_camera_id(), "Cam".to_string());
                 cam.update_resolution(state.width, state.height);
                 let cam_data = cam.get_data_mut().get_mut();
                 cam_data.fovy = 45.0f32.to_radians();
@@ -456,7 +457,7 @@ impl MainInterface
                 let node = scene.nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();
-                //node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                //node.add_component(Box::new(Transformation::identity(id_manager::get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.0, -1.25, 0.0));
                 node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(0.08, 0.08, 0.08));
 
@@ -472,7 +473,7 @@ impl MainInterface
                 let node = scene.nodes.get_mut(node_id).unwrap();
 
                 let mut node = node.write().unwrap();
-                //node.add_component(Box::new(Transformation::identity(scene.id_manager.get_next_component_id())));
+                //node.add_component(Box::new(Transformation::identity(id_manager::get_next_component_id())));
                 node.find_component_mut::<Transformation>().unwrap().apply_translation(Vector3::<f32>::new(0.15, -0.7, -0.2));
                 node.find_component_mut::<Transformation>().unwrap().apply_scale(Vector3::<f32>::new(25.0, 25.0, 25.0));
 
@@ -482,8 +483,6 @@ impl MainInterface
 
             // ********** scene add **********
             let scene_id = scene.id.clone();
-            let id_manager = scene.id_manager.clone();
-            let id_manager_clone = scene.id_manager.clone();
             let main_queue = state.main_thread_execution_queue.clone();
 
             //scene.update(&mut state.input_manager, state.frame_scale);
@@ -496,61 +495,59 @@ impl MainInterface
             spawn_thread(move ||
             {
 
-                //let nodes = scene_utils::load_object("scenes/Sponza_fixed.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("scenes/Sponza_fixed.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", sscene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/rpm.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/rpm3.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move_2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/xbot@dancing.glb", sscene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/mech_drone.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/woman_cyber_free_model_by_oscar_creativo.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/AnimatedTriangle.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/Alien.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/Alien2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RecursiveSkeletons.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedFigure.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/RiggedSimple.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/SimpleSkin.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm2_2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/rpm3.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, None, main_queue_clone.clone(),false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/animated_astronaut_character_in_space_suit_loop_2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/ct_gsg9_hip_hop_move_2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/whale.CYCLES.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/thinmat_model.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/mole.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/avatar.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-                //scene_utils::load_object("objects/temp/box.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //scene_utils::load_object("objects/temp/box2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //scene_utils::load_object("objects/temp/extras.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/box.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/box2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/extras.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
 
-                let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-                let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
                 let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
 
-                //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone());
-                let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), id_manager_clone.clone(), Some("mixamorig:Hips"));
+                //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(),);
+                let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
 
 
-                //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/sofa.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-                //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/lotus2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/character_with_animation.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/sofa.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+                //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-                //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), id_manager_clone.clone(), false, true, false, 0);
-
-                let id_manager_clone_inner = id_manager_clone.clone();
+                //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
@@ -581,7 +578,7 @@ impl MainInterface
 
                             if cone.find_component::<Transformation>().is_none()
                             {
-                                let component_id = id_manager_clone_inner.clone().write().unwrap().get_next_component_id();
+                                let component_id = id_manager::get_next_component_id();
                                 cone.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
                             }
 
@@ -621,7 +618,7 @@ impl MainInterface
                      */
                 }));
 
-                let light_id = id_manager_clone.clone().write().unwrap().get_next_light_id();
+                let light_id = id_manager::get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
                     let uuid = uuid::Uuid::new_v4().to_string();
@@ -653,7 +650,7 @@ impl MainInterface
                         // add camera
                         if scene.cameras.len() == 0
                         {
-                            let id = scene.id_manager.write().unwrap().get_next_camera_id();
+                            let id = id_manager::get_next_camera_id();
                             let uuid = uuid::Uuid::new_v4().to_string();
                             let mut cam = Camera::new(id, uuid, "Cam".to_string());
 
@@ -685,7 +682,7 @@ impl MainInterface
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
                     {
                         let sound_bytes = load_binary("sounds/click.ogg").unwrap();
-                        let sound_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                        let sound_id = id_manager::get_next_sound_source_id();
                         let sound = SoundSource::new(sound_id, "sound", audio_device.clone(), &sound_bytes, None);
 
                         scene.sound_sources.insert(sound.hash.clone(),  Arc::new(RwLock::new(Box::new(sound))));
@@ -702,7 +699,7 @@ impl MainInterface
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
                     {
                         let sound_bytes = load_binary("sounds/infoPopup.ogg").unwrap();
-                        let sound_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                        let sound_id = id_manager::get_next_sound_source_id();
                         let sound = SoundSource::new(sound_id, "sound", audio_device.clone(), &sound_bytes, None);
 
                         scene.sound_sources.insert(sound.hash.clone(),  Arc::new(RwLock::new(Box::new(sound))));

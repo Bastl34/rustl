@@ -2,11 +2,11 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueueItem, math::is_almost_integer}, state::scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, manager::id_manager::IdManagerItem, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object}}};
+use crate::{component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueueItem, math::is_almost_integer}, state::scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, manager::id_manager, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object}}};
 
 use super::helper::set_internal_tag_for_utils_nodes;
 
-pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
+pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
     let integer_grid_line_scale = 3.0;
 
@@ -17,8 +17,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
     let size = amount as f32 * spacing;
 
-    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
+    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), true, true, false, 0).unwrap();
+    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), true, true, false, 0).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
@@ -84,7 +84,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 // x
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    let id = id_manager::get_next_instance_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
@@ -97,7 +97,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     let z_pos = pos as f32 * spacing;
                     let scale = if is_almost_integer(z_pos) { integer_grid_line_scale } else { 1.0 };
 
-                    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let component_id = id_manager::get_next_component_id();
                     let mut transformation = Transformation::identity(component_id, "Transform");
                     transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, z_pos));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
@@ -110,7 +110,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 // y
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    let id = id_manager::get_next_instance_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
@@ -123,7 +123,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     let x_pos = pos as f32 * spacing;
                     let scale = if is_almost_integer(x_pos) { integer_grid_line_scale } else { 1.0 };
 
-                    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let component_id = id_manager::get_next_component_id();
                     let mut transformation = Transformation::identity(component_id, "Transform");
                     transformation.apply_translation(Vector3::<f32>::new(x_pos, 0.0, 0.0));
                     transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
@@ -176,13 +176,13 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // x (red)
             {
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
                 let mut instance = Instance::new(id, uuid, "grid_origin_x".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
-                let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                let component_id = id_manager::get_next_component_id();
                 let mut transformation = Transformation::identity(component_id, "Transform");
                 transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
@@ -195,13 +195,13 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // y (green)
             {
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
                 let mut instance = Instance::new(id, uuid, "grid_origin_y".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
-                let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                let component_id = id_manager::get_next_component_id();
                 let mut transformation = Transformation::identity(component_id, "Transform");
                 transformation.apply_rotation(Vector3::<f32>::new(0.0, 0.0, PI / 2.0));
                 transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
@@ -215,13 +215,13 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // z (blue)
             {
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
                 let mut instance = Instance::new(id, uuid, "grid_origin_z".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
-                let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                let component_id = id_manager::get_next_component_id();
                 let mut transformation = Transformation::identity(component_id, "Transform");
                 transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
                 transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
@@ -251,8 +251,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
         // ********** create plane **********
         if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
         {
-            let mesh_component_id = scene.id_manager.write().unwrap().get_next_component_id();
-            let material_id = scene.id_manager.write().unwrap().get_next_component_id();
+            let mesh_component_id = id_manager::get_next_component_id();
+            let material_id = id_manager::get_next_component_id();
 
             let half_size = size / 2.0;
 
@@ -273,7 +273,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
             scene.add_material(material_id, &plane_material_arc.clone());
 
             let uuid = uuid::Uuid::new_v4().to_string();
-            let plane_node = Node::new(scene.id_manager.write().unwrap().get_next_node_id(), uuid, "plane");
+            let plane_node = Node::new(id_manager::get_next_node_id(), uuid, "plane");
             {
                 {
                     let mut plane_node = plane_node.write().unwrap();
@@ -281,7 +281,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     plane_node.add_component(plane_material_arc);
                 }
 
-                let instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
+                let instance_id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
 
                 plane_node.write().unwrap().create_default_instance(plane_node.clone(), instance_id, uuid);

@@ -1,4 +1,4 @@
-use crate::state::{state::State, gui::helper::generic_items::modal_with_title};
+use crate::state::{gui::helper::generic_items::modal_with_title, scene::manager::id_manager, state::State};
 
 use super::super::editor_state::EditorState;
 
@@ -73,12 +73,12 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
                     let node = node.read().unwrap();
                     let instance = node.find_instance_by_id(instance_id).unwrap();
                     let mut instance = instance.write().unwrap();
-                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let id = id_manager::get_next_component_id();
                     instance.add_component(component.2(id, editor_state.add_component_name.as_str()));
                 }
                 else
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let id = id_manager::get_next_component_id();
                     node.write().unwrap().add_component(component.2(id, editor_state.add_component_name.as_str()));
                 }
             }

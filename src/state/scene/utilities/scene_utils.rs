@@ -2,10 +2,10 @@
 
 use std::{sync::{RwLock, Arc}, path::Path};
 
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, manager::id_manager, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
@@ -18,11 +18,11 @@ pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, parent_node_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return wavefront::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, parent_node_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return gltf::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
 
     Ok(vec![])
@@ -67,7 +67,7 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
                 }
                 else
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_texture_id();
+                    let id = id_manager::get_next_texture_id();
                     *texture_id_clone.write().unwrap() = Some(id);
                 }
             }
@@ -266,7 +266,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
             let sound_source_bytes = load_binary(path.as_str());
             if let Ok(sound_source_bytes) = sound_source_bytes
             {
-                let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
+                let sound_souce_id = id_manager::get_next_sound_source_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
                 let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, uuid, filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
                 let sound_source_clone = sound_source.clone();
@@ -280,7 +280,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
                 {
                     let mut cube = cube.write().unwrap();
 
-                    let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let sound_id = id_manager::get_next_component_id();
                     let mut sound = Sound::new(sound_id, "m16", sound_source_clone, spund_type, true);
                     sound.start();
 
@@ -291,9 +291,9 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
     });
 }
 
-pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
+pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
 {
-    let animations = load_object(path, scene_id, None, main_queue.clone(), id_manager.clone(), false, true, false, 0);
+    let animations = load_object(path, scene_id, None, main_queue.clone(), false, true, false, 0);
 
     if let Err(animations) = animations
     {
@@ -313,7 +313,7 @@ pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, m
         let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
 
         // copy animations
-        let new_animations = clone_all_animations(retarget_animation.clone().unwrap(), target_animation_node.unwrap(), scene);
+        let new_animations = clone_all_animations(retarget_animation.clone().unwrap(), target_animation_node.unwrap());
 
         // in place joint
         if let Some(in_place_joint) = &in_place_joint
@@ -337,7 +337,7 @@ pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, m
     Ok(true)
 }
 
-pub fn clone_all_animations(from: NodeItem, to: NodeItem, scene: &Scene) -> Vec<ComponentItem>
+pub fn clone_all_animations(from: NodeItem, to: NodeItem) -> Vec<ComponentItem>
 {
     let animations = from.read().unwrap().get_all_animations();
 
@@ -345,7 +345,7 @@ pub fn clone_all_animations(from: NodeItem, to: NodeItem, scene: &Scene) -> Vec<
 
     for animation in animations
     {
-        let cloned_animation = clone_animation(animation.clone(), to.clone(), scene);
+        let cloned_animation = clone_animation(animation.clone(), to.clone());
 
         if let Some(cloned_animation) = cloned_animation
         {
@@ -356,9 +356,9 @@ pub fn clone_all_animations(from: NodeItem, to: NodeItem, scene: &Scene) -> Vec<
     new_animation_components
 }
 
-pub fn clone_animation(animation_component_from: ComponentItem, animation_component_to: NodeItem, scene: &Scene) -> Option<ComponentItem>
+pub fn clone_animation(animation_component_from: ComponentItem, animation_component_to: NodeItem) -> Option<ComponentItem>
 {
-    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+    let component_id = id_manager::get_next_component_id();
     let cloned_animation = animation_component_from.read().unwrap().duplicate(component_id);
     if let Some(cloned_animation) = cloned_animation
     {

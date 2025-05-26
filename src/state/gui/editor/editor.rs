@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -171,9 +171,9 @@ impl Editor
         {
             if self.editor_state.selected_type == SelectionType::Object
             {
-                if let (Some(scene), Some(node), _) = self.editor_state.get_selected_node(state)
+                if let (Some(_scene), Some(node), _) = self.editor_state.get_selected_node(state)
                 {
-                    let new_instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
+                    let new_instance_id = id_manager::get_next_instance_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     node.write().unwrap().create_default_instance(node.clone(), new_instance_id, uuid);
                 }
@@ -292,7 +292,6 @@ impl Editor
                 let grid_amount = self.editor_state.grid_amount;
 
                 let main_queue_clone = state.main_thread_execution_queue.clone();
-                let id_manager_clone = scene.id_manager.clone();
 
                 let mut editor_utils_node_id = None;
                 if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
@@ -302,7 +301,7 @@ impl Editor
 
                 spawn_thread(move ||
                 {
-                    create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                    create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), grid_amount, grid_size);
                 });
 
                 self.editor_state.grid_recreate = false;
@@ -316,7 +315,7 @@ impl Editor
                 let mut transformation = grid.find_component::<Transformation>();
                 if transformation.is_none()
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_component_id();
+                    let id = id_manager::get_next_component_id();
                     grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transform")))));
                     transformation = grid.find_component::<Transformation>();
                 }
@@ -459,7 +458,7 @@ impl Editor
                                     self.editor_state.selected_object = format!("objects_{}", target_animation_node.read().unwrap().id);
                                     self.editor_state.settings = SettingsPanel::Components;
 
-                                    scene_utils::clone_all_animations(node, target_animation_node, scene);
+                                    scene_utils::clone_all_animations(node, target_animation_node);
                                 }
                             }
                         }
@@ -1271,11 +1270,9 @@ impl Editor
 
         let mut scene_id = None;
         let mut editor_utils_node_id = None;
-        let mut id_manager = None;
         for scene in &mut state.scenes
         {
             scene_id = Some(scene.id);
-            id_manager = Some(scene.id_manager.clone());
 
             if self.editor_state.asset_type == AssetType::Scene
             {
@@ -1296,18 +1293,16 @@ impl Editor
         }
 
         let scene_id = scene_id.unwrap();
-        let id_manager = id_manager.unwrap();
 
         let grid_size = self.editor_state.grid_size;
         let grid_amount = self.editor_state.grid_amount;
 
         let main_queue_clone = main_queue.clone();
-        let id_manager_clone = id_manager.clone();
         if self.editor_state.asset_type == AssetType::Scene
         {
             spawn_thread(move ||
             {
-                create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), id_manager_clone.clone(), grid_amount, grid_size);
+                create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), grid_amount, grid_size);
             });
         };
 
@@ -1331,7 +1326,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), id_manager.clone(), reuse_materials, object_only, create_mipmaps, max_tex_res);
+            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), reuse_materials, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
@@ -1377,7 +1372,7 @@ impl Editor
                             }
                         }
 
-                        let component_id = scene.id_manager.write().unwrap().get_next_component_id();
+                        let component_id = id_manager::get_next_component_id();
 
                         let mut transform = Transformation::identity(component_id, "Transform");
                         transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
@@ -1391,8 +1386,8 @@ impl Editor
                 if let Some(train) = scene.find_node_by_name("Train")
                 {
                     let mut node = train.write().unwrap();
-                    let id_1 = scene.id_manager.write().unwrap().get_next_component_id();
-                    let id_2 = scene.id_manager.write().unwrap().get_next_component_id();
+                    let id_1 = scene.id_manager::get_next_component_id();
+                    let id_2 = id_manager::get_next_component_id();
 
                     node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_1, "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
                     node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_2, "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
@@ -1415,7 +1410,7 @@ impl Editor
                 // add light
                 if scene.lights.get_ref().len() == 0
                 {
-                    let light_id = scene.id_manager.write().unwrap().get_next_light_id();
+                    let light_id = id_manager::get_next_light_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     let light = Light::new_point(light_id, uuid, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
@@ -1424,7 +1419,7 @@ impl Editor
                 // add camera
                 if scene.cameras.len() == 0
                 {
-                    let id = scene.id_manager.write().unwrap().get_next_camera_id();
+                    let id = id_manager::get_next_camera_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     let mut cam = Camera::new(id, uuid, "Cam".to_string());
                     let cam_data = cam.get_data_mut().get_mut();

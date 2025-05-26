@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use egui::{Color32, Layout, RichText, Ui};
+use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -151,9 +151,9 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             {
                                 if from_node.read().unwrap().id != target_animation_node.read().unwrap().id
                                 {
-                                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                                     {
-                                        scene_utils::clone_all_animations(from_node.clone(), target_animation_node.clone(), scene);
+                                        scene_utils::clone_all_animations(from_node.clone(), target_animation_node.clone());
                                     }));
                                 }
                             }
@@ -242,9 +242,9 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             ui.close();
 
                             let node_arc = node_arc.clone();
-                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                             {
-                                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                                let id = id_manager::get_next_instance_id();
                                 let uuid = uuid::Uuid::new_v4().to_string();
                                 node_arc.write().unwrap().create_default_instance(node_arc.clone(), id, uuid);
                             }));
@@ -799,8 +799,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
-                let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
+                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
                 node.write().unwrap().create_default_instance(node.clone(), id, uuid);
             }
@@ -966,8 +965,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         return;
     }
 
-    let id_manager = scene.id_manager.clone();
-
     let node = node.unwrap();
 
     // filter
@@ -1068,7 +1065,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         {
                             let component = component.read().unwrap();
 
-                            let id = id_manager.write().unwrap().get_next_component_id();
+                            let id = id_manager::get_next_component_id();
                             duplicate_component = component.duplicate(id);
                         }
                     }
@@ -1221,7 +1218,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                                 {
                                     let component = component.read().unwrap();
 
-                                    let id = id_manager.write().unwrap().get_next_component_id();
+                                    let id = id_manager::get_next_component_id();
                                     duplicate_component = component.duplicate(id);
                                 }
                             }

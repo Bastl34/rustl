@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}, manager::id_manager::IdManagerItem}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
+use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}, manager::id_manager}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -20,7 +20,7 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 
@@ -160,7 +160,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 else
                 {
                     //let component_id = scene.id_manager.get_next_component_id();
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
+                    let component_id = id_manager::get_next_component_id();
                     material_arc = new_component!(Material::new(component_id, ""));
 
                     let mut material_guard = material_arc.write().unwrap();
@@ -355,7 +355,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
             }
             else
             {
-                let material_id = id_manager.write().unwrap().get_next_component_id();
+                let material_id = id_manager::get_next_component_id();
                 material_arc = Arc::new(RwLock::new(Box::new(Material::new(material_id, ""))));
             }
 
@@ -369,10 +369,10 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 normals_indices = indices.clone();
             }
 
-            let component_id = id_manager.write().unwrap().get_next_component_id();
+            let component_id = id_manager::get_next_component_id();
             let item = Mesh::new_with_data(component_id, "mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
-            let id = id_manager.write().unwrap().get_next_node_id();
+            let id = id_manager::get_next_node_id();
             loaded_ids.push(id);
 
             let uuid = uuid::Uuid::new_v4().to_string();
@@ -387,7 +387,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
-                let instance_id = id_manager.write().unwrap().get_next_instance_id();
+                let instance_id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
                 node.create_default_instance(node_arc.clone(), instance_id, uuid);
             }
@@ -396,7 +396,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         }
     }
 
-    let node_id = id_manager.write().unwrap().get_next_node_id();
+    let node_id = id_manager::get_next_node_id();
     loaded_ids.push(node_id);
 
     let uuid = uuid::Uuid::new_v4().to_string();
