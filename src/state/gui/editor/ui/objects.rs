@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, manager::id_manager, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -244,9 +244,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             let node_arc = node_arc.clone();
                             execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                             {
-                                let id = id_manager::get_next_instance_id();
                                 let uuid = uuid::Uuid::new_v4().to_string();
-                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), id, uuid);
+                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), uuid);
                             }));
                         }
 
@@ -799,9 +798,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
-                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                node.write().unwrap().create_default_instance(node.clone(), id, uuid);
+                node.write().unwrap().create_default_instance(node.clone(), uuid);
             }
 
             if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()

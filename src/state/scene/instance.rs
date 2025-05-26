@@ -6,7 +6,7 @@ use nalgebra::{Matrix4, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, helper::change_tracker::ChangeTracker, input::input_manager::InputManager};
 
-use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem}};
+use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -47,11 +47,11 @@ pub struct Instance
 
 impl Instance
 {
-    pub fn new(id: u64, uuid: String, name: String, node: NodeItem) -> Instance
+    pub fn new(uuid: String, name: String, node: NodeItem) -> Instance
     {
         let instance = Instance
         {
-            id,
+            id: id_manager::get_next_instance_id(),
             uuid,
 
             name,
@@ -82,11 +82,11 @@ impl Instance
         instance
     }
 
-    pub fn new_with_transform(id: u64, uuid: String, name: String, node: NodeItem, transform: Transformation) -> Instance
+    pub fn new_with_transform(uuid: String, name: String, node: NodeItem, transform: Transformation) -> Instance
     {
         let mut instance = Instance
         {
-            id,
+            id: id_manager::get_next_instance_id(),
             uuid,
 
             name,

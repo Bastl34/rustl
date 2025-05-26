@@ -9,7 +9,7 @@ use parry3d::query::Ray;
 
 use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::Component, sound::Sound}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
@@ -237,9 +237,8 @@ impl Scene
 
     pub fn add_empty_node(&mut self, name: &str, parent: Option<NodeItem>) -> NodeItem
     {
-        let id = id_manager::get_next_node_id();
         let uuid = uuid::Uuid::new_v4().to_string();
-        let node = Node::new(id, uuid, name);
+        let node = Node::new(uuid, name);
 
         if let Some(parent) = parent
         {
@@ -283,9 +282,8 @@ impl Scene
             return self.textures.get_mut(&hash).unwrap().clone();
         }
 
-        let id = id_manager::get_next_texture_id();
         let uuid = uuid::Uuid::new_v4().to_string();
-        let texture = Texture::new(id, uuid, name, &image_bytes, extension, max_tex_res);
+        let texture = Texture::new(uuid, name, &image_bytes, extension, max_tex_res);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
@@ -304,9 +302,8 @@ impl Scene
             return self.sound_sources.get_mut(&hash).unwrap().clone();
         }
 
-        let id = id_manager::get_next_sound_source_id();
         let uuid = uuid::Uuid::new_v4().to_string();
-        let texture = SoundSource::new(id, uuid, name, self.audio_device.clone(), &sound_bytes, extension);
+        let texture = SoundSource::new(uuid, name, self.audio_device.clone(), &sound_bytes, extension);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
@@ -749,10 +746,9 @@ impl Scene
 
     pub fn add_empty_camera(&mut self, name: &str) -> &CameraItem
     {
-        let id = id_manager::get_next_camera_id();
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        let cam = Camera::new(id, uuid, name.to_string());
+        let cam = Camera::new(uuid, name.to_string());
         self.cameras.push(Box::new(cam));
 
         self.cameras.last().unwrap()
@@ -817,10 +813,9 @@ impl Scene
 
     pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = id_manager::get_next_light_id();
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        let light = Light::new_point(id, uuid, name.to_string(), pos, color, intensity);
+        let light = Light::new_point(uuid, name.to_string(), pos, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -828,10 +823,9 @@ impl Scene
 
     pub fn add_light_directional(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = id_manager::get_next_light_id();
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        let light = Light::new_directional(id, uuid, name.to_string(), pos, dir, color, intensity);
+        let light = Light::new_directional(uuid, name.to_string(), pos, dir, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -839,10 +833,9 @@ impl Scene
 
     pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = id_manager::get_next_light_id();
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        let light = Light::new_spot(id, uuid, name.to_string(), pos, dir, color, max_angle, intensity);
+        let light = Light::new_spot(uuid, name.to_string(), pos, dir, color, max_angle, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -850,10 +843,9 @@ impl Scene
 
     pub fn add_light_hemisperical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = id_manager::get_next_light_id();
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        let light = Light::new_hemi(id, uuid, name.to_string(), dir, color, ground_color, intensity);
+        let light = Light::new_hemi(uuid, name.to_string(), dir, color, ground_color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()

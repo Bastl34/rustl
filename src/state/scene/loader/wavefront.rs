@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}, manager::id_manager}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
+use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -368,12 +368,11 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
             let item = Mesh::new_with_data("mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
-            let node_id: u64 = id_manager::get_next_node_id();
-            loaded_ids.push(node_id);
-
             let uuid = uuid::Uuid::new_v4().to_string();
 
-            let node_arc = Node::new(node_id, uuid, m.name.as_str());
+            let node_arc = Node::new(uuid, m.name.as_str());
+            loaded_ids.push(node_arc.read().unwrap().id);
+
             {
                 let mut node = node_arc.write().unwrap();
                 node.add_component(Arc::new(RwLock::new(Box::new(item))));
@@ -383,20 +382,18 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
-                let instance_id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                node.create_default_instance(node_arc.clone(), instance_id, uuid);
+                node.create_default_instance(node_arc.clone(), uuid);
             }
 
             scene_nodes.push(node_arc)
         }
     }
 
-    let node_id = id_manager::get_next_node_id();
-    loaded_ids.push(node_id);
-
     let uuid = uuid::Uuid::new_v4().to_string();
-    let root_node = Node::new(node_id, uuid, resource_name.as_str());
+    let root_node = Node::new(uuid, resource_name.as_str());
+    loaded_ids.push(root_node.read().unwrap().id);
+
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(path.to_string());
 

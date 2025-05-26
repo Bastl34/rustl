@@ -7,7 +7,7 @@ use parry3d::query::Ray;
 
 use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
 
-use super::{node::NodeItem, camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}};
+use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -111,11 +111,11 @@ pub struct Camera
 
 impl Camera
 {
-    pub fn new(id: u64, uuid: String, name: String) -> Camera
+    pub fn new(uuid: String, name: String) -> Camera
     {
         Camera
         {
-            id,
+            id: id_manager::get_next_camera_id(),
             uuid,
 
             name: name,

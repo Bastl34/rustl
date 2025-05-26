@@ -99,11 +99,11 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     println!("loading scene items...");
 
     // create_root_node
-    let node_id = id_manager::get_next_node_id();
-    loaded_ids.push(node_id);
 
     let uuid = uuid::Uuid::new_v4().to_string();
-    let root_node = Node::new(node_id, uuid, resource_name.as_str());
+    let root_node = Node::new(uuid, resource_name.as_str());
+    loaded_ids.push(root_node.read().unwrap().id);
+
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(path.to_string());
 
@@ -210,7 +210,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     {
         if let Some(light) = node.light()
         {
-            let light_id = id_manager::get_next_light_id();
             let intensity = light.intensity();
             let color = light.color();
             let color = Vector3::<f32>::new(color[0], color[1], color[2]);
@@ -232,7 +231,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
                         let uuid = uuid::Uuid::new_v4().to_string();
-                        let light = Light::new_directional(light_id, uuid, (*name).clone(), pos, dir, color, intensity);
+                        let light = Light::new_directional(uuid, (*name).clone(), pos, dir, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -245,7 +244,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
                         let uuid = uuid::Uuid::new_v4().to_string();
-                        let light = Light::new_point(light_id, uuid, (*name).clone(), pos, color, intensity);
+                        let light = Light::new_point(uuid, (*name).clone(), pos, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -258,7 +257,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
                         let uuid = uuid::Uuid::new_v4().to_string();
-                        let light = Light::new_spot(light_id, uuid, (*name).clone(), pos, dir, color, outer_cone_angle, intensity);
+                        let light = Light::new_spot(uuid, (*name).clone(), pos, dir, color, outer_cone_angle, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -271,7 +270,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     {
         if let Some(camera) = node.camera()
         {
-            let cam_id = id_manager::get_next_camera_id();
             let name = camera.name().unwrap_or("Unnamed Camera").to_string();
             let name = Arc::new(name);
 
@@ -296,7 +294,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
                         let uuid = uuid::Uuid::new_v4().to_string();
-                        let mut cam = Camera::new(cam_id, uuid, (*name).clone());
+                        let mut cam = Camera::new(uuid, (*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
 
                         cam_data.left = -width;
@@ -327,7 +325,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
                         let uuid = uuid::Uuid::new_v4().to_string();
-                        let mut cam = Camera::new(cam_id, uuid, (*name).clone());
+                        let mut cam = Camera::new(uuid, (*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
 
                         cam_data.fovy = yfov;
@@ -584,15 +582,13 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
 
             // node
-            let node_id = id_manager::get_next_node_id();
-
             if primitives_amount > 1
             {
                 mesh_name = format!("{} {} primitive_{}", node_name, mesh_name, primitive_id);
             }
 
             let uuid = uuid::Uuid::new_v4().to_string();
-            let node_arc = Node::new(node_id, uuid, mesh_name.as_str());
+            let node_arc = Node::new(uuid, mesh_name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
 
@@ -623,9 +619,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 }
 
                 // add default instance
-                let instance_id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                scene_node.create_default_instance(node_arc.clone(), instance_id, uuid);
+                scene_node.create_default_instance(node_arc.clone(), uuid);
 
                 // parent
                 scene_node.parent = Some(parent_node.clone());
@@ -655,10 +650,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let name = node.name().unwrap_or("transform node");
             println!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
 
-
-            let node_id = id_manager::get_next_node_id();
             let uuid = uuid::Uuid::new_v4().to_string();
-            let scene_node = Node::new(node_id, uuid, name);
+            let scene_node = Node::new(uuid, name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
             scene_node.write().unwrap().extras.insert("_json_index", node_index);
 

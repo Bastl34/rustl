@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueueItem, math::is_almost_integer}, state::scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, manager::id_manager, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object}}};
+use crate::{component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueueItem, math::is_almost_integer}, state::scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object}}};
 
 use super::helper::set_internal_tag_for_utils_nodes;
 
@@ -84,11 +84,9 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 // x
                 {
-                    let id = id_manager::get_next_instance_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
-                        id,
                         uuid,
                         format!("grid_x_{}", pos),
                         grid_arc.clone()
@@ -109,11 +107,9 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 // y
                 {
-                    let id = id_manager::get_next_instance_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
-                        id,
                         uuid,
                         format!("grid_y_{}", pos),
                         grid_arc.clone()
@@ -174,9 +170,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // x (red)
             {
-                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(id, uuid, "grid_origin_x".to_string(), grid_arc.clone());
+                let mut instance = Instance::new(uuid, "grid_origin_x".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -192,9 +187,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // y (green)
             {
-                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(id, uuid, "grid_origin_y".to_string(), grid_arc.clone());
+                let mut instance = Instance::new(uuid, "grid_origin_y".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -211,9 +205,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // z (blue)
             {
-                let id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(id, uuid, "grid_origin_z".to_string(), grid_arc.clone());
+                let mut instance = Instance::new(uuid, "grid_origin_z".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -265,7 +258,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
             scene.add_material(&plane_material_arc.clone());
 
             let uuid = uuid::Uuid::new_v4().to_string();
-            let plane_node = Node::new(id_manager::get_next_node_id(), uuid, "plane");
+            let plane_node = Node::new(uuid, "plane");
             {
                 {
                     let mut plane_node = plane_node.write().unwrap();
@@ -273,10 +266,9 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     plane_node.add_component(plane_material_arc);
                 }
 
-                let instance_id = id_manager::get_next_instance_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
 
-                plane_node.write().unwrap().create_default_instance(plane_node.clone(), instance_id, uuid);
+                let instance_id = plane_node.write().unwrap().create_default_instance(plane_node.clone(), uuid);
                 plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
             }
 

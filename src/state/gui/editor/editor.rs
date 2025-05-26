@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, manager::id_manager, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -173,9 +173,8 @@ impl Editor
             {
                 if let (Some(_scene), Some(node), _) = self.editor_state.get_selected_node(state)
                 {
-                    let new_instance_id = id_manager::get_next_instance_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
-                    node.write().unwrap().create_default_instance(node.clone(), new_instance_id, uuid);
+                    node.write().unwrap().create_default_instance(node.clone(), uuid);
                 }
             }
         }
@@ -1407,18 +1406,16 @@ impl Editor
                 // add light
                 if scene.lights.get_ref().len() == 0
                 {
-                    let light_id = id_manager::get_next_light_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
-                    let light = Light::new_point(light_id, uuid, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    let light = Light::new_point(uuid, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                 }
 
                 // add camera
                 if scene.cameras.len() == 0
                 {
-                    let id = id_manager::get_next_camera_id();
                     let uuid = uuid::Uuid::new_v4().to_string();
-                    let mut cam = Camera::new(id, uuid, "Cam".to_string());
+                    let mut cam = Camera::new(uuid, "Cam".to_string());
                     let cam_data = cam.get_data_mut().get_mut();
                     cam_data.fovy = 45.0f32.to_radians();
                     cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);

@@ -7,6 +7,8 @@ use nalgebra::{Vector2, Vector4};
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
+use super::manager::id_manager;
+
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
 const PREVIEW_SIZE: u32 = 256;
@@ -133,7 +135,7 @@ impl Texture
 
         Texture
         {
-            id: 0,
+            id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
 
             name: "empty".to_string(),
@@ -146,7 +148,7 @@ impl Texture
         }
     }
 
-    pub fn new(id: u64, uuid: String, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
+    pub fn new(uuid: String, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
     {
         let image;
 
@@ -204,7 +206,7 @@ impl Texture
 
         Texture
         {
-            id,
+            id: id_manager::get_next_texture_id(),
             uuid,
 
             name: name.to_string(),

@@ -33,7 +33,6 @@ use crate::state::scene::components::animation::Animation;
 use crate::state::scene::components::material::Material;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
-use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::Node;
 use crate::state::scene::scene_controller::char_controller::CharacterController;
 use crate::state::scene::utilities::scene_utils::{self, execute_on_scene_mut_and_wait};
@@ -618,11 +617,10 @@ impl MainInterface
                      */
                 }));
 
-                let light_id = id_manager::get_next_light_id();
                 execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
                 {
                     let uuid = uuid::Uuid::new_v4().to_string();
-                    let light = Light::new_point(light_id, uuid, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    let light = Light::new_point(uuid, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
                     scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
@@ -650,9 +648,8 @@ impl MainInterface
                         // add camera
                         if scene.cameras.len() == 0
                         {
-                            let id = id_manager::get_next_camera_id();
                             let uuid = uuid::Uuid::new_v4().to_string();
-                            let mut cam = Camera::new(id, uuid, "Cam".to_string());
+                            let mut cam = Camera::new(uuid, "Cam".to_string());
 
                             cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 

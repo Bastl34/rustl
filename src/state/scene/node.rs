@@ -8,7 +8,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::{extras::Extras, tags::Tags}};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -71,11 +71,11 @@ pub struct Node
 
 impl Node
 {
-    pub fn new(id: u64, uuid: String, name: &str) -> NodeItem
+    pub fn new(uuid: String, name: &str) -> NodeItem
     {
         let node = Self
         {
-            id: id,
+            id: id_manager::get_next_node_id(),
             uuid,
 
             source: None,
@@ -1289,17 +1289,20 @@ impl Node
         !is_not_empty
     }
 
-    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64, uuid: String)
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem, uuid: String) -> u64
     {
         let instance = Instance::new
         (
-            instance_id,
             uuid,
             "instance".to_string(),
             self_node_item
         );
 
+        let instance_id = instance.id;
+
         self.add_instance(Box::new(instance));
+
+        instance_id
     }
 
     pub fn add_instance(&mut self, instance: InstanceItem)
@@ -1473,18 +1476,16 @@ impl Node
         }
 
         // clear and create new single instance
-        let instance_id;
         let node;
         {
             let first_instance = self.instances.get_ref().first().unwrap();
             let first_instance = first_instance.read().unwrap();
 
-            instance_id = first_instance.id;
             node = first_instance.node.clone();
         }
 
         self.clear_instances();
-        self.create_default_instance(node, instance_id, uuid::Uuid::new_v4().to_string());
+        self.create_default_instance(node, uuid::Uuid::new_v4().to_string());
 
         true
     }

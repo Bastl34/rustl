@@ -2,7 +2,7 @@
 
 use std::{sync::{RwLock, Arc}, path::Path};
 
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, manager::id_manager, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -45,9 +45,6 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
     let res_texture: Arc<RwLock<Option<TextureItem>>> = Arc::new(RwLock::new(None));
     let res_texture_clone = res_texture.clone();
 
-    let texture_id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let texture_id_clone = texture_id.clone();
-
     let scene_id_clone = scene_id.clone();
 
     let res;
@@ -65,11 +62,6 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
 
                     *res_texture_clone.write().unwrap() = Some(scene.textures.get_mut(&hash_clone).unwrap().clone());
                 }
-                else
-                {
-                    let id = id_manager::get_next_texture_id();
-                    *texture_id_clone.write().unwrap() = Some(id);
-                }
             }
         }))
     }
@@ -82,7 +74,7 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
 
     // ***** if not found -> load *****
     let uuid = uuid::Uuid::new_v4().to_string();
-    let texture = Texture::new(texture_id.read().unwrap().unwrap(), uuid, name, &image_bytes, extension, max_tex_res);
+    let texture = Texture::new(uuid, name, &image_bytes, extension, max_tex_res);
     let arc = Arc::new(RwLock::new(Box::new(texture)));
 
     // ***** add to scene textures *****
@@ -266,9 +258,8 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
             let sound_source_bytes = load_binary(path.as_str());
             if let Ok(sound_source_bytes) = sound_source_bytes
             {
-                let sound_souce_id = id_manager::get_next_sound_source_id();
                 let uuid = uuid::Uuid::new_v4().to_string();
-                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, uuid, filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
+                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(uuid, filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
                 let sound_source_clone = sound_source.clone();
 
                 let hash = sound_source.read().unwrap().hash.clone();
