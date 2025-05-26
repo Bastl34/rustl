@@ -482,18 +482,18 @@ impl Scene
         Self::clear_empty_nodes_recursive(&mut self.nodes);
     }
 
-    pub fn add_material(&mut self, id: u64, material: &MaterialItem)
+    pub fn add_material(&mut self, material: &MaterialItem)
     {
+        let id = material.read().unwrap().get_base().id;
         self.materials.insert(id, material.clone());
     }
 
     pub fn add_default_material(&mut self)
     {
-        let material_id =id_manager::get_next_component_id();
-        let material = Material::new(material_id, "default");
+        let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
-        self.add_material(material_id, &material_arc);
+        self.add_material(&material_arc);
     }
 
     pub fn get_default_material(&self) -> Option<MaterialItem>

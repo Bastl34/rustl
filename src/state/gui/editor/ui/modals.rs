@@ -1,4 +1,4 @@
-use crate::state::{gui::helper::generic_items::modal_with_title, scene::manager::id_manager, state::State};
+use crate::state::{gui::helper::generic_items::modal_with_title, state::State};
 
 use super::super::editor_state::EditorState;
 
@@ -62,24 +62,21 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
 
             if let (Some(scene_id), Some(node_id)) = (editor_state.selected_scene_id, node_id)
             {
-                let component = state.registered_components.get(editor_state.add_component_id).unwrap().clone();
+                let (_component_name, _component_instantiable, component_func) = state.registered_components.get(editor_state.add_component_id).unwrap().clone();
 
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
                 let node = scene.find_node_by_id(node_id).unwrap();
-
 
                 if let Some(instance_id) = instance_id
                 {
                     let node = node.read().unwrap();
                     let instance = node.find_instance_by_id(instance_id).unwrap();
                     let mut instance = instance.write().unwrap();
-                    let id = id_manager::get_next_component_id();
-                    instance.add_component(component.2(id, editor_state.add_component_name.as_str()));
+                    instance.add_component(component_func(editor_state.add_component_name.as_str()));
                 }
                 else
                 {
-                    let id = id_manager::get_next_component_id();
-                    node.write().unwrap().add_component(component.2(id, editor_state.add_component_name.as_str()));
+                    node.write().unwrap().add_component(component_func(editor_state.add_component_name.as_str()));
                 }
             }
 

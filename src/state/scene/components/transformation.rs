@@ -42,7 +42,7 @@ pub struct Transformation
 
 impl Transformation
 {
-    pub fn new(id: u64, name: &str, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
+    pub fn new(name: &str, position: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> Transformation
     {
         let data = TransformationData
         {
@@ -68,7 +68,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -81,7 +81,7 @@ impl Transformation
         transform
     }
 
-    pub fn new_transformation_only(id: u64, name: &str, trans: Matrix4::<f32>) -> Transformation
+    pub fn new_transformation_only(name: &str, trans: Matrix4::<f32>) -> Transformation
     {
         let data = TransformationData
         {
@@ -106,7 +106,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -119,7 +119,7 @@ impl Transformation
         transform
     }
 
-    pub fn identity(id: u64, name: &str) -> Transformation
+    pub fn identity(name: &str) -> Transformation
     {
         let data = TransformationData
         {
@@ -144,7 +144,7 @@ impl Transformation
 
         let mut transform = Transformation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
+            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Transformation".to_string(), "📌".to_string()),
             data: ChangeTracker::new(data),
 
             ui_lock_translation: false,
@@ -749,7 +749,7 @@ impl Component for Transformation
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         None
     }

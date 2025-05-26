@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, manager::id_manager, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
 
 use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
@@ -82,8 +82,7 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
                     {
                         if node.read().unwrap().find_component::<Transformation>().is_none()
                         {
-                            let component_id = id_manager::get_next_component_id();
-                            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(component_id, "Transform")))));
+                            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transform")))));
                         }
 
                         node.write().unwrap().visible = false;

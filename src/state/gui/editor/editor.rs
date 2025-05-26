@@ -315,8 +315,7 @@ impl Editor
                 let mut transformation = grid.find_component::<Transformation>();
                 if transformation.is_none()
                 {
-                    let id = id_manager::get_next_component_id();
-                    grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transform")))));
+                    grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transform")))));
                     transformation = grid.find_component::<Transformation>();
                 }
 
@@ -1372,9 +1371,7 @@ impl Editor
                             }
                         }
 
-                        let component_id = id_manager::get_next_component_id();
-
-                        let mut transform = Transformation::identity(component_id, "Transform");
+                        let mut transform = Transformation::identity("Transform");
                         transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
 
                         root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));

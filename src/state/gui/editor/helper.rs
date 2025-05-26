@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Vector3, Vector4};
 
-use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, manager::id_manager, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::State};
+use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::State};
 
 use super::editor_state::EditorState;
 
@@ -199,9 +199,8 @@ pub fn find_transform_component(editor_state: &mut EditorState, state: &mut Stat
             let node = node.read().unwrap();
             let instance = node.find_instance_by_id(instance_id).unwrap() ;
             let mut instance = instance.write().unwrap();
-            let id = id_manager::get_next_component_id();
 
-            instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+            instance.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transformation")))));
 
             let transformation = instance.find_component::<Transformation>().unwrap();
             edit_transformation = transformation.clone();
@@ -222,9 +221,8 @@ pub fn find_transform_component(editor_state: &mut EditorState, state: &mut Stat
         else
         {
             let mut node = node.write().unwrap();
-            let id = id_manager::get_next_component_id();
 
-            node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity(id, "Transformation")))));
+            node.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transformation")))));
 
             let transformation = node.find_component::<Transformation>().unwrap();
             edit_transformation = transformation.clone();

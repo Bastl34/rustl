@@ -20,7 +20,7 @@ pub struct Alpha
 
 impl Alpha
 {
-    pub fn new(id: u64, name: &str, alpha: f32) -> Alpha
+    pub fn new(name: &str, alpha: f32) -> Alpha
     {
         let data = AlphaData
         {
@@ -30,7 +30,7 @@ impl Alpha
 
         let alpha = Alpha
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Alpha".to_string(), "🌖".to_string()),
+            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Alpha".to_string(), "🌖".to_string()),
             data: ChangeTracker::new(data)
         };
 
@@ -90,7 +90,7 @@ impl Component for Alpha
         }
     }
 
-    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         let source = self.as_any().downcast_ref::<Alpha>();
 
@@ -103,7 +103,7 @@ impl Component for Alpha
 
         let mut alpha = Alpha
         {
-            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+            base: ComponentBase::duplicate(source.get_base()),
 
             data: ChangeTracker::new(source.get_data().clone()),
         };

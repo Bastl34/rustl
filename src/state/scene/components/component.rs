@@ -6,6 +6,7 @@ use std::any::Any;
 
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
@@ -30,7 +31,7 @@ pub trait Component: Any
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
     fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
-    fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>;
+    fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
 
     fn set_enabled(&mut self, state: bool);
@@ -86,11 +87,11 @@ pub struct ComponentBase
 
 impl ComponentBase
 {
-    pub fn new(id: u64, uuid: String, name: String, component_name: String, icon: String) -> ComponentBase
+    pub fn new(uuid: String, name: String, component_name: String, icon: String) -> ComponentBase
     {
         ComponentBase
         {
-            id,
+            id: id_manager::get_next_component_id(),
             uuid,
             is_enabled: true,
 
@@ -110,11 +111,11 @@ impl ComponentBase
         }
     }
 
-    pub fn duplicate(id: u64, from: &ComponentBase) -> ComponentBase
+    pub fn duplicate(from: &ComponentBase) -> ComponentBase
     {
         ComponentBase
         {
-            id,
+            id: id_manager::get_next_component_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
 
             is_enabled: from.is_enabled,

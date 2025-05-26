@@ -159,9 +159,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 }
                 else
                 {
-                    //let component_id = scene.id_manager.get_next_component_id();
-                    let component_id = id_manager::get_next_component_id();
-                    material_arc = new_component!(Material::new(component_id, ""));
+                    material_arc = new_component!(Material::new(""));
 
                     let mut material_guard = material_arc.write().unwrap();
                     let any = material_guard.as_any_mut();
@@ -348,15 +346,14 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                     let material_arc_clone = material_arc.clone();
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        scene.add_material(component_id, &material_arc_clone);
+                        scene.add_material(&material_arc_clone);
                     }));
                     double_check_materials.push((wavefront_mat_id, material_arc.clone()));
                 }
             }
             else
             {
-                let material_id = id_manager::get_next_component_id();
-                material_arc = Arc::new(RwLock::new(Box::new(Material::new(material_id, ""))));
+                material_arc = Arc::new(RwLock::new(Box::new(Material::new(""))));
             }
 
             if uvs.len() > 0 && uv_indices.len() == 0
@@ -369,15 +366,14 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 normals_indices = indices.clone();
             }
 
-            let component_id = id_manager::get_next_component_id();
-            let item = Mesh::new_with_data(component_id, "mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
+            let item = Mesh::new_with_data("mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
-            let id = id_manager::get_next_node_id();
-            loaded_ids.push(id);
+            let node_id: u64 = id_manager::get_next_node_id();
+            loaded_ids.push(node_id);
 
             let uuid = uuid::Uuid::new_v4().to_string();
 
-            let node_arc = Node::new(id, uuid, m.name.as_str());
+            let node_arc = Node::new(node_id, uuid, m.name.as_str());
             {
                 let mut node = node_arc.write().unwrap();
                 node.add_component(Arc::new(RwLock::new(Box::new(item))));

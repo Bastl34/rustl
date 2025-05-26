@@ -20,11 +20,11 @@ pub struct AnimationBlending
 
 impl AnimationBlending
 {
-    pub fn new(id: u64, name: &str, from: Option<u64>, to: Option<u64>, speed: f32) -> AnimationBlending
+    pub fn new(name: &str, from: Option<u64>, to: Option<u64>, speed: f32) -> AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
 
             from,
             to,
@@ -37,11 +37,11 @@ impl AnimationBlending
         animation_blending
     }
 
-    pub fn new_empty(id: u64, name: &str) -> AnimationBlending
+    pub fn new_empty(name: &str) -> AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
 
             from: None,
             to: None,
@@ -79,7 +79,7 @@ impl Component for AnimationBlending
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         None
     }

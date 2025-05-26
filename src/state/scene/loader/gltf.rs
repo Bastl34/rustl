@@ -85,15 +85,10 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
             let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, max_texture_resolution, resource_name.clone().clone());
             let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
 
-            let id;
-            {
-                id = material_arc.read().unwrap().id();
-            }
-
             let material_arc_clone = material_arc.clone();
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
             {
-                scene.add_material(id, &material_arc_clone);
+                scene.add_material(&material_arc_clone);
             }));
 
             loaded_materials.insert(gltf_material_index, material_arc);
@@ -513,8 +508,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut components: Vec<ComponentItem> = vec![];
 
             // mesh component
-            let component_id = id_manager::get_next_component_id();
-            let mut mesh_component: Mesh = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
+            let mut mesh_component: Mesh = Mesh::new_with_data("Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
             mesh_component.get_data_mut().get_mut().uvs_1 = uvs2;
             mesh_component.get_data_mut().get_mut().uvs_2 = uvs3;
             mesh_component.get_data_mut().get_mut().uvs_3 = uvs4;
@@ -575,9 +569,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let name = format!("Morph Target {}", i);
                     let name = target_names.get(i).unwrap_or(&name);
 
-                    let component_id = id_manager::get_next_component_id();
                     //let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
-                    let morph_target = MorphTarget::new(component_id, name, i as u32);
+                    let morph_target = MorphTarget::new(name, i as u32);
 
                     let mesh_component_data = mesh_component.get_data_mut().get_mut();
                     mesh_component_data.morph_target_positions.push(target.0.clone());
@@ -591,7 +584,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
 
             // node
-            let id = id_manager::get_next_node_id();
+            let node_id = id_manager::get_next_node_id();
 
             if primitives_amount > 1
             {
@@ -599,7 +592,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             }
 
             let uuid = uuid::Uuid::new_v4().to_string();
-            let node_arc = Node::new(id, uuid, mesh_name.as_str());
+            let node_arc = Node::new(node_id, uuid, mesh_name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
 
@@ -620,8 +613,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 // transformation
                 if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
                 {
-                    let component_id = id_manager::get_next_component_id();
-                    scene_node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                    scene_node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new("Transform", translate, rotation, scale)))));
                 }
 
                 // add skeleton/skin if needed
@@ -673,8 +665,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             // add transformation
             if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
             {
-                let component_id = id_manager::get_next_component_id();
-                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new("Transform", translate, rotation, scale)))));
             }
 
             // extras
@@ -746,8 +737,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
     for animation in animations
     {
         // create animation component
-        let component_id = id_manager::get_next_component_id();
-        let mut animation_component: Animation = Animation::new(component_id, animation.name().unwrap_or("Animation"));
+        let mut animation_component: Animation = Animation::new(animation.name().unwrap_or("Animation"));
 
         let mut duration: f32 = 0.0;
 
@@ -942,8 +932,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                     {
                         if node.find_component::<Joint>().is_none()
                         {
-                            let component_id = id_manager::get_next_component_id();
-                            let mut joint = Joint::new(component_id, "Joint");
+                            let mut joint = Joint::new("Joint");
                             joint.get_data_mut().get_mut().inverse_bind_trans = inverse_bind_matrix.clone();
 
                             node.add_component(Arc::new(RwLock::new(Box::new(joint))));
@@ -1055,8 +1044,7 @@ fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
                 if target.read().unwrap().find_component::<Joint>().is_none() && target.read().unwrap().find_component::<Transformation>().is_none()
                 //if target.read().unwrap().find_component::<Transformation>().is_none()
                 {
-                    let component_id = id_manager::get_next_component_id();
-                    let transformation: Transformation = Transformation::identity(component_id, "Animation Transformation");
+                    let transformation: Transformation = Transformation::identity("Animation Transformation");
 
                     target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 }
@@ -1236,9 +1224,7 @@ fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_tex
 
 pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_queue: ExecutionQueueItem, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool, max_texture_resolution: u32, resource_name: String) -> Material
 {
-    let component_id: u64 = id_manager::get_next_component_id();
-
-    let mut material = Material::new(component_id, gltf_material.name().unwrap_or("unknown"));
+    let mut material = Material::new(gltf_material.name().unwrap_or("unknown"));
     let material_name = material.get_base().name.clone();
     let data = material.get_data_mut().get_mut();
 

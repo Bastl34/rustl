@@ -280,8 +280,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
                 {
                     let mut cube = cube.write().unwrap();
 
-                    let sound_id = id_manager::get_next_component_id();
-                    let mut sound = Sound::new(sound_id, "m16", sound_source_clone, spund_type, true);
+                    let mut sound = Sound::new("m16", sound_source_clone, spund_type, true);
                     sound.start();
 
                     cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
@@ -358,8 +357,7 @@ pub fn clone_all_animations(from: NodeItem, to: NodeItem) -> Vec<ComponentItem>
 
 pub fn clone_animation(animation_component_from: ComponentItem, animation_component_to: NodeItem) -> Option<ComponentItem>
 {
-    let component_id = id_manager::get_next_component_id();
-    let cloned_animation = animation_component_from.read().unwrap().duplicate(component_id);
+    let cloned_animation = animation_component_from.read().unwrap().duplicate();
     if let Some(cloned_animation) = cloned_animation
     {
         let mut target_node = animation_component_to.write().unwrap();

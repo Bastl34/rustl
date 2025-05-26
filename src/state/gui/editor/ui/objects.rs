@@ -1065,8 +1065,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         {
                             let component = component.read().unwrap();
 
-                            let id = id_manager::get_next_component_id();
-                            duplicate_component = component.duplicate(id);
+                            duplicate_component = component.duplicate();
                         }
                     }
 
@@ -1218,8 +1217,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                                 {
                                     let component = component.read().unwrap();
 
-                                    let id = id_manager::get_next_component_id();
-                                    duplicate_component = component.duplicate(id);
+                                    duplicate_component = component.duplicate();
                                 }
                             }
 

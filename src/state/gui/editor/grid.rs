@@ -97,8 +97,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     let z_pos = pos as f32 * spacing;
                     let scale = if is_almost_integer(z_pos) { integer_grid_line_scale } else { 1.0 };
 
-                    let component_id = id_manager::get_next_component_id();
-                    let mut transformation = Transformation::identity(component_id, "Transform");
+                    let mut transformation = Transformation::identity("Transform");
                     transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, z_pos));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
 
@@ -123,8 +122,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     let x_pos = pos as f32 * spacing;
                     let scale = if is_almost_integer(x_pos) { integer_grid_line_scale } else { 1.0 };
 
-                    let component_id = id_manager::get_next_component_id();
-                    let mut transformation = Transformation::identity(component_id, "Transform");
+                    let mut transformation = Transformation::identity("Transform");
                     transformation.apply_translation(Vector3::<f32>::new(x_pos, 0.0, 0.0));
                     transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
                     transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
@@ -182,8 +180,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 let scale = grid_origin_line_scale;
 
-                let component_id = id_manager::get_next_component_id();
-                let mut transformation = Transformation::identity(component_id, "Transform");
+                let mut transformation = Transformation::identity("Transform");
                 transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 instance.get_data_mut().get_mut().color = Vector4::<f32>::new(1.0, 0.0, 0.0, 1.0);
@@ -201,8 +198,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 let scale = grid_origin_line_scale;
 
-                let component_id = id_manager::get_next_component_id();
-                let mut transformation = Transformation::identity(component_id, "Transform");
+                let mut transformation = Transformation::identity("Transform");
                 transformation.apply_rotation(Vector3::<f32>::new(0.0, 0.0, PI / 2.0));
                 transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
@@ -221,8 +217,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 let scale = grid_origin_line_scale;
 
-                let component_id = id_manager::get_next_component_id();
-                let mut transformation = Transformation::identity(component_id, "Transform");
+                let mut transformation = Transformation::identity("Transform");
                 transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
                 transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
                 instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
@@ -251,9 +246,6 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
         // ********** create plane **********
         if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
         {
-            let mesh_component_id = id_manager::get_next_component_id();
-            let material_id = id_manager::get_next_component_id();
-
             let half_size = size / 2.0;
 
             let p0 = Point3::<f32>::new(-half_size, -0.001, half_size);
@@ -261,16 +253,16 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
             let p2 = Point3::<f32>::new(half_size, -0.001, -half_size);
             let p3 = Point3::<f32>::new(-half_size, -0.001, -half_size);
 
-            let plane_mesh = Mesh::new_plane(mesh_component_id, "grid plane mesh", p0, p1, p2, p3);
+            let plane_mesh = Mesh::new_plane("grid plane mesh", p0, p1, p2, p3);
 
-            let mut plane_material = Material::new(material_id, "grid plane material");
+            let mut plane_material = Material::new("grid plane material");
             plane_material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.005, 0.005, 0.02);
             plane_material.get_data_mut().get_mut().alpha = 0.5;
             plane_material.get_data_mut().get_mut().unlit_shading = true;
 
             let plane_material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(plane_material)));
 
-            scene.add_material(material_id, &plane_material_arc.clone());
+            scene.add_material(&plane_material_arc.clone());
 
             let uuid = uuid::Uuid::new_v4().to_string();
             let plane_node = Node::new(id_manager::get_next_node_id(), uuid, "plane");

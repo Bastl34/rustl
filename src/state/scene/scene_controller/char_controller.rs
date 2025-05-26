@@ -5,7 +5,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, manager::id_manager, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::get_delta_t}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::get_delta_t}};
 
 use super::scene_controller::SceneController;
 
@@ -271,8 +271,7 @@ impl CharacterController
 
                 if self.animation_blending.is_none()
                 {
-                    let component_id = id_manager::get_next_component_id();
-                    let animation_blending = AnimationBlending::new_empty(component_id, "Animation Blending");
+                    let animation_blending = AnimationBlending::new_empty("Animation Blending");
                     animation_node.write().unwrap().add_component_front(Arc::new(RwLock::new(Box::new(animation_blending))));
 
                     self.animation_blending = animation_node.read().unwrap().find_component::<AnimationBlending>();
@@ -315,8 +314,7 @@ impl CharacterController
 
             if node.find_component::<Transformation>().is_none()
             {
-                let component_id = id_manager::get_next_component_id();
-                let component = Transformation::identity(component_id, "Transformation");
+                let component = Transformation::identity("Transformation");
                 node.add_component(Arc::new(RwLock::new(Box::new(component))));
             }
             {
