@@ -558,6 +558,34 @@ impl Node
         }
     }
 
+    pub fn set_highlighted(&mut self, highlight: bool)
+    {
+        let all_childs = Scene::list_all_child_nodes(&self.nodes);
+        for child_node in all_childs
+        {
+            let child_node = child_node.write().unwrap();
+
+            for instance in child_node.instances.get_ref()
+            {
+                let mut instance = instance.write().unwrap();
+                if instance.get_data().highlight != highlight
+                {
+                    instance.get_data_mut().get_mut().highlight = highlight;
+                }
+            }
+        }
+
+        // self
+        for instance in self.instances.get_ref()
+        {
+            let mut instance = instance.write().unwrap();
+            if instance.get_data().highlight != highlight
+            {
+                instance.get_data_mut().get_mut().highlight = highlight;
+            }
+        }
+    }
+
     pub fn has_changed_instance_data(&self) -> bool
     {
         for instance in self.instances.get_ref()

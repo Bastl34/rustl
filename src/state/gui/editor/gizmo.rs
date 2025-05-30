@@ -4,7 +4,7 @@ use nalgebra::{Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
 
-use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
+use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick, pick_node, set_internal_tag_for_utils_nodes}};
 
 const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_CLAMP: f32 = 10.0;
@@ -108,6 +108,7 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
 
                         material.get_data_mut().get_mut().alpha = 0.8;
                         material.get_data_mut().get_mut().blend_mode = BlendMode::Blend;
+                        material.get_data_mut().get_mut().highlight_color = Vector3::new(1.0, 1.0, 1.0);
                     }
                 }
             }
@@ -169,16 +170,8 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
         }
     }
 
-    // pointer position
-    let mut pointer_pos = state.input_manager.mouse.point.pos;
-    let mut pointer_pos_last = state.input_manager.mouse.point.last_pos;
-
-    if let Some(touch) = state.input_manager.touch.get_first_touch()
-    {
-        pointer_pos = touch.pos;
-        pointer_pos_last = touch.last_pos;
-    }
-
+    let pointer_pos = state.input_manager.get_pointer_input().pos;
+    let pointer_pos_last = state.input_manager.get_pointer_input().last_pos;
     if pointer_pos.is_none() || pointer_pos_last.is_none()
     {
         return;
@@ -196,19 +189,22 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
         }
     }
 
-    update_position_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state);
-    update_rotation_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state);
-    update_scale_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state);
+    let mut updated = false;
+    updated = update_position_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
+    updated = update_rotation_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
+    updated = update_scale_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
 
     move_gizmos(editor_state, state);
+
+    hover_gizmos(pointer_pos, editor_state, state, updated);
 }
 
 
-pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State)
+pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
 {
     if !editor_state.gizmo_position
     {
-        return;
+        return false;
     }
 
     let width = state.width;
@@ -223,7 +219,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
 
     if gizmo_position.is_none()
     {
-        return;
+        return false;
     }
     let gizmo_position = gizmo_position.unwrap();
 
@@ -231,9 +227,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
     // set gizmo state based on axis
     if first_action && editor_state.selected_gizmo.is_none()
     {
-        gizmo_position.write().unwrap().set_pickable(true);
-
-        let pick_res = pick_node(state, gizmo_position.clone(), state.input_manager.mouse.point.pos.unwrap());
+        let pick_res = pick_node(state, gizmo_position.clone(), state.input_manager.mouse.point.pos.unwrap(), false, true);
         if let Some((_, pick_res)) = pick_res
         {
             let axis = pick_res.node.read().unwrap().name.clone();
@@ -249,9 +243,10 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
             };
         }
 
-        gizmo_position.write().unwrap().set_pickable(false);
         editor_state.selected_object_gizmo_value = None;
     }
+
+    let mut updated = false;
 
     // ********** move object **********
     if input_active && editor_state.selected_gizmo.is_some()
@@ -414,17 +409,21 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                             edit_transformation.apply_translation(delta);
                         }
                     }
+
+                    updated = true;
                 }
             }
         }
     }
+
+    updated
 }
 
-pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State)
+pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
 {
     if !editor_state.gizmo_rotation
     {
-        return;
+        return false;
     }
 
     let width = state.width;
@@ -440,7 +439,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
 
     if gizmo_rotation.is_none()
     {
-        return;
+        return false;
     }
     let gizmo_rotation = gizmo_rotation.unwrap();
 
@@ -449,9 +448,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
     // set gizmo state based on axis
     if first_action && editor_state.selected_gizmo.is_none()
     {
-        gizmo_rotation.write().unwrap().set_pickable(true);
-
-        let pick_res = pick_node(state, gizmo_rotation.clone(), state.input_manager.mouse.point.pos.unwrap());
+        let pick_res = pick_node(state, gizmo_rotation.clone(), state.input_manager.mouse.point.pos.unwrap(), false, true);
         if let Some((_, pick_res)) = pick_res
         {
             let axis = pick_res.node.read().unwrap().name.clone();
@@ -464,9 +461,10 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
             };
         }
 
-        gizmo_rotation.write().unwrap().set_pickable(false);
         editor_state.selected_object_gizmo_value = None;
     }
+
+    let mut updated = false;
 
     // ********** rotate object **********
     if input_active && editor_state.selected_gizmo.is_some()
@@ -589,17 +587,21 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
 
                         edit_transformation.calc_transform();
                     }
+
+                    updated = true;
                 }
             }
         }
     }
+
+    updated
 }
 
-pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State)
+pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
 {
     if !editor_state.gizmo_scale
     {
-        return;
+        return false;
     }
 
     let width = state.width;
@@ -615,7 +617,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
 
     if gizmo_scale.is_none()
     {
-        return;
+        return false;
     }
     let gizmo_scale = gizmo_scale.unwrap();
 
@@ -623,9 +625,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
     // set gizmo state based on axis
     if first_action && editor_state.selected_gizmo.is_none()
     {
-        gizmo_scale.write().unwrap().set_pickable(true);
-
-        let pick_res = pick_node(state, gizmo_scale.clone(), state.input_manager.mouse.point.pos.unwrap());
+        let pick_res = pick_node(state, gizmo_scale.clone(), state.input_manager.mouse.point.pos.unwrap(), false, true);
         if let Some((_, pick_res)) = pick_res
         {
             let axis = pick_res.node.read().unwrap().name.clone();
@@ -639,9 +639,10 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
             };
         }
 
-        gizmo_scale.write().unwrap().set_pickable(false);
         editor_state.selected_object_gizmo_value = None;
     }
+
+    let mut updated = false;
 
     // ********** move object **********
     if input_active && editor_state.selected_gizmo.is_some()
@@ -788,10 +789,14 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
                         component_downcast_mut!(edit_transformation, Transformation);
                         edit_transformation.set_scale(scale_vec);
                     }
+
+                    updated = true;
                 }
             }
         }
     }
+
+    updated
 }
 
 pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
@@ -849,6 +854,55 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
             component_downcast_mut!(transform_component, Transformation);
             transform_component.set_translation(pos);
             transform_component.set_rotation(world_rotatio_only);
+        }
+    }
+}
+
+pub fn hover_gizmos(pointer_pos: Point2<f32>, editor_state: &mut EditorState, state: &mut State, gizmo_transform_updated: bool)
+{
+    let gizmos = vec!
+    [
+        ("gizmo_position", editor_state.gizmo_position),
+        ("gizmo_rotation", editor_state.gizmo_rotation),
+        ("gizmo_scale", editor_state.gizmo_scale)
+    ];
+
+    for (gizmo_name, gizmo_enabled) in gizmos
+    {
+        if !gizmo_enabled
+        {
+            continue;
+        }
+
+        let gizmo_node;
+        {
+            let scene = editor_state.get_selected_scene(state);
+            if let Some(scene) = scene
+            {
+                gizmo_node = scene.find_node_by_name(gizmo_name);
+            }
+            else
+            {
+                gizmo_node = None;
+            }
+        }
+
+        if let Some(gizmo_node) = gizmo_node
+        {
+            // reset
+            if !gizmo_transform_updated
+            {
+                gizmo_node.write().unwrap().set_highlighted(false);
+            }
+
+            if !state.input_manager.is_main_pointer_action_active()
+            {
+                if let Some((_scene_id, pick_res)) = pick_node(state, gizmo_node, pointer_pos, false, true)
+                {
+                    let mut node = pick_res.node.write().unwrap();
+                    node.set_highlighted(true);
+                }
+            }
         }
     }
 }

@@ -2,9 +2,9 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, helper::{concurrency::execution_queue::ExecutionQueueItem, math::is_almost_integer}, state::scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object}}};
+use crate::{component_downcast_mut, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}}, input::keyboard::Key, state::{scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object}}, state::State}};
 
-use super::helper::set_internal_tag_for_utils_nodes;
+use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
@@ -278,4 +278,112 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
         // run internal tagging
         set_internal_tag_for_utils_nodes(scene);
     }));
+}
+
+pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
+{
+    let grid_size = editor_state.grid_size;
+
+    // create instance
+    let move_up = state.input_manager.keyboard.is_pressed(Key::Plus);
+    let move_down = state.input_manager.keyboard.is_pressed(Key::Minus);
+
+    let mut move_grid_y_to = None;
+
+    if state.input_manager.keyboard.is_pressed(Key::Numpad8)
+    {
+        if let (Some(_), Some(node), instance_id) = editor_state.get_selected_node(state)
+        {
+            let node = node.read().unwrap();
+            if let Some(bbox) = node.get_world_bounding_info(instance_id, true, None)
+            {
+                move_grid_y_to = Some(bbox.1.y);
+            }
+        }
+    }
+    else if state.input_manager.keyboard.is_pressed(Key::Numpad2)
+    {
+        if let (Some(_), Some(node), instance_id) = editor_state.get_selected_node(state)
+        {
+            let node = node.read().unwrap();
+            if let Some(bbox) = node.get_world_bounding_info(instance_id, true, None)
+            {
+                move_grid_y_to = Some(bbox.0.y);
+            }
+        }
+    }
+    else if state.input_manager.keyboard.is_pressed(Key::Numpad0)
+    {
+        move_grid_y_to = Some(0.0);
+    }
+
+    for scene in &mut state.scenes
+    {
+        let scene_id = scene.id;
+
+        let grid = scene.find_node_by_name("grid");
+
+        // recreate grid
+        if grid.is_some() && editor_state.grid_recreate
+        {
+            // delete first
+            scene.delete_node_by_name("grid origin", true, true);
+            scene.delete_node_by_name("grid", true, true);
+
+            let grid_size = editor_state.grid_size;
+            let grid_amount = editor_state.grid_amount;
+
+            let main_queue_clone = state.main_thread_execution_queue.clone();
+
+            let mut editor_utils_node_id = None;
+            if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
+            {
+                editor_utils_node_id = Some(editor_utils_node.read().unwrap().id);
+            }
+
+            spawn_thread(move ||
+            {
+                create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), grid_amount, grid_size);
+            });
+
+            editor_state.grid_recreate = false;
+        }
+
+        // update grid position
+        if let Some(grid) = grid
+        {
+            let mut grid = grid.write().unwrap();
+
+            let mut transformation = grid.find_component::<Transformation>();
+            if transformation.is_none()
+            {
+                grid.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transform")))));
+                transformation = grid.find_component::<Transformation>();
+            }
+
+            let camera = scene.get_active_camera();
+            if let Some(camera) = camera
+            {
+                let camera_data = camera.get_data();
+
+                let pos = &camera_data.eye_pos;
+                let mut pos = Vector3::<f32>::new(pos.x.round(), 0.0, pos.z.round());
+                pos = snap_to_grid_vec3(pos, grid_size);
+
+                let transformation = transformation.unwrap();
+                component_downcast_mut!(transformation, Transformation);
+
+                pos.y = transformation.get_data().position.y;
+
+                if let Some(move_grid_y_to) = move_grid_y_to { pos.y = move_grid_y_to; }
+                else if move_up { pos.y += grid_size; }
+                else if move_down { pos.y -= grid_size; }
+
+                if !approx_equal_vec(&pos, &transformation.get_data().position)
+                {
+                    transformation.set_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+                }
+            }
+        }
+    }
 }

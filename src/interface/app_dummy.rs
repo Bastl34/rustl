@@ -559,6 +559,6 @@ impl App for AppDummy
 
     fn request_exit(&mut self, context: &mut Context) -> bool
     {
-        false
+        true
     }
 }

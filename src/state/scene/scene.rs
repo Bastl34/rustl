@@ -1082,7 +1082,7 @@ impl Scene
         false
     }
 
-    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let mut nodes = vec![];
 
@@ -1096,12 +1096,12 @@ impl Scene
         let child_nodes_with_meshes = Scene::list_all_child_nodes_with_mesh(&node.read().unwrap().nodes);
         nodes.extend(child_nodes_with_meshes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate)
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
-        let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
+        let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate);
 
         if hits.len() > 0
         {
@@ -1111,11 +1111,11 @@ impl Scene
         None
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
-        let hits = self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate);
+        let hits = self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate);
 
         if hits.len() > 0
         {
@@ -1125,14 +1125,14 @@ impl Scene
         None
     }
 
-    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate)
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         // find hits (bbox based)
         let mut hits_bbox = vec![];
@@ -1143,8 +1143,13 @@ impl Scene
         {
             let node = node_arc.read().unwrap();
 
-            // early "return" check
-            if !node.visible || !node.pickable
+            // early "return" checks
+            if !ignore_visible && !node.visible
+            {
+                continue;
+            }
+
+            if !ignore_pickable && !node.pickable
             {
                 continue;
             }
@@ -1190,7 +1195,7 @@ impl Scene
                 }
 
                 let instance = instance.read().unwrap();
-                if !instance.pickable
+                if !ignore_pickable && !instance.pickable
                 {
                     continue;
                 }

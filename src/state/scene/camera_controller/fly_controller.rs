@@ -277,7 +277,7 @@ impl CameraController for FlyController
 
             let ray = Ray::new(origin, dir);
 
-            let hit = scene.pick(&ray, false, false, None);
+            let hit = scene.pick(&ray, false, false, false, false, None);
 
             if let Some(hit) = hit
             {

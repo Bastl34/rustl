@@ -10,6 +10,7 @@ pub enum PointState
     Stationary
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct InputPoint
 {
     pub id: u64,

@@ -9,6 +9,7 @@ pub trait App
 
     fn request_exit(&mut self, context: &mut Context) -> bool
     {
+        let _ = context;
         true
     }
 }

@@ -6,7 +6,7 @@ use crate::state::{scene::{camera_controller::fly_controller::FlyController, com
 
 use super::editor_state::EditorState;
 
-pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, predicate: Option<PickPredicate>) -> Option<(u64, ScenePickRes)>
+pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<(u64, ScenePickRes)>
 {
     let scenes = &state.scenes;
     let width = state.width;
@@ -54,12 +54,12 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, predica
                     if let Some(grid) = grid
                     {
                         set_grid_picking(scene, true);
-                        grid_hit = scene.pick_node(grid, &ray, false, true, predicate.clone());
+                        grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, ignore_pickable, predicate.clone());
                         set_grid_picking(scene, false);
                     }
                 }
 
-                let scene_hit = scene.pick(&ray, false, false, predicate.clone());
+                let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, predicate.clone());
 
                 //dbg!(scene_hit.is_some());
                 //dbg!(grid_hit.is_some());
@@ -125,7 +125,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, predica
     None
 }
 
-pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>) -> Option<(u64, ScenePickRes)>
+pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visible: bool, ignore_pickable: bool) -> Option<(u64, ScenePickRes)>
 {
     let scenes = &state.scenes;
     let width = state.width;
@@ -139,7 +139,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>) -> Option<(u
             if camera.is_point_in_viewport(&pos)
             {
                 let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
-                let hit = scene.pick_node(node.clone(), &ray, false, false, None);
+                let hit = scene.pick_node(node.clone(), &ray, false, false, ignore_visible, ignore_pickable, None);
 
                 if let Some(hit) = hit
                 {

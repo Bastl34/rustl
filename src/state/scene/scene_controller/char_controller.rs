@@ -992,7 +992,7 @@ impl SceneController for CharacterController
                 };
 
                 let ray = Ray::new(pos, down_dir);
-                let pick_res = scene.multi_pick(&ray, false, false, Some(Arc::new(predicate_func)));
+                let pick_res = scene.multi_pick(&ray, false, false, false, false, Some(Arc::new(predicate_func)));
 
                 if let Some(first_pick) = pick_res.first()
                 {
