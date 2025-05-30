@@ -178,9 +178,9 @@ impl EditorState
             selectable: true,
             fly_camera: true,
 
-            gizmo_position: false,
+            gizmo_position: true,
             gizmo_rotation: false,
-            gizmo_scale: true,
+            gizmo_scale: false,
 
             pick_mode: PickType::None,
 

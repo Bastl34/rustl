@@ -265,16 +265,16 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
                 let hash = sound_source.read().unwrap().hash.clone();
                 scene.sound_sources.insert(hash, sound_source);
 
-                let cube = scene.find_node_by_name(node_name.as_str());
+                let node = scene.find_node_by_name(node_name.as_str());
 
-                if let Some(cube) = cube
+                if let Some(node) = node
                 {
-                    let mut cube = cube.write().unwrap();
+                    let mut node = node.write().unwrap();
 
-                    let mut sound = Sound::new("m16", sound_source_clone, spund_type, true);
+                    let mut sound = Sound::new(filename.as_str(), sound_source_clone, spund_type, true);
                     sound.start();
 
-                    cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                    node.add_component(Arc::new(RwLock::new(Box::new(sound))));
                 }
             }
         }));
