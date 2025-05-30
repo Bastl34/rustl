@@ -511,6 +511,16 @@ impl MainInterface
         self.context.state.borrow().exit
     }
 
+    pub fn request_exit(&mut self) -> bool
+    {
+        if let Some(app) = &mut self.app
+        {
+            return app.request_exit(&mut self.context);
+        }
+
+        true
+    }
+
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
         if self.editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())

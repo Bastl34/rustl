@@ -14,3 +14,19 @@ pub struct Context
     pub window: Arc<Window>,
     pub egui: EGui,
 }
+
+impl Context
+{
+    pub fn get_main_scene_id(&self) -> Option<u64>
+    {
+        for scene in &self.state.borrow().scenes
+        {
+            if scene.main
+            {
+                return Some(scene.id);
+            }
+        }
+
+        None
+    }
+}

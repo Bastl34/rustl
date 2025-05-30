@@ -125,8 +125,11 @@ impl ApplicationHandler<CustomEvent> for AppState
             },
             winit::event::WindowEvent::CloseRequested =>
             {
-                event_loop.exit();
-                app.interface.exit();
+                if app.interface.request_exit()
+                {
+                    event_loop.exit();
+                    app.interface.exit();
+                }
             },
             _ => app.interface.window_input(&event)
         }

@@ -23,8 +23,18 @@ impl App for AppDummy
 {
     fn init(&mut self, context: &mut Context)
     {
+        let scene_id = context.get_main_scene_id();
+
         let state = &mut *(context.state.borrow_mut());
-        let scene_id = 0; // TODO
+
+        if scene_id.is_none()
+        {
+            return;
+        }
+        let scene_id = scene_id.unwrap();
+
+        //load default env texture
+        state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
         // ********** cam **********
         /*
@@ -457,9 +467,6 @@ impl App for AppDummy
             //attach_sound_to_node("sounds/PSY - Gangnam Style.mp3", "Cube", SoundType::Spatial, main_queue_clone.clone(), scene_id, audio_device.clone());
         });
 
-        //load default env texture
-        state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
-
         /*
         {
             let main_queue = main_queue.clone();
@@ -537,13 +544,21 @@ impl App for AppDummy
 
     fn update(&mut self, context: &mut Context)
     {
+
     }
 
     fn resize(&mut self, context: &mut Context)
     {
+
     }
 
     fn exit(&mut self, context: &mut Context)
     {
+
+    }
+
+    fn request_exit(&mut self, context: &mut Context) -> bool
+    {
+        false
     }
 }

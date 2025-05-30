@@ -6,4 +6,9 @@ pub trait App
     fn update(&mut self, context: &mut Context);
     fn resize(&mut self, context: &mut Context);
     fn exit(&mut self, context: &mut Context);
+
+    fn request_exit(&mut self, context: &mut Context) -> bool
+    {
+        true
+    }
 }
