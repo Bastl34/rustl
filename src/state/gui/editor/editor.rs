@@ -36,7 +36,49 @@ impl Editor
         self.editor_state.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui);
         self.editor_state.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui);
 
+        self.create_main_entities(state);
         self.create_util_objects(state);
+    }
+
+    pub fn create_main_entities(&mut self, state: &mut State)
+    {
+        let scene_id = 0; // TODO
+
+        let main_queue = state.main_thread_execution_queue.clone();
+        let loading_state = self.editor_state.loading.clone();
+        spawn_thread(move ||
+        {
+            *loading_state.write().unwrap() = true;
+
+            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
+            {
+                // light
+                let uuid = uuid::Uuid::new_v4().to_string();
+                let light = Light::new_point(uuid, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+
+                scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+
+                // add camera
+                if scene.cameras.len() == 0
+                {
+                    let uuid = uuid::Uuid::new_v4().to_string();
+                    let mut cam = Camera::new(uuid, "Cam".to_string());
+
+                    cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+
+                    let cam_data = cam.get_data_mut().get_mut();
+                    cam_data.fovy = 45.0f32.to_radians();
+                    cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
+                    cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                    cam_data.clipping_near = 0.1;
+                    cam_data.clipping_far = 1000.0;
+                    scene.cameras.push(Box::new(cam));
+                }
+            }));
+
+            *loading_state.write().unwrap() = false;
+        });
     }
 
     pub fn create_util_objects(&mut self, state: &mut State)

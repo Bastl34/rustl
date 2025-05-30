@@ -57,6 +57,7 @@ pub struct Scene
 
     pub name: String,
     pub visible: bool,
+    pub main: bool,
 
     data: ChangeTracker<SceneData>,
 
@@ -87,6 +88,7 @@ impl Scene
 
             name: name.to_string(),
             visible: true,
+            main: false,
 
             data: ChangeTracker::new(SceneData
             {

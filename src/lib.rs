@@ -160,6 +160,11 @@ mod interface
     pub(crate) mod main_interface;
     pub(crate) mod winit;
     pub(crate) mod gilrs;
+
+
+    pub(crate) mod context;
+    pub(crate) mod app;
+    pub(crate) mod app_dummy;
 }
 
 mod helper
