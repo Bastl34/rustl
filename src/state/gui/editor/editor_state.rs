@@ -5,7 +5,7 @@ use std::sync::{RwLock, Arc};
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Vector3};
 
-use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{components::transformation::{Transformation, TransformationData}, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -145,6 +145,8 @@ pub struct EditorState
     pub selected_object_gizmo_value: Option<Vector3<f32>>,
 
     pub copy_asset: Option<String>,
+    pub copy_asset_transform: Option<TransformationData>,
+    pub copy_node_id: Arc<RwLock<Option<u64>>>,
 
     pub drag_id: Option<String>,
 
@@ -213,6 +215,8 @@ impl EditorState
             selected_object_gizmo_value: None,
 
             copy_asset: None,
+            copy_asset_transform: None,
+            copy_node_id: Arc::new(RwLock::new(None)),
 
             drag_id: None,
 
@@ -429,6 +433,81 @@ impl EditorState
         self.selected_scene_id = None;
         self.selected_type = SelectionType::None;
         self.selected_gizmo = None;
+    }
+
+    pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u64, instance_id: Option<u64>, selection_type: SelectionType) -> bool
+    {
+        let scene_id = scene.id;
+
+        let node = scene.find_node_by_id(node_id);
+        if node.is_none()
+        {
+            return false;
+        }
+        let node = node.unwrap();
+
+        let id_string;
+        {
+            if let Some(instance_id) = instance_id
+            {
+                id_string = format!("objects_{}_{}", node_id, instance_id);
+            }
+            else
+            {
+                id_string = format!("objects_{}", node_id);
+            }
+        }
+
+        let mut already_selected = false;
+
+        if self.selected_object == id_string && self.selected_scene_id == Some(scene_id)
+        {
+            already_selected = true;
+        }
+
+        // de-select first
+        self.de_select_current_item_from_scene(scene);
+
+        // highlight
+        if !already_selected
+        {
+            self.selected_object = id_string;
+            self.selected_scene_id = Some(scene_id);
+            self.selected_type = selection_type;
+
+            if let Some(instance_id) = instance_id
+            {
+                let node = node.read().unwrap();
+                if let Some(instance) = node.find_instance_by_id(instance_id)
+                {
+                    let mut instance = instance.write().unwrap();
+                    let instance_data = instance.get_data_mut().get_mut();
+                    instance_data.highlight = true;
+                }
+            }
+            else
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    let node = node.read().unwrap();
+
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = true;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        false
     }
 
     pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)

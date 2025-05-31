@@ -4,9 +4,10 @@ use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
+use gltf::json::extensions::root;
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{component::Component, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -227,6 +228,22 @@ impl Editor
 
     pub fn copy_paste(&mut self, state: &mut State)
     {
+        // select copied node (if there is one)
+        let copy_node_id = *self.editor_state.copy_node_id.read().unwrap();
+        if let Some(copy_node_id) = copy_node_id
+        {
+            if let Some(scene_id) = self.editor_state.selected_scene_id
+            {
+                let scene = state.find_scene_by_id_mut(scene_id);
+                if let Some(scene) = scene
+                {
+                    self.editor_state.set_selected_object(scene, copy_node_id, None, SelectionType::Object);
+                }
+            }
+
+            *self.editor_state.copy_node_id.write().unwrap() = None;
+        }
+
         if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
         {
             // copy
@@ -245,21 +262,57 @@ impl Editor
                 if let Some(source) = &node.source
                 {
                     self.editor_state.copy_asset = Some(source.clone());
+                    self.editor_state.copy_asset_transform = None;
+
+                    if let Some(transform) = node.find_component::<Transformation>()
+                    {
+                        component_downcast!(transform, Transformation);
+                        self.editor_state.copy_asset_transform = Some(transform.get_data().clone());
+                    }
                 }
             }
 
             // paste
             if state.input_manager.keyboard.is_pressed_no_wait(Key::V)
             {
+                // do not paste while loading
+                if *self.editor_state.loading.read().unwrap() { return; }
+
                 if let Some(copy_asset) = &self.editor_state.copy_asset
                 {
                     let pos = state.input_manager.mouse.point.pos.unwrap();
-                    self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y));
+
+                    let copy_node_id = self.editor_state.copy_node_id.clone();
+                    let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
+
+                    self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y), Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                    {
+                        // copy over transformation
+                        if let Some(transform_data) = copy_asset_transform.clone()
+                        {
+                            if let Some(transformation) = root_node.read().unwrap().find_component::<Transformation>()
+                            {
+                                component_downcast_mut!(transformation, Transformation);
+                                transformation.set_rotation(transform_data.rotation.clone());
+                                transformation.set_scale(transform_data.scale.clone());
+
+                                if let Some(rotation_quat) = transform_data.rotation_quat
+                                {
+                                    transformation.apply_rotation_quaternion(rotation_quat,true);
+                                }
+                            }
+                        }
+
+                        *copy_node_id.write().unwrap() = Some(root_node.read().unwrap().id);
+                    })));
                 }
             }
         }
         if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.input_manager.keyboard.is_pressed_no_wait(Key::D)
         {
+            // do not paste while loading
+            if *self.editor_state.loading.read().unwrap() { return; }
+
             // duplicate selected object
             let (scene, node, _) = self.editor_state.get_selected_node(state);
 
@@ -274,7 +327,30 @@ impl Editor
             if let Some(source) = &node.source
             {
                 let pos = state.input_manager.mouse.point.pos.unwrap();
-                self.load_asset(state, source.clone(), Point2::<f32>::new(pos.x, pos.y));
+
+                let copy_node_id = self.editor_state.copy_node_id.clone();
+                let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
+
+                self.load_asset(state, source.clone(), Point2::<f32>::new(pos.x, pos.y), Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                {
+                    // copy over transformation
+                    if let Some(transform_data) = copy_asset_transform.clone()
+                    {
+                        if let Some(transformation) = root_node.read().unwrap().find_component::<Transformation>()
+                        {
+                            component_downcast_mut!(transformation, Transformation);
+                            transformation.set_rotation(transform_data.rotation.clone());
+                            transformation.set_scale(transform_data.scale.clone());
+
+                            if let Some(rotation_quat) = transform_data.rotation_quat
+                            {
+                                transformation.apply_rotation_quaternion(rotation_quat,true);
+                            }
+                        }
+                    }
+
+                    *copy_node_id.write().unwrap() = Some(root_node.read().unwrap().id);
+                })));
             }
         }
     }
@@ -410,72 +486,26 @@ impl Editor
                             }
                         }
 
-                        let id_string;
+                        let scene = state.find_scene_by_id_mut(scene_id);
+                        if scene.is_none() { return; }
+                        let scene = scene.unwrap();
+
+                        let node = node_arc.read().unwrap();
+
+                        let instande_id = if right_mouse_button && !use_root_node { Some(hit.instance_id) } else { None };
+
+                        if right_mouse_button || left_mouse_button || tapped
                         {
-                            let node = node_arc.read().unwrap();
+                            let selected = self.editor_state.set_selected_object(scene, node.id, instande_id, SelectionType::Object);
 
-                            // select object itself if there is not instance on it
-                            if right_mouse_button && !use_root_node
+                            if selected
                             {
-                                id_string = format!("objects_{}_{}", node.id, hit.instance_id);
-                            }
-                            else
-                            {
-                                id_string = format!("objects_{}", node.id);
-                            }
-                        }
+                                let start_pos = pos.unwrap();
+                                self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
 
-                        let mut already_selected = false;
-                        if self.editor_state.selected_object == id_string && self.editor_state.selected_scene_id == Some(scene_id)
-                        {
-                            already_selected = true;
-                        }
-
-                        // de-select first
-                        self.editor_state.de_select_current_item(state);
-
-                        // highlight
-                        if !already_selected
-                        {
-                            self.editor_state.selected_object = id_string;
-                            self.editor_state.selected_scene_id = Some(scene_id);
-                            self.editor_state.selected_type = SelectionType::Object;
-
-                            let start_pos = pos.unwrap();
-                            self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
-
-                            if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
-                            {
-                                self.editor_state.settings = SettingsPanel::Object;
-                            }
-
-                            if right_mouse_button
-                            {
-                                let node = node_arc.read().unwrap();
-
-                                if let Some(instance) = node.find_instance_by_id(hit.instance_id)
+                                if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
                                 {
-                                    let mut instance = instance.write().unwrap();
-                                    let instance_data = instance.get_data_mut().get_mut();
-                                    instance_data.highlight = true;
-                                }
-                            }
-                            else if left_mouse_button || tapped
-                            {
-                                let mut all_nodes = vec![];
-                                all_nodes.push(node_arc.clone());
-                                all_nodes.extend(Scene::list_all_child_nodes(&node_arc.read().unwrap().nodes));
-
-                                for node in all_nodes
-                                {
-                                    let node = node.read().unwrap();
-
-                                    for instance in node.instances.get_ref()
-                                    {
-                                        let mut instance = instance.write().unwrap();
-                                        let instance_data = instance.get_data_mut().get_mut();
-                                        instance_data.highlight = true;
-                                    }
+                                    self.editor_state.settings = SettingsPanel::Object;
                                 }
                             }
                         }
@@ -584,7 +614,7 @@ impl Editor
                         let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
-                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y));
+                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y), None);
                         }
                     }
                 }
@@ -597,7 +627,7 @@ impl Editor
     pub fn apply_external_asset_drag(&mut self, state: &mut State, path: String)
     {
         let pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
-        self.load_asset(state, path, pos);
+        self.load_asset(state, path, pos, None);
     }
 
     pub fn set_edit_mode(&mut self, state: &mut State)
@@ -1190,7 +1220,7 @@ impl Editor
         }
     }
 
-    pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>)
+    pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
     {
         let main_queue = state.main_thread_execution_queue.clone();
 
@@ -1264,13 +1294,15 @@ impl Editor
 
             let loaded_ids = loaded.unwrap();
 
+            let on_done = on_done.clone();
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
             {
                 //scene.clear_empty_nodes();
 
+                let mut root_node = None;
+
                 if let Some(pos) = pos
                 {
-                    let mut root_node = None;
                     for id in &loaded_ids
                     {
                         if let Some(node) = scene.find_node_by_id(*id)
@@ -1283,7 +1315,7 @@ impl Editor
                         }
                     }
 
-                    if let Some(root_node) = root_node
+                    if let Some(root_node) = &root_node
                     {
                         // find offset based on bounding box
                         let mut offset = 0.0;
@@ -1365,6 +1397,14 @@ impl Editor
                     //let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
                     //cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
                     //cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
+                }
+
+                if let Some(on_done) = &on_done
+                {
+                    if let Some(root_node) = root_node
+                    {
+                        on_done(scene, root_node.clone());
+                    }
                 }
             }));
 

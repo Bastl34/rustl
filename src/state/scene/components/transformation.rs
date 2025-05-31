@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::sync::{Arc, RwLock};
+
 use egui::RichText;
 use nalgebra::{Vector3, Matrix4, Rotation3, Vector4, UnitQuaternion, Quaternion};
 
@@ -7,6 +9,7 @@ use crate::{component_impl_default, component_impl_no_cleanup_node, component_im
 
 use super::component::{Component, ComponentBase};
 
+#[derive(Copy, Clone)]
 pub struct TransformationData
 {
     pub parent_inheritance: bool,
@@ -484,65 +487,6 @@ impl Transformation
         self.calc_transform();
     }
 
-    /*
-    pub fn apply_rotation_quaternion_based(&mut self, rotation: Vector3<f32>)
-    {
-        let data = self.data.get_mut();
-
-        let current = UnitQuaternion::from_euler_angles(data.rotation.x, data.rotation.y, data.rotation.z);
-        let new = UnitQuaternion::from_euler_angles(rotation.x, rotation.y, rotation.z);
-
-        let new_rotation = current * new;
-        let euler_angles = new_rotation.euler_angles();
-        data.rotation = Vector3::new(euler_angles.0, euler_angles.1, euler_angles.2);
-
-        if !data.transform_vectors
-        {
-            let rotation = Self::get_rotation_matrix_from_vector(rotation);
-            data.trans = data.trans * rotation;
-        }
-
-        self.calc_transform();
-    }
-     */
-
-    /*
-    pub fn apply_global_rotation(&mut self, global_rotation: Vector3<f32>)
-    {
-        let global_quat = UnitQuaternion::from_euler_angles(global_rotation.x, global_rotation.y, global_rotation.z);
-
-        let rotation_matrix = self.get_data().trans.fixed_view::<3, 3>(0, 0);
-        let current_rotation = UnitQuaternion::from_matrix(&rotation_matrix.into());
-
-        // Wende die globale Rotation an
-        let new_rotation = global_quat * current_rotation;
-
-        // Konvertiere Quaternion zurück zu Euler-Winkeln
-        let (x, y, z) = new_rotation.euler_angles();
-        self.set_rotation(Vector3::new(x, y, z));
-    }
-    */
-
-    /*
-    pub fn apply_from_rotaion_matrix(&mut self, matrix: Matrix4<f32>)
-    {
-        matrix.svd()
-        let rotation = matrix.fixed_slice::<3, 3>(0, 0).into_owned().euler_angles();
-
-        let global_quat = UnitQuaternion::from_euler_angles(global_rotation.x, global_rotation.y, global_rotation.z);
-
-        let rotation_matrix = self.get_data().trans.fixed_view::<3, 3>(0, 0);
-        let current_rotation = UnitQuaternion::from_matrix(&rotation_matrix.into());
-
-        // Wende die globale Rotation an
-        let new_rotation = global_quat * current_rotation;
-
-        // Konvertiere Quaternion zurück zu Euler-Winkeln
-        let (x, y, z) = new_rotation.euler_angles();
-        self.set_rotation(Vector3::new(x, y, z));
-    }
-     */
-
     pub fn get_rotation_matrix_from_vector(rotation: Vector3<f32>) -> Matrix4<f32>
     {
         let rotation_x  = Rotation3::from_euler_angles(rotation.x, 0.0, 0.0).to_homogeneous();
@@ -735,7 +679,7 @@ impl Component for Transformation
 
     fn duplicatable(&self) -> bool
     {
-        false
+        true
     }
 
     fn set_enabled(&mut self, state: bool)
@@ -751,7 +695,30 @@ impl Component for Transformation
 
     fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
-        None
+        let source = self.as_any().downcast_ref::<Transformation>();
+
+        if source.is_none()
+        {
+            return None;
+        }
+
+        let source = source.unwrap();
+
+        let mut transformation = Transformation
+        {
+            base: ComponentBase::duplicate(source.get_base()),
+
+            data: ChangeTracker::new(source.get_data().clone()),
+
+            ui_lock_translation: false,
+            ui_lock_rotation: false,
+            ui_lock_rotation_quat: false,
+            ui_lock_scale: true,
+        };
+
+        transformation.data.force_change();
+
+        Some(Arc::new(RwLock::new(Box::new(transformation))))
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
