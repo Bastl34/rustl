@@ -3,7 +3,7 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{helper::{platform::is_windows, concurrency::thread::sleep_millis}, state::state::State};
+use crate::{helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -311,10 +311,12 @@ impl WGpu
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            //format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: self.surface_config.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             label: None,
-            view_formats: &[],
+            //view_formats: &[],
+            view_formats: &self.surface_config.view_formats,
         });
 
 
@@ -327,10 +329,12 @@ impl WGpu
                 mip_level_count: 1,
                 sample_count: self.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                //format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: self.surface_config.format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 label: None,
-                view_formats: &[],
+                //view_formats: &[],
+                view_formats: &self.surface_config.view_formats,
             });
 
             msaa_texture_view = Some(msaa_texture.create_view(&wgpu::TextureViewDescriptor::default()));
@@ -383,7 +387,6 @@ impl WGpu
         output_buffer.unmap();
 
         let img = DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(buffer_dimensions.width as u32, buffer_dimensions.height as u32, data).unwrap());
-        //brga_to_rgba(img)
-        img
+        brga_to_rgba(img)
     }
 }
