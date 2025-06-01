@@ -111,12 +111,12 @@ pub struct Camera
 
 impl Camera
 {
-    pub fn new(uuid: String, name: String) -> Camera
+    pub fn new(name: String) -> Camera
     {
         Camera
         {
             id: id_manager::get_next_camera_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name,
             enabled: true,

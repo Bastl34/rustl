@@ -71,12 +71,12 @@ pub struct Node
 
 impl Node
 {
-    pub fn new(uuid: String, name: &str) -> NodeItem
+    pub fn new(name: &str) -> NodeItem
     {
         let node = Self
         {
             id: id_manager::get_next_node_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             source: None,
 
@@ -1317,11 +1317,10 @@ impl Node
         !is_not_empty
     }
 
-    pub fn create_default_instance(&mut self, self_node_item: NodeItem, uuid: String) -> u64
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem) -> u64
     {
         let instance = Instance::new
         (
-            uuid,
             "instance".to_string(),
             self_node_item
         );
@@ -1513,7 +1512,7 @@ impl Node
         }
 
         self.clear_instances();
-        self.create_default_instance(node, uuid::Uuid::new_v4().to_string());
+        self.create_default_instance(node);
 
         true
     }

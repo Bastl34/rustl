@@ -4,7 +4,6 @@ use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
-use gltf::json::extensions::root;
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, approx_equal_vec, snap_to_grid, snap_to_grid_vec3}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{component::Component, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
@@ -54,8 +53,7 @@ impl Editor
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {
                 // light
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let light = Light::new_point(uuid, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                let light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
                 scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
@@ -63,8 +61,7 @@ impl Editor
                 // add camera
                 if scene.cameras.len() == 0
                 {
-                    let uuid = uuid::Uuid::new_v4().to_string();
-                    let mut cam = Camera::new(uuid, "Cam".to_string());
+                    let mut cam = Camera::new("Cam".to_string());
 
                     cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
@@ -87,8 +84,7 @@ impl Editor
         // use or create new scene if needed
         let scene = if state.scenes.is_empty()
         {
-            let uuid = uuid::Uuid::new_v4().to_string();
-            let mut scene = crate::state::scene::scene::Scene::new(0, uuid, "scene", state.audio_device.clone());
+            let mut scene = crate::state::scene::scene::Scene::new("main scene", state.audio_device.clone());
             scene.add_defaults();
 
             state.scenes.push(Box::new(scene));
@@ -216,8 +212,7 @@ impl Editor
             {
                 if let (Some(_scene), Some(node), _) = self.editor_state.get_selected_node(state)
                 {
-                    let uuid = uuid::Uuid::new_v4().to_string();
-                    node.write().unwrap().create_default_instance(node.clone(), uuid);
+                    node.write().unwrap().create_default_instance(node.clone());
                 }
             }
         }
@@ -1366,16 +1361,14 @@ impl Editor
                 // add light
                 if scene.lights.get_ref().len() == 0
                 {
-                    let uuid = uuid::Uuid::new_v4().to_string();
-                    let light = Light::new_point(uuid, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                    let light = Light::new_point("Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                     scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                 }
 
                 // add camera
                 if scene.cameras.len() == 0
                 {
-                    let uuid = uuid::Uuid::new_v4().to_string();
-                    let mut cam = Camera::new(uuid, "Cam".to_string());
+                    let mut cam = Camera::new("Cam".to_string());
                     let cam_data = cam.get_data_mut().get_mut();
                     cam_data.fovy = 45.0f32.to_radians();
                     cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);

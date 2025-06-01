@@ -244,8 +244,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             let node_arc = node_arc.clone();
                             execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                             {
-                                let uuid = uuid::Uuid::new_v4().to_string();
-                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), uuid);
+                                node_arc.write().unwrap().create_default_instance(node_arc.clone());
                             }));
                         }
 
@@ -798,8 +797,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
-                node.write().unwrap().create_default_instance(node.clone(), uuid);
+                node.write().unwrap().create_default_instance(node.clone());
             }
 
             if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()

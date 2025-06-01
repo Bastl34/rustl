@@ -87,12 +87,12 @@ pub struct ComponentBase
 
 impl ComponentBase
 {
-    pub fn new(uuid: String, name: String, component_name: String, icon: String) -> ComponentBase
+    pub fn new(name: String, component_name: String, icon: String) -> ComponentBase
     {
         ComponentBase
         {
             id: id_manager::get_next_component_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
             is_enabled: true,
 
             name,

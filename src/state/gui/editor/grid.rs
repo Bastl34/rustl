@@ -84,10 +84,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 // x
                 {
-                    let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
-                        uuid,
                         format!("grid_x_{}", pos),
                         grid_arc.clone()
                     );
@@ -107,10 +105,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
                 // y
                 {
-                    let uuid = uuid::Uuid::new_v4().to_string();
                     let mut instance = Instance::new
                     (
-                        uuid,
                         format!("grid_y_{}", pos),
                         grid_arc.clone()
                     );
@@ -170,8 +166,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // x (red)
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(uuid, "grid_origin_x".to_string(), grid_arc.clone());
+                let mut instance = Instance::new("grid_origin_x".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -187,8 +182,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // y (green)
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(uuid, "grid_origin_y".to_string(), grid_arc.clone());
+                let mut instance = Instance::new("grid_origin_y".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -205,8 +199,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             // z (blue)
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(uuid, "grid_origin_z".to_string(), grid_arc.clone());
+                let mut instance = Instance::new("grid_origin_z".to_string(), grid_arc.clone());
 
                 let scale = grid_origin_line_scale;
 
@@ -257,8 +250,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
             scene.add_material(&plane_material_arc.clone());
 
-            let uuid = uuid::Uuid::new_v4().to_string();
-            let plane_node = Node::new(uuid, "plane");
+            let plane_node = Node::new("plane");
             {
                 {
                     let mut plane_node = plane_node.write().unwrap();
@@ -266,9 +258,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     plane_node.add_component(plane_material_arc);
                 }
 
-                let uuid = uuid::Uuid::new_v4().to_string();
-
-                let instance_id = plane_node.write().unwrap().create_default_instance(plane_node.clone(), uuid);
+                let instance_id = plane_node.write().unwrap().create_default_instance(plane_node.clone());
                 plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
             }
 

@@ -43,7 +43,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
+            base: ComponentBase::new(name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
             data: ChangeTracker::new(data),
 
             keyboard_key: None,
@@ -71,7 +71,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
+            base: ComponentBase::new(name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
             data: ChangeTracker::new(data),
 
             keyboard_key: None,

@@ -105,7 +105,7 @@ impl Animation
     {
         Animation
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation".to_string(), "🎞".to_string()),
+            base: ComponentBase::new(name.to_string(), "Animation".to_string(), "🎞".to_string()),
 
             looped: true,
             reverse: false,

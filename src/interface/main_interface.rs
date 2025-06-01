@@ -201,8 +201,7 @@ impl MainInterface
         //init scene
         let state = &mut *(self.context.state.borrow_mut());
 
-        let uuid = uuid::Uuid::new_v4().to_string();
-        let mut scene = crate::state::scene::scene::Scene::new(0, uuid, "main scene", state.audio_device.clone());
+        let mut scene = crate::state::scene::scene::Scene::new("main scene", state.audio_device.clone());
         scene.add_defaults();
         scene.main = true;
 

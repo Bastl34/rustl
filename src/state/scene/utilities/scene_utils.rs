@@ -73,8 +73,7 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
     }
 
     // ***** if not found -> load *****
-    let uuid = uuid::Uuid::new_v4().to_string();
-    let texture = Texture::new(uuid, name, &image_bytes, extension, max_tex_res);
+    let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
     let arc = Arc::new(RwLock::new(Box::new(texture)));
 
     // ***** add to scene textures *****
@@ -258,8 +257,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
             let sound_source_bytes = load_binary(path.as_str());
             if let Ok(sound_source_bytes) = sound_source_bytes
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(uuid, filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
+                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
                 let sound_source_clone = sound_source.clone();
 
                 let hash = sound_source.read().unwrap().hash.clone();

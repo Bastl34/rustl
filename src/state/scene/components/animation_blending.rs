@@ -24,7 +24,7 @@ impl AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+            base: ComponentBase::new(name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
 
             from,
             to,
@@ -41,7 +41,7 @@ impl AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
+            base: ComponentBase::new(name.to_string(), "Animation Blending".to_string(), "◑".to_string()),
 
             from: None,
             to: None,

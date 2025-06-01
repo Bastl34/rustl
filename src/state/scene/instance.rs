@@ -47,12 +47,12 @@ pub struct Instance
 
 impl Instance
 {
-    pub fn new(uuid: String, name: String, node: NodeItem) -> Instance
+    pub fn new(name: String, node: NodeItem) -> Instance
     {
         let instance = Instance
         {
             id: id_manager::get_next_instance_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name,
             pickable: true,
@@ -82,12 +82,12 @@ impl Instance
         instance
     }
 
-    pub fn new_with_transform(uuid: String, name: String, node: NodeItem, transform: Transformation) -> Instance
+    pub fn new_with_transform(name: String, node: NodeItem, transform: Transformation) -> Instance
     {
         let mut instance = Instance
         {
             id: id_manager::get_next_instance_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name,
             pickable: true,

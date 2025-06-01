@@ -454,8 +454,7 @@ impl App for AppDummy
             /*
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let light = Light::new_point(uuid, "Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                let light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
                 scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
@@ -482,7 +481,6 @@ impl App for AppDummy
                     // add camera
                     if scene.cameras.len() == 0
                     {
-                        let uuid = uuid::Uuid::new_v4().to_string();
                         let mut cam = Camera::new(uuid, "Cam".to_string());
 
                         cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);

@@ -1,5 +1,6 @@
 use std::sync::{LazyLock, Mutex};
 
+static SCENE_ID:      LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
 static TEXTURE_ID:      LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
 static SOUND_SOURCE_ID: LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
 static NODE_ID:         LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
@@ -11,10 +12,13 @@ static COMPONENT_ID:    LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
 fn get_next_from(counter: &LazyLock<Mutex<u64>>) -> u64
 {
     let mut id = counter.lock().unwrap();
+    let current_id = *id;
     *id += 1;
-    *id
+
+    current_id
 }
 
+pub fn get_next_scene_id() -> u64        { get_next_from(&SCENE_ID) }
 pub fn get_next_texture_id() -> u64      { get_next_from(&TEXTURE_ID) }
 pub fn get_next_sound_source_id() -> u64 { get_next_from(&SOUND_SOURCE_ID) }
 pub fn get_next_node_id() -> u64         { get_next_from(&NODE_ID) }

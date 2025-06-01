@@ -44,12 +44,12 @@ pub struct Light
 
 impl Light
 {
-    pub fn new_point(uuid: String, name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_point(name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
             id: id_manager::get_next_light_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name,
 
@@ -66,12 +66,12 @@ impl Light
         }
     }
 
-    pub fn new_directional(uuid: String, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_directional(name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
             id: id_manager::get_next_light_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name,
 
@@ -88,12 +88,12 @@ impl Light
         }
     }
 
-    pub fn new_spot(uuid: String, name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> Light
+    pub fn new_spot(name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> Light
     {
         Self
         {
             id: id_manager::get_next_light_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name,
 
@@ -110,12 +110,12 @@ impl Light
         }
     }
 
-    pub fn new_hemi(uuid: String, name: String, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_hemi(name: String, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> Light
     {
         Self
         {
             id: id_manager::get_next_light_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name,
 

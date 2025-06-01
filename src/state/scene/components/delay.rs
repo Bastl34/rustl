@@ -27,7 +27,7 @@ impl Delay
     {
         Delay
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Delay".to_string(), "⏰".to_string()),
+            base: ComponentBase::new(name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay,
             target_id: Some(target_id),
             state: true,
@@ -42,7 +42,7 @@ impl Delay
     {
         Delay
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Delay".to_string(), "⏰".to_string()),
+            base: ComponentBase::new(name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay: 0.0,
             target_id: None,
             state: true,

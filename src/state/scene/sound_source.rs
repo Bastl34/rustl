@@ -53,7 +53,7 @@ impl Decodable for SoundSource
 
 impl SoundSource
 {
-    pub fn new(uuid: String, name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource
+    pub fn new(name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource
     {
         let bytes = sound_bytes.clone();
         let hash = helper::crypto::get_hash_from_byte_vec(sound_bytes);
@@ -61,7 +61,7 @@ impl SoundSource
         SoundSource
         {
             id: id_manager::get_next_sound_source_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
             extension,

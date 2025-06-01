@@ -148,7 +148,7 @@ impl Texture
         }
     }
 
-    pub fn new(uuid: String, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
+    pub fn new(name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
     {
         let image;
 
@@ -207,7 +207,7 @@ impl Texture
         Texture
         {
             id: id_manager::get_next_texture_id(),
-            uuid,
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
             hash,
@@ -219,7 +219,7 @@ impl Texture
         }
     }
 
-    pub fn new_from_image_channel(id: u64, uuid: String, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
+    pub fn new_from_image_channel(name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
     {
         let width = texture.width();
         let height = texture.height();
@@ -275,8 +275,8 @@ impl Texture
 
         Texture
         {
-            id,
-            uuid,
+            id: id_manager::get_next_texture_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
             hash,

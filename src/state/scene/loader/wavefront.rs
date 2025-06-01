@@ -368,9 +368,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
             let item = Mesh::new_with_data("mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
-            let uuid = uuid::Uuid::new_v4().to_string();
-
-            let node_arc = Node::new(uuid, m.name.as_str());
+            let node_arc = Node::new(m.name.as_str());
             loaded_ids.push(node_arc.read().unwrap().id);
 
             {
@@ -382,16 +380,14 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                node.create_default_instance(node_arc.clone(), uuid);
+                node.create_default_instance(node_arc.clone());
             }
 
             scene_nodes.push(node_arc)
         }
     }
 
-    let uuid = uuid::Uuid::new_v4().to_string();
-    let root_node = Node::new(uuid, resource_name.as_str());
+    let root_node = Node::new(resource_name.as_str());
     loaded_ids.push(root_node.read().unwrap().id);
 
     root_node.write().unwrap().root_node = true;

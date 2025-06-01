@@ -38,7 +38,7 @@ impl MorphTargetAnimation
     {
         let mut animation = MorphTargetAnimation
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
+            base: ComponentBase::new(name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
 
             target_id: Some(target_id),
 
@@ -67,7 +67,7 @@ impl MorphTargetAnimation
     {
         let mut animation = MorphTargetAnimation
         {
-            base: ComponentBase::new(uuid::Uuid::new_v4().to_string(), name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
+            base: ComponentBase::new(name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
 
             target_id: None,
 
