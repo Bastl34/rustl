@@ -1,6 +1,6 @@
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
-use nalgebra::{Point2, Point3, UnitQuaternion, Vector3, Vector4};
+use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
 
@@ -12,6 +12,8 @@ const GIZMO_SCALE_MIN: f32 = 0.01;
 const GIZMO_SCALE_STEP: f32 = 0.1;
 
 const GIZMO_ROTATION_STEP: f32 = PI / 16.0;
+
+const GIZMO_SCALE_DISTANCE_FACTOR: f32 = 0.1;
 
 pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, editor_utils_id: u64)
 {
@@ -813,6 +815,13 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
     // get pos from transform
     let pos = world_transform.column(3).xyz();
 
+    // calculate gizmo scaling
+    let camera = scene.cameras.iter().find(|c| c.enabled).unwrap();
+    let cam_pos = camera.get_data().eye_pos;
+    let distance = distance(&pos.into(), &cam_pos);
+
+    let scale = distance * GIZMO_SCALE_DISTANCE_FACTOR;
+
     // position gizmo
     let gizmo_translation = scene.find_node_by_name("gizmo_position");
     if let Some(gizmo_translation) = gizmo_translation
@@ -824,6 +833,7 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
         {
             component_downcast_mut!(transform_component, Transformation);
             transform_component.set_translation(pos);
+            transform_component.set_scale(Vector3::new(scale, scale, scale));
         }
     }
 
@@ -839,6 +849,7 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
             component_downcast_mut!(transform_component, Transformation);
             transform_component.set_translation(pos);
             transform_component.set_rotation(parent_world_rotation_only);
+            transform_component.set_scale(Vector3::new(scale, scale, scale));
         }
     }
 
@@ -854,6 +865,7 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
             component_downcast_mut!(transform_component, Transformation);
             transform_component.set_translation(pos);
             transform_component.set_rotation(world_rotatio_only);
+            transform_component.set_scale(Vector3::new(scale, scale, scale));
         }
     }
 }
