@@ -362,13 +362,13 @@ impl App for AppDummy
             //let nodes = scene_utils::load_object("scenes/de_dust2.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
 
-            let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+            //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-            let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
-            let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
+            // let avatar_nodes = scene_utils::load_object("objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+            // let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
 
-            //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(),);
-            let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
+            // //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(),);
+            // let _ = scene_utils::load_and_re_target_animation("objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
 
 
             //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
@@ -385,20 +385,20 @@ impl App for AppDummy
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
                 // start first animation
-                if let Ok(nodes) = &nodes
-                {
-                    for node_id in nodes
-                    {
-                        if let Some(node) = scene.find_node_by_id(*node_id)
-                        {
-                            if let Some(animation) = node.read().unwrap().find_animation_by_name("")
-                            {
-                                component_downcast_mut!(animation, Animation);
-                                animation.start();
-                            }
-                        }
-                    }
-                }
+                // if let Ok(nodes) = &nodes
+                // {
+                //     for node_id in nodes
+                //     {
+                //         if let Some(node) = scene.find_node_by_id(*node_id)
+                //         {
+                //             if let Some(animation) = node.read().unwrap().find_animation_by_name("")
+                //             {
+                //                 component_downcast_mut!(animation, Animation);
+                //                 animation.start();
+                //             }
+                //         }
+                //     }
+                // }
 
                 // cone
                 let cone = scene.find_node_by_name("traffic_cone_game_ready");
@@ -499,6 +499,33 @@ impl App for AppDummy
             });
         }
          */
+
+        // TODO: remove me
+        /*
+        if let Some(train) = scene.find_node_by_name("Train")
+        {
+            let mut node = train.write().unwrap();
+            let id_1 = scene.id_manager::get_next_component_id();
+            let id_2 = id_manager::get_next_component_id();
+
+            node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_1, "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+            node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_2, "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
+
+            let components_len = node.components.len();
+            {
+                let component = node.components.get_mut(components_len - 2).unwrap();
+                component_downcast_mut!(component, TransformationAnimation);
+                component.keyboard_key = Some(Key::ArrowLeft as usize);
+            }
+
+            {
+                let component = node.components.get_mut(components_len - 1).unwrap();
+                component_downcast_mut!(component, TransformationAnimation);
+                component.keyboard_key = Some(Key::ArrowRight as usize);
+            }
+        }
+            */
+
 
 
         // sound debugging

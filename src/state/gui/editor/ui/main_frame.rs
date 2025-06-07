@@ -1,4 +1,5 @@
 
+use crate::state::gui::editor::helper::get_pointer_world_position;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
@@ -56,13 +57,19 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, "📝 Console");
 
-            if loading
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                if let Some(pointer_pos) =  get_pointer_world_position(state)
                 {
+                    ui.label(RichText::new(format!("x: {:.2}, y: {:.2}, z: {:.2}", pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
+                }
+
+                if loading
+                {
+                    ui.separator();
                     ui.spinner();
-                });
-            }
+                }
+            });
         });
         ui.separator();
 

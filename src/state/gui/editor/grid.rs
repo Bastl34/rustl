@@ -18,7 +18,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
     let size = amount as f32 * spacing;
 
     let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), true, true, false, 0).unwrap();
+    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), false, true, false, 0).unwrap();
 
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
@@ -134,7 +134,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     component_downcast_mut!(material, Material);
                     material.get_base_mut().name = "grid material".to_string();
                     material.get_data_mut().get_mut().unlit_shading = true;
-                    material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.28, 0.66, 0.9);
+                    material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.0, 0.0, 0.0);
                 }
             }
         }
@@ -162,6 +162,15 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
             {
                 let mut grid = grid_arc.write().unwrap();
                 grid.clear_instances();
+
+                if let Some(material) = grid.find_component::<Material>()
+                {
+                    component_downcast_mut!(material, Material);
+                    material.get_base_mut().name = "grid origin material".to_string();
+                    material.get_data_mut().get_mut().unlit_shading = true;
+                    material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
+                    material.get_data_mut().get_mut().alpha = 0.7;
+                }
             }
 
             // x (red)
@@ -242,8 +251,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
             let plane_mesh = Mesh::new_plane("grid plane mesh", p0, p1, p2, p3);
 
             let mut plane_material = Material::new("grid plane material");
-            plane_material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.005, 0.005, 0.02);
-            plane_material.get_data_mut().get_mut().alpha = 0.5;
+            plane_material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.9, 0.9, 1.0);
+            plane_material.get_data_mut().get_mut().alpha = 0.7;
             plane_material.get_data_mut().get_mut().unlit_shading = true;
 
             let plane_material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(plane_material)));

@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use nalgebra::{Matrix4, Point2, Vector3, Vector4};
+use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
 use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::State};
 
@@ -146,6 +146,21 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
                     return Some((scene.id, hit));
                 }
             }
+        }
+    }
+
+    None
+}
+
+pub fn get_pointer_world_position(state: &State) -> Option<Point3<f32>>
+{
+    let pointer_pos = state.input_manager.get_pointer_input().pos;
+
+    if let Some(pointer_pos) = pointer_pos
+    {
+        if let Some((_scene, pick_res)) = pick(state, pointer_pos, true, false, false, None)
+        {
+            return Some(pick_res.point);
         }
     }
 

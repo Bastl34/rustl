@@ -1338,32 +1338,6 @@ impl Editor
                     }
                 }
 
-                // TODO: remove me
-                /*
-                if let Some(train) = scene.find_node_by_name("Train")
-                {
-                    let mut node = train.write().unwrap();
-                    let id_1 = scene.id_manager::get_next_component_id();
-                    let id_2 = id_manager::get_next_component_id();
-
-                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_1, "Left", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, -0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-                    node.add_component(Arc::new(RwLock::new(Box::new(TransformationAnimation::new(id_2, "Right", Vector3::<f32>::zeros(), Vector3::<f32>::new(0.0, 0.04, 0.0), Vector3::<f32>::new(0.0, 0.0, 0.0))))));
-
-                    let components_len = node.components.len();
-                    {
-                        let component = node.components.get_mut(components_len - 2).unwrap();
-                        component_downcast_mut!(component, TransformationAnimation);
-                        component.keyboard_key = Some(Key::ArrowLeft as usize);
-                    }
-
-                    {
-                        let component = node.components.get_mut(components_len - 1).unwrap();
-                        component_downcast_mut!(component, TransformationAnimation);
-                        component.keyboard_key = Some(Key::ArrowRight as usize);
-                    }
-                }
-                 */
-
                 // add light
                 if scene.lights.get_ref().len() == 0
                 {
@@ -1390,7 +1364,7 @@ impl Editor
                     let cam = scene.cameras.get_mut(0).unwrap();
                     if cam.controller.is_none()
                     {
-                        cam.add_controller_fly(true, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
                     }
 
                     //let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
