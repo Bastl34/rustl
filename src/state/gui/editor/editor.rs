@@ -42,7 +42,14 @@ impl Editor
 
     pub fn create_main_entities(&mut self, state: &mut State)
     {
-        let scene_id = 0; // TODO
+        let scene_id = state.get_main_scene_id();
+
+        if scene_id.is_none()
+        {
+            println!("No main scene found");
+            return;
+        }
+        let scene_id = scene_id.unwrap();
 
         let main_queue = state.main_thread_execution_queue.clone();
         let loading_state = self.editor_state.loading.clone();

@@ -250,6 +250,42 @@ impl State
         });
     }
 
+    pub fn get_main_scene(&self) -> Option<&SceneItem>
+    {
+        for scene in &self.scenes
+        {
+            if scene.main
+            {
+                return Some(&scene);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_main_scene_mut(&mut self) -> Option<&mut SceneItem>
+    {
+        for scene in &mut self.scenes
+        {
+            if scene.main
+            {
+                return Some(scene);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_main_scene_id(&self) -> Option<u64>
+    {
+        let scene = self.get_main_scene();
+        if let Some(scene) = scene
+        {
+            return Some(scene.id);
+        }
+        None
+    }
+
     pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>
     {
         for scene in &self.scenes
