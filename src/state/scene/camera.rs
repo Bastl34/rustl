@@ -379,15 +379,15 @@ impl Camera
         false
     }
 
-    pub fn screen_to_world(&self, point: &Point2<f32>, width: u32, height: u32) -> Vector3<f32>
+    pub fn screen_to_world(&self, point: &Point2<f32>) -> Vector3<f32>
     {
         let data = self.get_data();
 
-        let x_f = point.x as f32;
-        let y_f = point.y as f32;
+        let x_f = point.x as f32 - (data.viewport_x * data.resolution_width as f32);
+        let y_f = point.y as f32 - (data.viewport_y * data.resolution_height as f32);
 
-        let w = data.viewport_width as f32 * width as f32;
-        let h = data.viewport_height as f32 * height as f32;
+        let w = data.viewport_width as f32 * data.resolution_width as f32;
+        let h = data.viewport_height as f32 * data.resolution_height as f32;
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
@@ -403,15 +403,15 @@ impl Camera
         world_space.xyz()
     }
 
-    pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>, width: u32, height: u32) -> Ray
+    pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>) -> Ray
     {
         let data = self.get_data();
 
-        let x_f = point.x as f32;
-        let y_f = point.y as f32;
+        let x_f = point.x as f32 - (data.viewport_x * data.resolution_width as f32);
+        let y_f = point.y as f32 - (data.viewport_y * data.resolution_height as f32);
 
-        let w = data.viewport_width as f32 * width as f32;
-        let h = data.viewport_height as f32 * height as f32;
+        let w = data.viewport_width as f32 * data.resolution_width as f32;
+        let h = data.viewport_height as f32 * data.resolution_height as f32;
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
@@ -434,18 +434,18 @@ impl Camera
         ray
     }
 
-    pub fn get_viewport_coordinates_from_point(&self, point: &Point3<f32>, width: u32, height: u32) -> Point2<f32>
+    pub fn get_viewport_coordinates_from_point(&self, point: &Point3<f32>) -> Point2<f32>
     {
         let data = self.get_data();
 
-        let w = data.viewport_width as f32 * width as f32;
-        let h = data.viewport_height as f32 * height as f32;
+        let w = data.viewport_width as f32 * data.resolution_width as f32;
+        let h = data.viewport_height as f32 * data.resolution_height as f32;
 
         let camera_point = data.view.transform_point(&point);
         let clip_space_point = data.projection.transform_point(&camera_point);
 
-        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32;
-        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32;
+        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32 + (data.viewport_x * data.resolution_width as f32);
+        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32 + (data.viewport_y * data.resolution_height as f32);
 
         // reduce by 0.5 because the point was the center of the pixel
         Point2::new(screen_x - 0.5, screen_y - 0.5)

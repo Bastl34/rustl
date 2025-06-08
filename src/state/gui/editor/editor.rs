@@ -71,6 +71,10 @@ impl Editor
                     cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
                     cam_data.clipping_near = 0.1;
                     cam_data.clipping_far = 1000.0;
+                    // cam_data.viewport_x = 0.25;
+                    // cam_data.viewport_y = 0.25;
+                    // cam_data.viewport_width = 0.5;
+                    // cam_data.viewport_height = 0.5;
                     scene.cameras.push(Box::new(cam));
                 }
             }));
@@ -914,9 +918,6 @@ impl Editor
 
     pub fn drag_and_drop_object(&mut self, state: &mut State, apply_x: bool, apply_y: bool, apply_z: bool)
     {
-        let width = state.width;
-        let height = state.height;
-
         let grid_size = self.editor_state.grid_size;
 
         // ********** enable movement if nothing is selected **********
@@ -932,7 +933,6 @@ impl Editor
 
             return;
         }
-
 
         let mut pointer_pos = state.input_manager.mouse.point.pos;
         let mut pointer_velocity = state.input_manager.mouse.point.velocity;
@@ -1114,7 +1114,7 @@ impl Editor
                 // check if click is insight
                 if camera.is_point_in_viewport(&pos_new)
                 {
-                    bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center, width, height));
+                    bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center));
 
                     break;
                 }

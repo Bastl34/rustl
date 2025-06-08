@@ -209,8 +209,6 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
         return false;
     }
 
-    let width = state.width;
-    let height = state.height;
     let grid_size = editor_state.grid_size;
 
     let (scene, node, instance_id) = editor_state.get_selected_node(state);
@@ -296,8 +294,8 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                 {
                     if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
                     {
-                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last, width, height));
-                        ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos, width, height));
+                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
+                        ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
 
                         let xy_plane = Vector3::new(0.0, 0.0, 1.0);
                         let xz_plane = Vector3::new(0.0, 1.0, 0.0);
@@ -428,9 +426,6 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
         return false;
     }
 
-    let width = state.width;
-    let height = state.height;
-
     let parent_transform = get_parent_world_transform_from_selected_node(editor_state, state);
     let parent_world_rotation_only = extract_rotation_only(&parent_transform);
 
@@ -502,8 +497,8 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                 {
                     if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
                     {
-                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last, width, height));
-                        ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos, width, height));
+                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
+                        ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
 
                         let xy_plane = Vector3::new(0.0, 0.0, 1.0);
                         let xz_plane = Vector3::new(0.0, 1.0, 0.0);
@@ -606,9 +601,6 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
         return false;
     }
 
-    let width = state.width;
-    let height = state.height;
-
     let world_transform = get_world_transform_from_selected_node(editor_state, state);
     let world_rotation_only = extract_rotation_only(&world_transform);
 
@@ -680,8 +672,8 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
                 {
                     if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
                     {
-                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last, width, height));
-                        ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos, width, height));
+                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
+                        ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
 
                         let xy_plane = Vector3::new(0.0, 0.0, 1.0);
                         let xz_plane = Vector3::new(0.0, 1.0, 0.0);

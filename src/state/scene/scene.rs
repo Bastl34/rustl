@@ -207,6 +207,15 @@ impl Scene
         }
     }
 
+    pub fn update_resolution(&mut self, resolution_width: u32, resolution_height: u32)
+    {
+        for cam in &mut self.cameras
+        {
+            cam.update_resolution(resolution_width, resolution_height);
+            cam.init_matrices();
+        }
+    }
+
     pub fn print(&self)
     {
         println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len(), self.textures.len());

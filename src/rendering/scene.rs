@@ -844,15 +844,9 @@ impl Scene
         self.create_pipelines(wgpu, scene, true);
     }
 
-    pub fn resize(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>)
+    pub fn resize(&mut self, wgpu: &mut WGpu, _scene: &mut Box<crate::state::scene::scene::Scene>)
     {
         dbg!("resize");
-        for cam in &mut scene.cameras
-        {
-            cam.update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
-            cam.init_matrices();
-        }
-
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
     }
@@ -1165,11 +1159,12 @@ impl Scene
         });
 
         let x = cam_data.viewport_x * cam_data.resolution_width as f32;
-        let y = cam_data.viewport_y * cam_data.resolution_height as f32;
-
         let width = cam_data.viewport_width * cam_data.resolution_width as f32;
-        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
 
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
+        let y = (1.0 - cam_data.viewport_y - cam_data.viewport_height) * cam_data.resolution_height as f32;
+
+        // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, false, nodes, light_cam_bind_group)
@@ -1225,11 +1220,12 @@ impl Scene
         });
 
         let x = cam_data.viewport_x * cam_data.resolution_width as f32;
-        let y = cam_data.viewport_y * cam_data.resolution_height as f32;
-
         let width = cam_data.viewport_width * cam_data.resolution_width as f32;
-        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
 
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
+        let y = (1.0 - cam_data.viewport_y - cam_data.viewport_height) * cam_data.resolution_height as f32;
+
+        // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         self.draw_phase(&mut render_pass, true, nodes, light_cam_bind_group)

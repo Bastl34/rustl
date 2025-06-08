@@ -9,8 +9,6 @@ use super::editor_state::EditorState;
 pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<(u64, ScenePickRes)>
 {
     let scenes = &state.scenes;
-    let width = state.width;
-    let height = state.height;
 
     let mut hit: Option<ScenePickRes> = None;
     let mut scene_id: u64 = 0;
@@ -45,7 +43,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
             // check if click is insight
             if camera.is_point_in_viewport(&pos)
             {
-                let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
+                let ray = camera.get_ray_from_viewport_coordinates(&pos);
 
                 let mut grid_hit = None;
                 if allow_grid_picking
@@ -128,8 +126,6 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
 pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visible: bool, ignore_pickable: bool) -> Option<(u64, ScenePickRes)>
 {
     let scenes = &state.scenes;
-    let width = state.width;
-    let height = state.height;
 
     for scene in scenes
     {
@@ -138,7 +134,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
             // check if click is insight
             if camera.is_point_in_viewport(&pos)
             {
-                let ray = camera.get_ray_from_viewport_coordinates(&pos, width, height);
+                let ray = camera.get_ray_from_viewport_coordinates(&pos);
                 let hit = scene.pick_node(node.clone(), &ray, false, false, ignore_visible, ignore_pickable, None);
 
                 if let Some(hit) = hit

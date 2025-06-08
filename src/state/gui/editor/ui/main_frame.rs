@@ -59,15 +59,15 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
-                if let Some(pointer_pos) =  get_pointer_world_position(state)
-                {
-                    ui.label(RichText::new(format!("x: {:.2}, y: {:.2}, z: {:.2}", pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
-                }
-
                 if loading
                 {
                     ui.separator();
                     ui.spinner();
+                }
+
+                if let Some(pointer_pos) =  get_pointer_world_position(state)
+                {
+                    ui.label(RichText::new(format!("x: {:.2}, y: {:.2}, z: {:.2}", pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
                 }
             });
         });
