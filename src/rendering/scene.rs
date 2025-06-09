@@ -19,7 +19,7 @@ pub struct RenderData<'a>
     meshes: &'a Vec<RwLockReadGuard<'a, ComponentBox>>,
 
     has_transparency: bool,
-    alpha_index: u64,
+    alpha_index: i64,
     middle: Point3::<f32>
 }
 
@@ -942,7 +942,7 @@ impl Scene
 
         // solid_objects and transparent_objects
         let mut render_groups: Vec<(Vec<RenderData>, Vec<RenderData>)> = vec![];
-        let mut group_map: HashMap<u64, usize> = HashMap::new();
+        let mut rendering_group_map: HashMap<i64, usize> = HashMap::new();
 
         for (i, material) in materials_read.iter().enumerate()
         {
@@ -1023,7 +1023,7 @@ impl Scene
                 middle: item_middle
             };
 
-            let i = *group_map.entry(render_group_id).or_insert_with(||
+            let i = *rendering_group_map.entry(render_group_id).or_insert_with(||
             {
                 render_groups.push((vec![], vec![]));
                 render_groups.len() - 1

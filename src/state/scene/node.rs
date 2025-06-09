@@ -18,8 +18,8 @@ const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got
 pub struct NodeSettings
 {
     pub render_children_first: bool,
-    pub alpha_index: u64, // this can be used to influence the alpha sorting (for transparent objects rendering)
-    pub render_group_id: u64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
+    pub alpha_index: i64, // this can be used to influence the alpha sorting (for transparent objects rendering)
+    pub render_group_id: i64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
 
     pub depth_test: bool,
     pub depth_write: bool,

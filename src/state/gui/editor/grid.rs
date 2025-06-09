@@ -6,6 +6,8 @@ use crate::{component_downcast_mut, helper::{concurrency::{execution_queue::Exec
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
+const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
+
 pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
     let integer_grid_line_scale = 3.0;
@@ -153,6 +155,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                 {
                     instance.write().unwrap().pickable = false;
                 }
+
+                node.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX - 1; // render before the grid plane
             }
         }
 
@@ -223,6 +227,12 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                 grid.add_instance(Box::new(instance));
             }
 
+
+            {
+                let mut grid_origin = grid_arc.write().unwrap();
+                grid_origin.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX - 2; // render before the grid plane and grid lines
+            }
+
             /*
             {
                 let grid = grid_arc.read().unwrap();
@@ -239,7 +249,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
         }
 
         // ********** create plane **********
-        if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
+        if let Some(grid_area_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
         {
             let half_size = size / 2.0;
 
@@ -265,13 +275,15 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     let mut plane_node = plane_node.write().unwrap();
                     plane_node.add_component(Arc::new(RwLock::new(Box::new(plane_mesh))));
                     plane_node.add_component(plane_material_arc);
+
+                    plane_node.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX;
                 }
 
                 let instance_id = plane_node.write().unwrap().create_default_instance(plane_node.clone());
                 plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
             }
 
-            Node::add_node(grid_arc, plane_node);
+            Node::add_node(grid_area_arc, plane_node);
         }
 
         // run internal tagging
