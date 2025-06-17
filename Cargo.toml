@@ -37,8 +37,8 @@ arboard = "3.5.0"
 
 tobj = { version = "4.0", features = ["async"]}
 
-gltf = { version = "1.4", features = [
-#gltf = { git = "https://github.com/gltf-rs/gltf", features = [
+#gltf = { version = "1.4", features = [
+gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
@@ -46,11 +46,12 @@ gltf = { version = "1.4", features = [
   "KHR_materials_ior",
   "KHR_materials_unlit",
   "KHR_texture_transform",
-  "KHR_materials_emissive_strength"
+  "KHR_materials_emissive_strength",
+  "EXT_texture_webp"
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
-image = { version = "0.25", default-features = false, features = [ "png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
 #egui = "0.31"
