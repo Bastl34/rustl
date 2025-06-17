@@ -13,6 +13,27 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     let mut hit: Option<ScenePickRes> = None;
     let mut scene_id: u64 = 0;
 
+    let inner_predicate = predicate.clone();
+    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, _check_instance_id: Option<u64>| -> bool
+    {
+        if node_arc.read().unwrap().tags.contains("internal")
+        {
+            return false;
+        }
+
+        if let Some(inner_predicate) = &inner_predicate
+        {
+            if !inner_predicate(node_arc.clone(), None)
+            {
+                return false;
+            }
+        }
+        true
+    });
+
+    let do_not_pick_internal_nodes_predicate: Option<PickPredicate> = Some(do_not_pick_internal_nodes_predicate);
+
+
     for scene in scenes
     {
         let set_grid_picking = |scene: &Box<Scene>, state: bool|
@@ -57,7 +78,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
                     }
                 }
 
-                let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, predicate.clone());
+                let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, do_not_pick_internal_nodes_predicate.clone());
 
                 //dbg!(scene_hit.is_some());
                 //dbg!(grid_hit.is_some());
@@ -334,7 +355,9 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
 
     for node in all_child_nodes
     {
-        let node = node.read().unwrap();
+        let mut node = node.write().unwrap();
+        node.tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+
         let materials = node.find_components::<Material>();
         for material in materials
         {

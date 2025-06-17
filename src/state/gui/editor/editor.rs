@@ -291,7 +291,7 @@ impl Editor
                     let copy_node_id = self.editor_state.copy_node_id.clone();
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
 
-                    self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y), Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                    self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                     {
                         // copy over transformation
                         if let Some(transform_data) = copy_asset_transform.clone()
@@ -337,7 +337,7 @@ impl Editor
                 let copy_node_id = self.editor_state.copy_node_id.clone();
                 let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
 
-                self.load_asset(state, source.clone(), Point2::<f32>::new(pos.x, pos.y), Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                self.load_asset(state, source.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                 {
                     // copy over transformation
                     if let Some(transform_data) = copy_asset_transform.clone()
@@ -620,7 +620,8 @@ impl Editor
                         let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
-                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y), None);
+                            let reuse_materials = if self.editor_state.asset_type == AssetType::Object && self.editor_state.reuse_materials_by_name  { true } else { false };
+                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None);
                         }
                     }
                 }
@@ -633,7 +634,8 @@ impl Editor
     pub fn apply_external_asset_drag(&mut self, state: &mut State, path: String)
     {
         let pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
-        self.load_asset(state, path, pos, None);
+        let reuse_materials = false;
+        self.load_asset(state, path, pos, reuse_materials, None);
     }
 
     pub fn set_edit_mode(&mut self, state: &mut State)
@@ -1222,7 +1224,7 @@ impl Editor
         }
     }
 
-    pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
+    pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>, reuse_material: bool, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
     {
         if self.editor_state.loading.read().unwrap().clone()
         {
@@ -1282,7 +1284,6 @@ impl Editor
         let create_mipmaps = state.rendering.create_mipmaps;
         let max_tex_res = state.max_texture_resolution();
         let object_only = if self.editor_state.asset_type == AssetType::Object { true } else { false };
-        let reuse_materials = if self.editor_state.asset_type == AssetType::Object && self.editor_state.reuse_materials_by_name  { true } else { false };
 
         let editor_state = self.editor_state.loading.clone();
         spawn_thread(move ||
@@ -1290,7 +1291,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), reuse_materials, object_only, create_mipmaps, max_tex_res);
+            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), reuse_material, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {

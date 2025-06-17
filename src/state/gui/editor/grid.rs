@@ -231,21 +231,16 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
             {
                 let mut grid_origin = grid_arc.write().unwrap();
                 grid_origin.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX - 2; // render before the grid plane and grid lines
-            }
 
-            /*
-            {
-                let grid = grid_arc.read().unwrap();
-
-                if let Some(material) = grid.find_component::<Material>()
+                if let Some(material) = grid_origin.find_component::<Material>()
                 {
                     component_downcast_mut!(material, Material);
                     material.get_base_mut().name = "grid origin material".to_string();
                     material.get_data_mut().get_mut().unlit_shading = true;
+                    material.get_data_mut().get_mut().alpha = 0.8;
                     material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
                 }
             }
-             */
         }
 
         // ********** create plane **********
@@ -279,8 +274,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                     plane_node.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX;
                 }
 
-                let instance_id = plane_node.write().unwrap().create_default_instance(plane_node.clone());
-                plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
+                plane_node.write().unwrap().create_default_instance(plane_node.clone());
             }
 
             Node::add_node(grid_area_arc, plane_node);
