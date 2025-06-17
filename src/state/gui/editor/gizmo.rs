@@ -10,8 +10,10 @@ const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_MIN: f32 = 0.01;
 const GIZMO_SCALE_STEP: f32 = 0.1;
+const GIZMO_SCALE_SLOW_FACTOR: f32 = 0.1;
 
 const GIZMO_ROTATION_STEP: f32 = PI / 16.0;
+const GIZMO_ROTATION_SLOW_FACTOR: f32 = 0.1;
 
 const GIZMO_SCALE_DISTANCE_FACTOR: f32 = 0.1;
 
@@ -526,7 +528,12 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
 
                 if let (Some(p0), Some(p1)) = (p0, p1)
                 {
-                    let angle = signed_angle_between_points(&gizmo_pos, &p0, &p1, &plane_normal);
+                    let mut angle = signed_angle_between_points(&gizmo_pos, &p0, &p1, &plane_normal);
+
+                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    {
+                        angle *= GIZMO_ROTATION_SLOW_FACTOR;
+                    }
 
                     let rotation_vec = match editor_state.selected_gizmo
                     {
