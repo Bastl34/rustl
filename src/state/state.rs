@@ -250,6 +250,11 @@ impl State
         });
     }
 
+    pub fn export_json(&self, path: &str)
+    {
+        println!("exporting {} to json", path);
+    }
+
     pub fn get_main_scene(&self) -> Option<&SceneItem>
     {
         for scene in &self.scenes

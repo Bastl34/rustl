@@ -230,6 +230,15 @@ impl Editor
 
         // copy paste
         self.copy_paste(state);
+
+        // save project
+        if state.input_manager.keyboard.is_holding(Key::S) && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        {
+            if state.input_manager.keyboard.is_pressed_no_wait(Key::S)
+            {
+                state.export_json(self.editor_state.project_name.as_str());
+            }
+        }
     }
 
     pub fn copy_paste(&mut self, state: &mut State)

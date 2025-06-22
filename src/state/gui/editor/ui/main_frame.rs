@@ -43,7 +43,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.horizontal(|ui|
         {
-            create_file_menu(state, ui);
+            create_file_menu(editor_state, state, ui);
         });
     });
 
@@ -118,10 +118,14 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     create_modals(editor_state, state, ctx);
 }
 
-fn create_file_menu(state: &mut State, ui: &mut Ui)
+fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     ui.menu_button("File", |ui|
     {
+        if ui.button("Save Project").clicked()
+        {
+            state.export_json(editor_state.project_name.as_str());
+        }
         if ui.button("Exit").clicked()
         {
             state.exit = true;

@@ -5,7 +5,7 @@ use std::sync::{RwLock, Arc};
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Vector3};
 
-use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -110,6 +110,8 @@ pub struct EditorState
     pub selectable: bool,
     pub fly_camera: bool,
 
+    pub project_name: String,
+
     pub gizmo_position: bool,
     pub gizmo_rotation: bool,
     pub gizmo_scale: bool,
@@ -179,6 +181,8 @@ impl EditorState
             try_mode: false,
             selectable: true,
             fly_camera: true,
+
+            project_name: "test_project".to_string(),
 
             gizmo_position: true,
             gizmo_rotation: false,
@@ -327,6 +331,9 @@ impl EditorState
     {
         for scene in &mut state.scenes
         {
+            // enable camera movement again
+            apply_fly_camera_move_state(scene, true);
+
             for node in &scene.nodes
             {
                 let mut all_nodes = vec![];
@@ -392,6 +399,9 @@ impl EditorState
                     }
                 }
             }
+
+            // enable camera movement again
+            apply_fly_camera_move_state(scene, true);
         }
 
         self.selected_object.clear();
@@ -433,6 +443,9 @@ impl EditorState
         self.selected_scene_id = None;
         self.selected_type = SelectionType::None;
         self.selected_gizmo = None;
+
+        // enable camera movement again
+        apply_fly_camera_move_state(scene, true);
     }
 
     pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u64, instance_id: Option<u64>, selection_type: SelectionType) -> bool
