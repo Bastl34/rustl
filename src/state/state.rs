@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc, sync::{Arc, RwLock}};
 use instant::Instant;
 use nalgebra::Vector3;
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
+use crate::{helper::{change_tracker::ChangeTracker, file::write_string_to_tile, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -250,9 +250,17 @@ impl State
         });
     }
 
-    pub fn export_json(&self, path: &str)
+    pub fn export_json(&self, path: &str) -> bool
     {
         println!("exporting {} to json", path);
+
+        let mut file_content = String::new();
+        if write_string_to_tile(format!("{}.json", path).as_str(), file_content).is_ok()
+        {
+            return true;
+        }
+
+        false
     }
 
     pub fn get_main_scene(&self) -> Option<&SceneItem>

@@ -124,7 +124,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     {
         if ui.button("Save Project").clicked()
         {
-            state.export_json(editor_state.project_name.as_str());
+            state.export_json((("data/".to_string()) + &editor_state.project_name).as_str());
         }
         if ui.button("Exit").clicked()
         {

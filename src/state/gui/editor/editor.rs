@@ -236,7 +236,7 @@ impl Editor
         {
             if state.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
-                state.export_json(self.editor_state.project_name.as_str());
+                state.export_json((("data/".to_string()) + &self.editor_state.project_name).as_str());
             }
         }
     }
