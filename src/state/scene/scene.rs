@@ -9,7 +9,7 @@ use parry3d::query::Ray;
 
 use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::Component, sound::Sound}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager::{IdManager, IdManagerItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
@@ -52,13 +52,12 @@ pub struct SceneData
 
 pub struct Scene
 {
-    pub id_manager: IdManagerItem,
-
     pub id: u64,
     pub uuid: String,
 
     pub name: String,
     pub visible: bool,
+    pub main: bool,
 
     data: ChangeTracker<SceneData>,
 
@@ -80,17 +79,16 @@ pub struct Scene
 
 impl Scene
 {
-    pub fn new(id: u64, uuid: String, name: &str, audio_device: AudioDeviceItem) -> Scene
+    pub fn new(name: &str, audio_device: AudioDeviceItem) -> Scene
     {
         Self
         {
-            id_manager: Arc::new(RwLock::new(IdManager::new())),
-
-            id,
-            uuid,
+            id: id_manager::get_next_scene_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
             visible: true,
+            main: false,
 
             data: ChangeTracker::new(SceneData
             {
@@ -125,6 +123,12 @@ impl Scene
     pub fn get_data_mut(&mut self) -> &mut ChangeTracker<SceneData>
     {
         &mut self.data
+    }
+
+    pub fn get_node_amount_recursive(&self) -> usize
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        all_nodes.len()
     }
 
     pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
@@ -203,6 +207,15 @@ impl Scene
         }
     }
 
+    pub fn update_resolution(&mut self, resolution_width: u32, resolution_height: u32)
+    {
+        for cam in &mut self.cameras
+        {
+            cam.update_resolution(resolution_width, resolution_height);
+            cam.init_matrices();
+        }
+    }
+
     pub fn print(&self)
     {
         println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len(), self.textures.len());
@@ -235,9 +248,7 @@ impl Scene
 
     pub fn add_empty_node(&mut self, name: &str, parent: Option<NodeItem>) -> NodeItem
     {
-        let id = self.id_manager.write().unwrap().get_next_node_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-        let node = Node::new(id, uuid, name);
+        let node = Node::new(name);
 
         if let Some(parent) = parent
         {
@@ -281,9 +292,7 @@ impl Scene
             return self.textures.get_mut(&hash).unwrap().clone();
         }
 
-        let id = self.id_manager.write().unwrap().get_next_texture_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-        let texture = Texture::new(id, uuid, name, &image_bytes, extension, max_tex_res);
+        let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
@@ -302,9 +311,7 @@ impl Scene
             return self.sound_sources.get_mut(&hash).unwrap().clone();
         }
 
-        let id = self.id_manager.write().unwrap().get_next_sound_source_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-        let texture = SoundSource::new(id, uuid, name, self.audio_device.clone(), &sound_bytes, extension);
+        let texture = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
@@ -480,18 +487,18 @@ impl Scene
         Self::clear_empty_nodes_recursive(&mut self.nodes);
     }
 
-    pub fn add_material(&mut self, id: u64, material: &MaterialItem)
+    pub fn add_material(&mut self, material: &MaterialItem)
     {
+        let id = material.read().unwrap().get_base().id;
         self.materials.insert(id, material.clone());
     }
 
     pub fn add_default_material(&mut self)
     {
-        let material_id = self.id_manager.write().unwrap().get_next_component_id();
-        let material = Material::new(material_id, "default");
+        let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
-        self.add_material(material_id, &material_arc);
+        self.add_material(&material_arc);
     }
 
     pub fn get_default_material(&self) -> Option<MaterialItem>
@@ -747,10 +754,7 @@ impl Scene
 
     pub fn add_empty_camera(&mut self, name: &str) -> &CameraItem
     {
-        let id = self.id_manager.write().unwrap().get_next_camera_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-
-        let cam = Camera::new(id, uuid, name.to_string());
+        let cam = Camera::new(name.to_string());
         self.cameras.push(Box::new(cam));
 
         self.cameras.last().unwrap()
@@ -815,10 +819,7 @@ impl Scene
 
     pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = self.id_manager.write().unwrap().get_next_light_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-
-        let light = Light::new_point(id, uuid, name.to_string(), pos, color, intensity);
+        let light = Light::new_point(name.to_string(), pos, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -826,10 +827,7 @@ impl Scene
 
     pub fn add_light_directional(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = self.id_manager.write().unwrap().get_next_light_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-
-        let light = Light::new_directional(id, uuid, name.to_string(), pos, dir, color, intensity);
+        let light = Light::new_directional(name.to_string(), pos, dir, color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -837,10 +835,7 @@ impl Scene
 
     pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = self.id_manager.write().unwrap().get_next_light_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-
-        let light = Light::new_spot(id, uuid, name.to_string(), pos, dir, color, max_angle, intensity);
+        let light = Light::new_spot(name.to_string(), pos, dir, color, max_angle, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -848,10 +843,7 @@ impl Scene
 
     pub fn add_light_hemisperical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let id = self.id_manager.write().unwrap().get_next_light_id();
-        let uuid = uuid::Uuid::new_v4().to_string();
-
-        let light = Light::new_hemi(id, uuid, name.to_string(), dir, color, ground_color, intensity);
+        let light = Light::new_hemi(name.to_string(), dir, color, ground_color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -917,6 +909,70 @@ impl Scene
             return false;
         }
 
+        if delete_textures && !delete_materials
+        {
+            println!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
+        }
+
+        // ********** delete materials **********
+        let mut materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+        if delete_materials
+        {
+            let mut all_nodes_to_delete;
+            {
+                let delete_node = self.find_node_by_id(id);
+                let delete_node_arc = delete_node.unwrap();
+                let delete_node = delete_node_arc.read().unwrap();
+
+                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
+                all_nodes_to_delete.push(delete_node_arc.clone());
+            }
+
+            // find all affecting
+            let mut possible_materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+            for node in all_nodes_to_delete
+            {
+                let mut node_materials = vec![];
+
+                {
+                    let node = node.read().unwrap();
+
+                    for material in node.find_components::<Material>()
+                    {
+                        let material_id = material.read().unwrap().id();
+                        possible_materials_to_delete.insert(material_id, material.clone());
+                        node_materials.push(material_id);
+                    }
+                }
+
+                let mut node = node.write().unwrap();
+                for material_id in node_materials
+                {
+                    node.remove_component_by_id(material_id);
+                }
+            }
+
+            let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+            for (material_id, _) in &possible_materials_to_delete
+            {
+                let mut usage = 0;
+                for node in &all_nodes
+                {
+                    let node = node.read().unwrap();
+                    if node.find_component_by_id(*material_id).is_some()
+                    {
+                        usage += 1;
+                    }
+                }
+
+                if usage == 0
+                {
+                    materials_to_delete.insert(*material_id, possible_materials_to_delete.get(material_id).unwrap().clone());
+                    self.delete_material_by_id(*material_id);
+                }
+            }
+        }
+
         // ********** delete textures **********
         if delete_textures
         {
@@ -934,21 +990,17 @@ impl Scene
             let mut textures_to_delete: HashSet<u64> = HashSet::new();
 
             // find all textures from materials and delete them from materials
-            for node in all_nodes_to_delete
+            for (_material_id, material) in &materials_to_delete
             {
-                let node = node.read().unwrap();
-                for material in node.find_components::<Material>()
+                component_downcast_mut!(material, Material);
+                let textures = material.get_all_textures();
+                for texture in &textures
                 {
-                    component_downcast_mut!(material, Material);
-                    let textures = material.get_all_textures();
-                    for texture in &textures
-                    {
-                        let texture_id = texture.read().unwrap().id;
-                        textures_to_delete.insert(texture_id);
-                    }
-
-                    material.remove_all_textures();
+                    let texture_id = texture.read().unwrap().id;
+                    textures_to_delete.insert(texture_id);
                 }
+
+                material.remove_all_textures();
             }
 
             // delete textures if not in use anymore
@@ -967,64 +1019,6 @@ impl Scene
                 if usage == 0
                 {
                     self.delete_texture_by_id(texture_id);
-                }
-            }
-        }
-
-        // ********** delete materials **********
-        if delete_materials
-        {
-            let mut all_nodes_to_delete;
-            {
-                let delete_node = self.find_node_by_id(id);
-                let delete_node_arc = delete_node.unwrap();
-                let delete_node = delete_node_arc.read().unwrap();
-
-                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
-                all_nodes_to_delete.push(delete_node_arc.clone());
-            }
-
-            // find all affecting
-            let mut materials_to_delete: HashSet<u64> = HashSet::new();
-
-            for node in all_nodes_to_delete
-            {
-                let mut node_materials = vec![];
-
-                {
-                    let node = node.read().unwrap();
-
-                    for material in node.find_components::<Material>()
-                    {
-                        let material_id = material.read().unwrap().id();
-                        materials_to_delete.insert(material_id);
-                        node_materials.push(material_id);
-                    }
-                }
-
-                let mut node = node.write().unwrap();
-                for material_id in node_materials
-                {
-                    node.remove_component_by_id(material_id);
-                }
-            }
-
-            let all_nodes = Scene::list_all_child_nodes(&self.nodes);
-            for material_id in materials_to_delete
-            {
-                let mut usage = 0;
-                for node in &all_nodes
-                {
-                    let node = node.read().unwrap();
-                    if node.find_component_by_id(material_id).is_some()
-                    {
-                        usage += 1;
-                    }
-                }
-
-                if usage == 0
-                {
-                    self.delete_material_by_id(material_id);
                 }
             }
         }
@@ -1084,7 +1078,7 @@ impl Scene
         false
     }
 
-    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
+    pub fn multi_pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let mut nodes = vec![];
 
@@ -1098,12 +1092,12 @@ impl Scene
         let child_nodes_with_meshes = Scene::list_all_child_nodes_with_mesh(&node.read().unwrap().nodes);
         nodes.extend(child_nodes_with_meshes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate)
     }
 
-    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
+    pub fn pick_node(&self, node: NodeItem, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
-        let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, predicate);
+        let hits = self.multi_pick_node(node, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate);
 
         if hits.len() > 0
         {
@@ -1113,11 +1107,11 @@ impl Scene
         None
     }
 
-    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
+    pub fn pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
-        let hits = self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate);
+        let hits = self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate);
 
         if hits.len() > 0
         {
@@ -1127,14 +1121,14 @@ impl Scene
         None
     }
 
-    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
+    pub fn multi_pick(&self, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         let nodes = Scene::list_all_child_nodes_with_mesh(&self.nodes);
 
-        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, predicate)
+        self.pick_nodes(&nodes, ray, stop_on_first_hit, bounding_box_only, ignore_visible, ignore_pickable, predicate)
     }
 
-    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
+    fn pick_nodes(&self, nodes: &Vec<Arc<RwLock<Box<Node>>>>, ray: &Ray, stop_on_first_hit: bool, bounding_box_only: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Vec<ScenePickRes>
     {
         // find hits (bbox based)
         let mut hits_bbox = vec![];
@@ -1145,8 +1139,13 @@ impl Scene
         {
             let node = node_arc.read().unwrap();
 
-            // early "return" check
-            if !node.visible
+            // early "return" checks
+            if !ignore_visible && !node.visible
+            {
+                continue;
+            }
+
+            if !ignore_pickable && !node.pickable
             {
                 continue;
             }
@@ -1192,7 +1191,7 @@ impl Scene
                 }
 
                 let instance = instance.read().unwrap();
-                if !instance.pickable
+                if !ignore_pickable && !instance.pickable
                 {
                     continue;
                 }

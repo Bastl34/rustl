@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{gamepad::Gamepad, keyboard::Keyboard, mouse::Mouse, touch::Touch};
+use super::{gamepad::Gamepad, input_point::InputPoint, keyboard::Keyboard, mouse::{Mouse, MouseButton}, touch::Touch};
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum InputType
@@ -69,6 +69,26 @@ impl InputManager
         {
             gamepad.update_states();
         }
+    }
+
+    pub fn get_pointer_input(&self) -> InputPoint
+    {
+        if let Some(touch) = self.touch.get_first_touch()
+        {
+            return touch.clone();
+        }
+
+        return self.mouse.point.clone();
+    }
+
+    pub fn is_main_pointer_action_active(&self) -> bool
+    {
+        if let Some(_touch) = self.touch.get_first_touch()
+        {
+            return true;
+        }
+
+        return self.mouse.is_holding(MouseButton::Left);
     }
 
     pub fn reset(&mut self)

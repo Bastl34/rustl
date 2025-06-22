@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{state::{scene::{components::material::{MaterialItem, ALL_TEXTURE_TYPES, Material}, scene::Scene}, state::State, gui::{helper::{generic_items::{collapse_with_title, self}, info_box::info_box}, editor::dialogs::load_texture_dialog}}, component_downcast_mut, helper::concurrency::thread::spawn_thread};
+use crate::{component_downcast_mut, helper::concurrency::thread::spawn_thread, state::{gui::{editor::ui::dialogs::load_texture_dialog, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
 pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u64, MaterialItem>, ui: &mut Ui, scene_id: u64)
 {
@@ -15,8 +15,11 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let material = material.read().unwrap();
             let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
 
+            let is_internal = material.get_base().tags.contains("internal");
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_nodes);
+
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }

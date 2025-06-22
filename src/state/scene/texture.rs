@@ -7,6 +7,8 @@ use nalgebra::{Vector2, Vector4};
 
 use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
+use super::manager::id_manager;
+
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
 const PREVIEW_SIZE: u32 = 256;
@@ -94,6 +96,7 @@ pub struct Texture
     pub uuid: String,
 
     pub name: String,
+    pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
 
     pub data: ChangeTracker<TextureData>,
@@ -133,10 +136,11 @@ impl Texture
 
         Texture
         {
-            id: 0,
+            id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
 
             name: "empty".to_string(),
+            extension: None,
             hash: "".to_string(),
 
             data: ChangeTracker::new(data),
@@ -146,11 +150,11 @@ impl Texture
         }
     }
 
-    pub fn new(id: u64, uuid: String, name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
+    pub fn new(name: &str, image_bytes: &Vec<u8>, extension: Option<String>, max_resolution: u32) -> Texture
     {
         let image;
 
-        if let Some(extension) = extension
+        if let Some(extension) = &extension
         {
             let format = ImageFormat::from_extension(extension).unwrap();
             image = image::load_from_memory_with_format(image_bytes.as_slice(), format).unwrap();
@@ -204,10 +208,11 @@ impl Texture
 
         Texture
         {
-            id,
-            uuid,
+            id: id_manager::get_next_texture_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
+            extension,
             hash,
 
             data: ChangeTracker::new(data),
@@ -217,7 +222,7 @@ impl Texture
         }
     }
 
-    pub fn new_from_image_channel(id: u64, uuid: String, name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
+    pub fn new_from_image_channel(name: &str, texture: &Texture, channel: usize, max_resolution: u32) -> Texture
     {
         let width = texture.width();
         let height = texture.height();
@@ -273,10 +278,11 @@ impl Texture
 
         Texture
         {
-            id,
-            uuid,
+            id: id_manager::get_next_texture_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
+            extension: texture.extension.clone(),
             hash,
 
             data: ChangeTracker::new(data),
@@ -561,6 +567,10 @@ impl Texture
 
         ui.label(format!("{}x{}, {}, {} mips, {:.2} MB", data.width, data.height, format, self.get_mipmap_levels_amount(), gpu_size));
         ui.label(format!("has transparency: {}", data.has_transparency));
+        if let Some(extension) = &self.extension
+        {
+            ui.label(format!("original format: {}", extension));
+        }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)

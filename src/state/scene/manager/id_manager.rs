@@ -1,79 +1,28 @@
-pub struct IdManager
+use std::sync::{LazyLock, Mutex};
+
+static SCENE_ID:      LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static TEXTURE_ID:      LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static SOUND_SOURCE_ID: LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static NODE_ID:         LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static INSTANCE_ID:     LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static CAMERA_ID:       LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static LIGHT_ID:        LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+static COMPONENT_ID:    LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+
+fn get_next_from(counter: &LazyLock<Mutex<u64>>) -> u64
 {
-    texture_id: u64,
-    sound_source_id: u64,
-    node_id: u64,
-    instance_id: u64,
-    camera_id: u64,
-    light_id: u64,
-    component_id: u64,
+    let mut id = counter.lock().unwrap();
+    let current_id = *id;
+    *id += 1;
+
+    current_id
 }
 
-pub type IdManagerItem = std::sync::Arc<std::sync::RwLock<IdManager>>;
-
-impl IdManager
-{
-    pub fn new() -> IdManager
-    {
-        Self
-        {
-            texture_id: 0,
-            sound_source_id: 0,
-            node_id: 0,
-            instance_id: 0,
-            camera_id: 0,
-            light_id: 0,
-            component_id: 0
-        }
-    }
-
-    pub fn get_next_texture_id(&mut self) -> u64
-    {
-        self.texture_id = self.texture_id + 1;
-
-        self.texture_id
-    }
-
-    pub fn get_next_sound_source_id(&mut self) -> u64
-    {
-        self.sound_source_id = self.sound_source_id + 1;
-
-        self.sound_source_id
-    }
-
-    pub fn get_next_node_id(&mut self) -> u64
-    {
-        self.node_id = self.node_id + 1;
-
-        self.node_id
-    }
-
-    pub fn get_next_instance_id(&mut self) -> u64
-    {
-        self.instance_id = self.instance_id + 1;
-
-        self.instance_id
-    }
-
-    pub fn get_next_camera_id(&mut self) -> u64
-    {
-        self.camera_id = self.camera_id + 1;
-
-        self.camera_id
-    }
-
-    pub fn get_next_light_id(&mut self) -> u64
-    {
-        self.light_id = self.light_id + 1;
-
-        self.light_id
-    }
-
-    pub fn get_next_component_id(&mut self) -> u64
-    {
-        self.component_id = self.component_id + 1;
-
-        self.component_id
-    }
-
-}
+pub fn get_next_scene_id() -> u64        { get_next_from(&SCENE_ID) }
+pub fn get_next_texture_id() -> u64      { get_next_from(&TEXTURE_ID) }
+pub fn get_next_sound_source_id() -> u64 { get_next_from(&SOUND_SOURCE_ID) }
+pub fn get_next_node_id() -> u64         { get_next_from(&NODE_ID) }
+pub fn get_next_instance_id() -> u64     { get_next_from(&INSTANCE_ID) }
+pub fn get_next_camera_id() -> u64       { get_next_from(&CAMERA_ID) }
+pub fn get_next_light_id() -> u64        { get_next_from(&LIGHT_ID) }
+pub fn get_next_component_id() -> u64    { get_next_from(&COMPONENT_ID) }

@@ -10,12 +10,12 @@ use wasm_bindgen::prelude::*;
 
 use crate::interface::main_interface::MainInterface;
 
-struct App
+struct WindowApp
 {
     interface: MainInterface,
 }
 
-impl App
+impl WindowApp
 {
     async fn new(window: Arc<Window>,) -> Self
     {
@@ -32,14 +32,14 @@ impl App
 
 enum CustomEvent
 {
-    Initialized(App),
+    Initialized(WindowApp),
 }
 
 enum AppState
 {
     // TODO: EventLoopProxy will no longer be required here once https://github.com/rust-windowing/winit/issues/3741 lands
     Uninitialized(EventLoopProxy<CustomEvent>),
-    Initialized(App),
+    Initialized(WindowApp),
 }
 
 impl ApplicationHandler<CustomEvent> for AppState
@@ -61,7 +61,7 @@ impl ApplicationHandler<CustomEvent> for AppState
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
-                    let app = pollster::block_on(App::new(window));
+                    let app = pollster::block_on(WindowApp::new(window));
 
                     //let proxy = event_loop_proxy.clone();
 
@@ -81,7 +81,7 @@ impl ApplicationHandler<CustomEvent> for AppState
                     let event_loop_proxy = event_loop_proxy.clone();
                     wasm_bindgen_futures::spawn_local(async move
                     {
-                        let app = App::new(window).await;
+                        let app = WindowApp::new(window).await;
                         assert!(event_loop_proxy.send_event(CustomEvent::Initialized(app)).is_ok());
                     });
                 }
@@ -109,6 +109,7 @@ impl ApplicationHandler<CustomEvent> for AppState
                 if app.interface.check_exit()
                 {
                     event_loop.exit();
+                    app.interface.exit();
                 }
                 else
                 {
@@ -122,7 +123,14 @@ impl ApplicationHandler<CustomEvent> for AppState
 
                 }
             },
-            winit::event::WindowEvent::CloseRequested => event_loop.exit(),
+            winit::event::WindowEvent::CloseRequested =>
+            {
+                if app.interface.request_exit()
+                {
+                    event_loop.exit();
+                    app.interface.exit();
+                }
+            },
             _ => app.interface.window_input(&event)
         }
     }
@@ -175,11 +183,11 @@ pub fn run()
     }
 
     let event_loop = winit::event_loop::EventLoop::with_user_event().build().unwrap();
-    let mut app = AppState::Uninitialized(event_loop.create_proxy());
+    let mut app_state = AppState::Uninitialized(event_loop.create_proxy());
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        event_loop.run_app(&mut app).unwrap();
+        event_loop.run_app(&mut app_state).unwrap();
     }
 
     #[cfg(target_arch = "wasm32")]

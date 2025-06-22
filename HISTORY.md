@@ -1,6 +1,12 @@
 # History
 Here are some screenshots which are showing the development progress.
 
+# 2025-06-21
+* Easy to use Editor
+
+<img src="history/2025-06-21.png" width="720">
+<br><br>
+
 # 2025-02-23
 * Alpha Cutoff
 

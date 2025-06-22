@@ -146,7 +146,7 @@ pub struct Material
 
 impl Material
 {
-    pub fn new(id: u64, name: &str) -> Material
+    pub fn new(name: &str) -> Material
     {
         let material_data = MaterialData
         {
@@ -198,8 +198,8 @@ impl Material
 
         Material
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Material".to_string(), "🎨".to_string()),
-            data: ChangeTracker::new(material_data)
+            base: ComponentBase::new(name.to_string(), "Material".to_string(), "🎨".to_string()),
+            data: ChangeTracker::new(material_data),
         }
     }
 
@@ -215,7 +215,7 @@ impl Material
 
     pub fn apply_diff_without_textures(&mut self, new_mat: &Material)
     {
-        let default_material = Material::new(0, "");
+        let default_material = Material::new("");
         let default_material_data = default_material.get_data();
 
         let new_mat_data = new_mat.get_data();
@@ -283,7 +283,7 @@ impl Material
         self.apply_diff_without_textures(new_mat);
 
         // ********** textures **********
-        let default_material = Material::new(0, "");
+        let default_material = Material::new("");
         let default_material_data = default_material.data.get_ref();
 
         let new_mat_data = new_mat.get_data();
@@ -686,7 +686,7 @@ impl Component for Material
         false
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         None
     }

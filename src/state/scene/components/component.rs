@@ -6,8 +6,10 @@ use std::any::Any;
 
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
+use crate::state::scene::utilities::tags::Tags;
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -29,7 +31,7 @@ pub trait Component: Any
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
     fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
-    fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>;
+    fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
 
     fn set_enabled(&mut self, state: bool);
@@ -74,6 +76,7 @@ pub struct ComponentBase
     pub info: Option<String>,
 
     pub extras: Extras,
+    pub tags: Tags,
 
     pub from_file: bool,
 
@@ -84,12 +87,12 @@ pub struct ComponentBase
 
 impl ComponentBase
 {
-    pub fn new(id: u64, uuid: String, name: String, component_name: String, icon: String) -> ComponentBase
+    pub fn new(name: String, component_name: String, icon: String) -> ComponentBase
     {
         ComponentBase
         {
-            id,
-            uuid,
+            id: id_manager::get_next_component_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
             is_enabled: true,
 
             name,
@@ -98,6 +101,7 @@ impl ComponentBase
             info: None,
 
             extras: Extras::new(),
+            tags: Tags::new(),
 
             from_file: false,
 
@@ -107,11 +111,11 @@ impl ComponentBase
         }
     }
 
-    pub fn duplicate(id: u64, from: &ComponentBase) -> ComponentBase
+    pub fn duplicate(from: &ComponentBase) -> ComponentBase
     {
         ComponentBase
         {
-            id,
+            id: id_manager::get_next_component_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
 
             is_enabled: from.is_enabled,
@@ -122,6 +126,7 @@ impl ComponentBase
             info: from.info.clone(),
 
             extras: from.extras.clone(),
+            tags: from.tags.clone(),
 
             from_file: false,
 

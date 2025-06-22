@@ -4,9 +4,9 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, input::input_manager::InputManager, helper::change_tracker::ChangeTracker};
+use crate::{component_downcast, component_downcast_mut, helper::change_tracker::ChangeTracker, input::input_manager::InputManager};
 
-use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem}};
+use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
 pub type InstanceItem = Box<Instance>;
 
@@ -29,7 +29,6 @@ pub struct InstanceData
     pub color: Vector4::<f32>
 }
 
-
 pub struct Instance
 {
     pub id: u64,
@@ -48,12 +47,12 @@ pub struct Instance
 
 impl Instance
 {
-    pub fn new(id: u64, uuid: String, name: String, node: NodeItem) -> Instance
+    pub fn new(name: String, node: NodeItem) -> Instance
     {
         let instance = Instance
         {
-            id,
-            uuid,
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name,
             pickable: true,
@@ -83,12 +82,12 @@ impl Instance
         instance
     }
 
-    pub fn new_with_transform(id: u64, uuid: String, name: String, node: NodeItem, transform: Transformation) -> Instance
+    pub fn new_with_transform(name: String, node: NodeItem, transform: Transformation) -> Instance
     {
         let mut instance = Instance
         {
-            id,
-            uuid,
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name,
             pickable: true,

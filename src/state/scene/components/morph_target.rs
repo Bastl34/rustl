@@ -19,7 +19,7 @@ pub struct MorphTarget
 
 impl MorphTarget
 {
-    pub fn new(id: u64, name: &str, target_id: u32) -> MorphTarget
+    pub fn new(name: &str, target_id: u32) -> MorphTarget
     {
         let data = MorphTargetData
         {
@@ -29,7 +29,7 @@ impl MorphTarget
 
         let morph_target = MorphTarget
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Morpth Target".to_string(), "☺".to_string()),
+            base: ComponentBase::new(name.to_string(), "Morpth Target".to_string(), "☺".to_string()),
             data: ChangeTracker::new(data)
         };
 
@@ -81,7 +81,7 @@ impl Component for MorphTarget
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         None
     }

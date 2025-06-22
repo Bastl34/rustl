@@ -5,7 +5,8 @@ use rfd::FileDialog;
 
 use crate::{helper::concurrency::thread::spawn_thread, state::{gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{components::sound::Sound, scene::Scene, sound_source::SoundSourceItem}, state::State}};
 
-use super::{dialogs::load_sound_dialog, editor_state::{EditorState, SelectionType, SettingsPanel}};
+use crate::state::gui::editor::ui::dialogs::load_sound_dialog;
+use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
 pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &HashMap<std::string::String, SoundSourceItem>, ui: &mut Ui, scene_id: u64)
 {

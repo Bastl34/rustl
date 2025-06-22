@@ -31,7 +31,7 @@ pub struct TransformationAnimation
 
 impl TransformationAnimation
 {
-    pub fn new(id: u64, name: &str, translation: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> TransformationAnimation
+    pub fn new(name: &str, translation: Vector3<f32>, rotation: Vector3<f32>, scale: Vector3<f32>) -> TransformationAnimation
     {
         let data = TransformationAnimationData
         {
@@ -43,7 +43,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
+            base: ComponentBase::new(name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
             data: ChangeTracker::new(data),
 
             keyboard_key: None,
@@ -59,7 +59,7 @@ impl TransformationAnimation
         transform_animation
     }
 
-    pub fn new_empty(id: u64, name: &str) -> TransformationAnimation
+    pub fn new_empty(name: &str) -> TransformationAnimation
     {
         let data = TransformationAnimationData
         {
@@ -71,7 +71,7 @@ impl TransformationAnimation
 
         let mut transform_animation = TransformationAnimation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
+            base: ComponentBase::new(name.to_string(), "Transform. Animation".to_string(), "🚤".to_string()),
             data: ChangeTracker::new(data),
 
             keyboard_key: None,
@@ -147,7 +147,7 @@ impl TransformationAnimation
             {
                 if !helper::math::approx_zero_vec4(&rotation_quat)
                 {
-                    transform_component.apply_rotation_quaternion(rotation_quat);
+                    transform_component.apply_rotation_quaternion(rotation_quat, true);
                 }
             }
         }
@@ -180,7 +180,7 @@ impl Component for TransformationAnimation
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         None
     }

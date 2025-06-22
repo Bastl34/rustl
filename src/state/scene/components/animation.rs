@@ -101,11 +101,11 @@ pub struct Animation
 
 impl Animation
 {
-    pub fn new(id: u64, name: &str) -> Animation
+    pub fn new(name: &str) -> Animation
     {
         Animation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Animation".to_string(), "🎞".to_string()),
+            base: ComponentBase::new(name.to_string(), "Animation".to_string(), "🎞".to_string()),
 
             looped: true,
             reverse: false,
@@ -461,7 +461,7 @@ impl Component for Animation
         channels_amount != self.channels.len()
     }
 
-    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         let source = self.as_any().downcast_ref::<Animation>();
 
@@ -474,7 +474,7 @@ impl Component for Animation
 
         let animation = Animation
         {
-            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+            base: ComponentBase::duplicate(source.get_base()),
 
             looped: self.looped,
             reverse: self.reverse,

@@ -98,7 +98,7 @@ pub struct State
     pub pause: bool,
     pub scenes: Vec<SceneItem>,
 
-    pub registered_components: Vec<(String, bool, fn(u64, &str) -> ComponentItem)>,
+    pub registered_components: Vec<(String, bool, fn(&str) -> ComponentItem)>,
     pub registered_camera_controller: Vec<(String, fn() -> CameraControllerBox)>,
     pub registered_scene_controller: Vec<(String, fn() -> SceneControllerBox)>,
 
@@ -125,17 +125,17 @@ impl State
 {
     pub fn new(audio_device: AudioDeviceItem) -> State
     {
-        let mut components: Vec<(String, bool, fn(u64, &str) -> ComponentItem)> = vec![];
+        let mut components: Vec<(String, bool, fn(&str) -> ComponentItem)> = vec![];
 
-        components.push(("Alpha".to_string(), crate::state::scene::components::alpha::Alpha::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(id, name, 1.0)))) }));
-        components.push(("Material".to_string(), crate::state::scene::components::material::Material::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(id, name)))) }));
-        //components.push(("Mesh".to_string(), crate::state::scene::components::mesh::Mesh::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane(id, name, x0, x1, x2, x3)))) }));
-        components.push(("Transform".to_string(), crate::state::scene::components::transformation::Transformation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(id, name)))) }));
-        components.push(("Transform Animation".to_string(), crate::state::scene::components::transformation_animation::TransformationAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(id, name)))) }));
-        components.push(("Morph Target Animation".to_string(), crate::state::scene::components::morph_target_animation::MorphTargetAnimation::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(id, name)))) }));
-        components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(id, name)))) }));
-        components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(id, name)))) }));
-        components.push(("Delay".to_string(), crate::state::scene::components::delay::Delay::instantiable(), |id, name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::delay::Delay::new_empty(id, name)))) }));
+        components.push(("Alpha".to_string(), crate::state::scene::components::alpha::Alpha::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::alpha::Alpha::new(name, 1.0)))) }));
+        components.push(("Material".to_string(), crate::state::scene::components::material::Material::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::material::Material::new(name)))) }));
+        //components.push(("Mesh".to_string(), crate::state::scene::components::mesh::Mesh::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::mesh::Mesh::new_plane( name, x0, x1, x2, x3)))) }));
+        components.push(("Transform".to_string(), crate::state::scene::components::transformation::Transformation::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation::Transformation::identity(name)))) }));
+        components.push(("Transform Animation".to_string(), crate::state::scene::components::transformation_animation::TransformationAnimation::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::transformation_animation::TransformationAnimation::new_empty(name)))) }));
+        components.push(("Morph Target Animation".to_string(), crate::state::scene::components::morph_target_animation::MorphTargetAnimation::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::morph_target_animation::MorphTargetAnimation::new_empty(name)))) }));
+        components.push(("Animation Blending".to_string(), crate::state::scene::components::animation_blending::AnimationBlending::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::animation_blending::AnimationBlending::new_empty(name)))) }));
+        components.push(("Sound".to_string(), crate::state::scene::components::sound::Sound::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::sound::Sound::new_empty(name)))) }));
+        components.push(("Delay".to_string(), crate::state::scene::components::delay::Delay::instantiable(), |name| { Arc::new(RwLock::new(Box::new(crate::state::scene::components::delay::Delay::new_empty(name)))) }));
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
@@ -248,6 +248,47 @@ impl State
         {
             load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None, true, max_res);
         });
+    }
+
+    pub fn export_json(&self, path: &str)
+    {
+        println!("exporting {} to json", path);
+    }
+
+    pub fn get_main_scene(&self) -> Option<&SceneItem>
+    {
+        for scene in &self.scenes
+        {
+            if scene.main
+            {
+                return Some(&scene);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_main_scene_mut(&mut self) -> Option<&mut SceneItem>
+    {
+        for scene in &mut self.scenes
+        {
+            if scene.main
+            {
+                return Some(scene);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_main_scene_id(&self) -> Option<u64>
+    {
+        let scene = self.get_main_scene();
+        if let Some(scene) = scene
+        {
+            return Some(scene.id);
+        }
+        None
     }
 
     pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>

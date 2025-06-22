@@ -1,4 +1,4 @@
-use egui::{Ui, Color32, RichText, Align2};
+use egui::{Align2, Color32, Frame, RichText, Ui};
 
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
@@ -66,4 +66,12 @@ pub fn separator_colored(ui: &mut Ui, color: Color32, height: f32)
 
     let painter = ui.painter();
     painter.rect_filled(rect, 0.0, color);
+}
+
+pub fn label_with_background(ui: &mut Ui, text: &str, bg_color: Color32)
+{
+    Frame::new().fill(bg_color).corner_radius(2.0).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui|
+    {
+        ui.label(RichText::new(text).strong().color(Color32::WHITE));
+    });
 }

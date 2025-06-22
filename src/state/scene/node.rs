@@ -8,7 +8,7 @@ use regex::Regex;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, utilities::extras::Extras};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
@@ -18,8 +18,8 @@ const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got
 pub struct NodeSettings
 {
     pub render_children_first: bool,
-    pub alpha_index: u64, // this can be used to influence the alpha sorting (for transparent objects rendering)
-    pub render_group_id: u64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
+    pub alpha_index: i64, // this can be used to influence the alpha sorting (for transparent objects rendering)
+    pub render_group_id: i64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
 
     pub depth_test: bool,
     pub depth_write: bool,
@@ -42,6 +42,7 @@ pub struct Node
     pub name: String,
     pub visible: bool,
     pub locked: bool,
+    pub pickable: bool,
     pub root_node: bool,
 
     pub settings: NodeSettings,
@@ -51,6 +52,7 @@ pub struct Node
     pub skin: Vec<NodeItem>,
 
     pub extras: Extras,
+    pub tags: Tags,
 
     pub nodes: Vec<NodeItem>,
     pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
@@ -69,18 +71,19 @@ pub struct Node
 
 impl Node
 {
-    pub fn new(id: u64, uuid: String, name: &str) -> NodeItem
+    pub fn new(name: &str) -> NodeItem
     {
         let node = Self
         {
-            id: id,
-            uuid,
+            id: id_manager::get_next_node_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             source: None,
 
             name: name.to_string(),
             visible: true,
             locked: false,
+            pickable: true,
             root_node: false,
 
             settings: NodeSettings
@@ -102,6 +105,7 @@ impl Node
             skin: vec![],
 
             extras: Extras::new(),
+            tags: Tags::new(),
 
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
@@ -176,6 +180,48 @@ impl Node
             let mut child_node = child_node.write().unwrap();
             child_node.parent = Some(node.clone());
         }
+    }
+
+    pub fn move_to_front(&mut self, node: NodeItem)
+    {
+        let nodes_amount = self.nodes.len();
+        if nodes_amount == 0
+        {
+            return;
+        }
+
+        self.nodes.retain(|child_node|
+        {
+            child_node.read().unwrap().id != node.read().unwrap().id
+        });
+
+        if self.nodes.len() == nodes_amount
+        {
+            return;
+        }
+
+        self.nodes.insert(0, node.clone());
+    }
+
+    pub fn move_to_back(&mut self, node: NodeItem)
+    {
+        let nodes_amount = self.nodes.len();
+        if nodes_amount == 0
+        {
+            return;
+        }
+
+        self.nodes.retain(|child_node|
+        {
+            child_node.read().unwrap().id != node.read().unwrap().id
+        });
+
+        if self.nodes.len() == nodes_amount
+        {
+            return;
+        }
+
+        self.nodes.push(node.clone());
     }
 
     pub fn set_parent(node: NodeItem, new_parent: NodeItem)
@@ -262,6 +308,11 @@ impl Node
     pub fn get_meshes(&self) -> Vec<ComponentItem>
     {
         self.find_components::<Mesh>()
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool
+    {
+        self.tags.contains(tag)
     }
 
     pub fn get_world_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
@@ -383,6 +434,13 @@ impl Node
         None
     }
 
+    pub fn is_name_matching_regex(&self, regex: &str) -> bool
+    {
+        let regex_item: Regex = Regex::new(regex).unwrap();
+
+        regex_item.is_match(&self.name)
+    }
+
     pub fn parent_amount(&self) -> u32
     {
         let mut parent_amount = 0;
@@ -481,6 +539,51 @@ impl Node
         }
 
         false
+    }
+
+    pub fn set_pickable(&mut self, pickable: bool)
+    {
+        self.pickable = pickable;
+        let all_childs = Scene::list_all_child_nodes(&self.nodes);
+        for child_node in all_childs
+        {
+            let mut child_node = child_node.write().unwrap();
+            child_node.pickable = pickable;
+
+            for instance in child_node.instances.get_ref()
+            {
+                let mut instance = instance.write().unwrap();
+                instance.pickable = pickable;
+            }
+        }
+    }
+
+    pub fn set_highlighted(&mut self, highlight: bool)
+    {
+        let all_childs = Scene::list_all_child_nodes(&self.nodes);
+        for child_node in all_childs
+        {
+            let child_node = child_node.write().unwrap();
+
+            for instance in child_node.instances.get_ref()
+            {
+                let mut instance = instance.write().unwrap();
+                if instance.get_data().highlight != highlight
+                {
+                    instance.get_data_mut().get_mut().highlight = highlight;
+                }
+            }
+        }
+
+        // self
+        for instance in self.instances.get_ref()
+        {
+            let mut instance = instance.write().unwrap();
+            if instance.get_data().highlight != highlight
+            {
+                instance.get_data_mut().get_mut().highlight = highlight;
+            }
+        }
     }
 
     pub fn has_changed_instance_data(&self) -> bool
@@ -609,26 +712,26 @@ impl Node
         full_transform.try_inverse().unwrap()
     }
 
-    pub fn transform_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    pub fn transform_vec_global_to_local(&self, vec: &Vector4<f32>) -> Vector4<f32>
     {
-        let trans = self.get_full_transform_inverse();
+        let trans_inverse = self.get_full_transform_inverse();
 
-        trans * vec
+        trans_inverse * vec
     }
 
-    pub fn transform_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
+    pub fn transform_vec_local_to_global(&self, vec: &Vector4<f32>) -> Vector4<f32>
     {
         let trans = self.get_full_transform();
 
         trans * vec
     }
 
-    pub fn transform_from_node_to_local(&self, vec: &Vector4<f32>, node: NodeItem) -> Vector4<f32>
+    pub fn transform_vec_from_node_to_local(&self, vec: &Vector4<f32>, node: NodeItem) -> Vector4<f32>
     {
         let node = node.read().unwrap();
-        let global_vec = node.transform_local_to_global(vec);
+        let global_vec = node.transform_vec_local_to_global(vec);
 
-        self.transform_global_to_local(&global_vec)
+        self.transform_vec_global_to_local(&global_vec)
     }
 
     fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
@@ -1214,17 +1317,19 @@ impl Node
         !is_not_empty
     }
 
-    pub fn create_default_instance(&mut self, self_node_item: NodeItem, instance_id: u64, uuid: String)
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem) -> u64
     {
         let instance = Instance::new
         (
-            instance_id,
-            uuid,
             "instance".to_string(),
             self_node_item
         );
 
+        let instance_id = instance.id;
+
         self.add_instance(Box::new(instance));
+
+        instance_id
     }
 
     pub fn add_instance(&mut self, instance: InstanceItem)
@@ -1398,18 +1503,16 @@ impl Node
         }
 
         // clear and create new single instance
-        let instance_id;
         let node;
         {
             let first_instance = self.instances.get_ref().first().unwrap();
             let first_instance = first_instance.read().unwrap();
 
-            instance_id = first_instance.id;
             node = first_instance.node.clone();
         }
 
         self.clear_instances();
-        self.create_default_instance(node, instance_id, uuid::Uuid::new_v4().to_string());
+        self.create_default_instance(node);
 
         true
     }

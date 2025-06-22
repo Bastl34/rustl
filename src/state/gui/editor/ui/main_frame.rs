@@ -1,4 +1,5 @@
 
+use crate::state::gui::editor::helper::get_pointer_world_position;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
@@ -11,7 +12,7 @@ use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 
 use super::assets::create_asset_section;
 use super::cameras::{build_camera_list, create_camera_settings};
-use super::editor_state::{SelectionType, BottomPanel};
+use super::super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
@@ -42,7 +43,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     {
         ui.horizontal(|ui|
         {
-            create_file_menu(state, ui);
+            create_file_menu(editor_state, state, ui);
         });
     });
 
@@ -56,13 +57,19 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, "📝 Console");
 
-            if loading
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                if loading
                 {
+                    ui.separator();
                     ui.spinner();
-                });
-            }
+                }
+
+                if let Some(pointer_pos) =  get_pointer_world_position(state)
+                {
+                    ui.label(RichText::new(format!("x: {:.2}, y: {:.2}, z: {:.2}", pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
+                }
+            });
         });
         ui.separator();
 
@@ -94,6 +101,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         //});
     });
 
+
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
     {
@@ -110,10 +118,14 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     create_modals(editor_state, state, ctx);
 }
 
-fn create_file_menu(state: &mut State, ui: &mut Ui)
+fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     ui.menu_button("File", |ui|
     {
+        if ui.button("Save Project").clicked()
+        {
+            state.export_json(editor_state.project_name.as_str());
+        }
         if ui.button("Exit").clicked()
         {
             state.exit = true;
@@ -144,10 +156,40 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             }
 
             // try out mode
-            if ui.toggle_value(&mut try_out, RichText::new("🚀").size(icon_size)).on_hover_text("try out").changed()
+            if ui.toggle_value(&mut try_out, RichText::new("🎮").size(icon_size)).on_hover_text("try out").changed()
             {
                 editor_state.set_try_mode(state, try_out);
             };
+
+            ui.separator();
+
+            // gizmo
+            if ui.toggle_value(&mut editor_state.gizmo_scale, RichText::new("🕂").size(icon_size)).on_hover_text("use scale gizmo").clicked()
+            {
+                if editor_state.gizmo_scale
+                {
+                    editor_state.gizmo_position = false;
+                    editor_state.gizmo_rotation = false;
+                }
+            }
+
+            if ui.toggle_value(&mut editor_state.gizmo_rotation, RichText::new("↻").size(icon_size)).on_hover_text("use rotation gizmo").clicked()
+            {
+                if editor_state.gizmo_rotation
+                {
+                    editor_state.gizmo_position = false;
+                    editor_state.gizmo_scale = false;
+                }
+            }
+
+            if ui.toggle_value(&mut editor_state.gizmo_position, RichText::new("⬌").size(icon_size)).on_hover_text("use position gizmo").clicked()
+            {
+                if editor_state.gizmo_position
+                {
+                    editor_state.gizmo_rotation = false;
+                    editor_state.gizmo_scale = false;
+                }
+            }
 
             ui.separator();
 
@@ -374,6 +416,13 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.toggle_value(&mut editor_state.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
     });
 
+    ui.horizontal(|ui|
+    {
+        ui.checkbox(&mut editor_state.show_internal_nodes, "Show Editor Nodes").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+    });
+
+    ui.separator();
+
     let exec_queue = state.main_thread_execution_queue.clone();
 
     for scene in &mut state.scenes
@@ -408,7 +457,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     if ui.button("Clear").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.clear();
                     }
                 });
@@ -434,7 +483,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new("◼ Objects").color(Color32::LIGHT_GREEN).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive())).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
 
                 if toggle.clicked()
                 {
@@ -455,7 +504,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 {
                     if ui.button("⊞ Add New Node").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.add_empty_node("Node", None);
                     }
                 });
@@ -477,7 +526,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
 
-                let toggle = ui.toggle_value(&mut selection, RichText::new("📷 Cameras").color(Color32::LIGHT_RED).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("📷 Cameras ({})", scene.cameras.len())).color(Color32::LIGHT_RED).strong());
 
                 if toggle.clicked()
                 {
@@ -498,7 +547,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 {
                     if ui.button("Add New Camera").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.add_empty_camera("Camera");
                     }
                 });
@@ -518,7 +567,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new("💡 Lights").color(Color32::YELLOW).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("💡 Lights ({})", scene.lights.get_ref().len())).color(Color32::YELLOW).strong());
 
                 if toggle.clicked()
                 {
@@ -539,7 +588,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                 {
                     if ui.button("Add New Light").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         scene.add_empty_light("Light");
                     }
                 });
@@ -559,7 +608,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Material { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("🎨 Materials").color(Color32::GOLD).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", scene.materials.len())).color(Color32::GOLD).strong()).clicked()
                 {
                     if selection
                     {
@@ -589,7 +638,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("🖼 Textures").color(Color32::LIGHT_BLUE).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", scene.textures.len())).color(Color32::LIGHT_BLUE).strong()).clicked()
                 {
                     if selection
                     {
@@ -619,7 +668,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new("🔊 Sounds").color(Color32::LIGHT_GRAY).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", scene.sound_sources.len())).color(Color32::LIGHT_GRAY).strong()).clicked()
                 {
                     if selection
                     {

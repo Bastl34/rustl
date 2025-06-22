@@ -4,6 +4,8 @@ use std::{fs, io::Cursor, sync::{Arc, RwLock}};
 
 use crate::{helper::{self}, output::audio_device::AudioDeviceItem};
 
+use super::manager::id_manager;
+
 pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 
 #[derive(Clone)]
@@ -51,15 +53,15 @@ impl Decodable for SoundSource
 
 impl SoundSource
 {
-    pub fn new(id: u64, uuid: String, name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource
+    pub fn new(name: &str, audio_device: AudioDeviceItem, sound_bytes: &Vec<u8>, extension: Option<String>) -> SoundSource
     {
         let bytes = sound_bytes.clone();
         let hash = helper::crypto::get_hash_from_byte_vec(sound_bytes);
 
         SoundSource
         {
-            id,
-            uuid,
+            id: id_manager::get_next_sound_source_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
 
             name: name.to_string(),
             extension,

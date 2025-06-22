@@ -277,7 +277,7 @@ impl CameraController for TargetRotationController
             let ray = Ray::new(target_pos, dir);
 
             let target_node = node.clone().unwrap();
-            let pick_res = scene.pick(&ray, false, false, Some(Arc::new(move |node, _instance|
+            let pick_res = scene.pick(&ray, false, false, false, false, Some(Arc::new(move |node, _instance|
             {
                 let node = node.read().unwrap();
                 let has_currect_parent = node.has_parent_or_is_equal(target_node.clone());

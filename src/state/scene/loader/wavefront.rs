@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}, manager::id_manager::IdManagerItem}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
+use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -20,7 +20,7 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     tex_path
 }
 
-pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, _reuse_materials: bool, _object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let mut loaded_ids: Vec<u64> = vec![];
 
@@ -159,204 +159,202 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 }
                 else
                 {
-                    //let component_id = scene.id_manager.get_next_component_id();
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
-                    material_arc = new_component!(Material::new(component_id, ""));
-
-                    let mut material_guard = material_arc.write().unwrap();
-                    let any = material_guard.as_any_mut();
-                    let material = any.downcast_mut::<Material>().unwrap();
-
-                    let mat: &tobj::Material = &wavefront_materials[wavefront_mat_id];
+                    material_arc = new_component!(Material::new(""));
 
                     {
-                        material.get_base_mut().name = mat.name.clone();
-                    }
+                        let mut material_guard = material_arc.write().unwrap();
+                        let any = material_guard.as_any_mut();
+                        let material = any.downcast_mut::<Material>().unwrap();
 
-                    let material_data = material.get_data_mut().get_mut();
+                        let mat: &tobj::Material = &wavefront_materials[wavefront_mat_id];
 
-                    if mat.shininess.is_some()
-                    {
-                        material_data.shininess = mat.shininess.unwrap();
-                    }
-
-                    if mat.ambient.is_some()
-                    {
-                        let ambient = mat.ambient.unwrap();
-                        material_data.ambient_color = Vector3::<f32>::new(ambient[0], ambient[1], ambient[2]);
-                    }
-
-                    if mat.specular.is_some()
-                    {
-                        let specular = mat.specular.unwrap();
-                        material_data.specular_color = Vector3::<f32>::new(specular[0], specular[1], specular[2]);
-                    }
-
-                    if mat.diffuse.is_some()
-                    {
-                        let diffuse = mat.diffuse.unwrap();
-                        material_data.base_color = Vector3::<f32>::new(diffuse[0], diffuse[1], diffuse[2]);
-                    }
-
-                    if mat.optical_density.is_some()
-                    {
-                        material_data.refraction_index = mat.optical_density.unwrap();
-                    }
-
-                    if mat.dissolve.is_some()
-                    {
-                        material_data.alpha = mat.dissolve.unwrap();
-                    }
-
-
-                    material_data.ambient_color = material_data.base_color * 0.01;
-
-                    if let Some(illumination) = mat.illumination_model
-                    {
-                        if illumination > 2
                         {
-                            material_data.reflectivity = 0.5;
+                            material.get_base_mut().name = mat.name.clone();
                         }
-                    }
 
-                    // base texture
-                    if mat.diffuse_texture.is_some()
-                    {
-                        println!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
-                        let diffuse_texture = mat.diffuse_texture.clone().unwrap();
-                        let tex_path = get_texture_path(&diffuse_texture, path);
-                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                        let material_data = material.get_data_mut().get_mut();
+
+                        if mat.shininess.is_some()
                         {
-                            let mut tex = tex.write().unwrap();
+                            material_data.shininess = mat.shininess.unwrap();
+                        }
 
-                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                        if mat.ambient.is_some()
+                        {
+                            let ambient = mat.ambient.unwrap();
+                            material_data.ambient_color = Vector3::<f32>::new(ambient[0], ambient[1], ambient[2]);
+                        }
+
+                        if mat.specular.is_some()
+                        {
+                            let specular = mat.specular.unwrap();
+                            material_data.specular_color = Vector3::<f32>::new(specular[0], specular[1], specular[2]);
+                        }
+
+                        if mat.diffuse.is_some()
+                        {
+                            let diffuse = mat.diffuse.unwrap();
+                            material_data.base_color = Vector3::<f32>::new(diffuse[0], diffuse[1], diffuse[2]);
+                        }
+
+                        if mat.optical_density.is_some()
+                        {
+                            material_data.refraction_index = mat.optical_density.unwrap();
+                        }
+
+                        if mat.dissolve.is_some()
+                        {
+                            material_data.alpha = mat.dissolve.unwrap();
+                        }
+
+                        material_data.ambient_color = material_data.base_color * 0.01;
+
+                        if let Some(illumination) = mat.illumination_model
+                        {
+                            if illumination > 2
                             {
-                                tex.create_mipmap_cache();
+                                material_data.reflectivity = 0.5;
                             }
-
-                            let tex_data = tex.get_data_mut().get_mut();
-                            tex_data.mipmapping = create_mipmaps;
                         }
-                        material.set_texture(tex, TextureType::Base);
-                    }
 
-                    // normal texture
-                    if mat.normal_texture.is_some()
-                    {
-                        println!("loading normal texture {}", mat.normal_texture.clone().unwrap());
-                        let normal_texture = mat.normal_texture.clone().unwrap();
-                        let tex_path = get_texture_path(&normal_texture, path);
-                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                        // base texture
+                        if mat.diffuse_texture.is_some()
                         {
-                            let mut tex = tex.write().unwrap();
-
-                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            println!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
+                            let diffuse_texture = mat.diffuse_texture.clone().unwrap();
+                            let tex_path = get_texture_path(&diffuse_texture, path);
+                            let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                             {
-                                tex.create_mipmap_cache();
+                                let mut tex = tex.write().unwrap();
+
+                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                                {
+                                    tex.create_mipmap_cache();
+                                }
+
+                                let tex_data = tex.get_data_mut().get_mut();
+                                tex_data.mipmapping = create_mipmaps;
                             }
-
-                            let tex_data = tex.get_data_mut().get_mut();
-                            tex_data.mipmapping = create_mipmaps;
+                            material.set_texture(tex, TextureType::Base);
                         }
-                        material.set_texture(tex, TextureType::Normal);
-                    }
 
-                    // ambient texture
-                    if mat.ambient_texture.is_some()
-                    {
-                        println!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
-                        let ambient_texture = mat.ambient_texture.clone().unwrap();
-                        let tex_path = get_texture_path(&ambient_texture, path);
-                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                        // normal texture
+                        if mat.normal_texture.is_some()
                         {
-                            let mut tex = tex.write().unwrap();
-
-                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            println!("loading normal texture {}", mat.normal_texture.clone().unwrap());
+                            let normal_texture = mat.normal_texture.clone().unwrap();
+                            let tex_path = get_texture_path(&normal_texture, path);
+                            let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                             {
-                                tex.create_mipmap_cache();
+                                let mut tex = tex.write().unwrap();
+
+                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                                {
+                                    tex.create_mipmap_cache();
+                                }
+
+                                let tex_data = tex.get_data_mut().get_mut();
+                                tex_data.mipmapping = create_mipmaps;
                             }
-
-                            let tex_data = tex.get_data_mut().get_mut();
-                            tex_data.mipmapping = create_mipmaps;
+                            material.set_texture(tex, TextureType::Normal);
                         }
-                        material.set_texture(tex, TextureType::AmbientEmissive);
-                    }
 
-                    // specular texture
-                    if mat.specular_texture.is_some()
-                    {
-                        println!("loading specular texture {}", mat.specular_texture.clone().unwrap());
-                        let specular_texture = mat.specular_texture.clone().unwrap();
-                        let tex_path: String = get_texture_path(&specular_texture, path);
-                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                        // ambient texture
+                        if mat.ambient_texture.is_some()
                         {
-                            let mut tex = tex.write().unwrap();
-
-                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            println!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
+                            let ambient_texture = mat.ambient_texture.clone().unwrap();
+                            let tex_path = get_texture_path(&ambient_texture, path);
+                            let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                             {
-                                tex.create_mipmap_cache();
+                                let mut tex = tex.write().unwrap();
+
+                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                                {
+                                    tex.create_mipmap_cache();
+                                }
+
+                                let tex_data = tex.get_data_mut().get_mut();
+                                tex_data.mipmapping = create_mipmaps;
                             }
-
-                            let tex_data = tex.get_data_mut().get_mut();
-                            tex_data.mipmapping = create_mipmaps;
+                            material.set_texture(tex, TextureType::AmbientEmissive);
                         }
-                        material.set_texture(tex, TextureType::Specular);
-                    }
 
-                    // dissolve texture
-                    if mat.dissolve_texture.is_some()
-                    {
-                        println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
-                        let dissolve_texture = mat.dissolve_texture.clone().unwrap();
-                        let tex_path = get_texture_path(&dissolve_texture, path);
-                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                        // specular texture
+                        if mat.specular_texture.is_some()
                         {
-                            let mut tex = tex.write().unwrap();
-
-                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            println!("loading specular texture {}", mat.specular_texture.clone().unwrap());
+                            let specular_texture = mat.specular_texture.clone().unwrap();
+                            let tex_path: String = get_texture_path(&specular_texture, path);
+                            let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                             {
-                                tex.create_mipmap_cache();
+                                let mut tex = tex.write().unwrap();
+
+                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                                {
+                                    tex.create_mipmap_cache();
+                                }
+
+                                let tex_data = tex.get_data_mut().get_mut();
+                                tex_data.mipmapping = create_mipmaps;
                             }
-
-                            let tex_data = tex.get_data_mut().get_mut();
-                            tex_data.mipmapping = create_mipmaps;
+                            material.set_texture(tex, TextureType::Specular);
                         }
-                        material.set_texture(tex, TextureType::Alpha);
-                    }
 
-                    // shininess_texture
-                    if mat.shininess_texture.is_some()
-                    {
-                        println!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
-                        let shininess_texture = mat.shininess_texture.clone().unwrap();
-                        let tex_path = get_texture_path(&shininess_texture, path);
-                        let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                        // dissolve texture
+                        if mat.dissolve_texture.is_some()
                         {
-                            let mut tex = tex.write().unwrap();
-
-                            if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                            println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
+                            let dissolve_texture = mat.dissolve_texture.clone().unwrap();
+                            let tex_path = get_texture_path(&dissolve_texture, path);
+                            let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
                             {
-                                tex.create_mipmap_cache();
-                            }
+                                let mut tex = tex.write().unwrap();
 
-                            let tex_data = tex.get_data_mut().get_mut();
-                            tex_data.mipmapping = create_mipmaps;
+                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                                {
+                                    tex.create_mipmap_cache();
+                                }
+
+                                let tex_data = tex.get_data_mut().get_mut();
+                                tex_data.mipmapping = create_mipmaps;
+                            }
+                            material.set_texture(tex, TextureType::Alpha);
                         }
-                        material.set_texture(tex, TextureType::Shininess);
+
+                        // shininess_texture
+                        if mat.shininess_texture.is_some()
+                        {
+                            println!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
+                            let shininess_texture = mat.shininess_texture.clone().unwrap();
+                            let tex_path = get_texture_path(&shininess_texture, path);
+                            let tex = load_texture_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
+                            {
+                                let mut tex = tex.write().unwrap();
+
+                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
+                                {
+                                    tex.create_mipmap_cache();
+                                }
+
+                                let tex_data = tex.get_data_mut().get_mut();
+                                tex_data.mipmapping = create_mipmaps;
+                            }
+                            material.set_texture(tex, TextureType::Shininess);
+                        }
                     }
 
                     let material_arc_clone = material_arc.clone();
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        scene.add_material(component_id, &material_arc_clone);
+                        scene.add_material(&material_arc_clone);
                     }));
                     double_check_materials.push((wavefront_mat_id, material_arc.clone()));
                 }
             }
             else
             {
-                let material_id = id_manager.write().unwrap().get_next_component_id();
-                material_arc = Arc::new(RwLock::new(Box::new(Material::new(material_id, ""))));
+                material_arc = Arc::new(RwLock::new(Box::new(Material::new(""))));
             }
 
             if uvs.len() > 0 && uv_indices.len() == 0
@@ -369,15 +367,11 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 normals_indices = indices.clone();
             }
 
-            let component_id = id_manager.write().unwrap().get_next_component_id();
-            let item = Mesh::new_with_data(component_id, "mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
+            let item = Mesh::new_with_data("mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
 
-            let id = id_manager.write().unwrap().get_next_node_id();
-            loaded_ids.push(id);
+            let node_arc = Node::new(m.name.as_str());
+            loaded_ids.push(node_arc.read().unwrap().id);
 
-            let uuid = uuid::Uuid::new_v4().to_string();
-
-            let node_arc = Node::new(id, uuid, m.name.as_str());
             {
                 let mut node = node_arc.write().unwrap();
                 node.add_component(Arc::new(RwLock::new(Box::new(item))));
@@ -387,20 +381,16 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
                 // add default instance
                 //let node = scene.nodes.get_mut(0).unwrap();
-                let instance_id = id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                node.create_default_instance(node_arc.clone(), instance_id, uuid);
+                node.create_default_instance(node_arc.clone());
             }
 
             scene_nodes.push(node_arc)
         }
     }
 
-    let node_id = id_manager.write().unwrap().get_next_node_id();
-    loaded_ids.push(node_id);
+    let root_node = Node::new(resource_name.as_str());
+    loaded_ids.push(root_node.read().unwrap().id);
 
-    let uuid = uuid::Uuid::new_v4().to_string();
-    let root_node = Node::new(node_id, uuid, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(path.to_string());
 

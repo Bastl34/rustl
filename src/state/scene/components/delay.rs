@@ -23,11 +23,11 @@ pub struct Delay
 
 impl Delay
 {
-    pub fn new(id: u64, name: &str, target_id: u64, delay: f32) -> Delay
+    pub fn new(name: &str, target_id: u64, delay: f32) -> Delay
     {
         Delay
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Delay".to_string(), "⏰".to_string()),
+            base: ComponentBase::new(name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay,
             target_id: Some(target_id),
             state: true,
@@ -38,11 +38,11 @@ impl Delay
         }
     }
 
-    pub fn new_empty(id: u64, name: &str) -> Delay
+    pub fn new_empty(name: &str) -> Delay
     {
         Delay
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Delay".to_string(), "⏰".to_string()),
+            base: ComponentBase::new(name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay: 0.0,
             target_id: None,
             state: true,
@@ -169,7 +169,7 @@ impl Component for Delay
         }
     }
 
-    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         let source = self.as_any().downcast_ref::<Delay>();
 
@@ -182,7 +182,7 @@ impl Component for Delay
 
         let delay = Delay
         {
-            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+            base: ComponentBase::duplicate(source.get_base()),
 
             delay: self.delay,
             target_id: self.target_id,

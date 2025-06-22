@@ -34,11 +34,11 @@ pub struct MorphTargetAnimation
 
 impl MorphTargetAnimation
 {
-    pub fn new(id: u64, name: &str, target_id: u64, from: f32, to: f32, speed: f32, looped: bool) -> MorphTargetAnimation
+    pub fn new( name: &str, target_id: u64, from: f32, to: f32, speed: f32, looped: bool) -> MorphTargetAnimation
     {
         let mut animation = MorphTargetAnimation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
+            base: ComponentBase::new(name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
 
             target_id: Some(target_id),
 
@@ -63,11 +63,11 @@ impl MorphTargetAnimation
         animation
     }
 
-    pub fn new_empty(id: u64, name: &str) -> MorphTargetAnimation
+    pub fn new_empty(name: &str) -> MorphTargetAnimation
     {
         let mut animation = MorphTargetAnimation
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
+            base: ComponentBase::new(name.to_string(), "Morph T. Animation".to_string(), "☺".to_string()),
 
             target_id: None,
 
@@ -122,7 +122,7 @@ impl Component for MorphTargetAnimation
         }
     }
 
-    fn duplicate(&self, new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         let source = self.as_any().downcast_ref::<MorphTargetAnimation>();
 
@@ -135,7 +135,7 @@ impl Component for MorphTargetAnimation
 
         let mut animation = MorphTargetAnimation
         {
-            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+            base: ComponentBase::duplicate(source.get_base()),
 
             target_id: source.target_id.clone(),
 

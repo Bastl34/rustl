@@ -30,7 +30,7 @@ pub struct Joint
 impl Joint
 {
     //pub fn new(id: u64, name: &str, joint_id: u32) -> Joint
-    pub fn new(id: u64, name: &str) -> Joint
+    pub fn new(name: &str) -> Joint
     {
         let data = JointData
         {
@@ -48,7 +48,7 @@ impl Joint
 
         let joint = Joint
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Joint".to_string(), "🕱".to_string()),
+            base: ComponentBase::new(name.to_string(), "Joint".to_string(), "🕱".to_string()),
             data: ChangeTracker::new(data)
         };
 
@@ -195,7 +195,7 @@ impl Component for Joint
         }
     }
 
-    fn duplicate(&self, _new_component_id: u64) -> Option<crate::state::scene::components::component::ComponentItem>
+    fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
     {
         None
     }

@@ -4,7 +4,7 @@ use egui::{Ui, RichText};
 
 use crate::{helper::change_tracker::ChangeTracker, state::{scene::light::{LightItem, Light}, state::State, gui::helper::generic_items::collapse_with_title}};
 
-use super::editor_state::{EditorState, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
 pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>, ui: &mut Ui, scene_id: u64)
 {

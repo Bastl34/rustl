@@ -189,7 +189,6 @@ impl CharacterController
 
     pub fn auto_setup(&mut self, scene: &mut crate::state::scene::scene::Scene, character_node: &str, cam_name: &str) -> Option<String>
     {
-        let id_manager = scene.id_manager.clone();
         let node = scene.find_node_by_name(character_node);
 
         let cam;
@@ -272,8 +271,7 @@ impl CharacterController
 
                 if self.animation_blending.is_none()
                 {
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
-                    let animation_blending = AnimationBlending::new_empty(component_id, "Animation Blending");
+                    let animation_blending = AnimationBlending::new_empty("Animation Blending");
                     animation_node.write().unwrap().add_component_front(Arc::new(RwLock::new(Box::new(animation_blending))));
 
                     self.animation_blending = animation_node.read().unwrap().find_component::<AnimationBlending>();
@@ -316,8 +314,7 @@ impl CharacterController
 
             if node.find_component::<Transformation>().is_none()
             {
-                let component_id = id_manager.write().unwrap().get_next_component_id();
-                let component = Transformation::identity(component_id, "Transformation");
+                let component = Transformation::identity("Transformation");
                 node.add_component(Arc::new(RwLock::new(Box::new(component))));
             }
             {
@@ -995,7 +992,7 @@ impl SceneController for CharacterController
                 };
 
                 let ray = Ray::new(pos, down_dir);
-                let pick_res = scene.multi_pick(&ray, false, false, Some(Arc::new(predicate_func)));
+                let pick_res = scene.multi_pick(&ray, false, false, false, false, Some(Arc::new(predicate_func)));
 
                 if let Some(first_pick) = pick_res.first()
                 {

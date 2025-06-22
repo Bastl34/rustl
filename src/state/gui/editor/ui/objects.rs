@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use egui::{Ui, RichText, Color32};
+use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
-use super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
+use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
 pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
@@ -21,6 +21,9 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
         let name = node.name.clone();
         let node_id = node.id;
+
+        let is_internal_node = node.has_tag("internal");
+        let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_nodes);
 
         let filter = editor_state.hierarchy_filter.to_lowercase();
 
@@ -39,7 +42,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
             }
         }
 
-        if !filter.is_empty() && !child_node_match && name.to_lowercase().find(filter.as_str()).is_none()
+        if !show_from_tags || !filter.is_empty() && !child_node_match && name.to_lowercase().find(filter.as_str()).is_none()
         {
             continue;
         }
@@ -148,9 +151,9 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             {
                                 if from_node.read().unwrap().id != target_animation_node.read().unwrap().id
                                 {
-                                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                                     {
-                                        scene_utils::clone_all_animations(from_node.clone(), target_animation_node.clone(), scene);
+                                        scene_utils::clone_all_animations(from_node.clone(), target_animation_node.clone());
                                     }));
                                 }
                             }
@@ -221,7 +224,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 {
                     if ui.button("⊞ Add empty node").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
 
                         let node_arc = node_arc.clone();
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
@@ -236,14 +239,12 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     {
                         if ui.button("🖹 Add default instance").clicked()
                         {
-                            ui.close_menu();
+                            ui.close();
 
                             let node_arc = node_arc.clone();
-                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                             {
-                                let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                                let uuid = uuid::Uuid::new_v4().to_string();
-                                node_arc.write().unwrap().create_default_instance(node_arc.clone(), id, uuid);
+                                node_arc.write().unwrap().create_default_instance(node_arc.clone());
                             }));
                         }
 
@@ -254,7 +255,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     let hide_show_text = if node_visible { "👁 Hide" } else { "👁 Show" };
                     if ui.button(hide_show_text).clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
 
                         let node_arc = node_arc.clone();
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
@@ -268,7 +269,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     let lock_unlock_text = if node_locked { "🔓 Unlock" } else { "🔒 Lock" };
                     if ui.button(lock_unlock_text).clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
 
                         let node_arc = node_arc.clone();
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
@@ -284,25 +285,25 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                         if ui.button("⏵ Start all animations").clicked()
                         {
-                            ui.close_menu();
+                            ui.close();
                             node.start_all_animations();
                         }
 
                         if ui.button("⏵ Start first animation").clicked()
                         {
-                            ui.close_menu();
+                            ui.close();
                             node.start_first_animation();
                         }
 
                         if ui.button("⏹ Stop all animations").clicked()
                         {
-                            ui.close_menu();
+                            ui.close();
                             node.stop_all_animations();
                         }
 
                         if ui.button("🗐 Copy and re-target animations").clicked()
                         {
-                            ui.close_menu();
+                            ui.close();
 
                             editor_state.de_select_current_item_from_scene(scene);
                             editor_state.selected_object = format!("objects_{}", node.id);
@@ -316,7 +317,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     ui.separator();
                     if ui.button("🗑 Delete").clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
@@ -326,7 +327,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                     if ui.button(RichText::new("🗑 Delete + materials/textures").color(Color32::LIGHT_RED)).clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
@@ -436,7 +437,7 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                 let hide_show_text = if visible { "👁 Hide" } else { "👁 Show" };
                 if ui.button(hide_show_text).clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
 
                     let mut instance = instance.write().unwrap();
                     instance.get_data_mut().get_mut().visible = !visible;
@@ -446,7 +447,7 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                 let lock_unlock_text = if locked { "🔓 Unlock" } else { "🔒 Lock" };
                 if ui.button(lock_unlock_text).clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
 
                     let mut instance = instance.write().unwrap();
                     instance.get_data_mut().get_mut().locked = !locked;
@@ -456,7 +457,7 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                 ui.separator();
                 if ui.button("🗑 Delete").clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
 
                     spawn_thread(move ||
                     {
@@ -468,7 +469,6 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
         }
     });
 }
-
 
 pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
@@ -586,6 +586,68 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             {
                 ui.label(format!("⚫ {}: {:?}", key, value));
             }
+        });
+    });
+
+    // Tags
+    collapse_with_title(ui, "object_tags", true, "🔖 Tags", None, |ui|
+    {
+        ui.scope(|ui|
+        {
+            ui.vertical( |ui|
+            {
+                let mut delete_tag = "".to_string();
+
+                // list all tags
+                {
+                    let node: std::sync::RwLockReadGuard<'_, Box<Node>> = node.read().unwrap();
+                    for (tag, data) in node.tags.iter()
+                    {
+                        ui.horizontal(|ui|
+                        {
+                            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+
+                            let color_u8 = Color32::from_rgb((data.color.x * 255.0) as u8, (data.color.y * 255.0) as u8,(data.color.z * 255.0) as u8);
+                            label_with_background(ui, tag, color_u8);
+
+                            ui.add_enabled_ui(!data.locked, |ui|
+                            {
+                                let hover_text = if data.locked { "locked - can not be deleted via ui" } else { "delete tag" };
+
+                                if ui.button(RichText::new("✖").size(16.0).color(Color32::WHITE)).on_hover_text(hover_text).clicked()
+                                {
+                                    delete_tag = tag.clone();
+                                }
+                            });
+                        });
+                    }
+                }
+
+                // delete tag
+                if delete_tag.len() > 0
+                {
+                    let mut node = node.write().unwrap();
+                    node.tags.remove(delete_tag.as_str());
+                }
+
+                // add new tag
+                ui.horizontal(|ui|
+                {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+
+                    ui.set_max_width(150.0);
+                    ui.text_edit_singleline(&mut editor_state.tag_input);
+                    if ui.button(RichText::new("➕").size(16.0).color(Color32::WHITE)).clicked()
+                    {
+                        let mut node = node.write().unwrap();
+                        if !editor_state.tag_input.is_empty()
+                        {
+                            node.tags.insert(editor_state.tag_input.as_str());
+                            editor_state.tag_input.clear();
+                        }
+                    }
+                });
+            });
         });
     });
 
@@ -735,10 +797,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         {
             if ui.button(RichText::new("Create Default Instance").heading().strong().color(Color32::LIGHT_GREEN)).clicked()
             {
-                let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                node.write().unwrap().create_default_instance(node.clone(), id, uuid);
+                node.write().unwrap().create_default_instance(node.clone());
             }
 
             if ui.button(RichText::new("⮈ Go to parent").heading().strong()).clicked()
@@ -902,8 +961,6 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         return;
     }
 
-    let id_manager = scene.id_manager.clone();
-
     let node = node.unwrap();
 
     // filter
@@ -1004,8 +1061,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         {
                             let component = component.read().unwrap();
 
-                            let id = id_manager.write().unwrap().get_next_component_id();
-                            duplicate_component = component.duplicate(id);
+                            duplicate_component = component.duplicate();
                         }
                     }
 
@@ -1157,8 +1213,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                                 {
                                     let component = component.read().unwrap();
 
-                                    let id = id_manager.write().unwrap().get_next_component_id();
-                                    duplicate_component = component.duplicate(id);
+                                    duplicate_component = component.duplicate();
                                 }
                             }
 

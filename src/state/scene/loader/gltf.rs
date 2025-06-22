@@ -7,10 +7,10 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
 
 
-pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     println!("load gltf file {}", path);
 
@@ -82,18 +82,13 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         }
         else
         {
-            let material = load_material(&gltf_material, scene_id, main_queue.clone(), id_manager.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, max_texture_resolution, resource_name.clone().clone());
+            let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, max_texture_resolution, resource_name.clone().clone());
             let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
-
-            let id;
-            {
-                id = material_arc.read().unwrap().id();
-            }
 
             let material_arc_clone = material_arc.clone();
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
             {
-                scene.add_material(id, &material_arc_clone);
+                scene.add_material(&material_arc_clone);
             }));
 
             loaded_materials.insert(gltf_material_index, material_arc);
@@ -104,11 +99,9 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     println!("loading scene items...");
 
     // create_root_node
-    let node_id = id_manager.write().unwrap().get_next_node_id();
-    loaded_ids.push(node_id);
+    let root_node = Node::new(resource_name.as_str());
+    loaded_ids.push(root_node.read().unwrap().id);
 
-    let uuid = uuid::Uuid::new_v4().to_string();
-    let root_node = Node::new(node_id, uuid, resource_name.as_str());
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(path.to_string());
 
@@ -117,7 +110,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     {
         for node in gltf_scene.nodes()
         {
-            read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), id_manager.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
+            read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
         }
     }
 
@@ -131,15 +124,15 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     // ********** map skeletons **********
     println!("loading skeletons...");
     let nodes = vec![root_node.clone()];
-    load_skeletons(&nodes, gltf.skins(), &buffers, id_manager.clone());
+    load_skeletons(&nodes, gltf.skins(), &buffers);
 
     // ********** animations **********
     println!("loading animations...");
-    read_animations(root_node.clone(), id_manager.clone(), gltf.animations(), &buffers);
+    read_animations(root_node.clone(), gltf.animations(), &buffers);
 
     // ********** map animatables **********
     println!("mapping animatables...");
-    map_animatables(&nodes, id_manager.clone());
+    map_animatables(&nodes);
 
     // ********** calculate skin bounding boxes **********
     println!("calc bbox skin...");
@@ -195,7 +188,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 }
 
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
@@ -215,7 +208,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     {
         if let Some(light) = node.light()
         {
-            let light_id = id_manager.write().unwrap().get_next_light_id();
             let intensity = light.intensity();
             let color = light.color();
             let color = Vector3::<f32>::new(color[0], color[1], color[2]);
@@ -236,8 +228,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let uuid = uuid::Uuid::new_v4().to_string();
-                        let light = Light::new_directional(light_id, uuid, (*name).clone(), pos, dir, color, intensity);
+                        let light = Light::new_directional((*name).clone(), pos, dir, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -249,8 +240,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let uuid = uuid::Uuid::new_v4().to_string();
-                        let light = Light::new_point(light_id, uuid, (*name).clone(), pos, color, intensity);
+                        let light = Light::new_point((*name).clone(), pos, color, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -262,8 +252,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let uuid = uuid::Uuid::new_v4().to_string();
-                        let light = Light::new_spot(light_id, uuid, (*name).clone(), pos, dir, color, outer_cone_angle, intensity);
+                        let light = Light::new_spot((*name).clone(), pos, dir, color, outer_cone_angle, intensity);
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -276,7 +265,6 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     {
         if let Some(camera) = node.camera()
         {
-            let cam_id = id_manager.write().unwrap().get_next_camera_id();
             let name = camera.name().unwrap_or("Unnamed Camera").to_string();
             let name = Arc::new(name);
 
@@ -300,8 +288,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let uuid = uuid::Uuid::new_v4().to_string();
-                        let mut cam = Camera::new(cam_id, uuid, (*name).clone());
+                        let mut cam = Camera::new((*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
 
                         cam_data.left = -width;
@@ -331,8 +318,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let uuid = uuid::Uuid::new_v4().to_string();
-                        let mut cam = Camera::new(cam_id, uuid, (*name).clone());
+                        let mut cam = Camera::new((*name).clone());
                         let cam_data = cam.get_data_mut().get_mut();
 
                         cam_data.fovy = yfov;
@@ -513,8 +499,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut components: Vec<ComponentItem> = vec![];
 
             // mesh component
-            let component_id = id_manager.write().unwrap().get_next_component_id();
-            let mut mesh_component: Mesh = Mesh::new_with_data(component_id, "Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
+            let mut mesh_component: Mesh = Mesh::new_with_data("Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
             mesh_component.get_data_mut().get_mut().uvs_1 = uvs2;
             mesh_component.get_data_mut().get_mut().uvs_2 = uvs3;
             mesh_component.get_data_mut().get_mut().uvs_3 = uvs4;
@@ -575,9 +560,8 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     let name = format!("Morph Target {}", i);
                     let name = target_names.get(i).unwrap_or(&name);
 
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
                     //let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
-                    let morph_target = MorphTarget::new(component_id, name, i as u32);
+                    let morph_target = MorphTarget::new(name, i as u32);
 
                     let mesh_component_data = mesh_component.get_data_mut().get_mut();
                     mesh_component_data.morph_target_positions.push(target.0.clone());
@@ -591,15 +575,12 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
 
             // node
-            let id = id_manager.write().unwrap().get_next_node_id();
-
             if primitives_amount > 1
             {
                 mesh_name = format!("{} {} primitive_{}", node_name, mesh_name, primitive_id);
             }
 
-            let uuid = uuid::Uuid::new_v4().to_string();
-            let node_arc = Node::new(id, uuid, mesh_name.as_str());
+            let node_arc = Node::new(mesh_name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
 
@@ -620,8 +601,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 // transformation
                 if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
                 {
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
-                    scene_node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                    scene_node.add_component(Arc::new(RwLock::new(Box::new(Transformation::new("Transform", translate, rotation, scale)))));
                 }
 
                 // add skeleton/skin if needed
@@ -631,9 +611,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                 }
 
                 // add default instance
-                let instance_id = id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                scene_node.create_default_instance(node_arc.clone(), instance_id, uuid);
+                scene_node.create_default_instance(node_arc.clone());
 
                 // parent
                 scene_node.parent = Some(parent_node.clone());
@@ -663,18 +641,14 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let name = node.name().unwrap_or("transform node");
             println!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
 
-
-            let node_id = id_manager.write().unwrap().get_next_node_id();
-            let uuid = uuid::Uuid::new_v4().to_string();
-            let scene_node = Node::new(node_id, uuid, name);
+            let scene_node = Node::new(name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
             scene_node.write().unwrap().extras.insert("_json_index", node_index);
 
             // add transformation
             if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
             {
-                let component_id = id_manager.write().unwrap().get_next_component_id();
-                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new(component_id, "Transform", translate, rotation, scale)))));
+                scene_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::new("Transform", translate, rotation, scale)))));
             }
 
             // extras
@@ -689,7 +663,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     // ********** children **********
     for child in node.children()
     {
-        read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), id_manager.clone(), parent_node.clone(), &world_transform, level + 1);
+        read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
     }
 }
 
@@ -739,15 +713,14 @@ pub fn read_extras(node: NodeItem, gltf_node: &gltf::Node)
     }
 }
 
-pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerItem, animations: Animations<'_>, buffers: &Vec<gltf::buffer::Data>)
+pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations<'_>, buffers: &Vec<gltf::buffer::Data>)
 {
     let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
 
     for animation in animations
     {
         // create animation component
-        let component_id = id_manager.write().unwrap().get_next_component_id();
-        let mut animation_component: Animation = Animation::new(component_id, animation.name().unwrap_or("Animation"));
+        let mut animation_component: Animation = Animation::new(animation.name().unwrap_or("Animation"));
 
         let mut duration: f32 = 0.0;
 
@@ -889,7 +862,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, id_manager: IdManagerI
 }
 
 
-fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, buffers: &Vec<gltf::buffer::Data>, id_manager: IdManagerItem)
+fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, buffers: &Vec<gltf::buffer::Data>)
 {
     let all_nodes = Scene::list_all_child_nodes(scene_nodes);
     let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
@@ -942,8 +915,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                     {
                         if node.find_component::<Joint>().is_none()
                         {
-                            let component_id = id_manager.write().unwrap().get_next_component_id();
-                            let mut joint = Joint::new(component_id, "Joint");
+                            let mut joint = Joint::new("Joint");
                             joint.get_data_mut().get_mut().inverse_bind_trans = inverse_bind_matrix.clone();
 
                             node.add_component(Arc::new(RwLock::new(Box::new(joint))));
@@ -1037,7 +1009,7 @@ fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
 }
 
 
-fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, id_manager: IdManagerItem)
+fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
 {
     let all_nodes = Scene::list_all_child_nodes(scene_nodes);
 
@@ -1055,8 +1027,7 @@ fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, id_manager: IdMana
                 if target.read().unwrap().find_component::<Joint>().is_none() && target.read().unwrap().find_component::<Transformation>().is_none()
                 //if target.read().unwrap().find_component::<Transformation>().is_none()
                 {
-                    let component_id = id_manager.write().unwrap().get_next_component_id();
-                    let transformation: Transformation = Transformation::identity(component_id, "Animation Transformation");
+                    let transformation: Transformation = Transformation::identity("Animation Transformation");
 
                     target.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
                 }
@@ -1234,12 +1205,9 @@ fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_tex
     }
 }
 
-pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool, max_texture_resolution: u32, resource_name: String) -> Material
+pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_queue: ExecutionQueueItem, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool, max_texture_resolution: u32, resource_name: String) -> Material
 {
-    //let component_id = scene.id_manager.get_next_component_id();
-    let component_id: u64 = id_manager.write().unwrap().get_next_component_id();
-
-    let mut material = Material::new(component_id, gltf_material.name().unwrap_or("unknown"));
+    let mut material = Material::new(gltf_material.name().unwrap_or("unknown"));
     let material_name = material.get_base().name.clone();
     let data = material.get_data_mut().get_mut();
 
@@ -1340,16 +1308,12 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
     {
         if let Some(texture) = get_texture_by_index(&metallic_roughness_tex, &loaded_textures)
         {
-            let tex_id: u64 = id_manager.write().unwrap().get_next_texture_id();
-
             let reflectivity_tex;
             let tex_name;
             {
                 let tex = texture.read().unwrap();
                 tex_name = tex.name.clone();
-
-                let uuid = uuid::Uuid::new_v4().to_string();
-                reflectivity_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 2, max_texture_resolution);
+                reflectivity_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 2, max_texture_resolution);
             }
             let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), reflectivity_tex, tex_name.as_str());
 
@@ -1384,15 +1348,12 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
     {
         if let Some(texture) = get_texture_by_index(&metallic_roughness_tex, &loaded_textures)
         {
-            let tex_id: u64 = id_manager.write().unwrap().get_next_texture_id();
-
             let roughness_tex;
             let tex_name;
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
                 let tex = texture.read().unwrap();
                 tex_name = tex.name.clone();
-                roughness_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 1, max_texture_resolution);
+                roughness_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 1, max_texture_resolution);
             }
             let tex_arc = insert_texture_or_reuse(scene_id, main_queue.clone(), roughness_tex, tex_name.as_str());
 
@@ -1445,16 +1406,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
     {
         if let Some(texture) = get_ao_texture_by_index(&ao_gltf_tex, &loaded_textures)
         {
-            let tex_id: u64 = id_manager.write().unwrap().get_next_texture_id();
-
             //data.texture_ambient_occlusion = Some(TextureState::new(texture));
             let ao_tex;
             let tex_name;
             {
-                let uuid = uuid::Uuid::new_v4().to_string();
                 let tex = texture.read().unwrap();
                 tex_name = tex.name.clone();
-                ao_tex = Texture::new_from_image_channel(tex_id, uuid, tex.name.as_str(), &tex, 0, max_texture_resolution);
+                ao_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 0, max_texture_resolution);
             }
             let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), ao_tex, tex_name.as_str());
 

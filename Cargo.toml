@@ -1,7 +1,7 @@
 [package]
 name = "rustl"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -10,13 +10,13 @@ crate-type = ["cdylib", "rlib"]
 simple_logger = "5.0"
 log = "0.4"
 cfg-if = "1"
-wgpu = "24.0"
-bytemuck = { version = "1.20", features = [ "derive" ] }
+wgpu = "25.0"
+bytemuck = { version = "1.23", features = [ "derive" ] }
 instant = "0.1"
-winit = "0.30.9"
+winit = "0.30.11"
 anyhow = "1.0"
 nalgebra = "0.33"
-sha256 = "1.5.0"
+sha256 = "1.6.0"
 colored = "3.0.0"
 base64 = "0.22"
 strum = "0.27"
@@ -28,17 +28,17 @@ regex = "1.11"
 rodio = "0.20"
 gilrs = { version = "0.11", features = ["wgi"]}
 take_mut = "0.2"
-uuid = {version = "1.13", features = ["v4"] }
+uuid = {version = "1.17", features = ["v4"] }
 
-parry3d = "0.18"
+parry3d = "0.21"
 bvh = "0.11.0"
 
-arboard = "3.4.1"
+arboard = "3.5.0"
 
 tobj = { version = "4.0", features = ["async"]}
 
-gltf = { version = "1.4", features = [
-#gltf = { git = "https://github.com/gltf-rs/gltf", features = [
+#gltf = { version = "1.4", features = [
+gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "extras",
   "names",
   "KHR_lights_punctual",
@@ -46,34 +46,35 @@ gltf = { version = "1.4", features = [
   "KHR_materials_ior",
   "KHR_materials_unlit",
   "KHR_texture_transform",
-  "KHR_materials_emissive_strength"
+  "KHR_materials_emissive_strength",
+  "EXT_texture_webp"
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
-image = { version = "0.25", default-features = false, features = [ "png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
-egui = "0.31"
-egui-wgpu = "0.31"
-egui_plot = "0.31"
-#egui = { git = "https://github.com/emilk/egui", branch = "master"  }
-#egui-wgpu = { git = "https://github.com/emilk/egui", branch = "master" }
-#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+#egui = "0.31"
+#egui-wgpu = "0.31"
+#egui_plot = "0.31"
+egui = { git = "https://github.com/emilk/egui", branch = "main"  }
+egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
+egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
 
-#[patch.crates-io]
-#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
-#egui = { git = "https://github.com/emilk/egui", branch = "master" }
+[patch.crates-io]
+egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+egui = { git = "https://github.com/emilk/egui", branch = "main" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.31"
-#egui-winit = { git ="https://github.com/emilk/egui", branch = "master" }
+#egui-winit = "0.31"
+egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
 pollster = "0.4.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.12"
-wgpu = { version = "24.0.0", features = ["webgl"]}
+wgpu = { version = "25.0.0", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
@@ -84,8 +85,8 @@ web-sys = { version = "0.3", features = [
 ]}
 wasm_thread = { version = "0.3", features = ["es_modules"]}
 
-#egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "master", features = [
-egui-winit = { version = "0.31", default-features = false, features = [
+egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
+#egui-winit = { version = "0.31", default-features = false, features = [
   "links",
 ] }
 

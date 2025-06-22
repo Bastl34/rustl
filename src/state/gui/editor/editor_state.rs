@@ -5,13 +5,31 @@ use std::sync::{RwLock, Arc};
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Vector3};
 
-use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{scene::{node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum GizmoTypeAndAxis
+{
+    TranslateX,
+    TranslateY,
+    TranslateZ,
+    TranslateXY,
+    TranslateXZ,
+    TranslateYZ,
+    RotateX,
+    RotateY,
+    RotateZ,
+    ScaleX,
+    ScaleY,
+    ScaleZ,
+    ScaleUniform,
+}
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
@@ -92,6 +110,12 @@ pub struct EditorState
     pub selectable: bool,
     pub fly_camera: bool,
 
+    pub project_name: String,
+
+    pub gizmo_position: bool,
+    pub gizmo_rotation: bool,
+    pub gizmo_scale: bool,
+
     pub pick_mode: PickType,
 
     pub grid_size: f32,
@@ -109,15 +133,22 @@ pub struct EditorState
 
     pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
+    pub show_internal_nodes: bool,
 
     pub component_filter: String,
+
+    pub tag_input: String,
 
     pub selected_scene_id: Option<u64>,
     pub selected_type: SelectionType,
     pub selected_object: String,
     pub selected_object_position: Option<Vector3<f32>>,
+    pub selected_gizmo: Option<GizmoTypeAndAxis>,
+    pub selected_object_gizmo_value: Option<Vector3<f32>>,
 
     pub copy_asset: Option<String>,
+    pub copy_asset_transform: Option<TransformationData>,
+    pub copy_node_id: Arc<RwLock<Option<u64>>>,
 
     pub drag_id: Option<String>,
 
@@ -151,6 +182,12 @@ impl EditorState
             selectable: true,
             fly_camera: true,
 
+            project_name: "test_project".to_string(),
+
+            gizmo_position: true,
+            gizmo_rotation: false,
+            gizmo_scale: false,
+
             pick_mode: PickType::None,
 
             grid_size: DEFAULT_GRID_SIZE,
@@ -168,15 +205,22 @@ impl EditorState
 
             hierarchy_expand_all: true,
             hierarchy_filter: String::new(),
+            show_internal_nodes: false,
 
             component_filter: String::new(),
+
+            tag_input: String::new(),
 
             selected_scene_id: None,
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
             selected_object_position: None,
+            selected_gizmo: None,
+            selected_object_gizmo_value: None,
 
             copy_asset: None,
+            copy_asset_transform: None,
+            copy_node_id: Arc::new(RwLock::new(None)),
 
             drag_id: None,
 
@@ -287,6 +331,9 @@ impl EditorState
     {
         for scene in &mut state.scenes
         {
+            // enable camera movement again
+            apply_fly_camera_move_state(scene, true);
+
             for node in &scene.nodes
             {
                 let mut all_nodes = vec![];
@@ -352,11 +399,15 @@ impl EditorState
                     }
                 }
             }
+
+            // enable camera movement again
+            apply_fly_camera_move_state(scene, true);
         }
 
         self.selected_object.clear();
         self.selected_scene_id = None;
         self.selected_type = SelectionType::None;
+        self.selected_gizmo = None;
     }
 
     pub fn de_select_current_item_from_scene(&mut self, scene: &mut Scene)
@@ -391,6 +442,85 @@ impl EditorState
         self.selected_object.clear();
         self.selected_scene_id = None;
         self.selected_type = SelectionType::None;
+        self.selected_gizmo = None;
+
+        // enable camera movement again
+        apply_fly_camera_move_state(scene, true);
+    }
+
+    pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u64, instance_id: Option<u64>, selection_type: SelectionType) -> bool
+    {
+        let scene_id = scene.id;
+
+        let node = scene.find_node_by_id(node_id);
+        if node.is_none()
+        {
+            return false;
+        }
+        let node = node.unwrap();
+
+        let id_string;
+        {
+            if let Some(instance_id) = instance_id
+            {
+                id_string = format!("objects_{}_{}", node_id, instance_id);
+            }
+            else
+            {
+                id_string = format!("objects_{}", node_id);
+            }
+        }
+
+        let mut already_selected = false;
+
+        if self.selected_object == id_string && self.selected_scene_id == Some(scene_id)
+        {
+            already_selected = true;
+        }
+
+        // de-select first
+        self.de_select_current_item_from_scene(scene);
+
+        // highlight
+        if !already_selected
+        {
+            self.selected_object = id_string;
+            self.selected_scene_id = Some(scene_id);
+            self.selected_type = selection_type;
+
+            if let Some(instance_id) = instance_id
+            {
+                let node = node.read().unwrap();
+                if let Some(instance) = node.find_instance_by_id(instance_id)
+                {
+                    let mut instance = instance.write().unwrap();
+                    let instance_data = instance.get_data_mut().get_mut();
+                    instance_data.highlight = true;
+                }
+            }
+            else
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    let node = node.read().unwrap();
+
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = true;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        false
     }
 
     pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)

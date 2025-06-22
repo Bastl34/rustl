@@ -1,13 +1,11 @@
 #![allow(dead_code)]
 
-use std::{sync::{RwLock, Arc}, f32::consts::PI, path::Path};
+use std::{sync::{RwLock, Arc}, path::Path};
 
-use nalgebra::{Point3, Vector3, Vector4};
-
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, math::is_almost_integer}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::{Component, ComponentItem}, material::{Material, MaterialItem, TextureState, TextureType}, mesh::Mesh, sound::{Sound, SoundType}, transformation::Transformation}, instance::Instance, loader::wavefront, manager::id_manager::IdManagerItem, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
@@ -20,11 +18,11 @@ pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, parent_node_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return wavefront::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, parent_node_id, main_queue, id_manager, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return gltf::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
 
     Ok(vec![])
@@ -38,7 +36,6 @@ pub fn load_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_
     Ok(load_texture_byte_or_reuse(scene_id, main_queue, max_tex_res, &image_bytes, name.as_str(), extension))
 }
 
-
 pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
 {
     let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
@@ -47,9 +44,6 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
 
     let res_texture: Arc<RwLock<Option<TextureItem>>> = Arc::new(RwLock::new(None));
     let res_texture_clone = res_texture.clone();
-
-    let texture_id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(None));
-    let texture_id_clone = texture_id.clone();
 
     let scene_id_clone = scene_id.clone();
 
@@ -68,11 +62,6 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
 
                     *res_texture_clone.write().unwrap() = Some(scene.textures.get_mut(&hash_clone).unwrap().clone());
                 }
-                else
-                {
-                    let id = scene.id_manager.write().unwrap().get_next_texture_id();
-                    *texture_id_clone.write().unwrap() = Some(id);
-                }
             }
         }))
     }
@@ -84,8 +73,7 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
     }
 
     // ***** if not found -> load *****
-    let uuid = uuid::Uuid::new_v4().to_string();
-    let texture = Texture::new(texture_id.read().unwrap().unwrap(), uuid, name, &image_bytes, extension, max_tex_res);
+    let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
     let arc = Arc::new(RwLock::new(Box::new(texture)));
 
     // ***** add to scene textures *****
@@ -166,262 +154,6 @@ pub fn insert_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, te
 
     arc
 
-}
-
-pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, amount: u32, spacing: f32)
-{
-    let integer_grid_line_scale = 3.0;
-
-    let grid_origin_line_scale = 3.5;
-    let grid_origin_line_scale_line = 1_000.0;
-
-    let amount = amount as i32;
-
-    let size = amount as f32 * spacing;
-
-    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), id_manager.clone(), true, true, false, 0).unwrap();
-
-    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
-    {
-        // ********** renaming **********
-        if let Some(root) = loaded_ids_grid.get(0)
-        {
-            if let Some(root_node) = scene.find_node_by_id(*root)
-            {
-                root_node.write().unwrap().name = "grid".to_string();
-            }
-        }
-
-        if let Some(root) = loaded_ids_origin.get(0)
-        {
-            if let Some(root_node) = scene.find_node_by_id(*root)
-            {
-                root_node.write().unwrap().name = "grid origin".to_string();
-            }
-        }
-
-        // ********** grid **********
-        if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
-        {
-            {
-                let mut grid = grid_arc.write().unwrap();
-                grid.clear_instances();
-            }
-
-            for i in 0..amount
-            {
-                let pos = i - (amount / 2);
-
-                // x
-                {
-                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                    let uuid = uuid::Uuid::new_v4().to_string();
-                    let mut instance = Instance::new
-                    (
-                        id,
-                        uuid,
-                        format!("grid_x_{}", pos),
-                        grid_arc.clone()
-                    );
-
-                    let z_pos = pos as f32 * spacing;
-                    let scale = if is_almost_integer(z_pos) { integer_grid_line_scale } else { 1.0 };
-
-                    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-                    let mut transformation = Transformation::identity(component_id, "Transform");
-                    transformation.apply_translation(Vector3::<f32>::new(0.0, 0.0, z_pos));
-                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
-
-                    instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
-
-                    let mut grid = grid_arc.write().unwrap();
-                    grid.add_instance(Box::new(instance));
-                }
-
-                // y
-                {
-                    let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                    let uuid = uuid::Uuid::new_v4().to_string();
-                    let mut instance = Instance::new
-                    (
-                        id,
-                        uuid,
-                        format!("grid_y_{}", pos),
-                        grid_arc.clone()
-                    );
-
-                    let x_pos = pos as f32 * spacing;
-                    let scale = if is_almost_integer(x_pos) { integer_grid_line_scale } else { 1.0 };
-
-                    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-                    let mut transformation = Transformation::identity(component_id, "Transform");
-                    transformation.apply_translation(Vector3::<f32>::new(x_pos, 0.0, 0.0));
-                    transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
-                    transformation.apply_scale(Vector3::<f32>::new(amount as f32 * spacing, scale, scale), true);
-
-                    instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
-
-                    let mut grid = grid_arc.write().unwrap();
-                    grid.add_instance(Box::new(instance));
-                }
-            }
-
-            {
-                let grid = grid_arc.read().unwrap();
-
-                if let Some(material) = grid.find_component::<Material>()
-                {
-                    component_downcast_mut!(material, Material);
-                    material.get_base_mut().name = "grid material".to_string();
-                    material.get_data_mut().get_mut().unlit_shading = true;
-                    material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.28, 0.66, 0.9);
-                }
-            }
-        }
-
-        // ********** merge together grid mesh **********
-        for id in &loaded_ids_grid
-        {
-            if let Some(node) = scene.find_node_by_id(*id)
-            {
-                let mut node = node.write().unwrap();
-                node.merge_instances();
-
-                let instance = node.instances.get_mut().first();
-
-                if let Some(instance) = instance
-                {
-                    instance.write().unwrap().pickable = false;
-                }
-            }
-        }
-
-        // ********** grid origin **********
-        if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_origin)
-        {
-            {
-                let mut grid = grid_arc.write().unwrap();
-                grid.clear_instances();
-            }
-
-            // x (red)
-            {
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(id, uuid, "grid_origin_x".to_string(), grid_arc.clone());
-
-                let scale = grid_origin_line_scale;
-
-                let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-                let mut transformation = Transformation::identity(component_id, "Transform");
-                transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
-                instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
-                instance.get_data_mut().get_mut().color = Vector4::<f32>::new(1.0, 0.0, 0.0, 1.0);
-                instance.pickable = false;
-
-                let mut grid = grid_arc.write().unwrap();
-                grid.add_instance(Box::new(instance));
-            }
-
-            // y (green)
-            {
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(id, uuid, "grid_origin_y".to_string(), grid_arc.clone());
-
-                let scale = grid_origin_line_scale;
-
-                let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-                let mut transformation = Transformation::identity(component_id, "Transform");
-                transformation.apply_rotation(Vector3::<f32>::new(0.0, 0.0, PI / 2.0));
-                transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
-                instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
-                instance.get_data_mut().get_mut().color = Vector4::<f32>::new(0.0, 1.0, 0.0, 1.0);
-                instance.pickable = false;
-
-                let mut grid = grid_arc.write().unwrap();
-                grid.add_instance(Box::new(instance));
-            }
-
-            // z (blue)
-            {
-                let id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let mut instance = Instance::new(id, uuid, "grid_origin_z".to_string(), grid_arc.clone());
-
-                let scale = grid_origin_line_scale;
-
-                let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-                let mut transformation = Transformation::identity(component_id, "Transform");
-                transformation.apply_rotation(Vector3::<f32>::new(0.0, PI / 2.0, 0.0));
-                transformation.apply_scale(Vector3::<f32>::new(grid_origin_line_scale_line, scale, scale), true);
-                instance.add_component(Arc::new(RwLock::new(Box::new(transformation))));
-                instance.get_data_mut().get_mut().color = Vector4::<f32>::new(0.0, 0.0, 1.0, 1.0);
-                instance.pickable = false;
-
-                let mut grid = grid_arc.write().unwrap();
-                grid.add_instance(Box::new(instance));
-            }
-
-            /*
-            {
-                let grid = grid_arc.read().unwrap();
-
-                if let Some(material) = grid.find_component::<Material>()
-                {
-                    component_downcast_mut!(material, Material);
-                    material.get_base_mut().name = "grid origin material".to_string();
-                    material.get_data_mut().get_mut().unlit_shading = true;
-                    material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
-                }
-            }
-             */
-        }
-
-        // ********** create plane **********
-        if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
-        {
-            let mesh_component_id = scene.id_manager.write().unwrap().get_next_component_id();
-            let material_id = scene.id_manager.write().unwrap().get_next_component_id();
-
-            let half_size = size / 2.0;
-
-            let p0 = Point3::<f32>::new(-half_size, -0.001, half_size);
-            let p1 = Point3::<f32>::new(half_size, -0.001, half_size);
-            let p2 = Point3::<f32>::new(half_size, -0.001, -half_size);
-            let p3 = Point3::<f32>::new(-half_size, -0.001, -half_size);
-
-            let plane_mesh = Mesh::new_plane(mesh_component_id, "grid plane mesh", p0, p1, p2, p3);
-
-            let mut plane_material = Material::new(material_id, "grid plane material");
-            plane_material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.005, 0.005, 0.02);
-            plane_material.get_data_mut().get_mut().alpha = 0.5;
-            plane_material.get_data_mut().get_mut().unlit_shading = true;
-
-            let plane_material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(plane_material)));
-
-            scene.add_material(material_id, &plane_material_arc.clone());
-
-            let uuid = uuid::Uuid::new_v4().to_string();
-            let plane_node = Node::new(scene.id_manager.write().unwrap().get_next_node_id(), uuid, "plane");
-            {
-                {
-                    let mut plane_node = plane_node.write().unwrap();
-                    plane_node.add_component(Arc::new(RwLock::new(Box::new(plane_mesh))));
-                    plane_node.add_component(plane_material_arc);
-                }
-
-                let instance_id = scene.id_manager.write().unwrap().get_next_instance_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-
-                plane_node.write().unwrap().create_default_instance(plane_node.clone(), instance_id, uuid);
-                plane_node.write().unwrap().find_instance_by_id(instance_id).unwrap().write().unwrap().pickable = false;
-            }
-
-            Node::add_node(grid_arc, plane_node);
-        }
-    }));
 }
 
 pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: TextureType, scene_id: u64, material_id: Option<u64>, mipmapping: bool, max_tex_res: u32)
@@ -525,34 +257,31 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
             let sound_source_bytes = load_binary(path.as_str());
             if let Ok(sound_source_bytes) = sound_source_bytes
             {
-                let sound_souce_id = scene.id_manager.write().unwrap().get_next_sound_source_id();
-                let uuid = uuid::Uuid::new_v4().to_string();
-                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(sound_souce_id, uuid, filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
+                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
                 let sound_source_clone = sound_source.clone();
 
                 let hash = sound_source.read().unwrap().hash.clone();
                 scene.sound_sources.insert(hash, sound_source);
 
-                let cube = scene.find_node_by_name(node_name.as_str());
+                let node = scene.find_node_by_name(node_name.as_str());
 
-                if let Some(cube) = cube
+                if let Some(node) = node
                 {
-                    let mut cube = cube.write().unwrap();
+                    let mut node = node.write().unwrap();
 
-                    let sound_id = scene.id_manager.write().unwrap().get_next_component_id();
-                    let mut sound = Sound::new(sound_id, "m16", sound_source_clone, spund_type, true);
+                    let mut sound = Sound::new(filename.as_str(), sound_source_clone, spund_type, true);
                     sound.start();
 
-                    cube.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                    node.add_component(Arc::new(RwLock::new(Box::new(sound))));
                 }
             }
         }));
     });
 }
 
-pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, id_manager: IdManagerItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
+pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
 {
-    let animations = load_object(path, scene_id, None, main_queue.clone(), id_manager.clone(), false, true, false, 0);
+    let animations = load_object(path, scene_id, None, main_queue.clone(), false, true, false, 0);
 
     if let Err(animations) = animations
     {
@@ -572,7 +301,7 @@ pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, m
         let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
 
         // copy animations
-        let new_animations = clone_all_animations(retarget_animation.clone().unwrap(), target_animation_node.unwrap(), scene);
+        let new_animations = clone_all_animations(retarget_animation.clone().unwrap(), target_animation_node.unwrap());
 
         // in place joint
         if let Some(in_place_joint) = &in_place_joint
@@ -596,7 +325,7 @@ pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, m
     Ok(true)
 }
 
-pub fn clone_all_animations(from: NodeItem, to: NodeItem, scene: &Scene) -> Vec<ComponentItem>
+pub fn clone_all_animations(from: NodeItem, to: NodeItem) -> Vec<ComponentItem>
 {
     let animations = from.read().unwrap().get_all_animations();
 
@@ -604,7 +333,7 @@ pub fn clone_all_animations(from: NodeItem, to: NodeItem, scene: &Scene) -> Vec<
 
     for animation in animations
     {
-        let cloned_animation = clone_animation(animation.clone(), to.clone(), scene);
+        let cloned_animation = clone_animation(animation.clone(), to.clone());
 
         if let Some(cloned_animation) = cloned_animation
         {
@@ -615,10 +344,9 @@ pub fn clone_all_animations(from: NodeItem, to: NodeItem, scene: &Scene) -> Vec<
     new_animation_components
 }
 
-pub fn clone_animation(animation_component_from: ComponentItem, animation_component_to: NodeItem, scene: &Scene) -> Option<ComponentItem>
+pub fn clone_animation(animation_component_from: ComponentItem, animation_component_to: NodeItem) -> Option<ComponentItem>
 {
-    let component_id = scene.id_manager.write().unwrap().get_next_component_id();
-    let cloned_animation = animation_component_from.read().unwrap().duplicate(component_id);
+    let cloned_animation = animation_component_from.read().unwrap().duplicate();
     if let Some(cloned_animation) = cloned_animation
     {
         let mut target_node = animation_component_to.write().unwrap();

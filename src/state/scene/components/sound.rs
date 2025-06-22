@@ -50,11 +50,11 @@ pub struct Sound
 
 impl Sound
 {
-    pub fn new(id: u64, name: &str, sound_source: SoundSourceItem, sound_type: SoundType, looped: bool) -> Sound
+    pub fn new(name: &str, sound_source: SoundSourceItem, sound_type: SoundType, looped: bool) -> Sound
     {
         let mut sound = Sound
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Sound".to_string(), "🔊".to_string()),
+            base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
             sound_source: Some(sound_source.clone()),
             duration: 0.0,
@@ -82,11 +82,11 @@ impl Sound
         sound
     }
 
-    pub fn new_empty(id: u64, name: &str) -> Sound
+    pub fn new_empty(name: &str) -> Sound
     {
         let sound = Sound
         {
-            base: ComponentBase::new(id, uuid::Uuid::new_v4().to_string(), name.to_string(), "Sound".to_string(), "🔊".to_string()),
+            base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
             sound_source: None,
             duration: 0.0,
@@ -453,7 +453,7 @@ impl Component for Sound
         }
     }
 
-    fn duplicate(&self, new_component_id: u64) -> Option<ComponentItem>
+    fn duplicate(&self) -> Option<ComponentItem>
     {
         let source = self.as_any().downcast_ref::<Sound>();
 
@@ -466,7 +466,7 @@ impl Component for Sound
 
         let mut sound = Sound
         {
-            base: ComponentBase::duplicate(new_component_id, source.get_base()),
+            base: ComponentBase::duplicate(source.get_base()),
 
             sound_source: source.sound_source.clone(),
             duration: source.duration,

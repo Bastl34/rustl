@@ -9,6 +9,7 @@ todo:
  * optimize shader - do not use empty morph targets or animation weights
  * action management
  * dynamic shader pipelines (backface culling, depth test/write, blending)
+ * move editor to extra crate
 
 done:
  * winit + wgpu update
