@@ -8,6 +8,7 @@ use crate::state::scene::components::transformation::Transformation;
 use crate::state::{gui::editor::editor_state::EditorState, state::State};
 use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
+use crate::state::scene::exporter::json;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 
 use super::assets::create_asset_section;
@@ -124,7 +125,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     {
         if ui.button("Save Project").clicked()
         {
-            state.export_json((("data/".to_string()) + &editor_state.project_name).as_str());
+            json::export(state, (("data/".to_string()) + &editor_state.project_name).as_str());
         }
         if ui.button("Exit").clicked()
         {

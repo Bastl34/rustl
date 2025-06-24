@@ -12,6 +12,7 @@ use self::math::approx_zero;
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::state::gui::editor::ui::main_frame;
+use crate::state::scene::exporter::json;
 
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
@@ -236,7 +237,7 @@ impl Editor
         {
             if state.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
-                state.export_json((("data/".to_string()) + &self.editor_state.project_name).as_str());
+                json::export(state, (("data/".to_string()) + &self.editor_state.project_name).as_str());
             }
         }
     }

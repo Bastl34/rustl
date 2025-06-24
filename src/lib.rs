@@ -48,6 +48,11 @@ mod state
             pub(crate) mod gltf;
         }
 
+        pub(crate) mod exporter
+        {
+            pub(crate) mod json;
+        }
+
         pub(crate) mod components
         {
             pub(crate) mod component;

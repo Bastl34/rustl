@@ -250,19 +250,6 @@ impl State
         });
     }
 
-    pub fn export_json(&self, path: &str) -> bool
-    {
-        println!("exporting {} to json", path);
-
-        let mut file_content = String::new();
-        if write_string_to_tile(format!("{}.json", path).as_str(), file_content).is_ok()
-        {
-            return true;
-        }
-
-        false
-    }
-
     pub fn get_main_scene(&self) -> Option<&SceneItem>
     {
         for scene in &self.scenes
