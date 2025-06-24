@@ -18,6 +18,19 @@ pub struct ComputedInstanceData
     pub locked: bool,
 }
 
+impl Default for ComputedInstanceData
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            world_matrix: Matrix4::<f32>::identity(),
+            alpha: 1.0,
+            locked: false,
+        }
+    }
+}
+
 pub struct InstanceData
 {
     pub computed: ComputedInstanceData,
@@ -64,12 +77,7 @@ impl Instance
 
             data: ChangeTracker::new(InstanceData
             {
-                computed: ComputedInstanceData
-                {
-                    world_matrix: Matrix4::<f32>::identity(),
-                    alpha: 1.0,
-                    locked: false
-                },
+                computed: ComputedInstanceData::default(),
 
                 visible: true,
                 highlight: false,
@@ -99,12 +107,7 @@ impl Instance
 
             data: ChangeTracker::new(InstanceData
             {
-                computed: ComputedInstanceData
-                {
-                    world_matrix: Matrix4::<f32>::identity(),
-                    alpha: 1.0,
-                    locked: false
-                },
+                computed: ComputedInstanceData::default(),
 
                 visible: true,
                 highlight: false,

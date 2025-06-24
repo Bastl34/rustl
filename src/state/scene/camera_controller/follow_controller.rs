@@ -1,16 +1,19 @@
 #![allow(dead_code)]
 
 use nalgebra::{Point3, Vector3};
+use serde::{Deserialize, Serialize};
 
 use crate::{camera_controller_impl_default, component_downcast, helper::{change_tracker::ChangeTracker, math::{self}}, input::input_manager::InputManager, state::scene::{camera::CameraData, components::transformation::Transformation, node::NodeItem, scene::Scene}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
+#[derive(Serialize, Deserialize)]
 pub struct FollowControllerControllerData
 {
     pub offset: Vector3::<f32>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct FollowController
 {
     base: CameraControllerBase,

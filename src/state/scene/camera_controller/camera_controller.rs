@@ -1,5 +1,7 @@
 use std::any::Any;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{state::scene::node::NodeItem, input::input_manager::InputManager};
 
 pub type CameraControllerBox = Box<dyn CameraController + Send + Sync>;
@@ -16,6 +18,7 @@ pub trait CameraController: Any
     fn update(&mut self, node: Option<NodeItem>, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, cam_data: &mut crate::helper::change_tracker::ChangeTracker<crate::state::scene::camera::CameraData>, frame_scale: f32) -> bool;
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CameraControllerBase
 {
     pub is_enabled: bool,

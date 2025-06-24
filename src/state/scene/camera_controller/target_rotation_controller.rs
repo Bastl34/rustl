@@ -4,6 +4,7 @@ use std::{f32::consts::PI, sync::Arc};
 
 use nalgebra::{Vector2, Vector3, Point3};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
 use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
@@ -14,6 +15,7 @@ const ANGLE_OFFSET: f32 = 0.01;
 const DEFAULT_AUTO_ROTATE_TIMEOUT: u64 = 2000;
 const DEFAULT_ZOOM_SPEED: f32 = 0.05;
 
+#[derive(Serialize, Deserialize)]
 pub struct TargetRotationControllerData
 {
     pub offset: Vector3::<f32>,
@@ -23,6 +25,7 @@ pub struct TargetRotationControllerData
     pub beta: f32, // x-achis
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TargetRotationController
 {
     base: CameraControllerBase,
@@ -37,6 +40,7 @@ pub struct TargetRotationController
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
+    #[serde(skip, default)]
     pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>,
 
     pub collision_check: bool,

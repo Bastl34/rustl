@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
+use serde::{Deserialize, Serialize};
+
 use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::manager::id_manager;
@@ -63,6 +65,7 @@ pub trait Component: Any
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct ComponentBase
 {
     pub id: u64,
@@ -82,6 +85,7 @@ pub struct ComponentBase
 
     pub delete_later_request: bool,
 
+    #[serde(skip, default)]
     pub render_item: RenderItemOption
 }
 

@@ -632,7 +632,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
 
     // textures
     {
-        let id = format!("sounds_{}", scene.id);
+        let id = format!("textures_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
         {
@@ -662,20 +662,20 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
 
     // sounds
     {
-        let id = format!("textures_{}", scene.id);
+        let id = format!("sounds_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
                 if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", scene.sound_sources.len())).color(Color32::LIGHT_GRAY).strong()).clicked()
                 {
                     if selection
                     {
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::Sound;
+                        editor_state.selected_type = SelectionType::SoundSource;
                     }
                     else
                     {

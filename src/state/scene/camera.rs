@@ -4,6 +4,7 @@ use std::{mem::swap, f32::consts::PI};
 
 use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
 use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
 
@@ -45,13 +46,14 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
 
 pub type CameraItem = Box<Camera>;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CameraProjectionType
 {
     Perspective,
     Orthogonal
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CameraData
 {
     pub viewport_x: f32,    // 0.0-1.0

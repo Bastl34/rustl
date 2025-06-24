@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 
 use nalgebra::{Point3, Vector3};
+use serde::{Deserialize, Serialize};
 
 use crate::helper::change_tracker::ChangeTracker;
 
@@ -12,7 +13,7 @@ pub type LightItem = Box<Light>;
 
 // ******************** LightType ********************
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum LightType
 {
     Directional,
@@ -23,6 +24,7 @@ pub enum LightType
 
 // ******************** Light ********************
 
+#[derive(Serialize, Deserialize)]
 pub struct Light
 {
     pub id: u64,

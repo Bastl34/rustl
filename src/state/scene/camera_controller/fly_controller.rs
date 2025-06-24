@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 
 use nalgebra::{Vector2, Vector3};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
 use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
 
@@ -14,6 +15,7 @@ const DEFAULT_COLLISION_DISTANCE: f32 = 0.5;
 const DEFAULT_MOUSE_SENSIVITY: f32 = 0.0015;
 const DEFAULT_GAMEPAD_SENSIVITY: f32 = 0.03;
 
+#[derive(Serialize, Deserialize)]
 pub struct FlyController
 {
     base: CameraControllerBase,

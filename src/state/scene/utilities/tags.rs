@@ -3,15 +3,16 @@
 use std::collections::{hash_map::Iter, HashMap};
 
 use nalgebra::Vector3;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TagData
 {
     pub color: Vector3::<f32>,
     pub locked: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Tags
 {
     pub tags: HashMap<String, TagData>,

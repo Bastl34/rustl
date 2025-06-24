@@ -4,8 +4,9 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc, sync::{Arc, RwLock}};
 
 use instant::Instant;
 use nalgebra::Vector3;
+use serde::Serialize;
 
-use crate::{helper::{change_tracker::ChangeTracker, file::write_string_to_tile, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -22,6 +23,12 @@ pub fn get_delta_t(frame_scale: f32) -> f32
     frame_scale / REFERENCE_UPDATE_FRAMES
 }
 
+#[derive(Serialize)]
+pub struct Project
+{
+    pub name: String,
+}
+
 pub struct AdapterFeatures
 {
     pub name: String,
@@ -35,6 +42,7 @@ pub struct AdapterFeatures
     pub max_supported_texture_resolution: u32
 }
 
+#[derive(Serialize)]
 pub struct Rendering
 {
     pub clear_color: ChangeTracker<Vector3<f32>>,
@@ -87,6 +95,8 @@ pub struct Statistics
 
 pub struct State
 {
+    pub project: Project,
+
     pub adapter: AdapterFeatures,
     pub rendering: Rendering,
     pub input_manager: InputManager,
@@ -147,6 +157,10 @@ impl State
 
         Self
         {
+            project: Project
+            {
+                name: "Uknown".to_string(),
+            },
             adapter: AdapterFeatures
             {
                 name: String::new(),
