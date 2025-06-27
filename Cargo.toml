@@ -16,7 +16,6 @@ instant = "0.1"
 winit = "0.30.11"
 anyhow = "1.0"
 nalgebra = "0.33"
-sha256 = "1.6.0"
 colored = "3.0.0"
 base64 = "0.22"
 strum = "0.27"
@@ -29,6 +28,8 @@ rodio = "0.20"
 gilrs = { version = "0.11", features = ["wgi"]}
 take_mut = "0.2"
 uuid = {version = "1.17", features = ["v4"] }
+
+xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 
 parry3d = "0.21"
 bvh = "0.11.0"

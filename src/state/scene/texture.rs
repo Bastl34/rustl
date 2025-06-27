@@ -94,6 +94,7 @@ pub struct Texture
 {
     pub id: u64,
     pub uuid: String,
+    pub source: Option<String>,
 
     pub name: String,
     pub extension: Option<String>,
@@ -138,6 +139,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: None,
 
             name: "empty".to_string(),
             extension: None,
@@ -210,6 +212,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: None,
 
             name: name.to_string(),
             extension,
@@ -280,6 +283,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: None,
 
             name: name.to_string(),
             extension: texture.extension.clone(),
@@ -571,6 +575,7 @@ impl Texture
         {
             ui.label(format!("original format: {}", extension));
         }
+        ui.label(format!("hash: {}", self.hash));
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)
