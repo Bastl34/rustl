@@ -260,7 +260,7 @@ impl State
         let max_res = self.max_texture_resolution();
         spawn_thread(move ||
         {
-            load_texture(path.as_str(), main_queue.clone(), TextureType::Environment, scene_id, None, true, max_res);
+            load_texture(path.as_str(), main_queue.clone(), Some(TextureType::Environment), scene_id, None, true, max_res);
         });
     }
 

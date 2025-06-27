@@ -493,12 +493,24 @@ impl Scene
         self.materials.insert(id, material.clone());
     }
 
-    pub fn add_default_material(&mut self)
+    pub fn add_default_material(&mut self) -> MaterialItem
     {
         let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
         self.add_material(&material_arc);
+
+        material_arc
+    }
+
+    pub fn add_empty_material(&mut self, name: &str) -> MaterialItem
+    {
+        let material = Material::new(name);
+
+        let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        self.add_material(&material_arc);
+
+        material_arc
     }
 
     pub fn get_default_material(&self) -> Option<MaterialItem>

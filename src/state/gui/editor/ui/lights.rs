@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use egui::{Ui, RichText};
 
-use crate::{helper::change_tracker::ChangeTracker, state::{scene::light::{LightItem, Light}, state::State, gui::helper::generic_items::collapse_with_title}};
+use crate::{helper::{change_tracker::ChangeTracker, generic::cut_string_to_length}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::generic_items::collapse_with_title}, scene::light::{Light, LightItem}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -22,7 +22,7 @@ pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<V
                 continue;
             }
 
-            let headline_name = format!("⚫ {}: {}", light.id, light.name);
+            let headline_name = format!("⚫ {}: {}", light.id, cut_string_to_length(&light.name, MAX_NAME_LENGTH));
 
             let id = format!("light_{}", light.id);
 

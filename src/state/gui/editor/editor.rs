@@ -17,6 +17,8 @@ use crate::state::scene::exporter::json;
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
 
+pub const MAX_NAME_LENGTH: usize = 24;
+
 pub struct Editor
 {
     pub editor_state: EditorState,

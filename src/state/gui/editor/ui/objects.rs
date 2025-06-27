@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -56,23 +56,23 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let mut headline_name: String;
                 if node.find_component::<Animation>().is_some()
                 {
-                    headline_name = format!("🎞 {}: {}", node_id, name.clone());
+                    headline_name = format!("🎞 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.find_component::<Joint>().is_some()
                 {
-                    headline_name = format!("🕱 {}: {}", node_id, name.clone());
+                    headline_name = format!("🕱 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.is_empty()
                 {
-                    headline_name = format!("👻 {}: {}", node_id, name.clone());
+                    headline_name = format!("👻 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.get_mesh().is_some()
                 {
-                    headline_name = format!("◼ {}: {}", node_id, name.clone());
+                    headline_name = format!("◼ {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else
                 {
-                    headline_name = format!("◻ {}: {}", node_id, name.clone());
+                    headline_name = format!("◻ {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
 
                 if locked

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast_mut, helper::concurrency::thread::spawn_thread, state::{gui::{editor::ui::dialogs::load_texture_dialog, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
+use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::{editor::MAX_NAME_LENGTH, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -13,7 +13,7 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
         for (material_id, material) in materials
         {
             let material = material.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
+            let headline_name = format!("⚫ {}: {}", material_id, cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
 
             let is_internal = material.get_base().tags.contains("internal");
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_nodes);
@@ -209,12 +209,16 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                     {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
                         {
-                            if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
+                            if ui.button(RichText::new("Use texture").heading().strong()).clicked()
+                            {
+                                // TODO
+                            }
+                            if ui.button(RichText::new("Load new texture").heading().strong()).clicked()
                             {
                                 let main_queue = main_queue.clone();
                                 spawn_thread(move ||
                                 {
-                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping, max_tex_res);
+                                    load_texture_dialog(main_queue.clone(), Some(texture_type), scene_id, Some(material_id), mipmapping, max_tex_res);
                                 });
                             }
                         });

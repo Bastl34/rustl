@@ -4,7 +4,7 @@ use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{state::{state::State, gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{texture::TextureItem, components::{material::Material, component::Component}}}, component_downcast};
+use crate::{component_downcast, helper::generic::cut_string_to_length, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::{component::Component, material::Material}, texture::TextureItem}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -15,7 +15,7 @@ pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std
         for (_texture_hash, texture) in textures
         {
             let texture = texture.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", texture.id, texture.as_ref().name);
+            let headline_name = format!("⚫ {}: {}", texture.id, cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
 
             let filter = editor_state.hierarchy_filter.to_lowercase();
             if !filter.is_empty() && texture.as_ref().name.to_lowercase().find(filter.as_str()).is_none()

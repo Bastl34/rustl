@@ -1,5 +1,9 @@
 
+use std::mem::swap;
+
+use crate::helper::concurrency::thread::spawn_thread;
 use crate::state::gui::editor::helper::get_pointer_world_position;
+use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
@@ -426,7 +430,9 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     let exec_queue = state.main_thread_execution_queue.clone();
 
-    for scene in &mut state.scenes
+    let mut scenes = vec![];
+    swap(&mut state.scenes, &mut scenes);
+    for scene in &mut scenes
     {
         let scene_id = scene.id;
         let id = format!("scene_{}", scene_id);
@@ -466,14 +472,18 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }).body(|ui|
         {
             //self.build_node_list(ui, &scene.nodes, scene_id, true);
-            create_hierarchy_type_entries(editor_state, exec_queue.clone(), scene, ui);
+            create_hierarchy_type_entries(state, editor_state, exec_queue.clone(), scene, ui);
         });
     }
+
+    swap(&mut scenes, &mut state.scenes);
 }
 
-fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)
+fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)
 {
     let scene_id = scene.id;
+    let mipmapping = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
 
     // objects
     {
@@ -513,7 +523,7 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
         }).body(|ui|
         {
             let nodes = scene.nodes.clone();
-            build_objects_list(editor_state, exec_queue, scene, ui, &nodes, scene.id, true, false);
+            build_objects_list(editor_state, exec_queue.clone(), scene, ui, &nodes, scene.id, true, false);
         });
     }
 
@@ -609,7 +619,9 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Material { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", scene.materials.len())).color(Color32::GOLD).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", scene.materials.len())).color(Color32::GOLD).strong());
+
+                if toggle.clicked()
                 {
                     if selection
                     {
@@ -623,6 +635,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Material").clicked()
+                    {
+                        scene.add_empty_material("Material");
+                        ui.close();
+                    }
+                });
             });
         }).body(|ui|
         {
@@ -634,12 +655,15 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
     {
         let id = format!("textures_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
+        let exec_queue = exec_queue.clone();
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", scene.textures.len())).color(Color32::LIGHT_BLUE).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", scene.textures.len())).color(Color32::LIGHT_BLUE).strong());
+
+                if toggle.clicked()
                 {
                     if selection
                     {
@@ -653,6 +677,19 @@ fn create_hierarchy_type_entries(editor_state: &mut EditorState, exec_queue: Exe
                         editor_state.selected_type = SelectionType::None;
                     }
                 }
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Texture").clicked()
+                    {
+                        let exec_queue = exec_queue.clone();
+                        spawn_thread(move ||
+                        {
+                            load_texture_dialog(exec_queue.clone(), None, scene_id, None, mipmapping, max_tex_res);
+                        });
+                        ui.close();
+                    }
+                });
             });
         }).body(|ui|
         {

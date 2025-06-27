@@ -32,3 +32,30 @@ pub fn match_by_include_exclude(str: &String, include: &Vec<String>, exclude: &V
 
     true
 }
+
+pub fn cut_str_to_length(s: &str, length: usize) -> String
+{
+    if s.len() <= length
+    {
+        return s.to_string();
+    }
+
+    let mut cut = s.chars().take(length).collect::<String>();
+    cut.push_str("...");
+
+    cut
+}
+
+pub fn cut_string_to_length(s: &String, length: usize) -> String
+{
+    let s = s.as_str();
+    if s.len() <= length
+    {
+        return s.to_string();
+    }
+
+    let mut cut = s.chars().take(length).collect::<String>();
+    cut.push_str("...");
+
+    cut
+}
