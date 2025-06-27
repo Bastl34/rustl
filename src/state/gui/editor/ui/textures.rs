@@ -1,20 +1,18 @@
-use std::collections::HashMap;
-
 use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{component_downcast, helper::generic::cut_string_to_length, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::{component::Component, material::Material}, texture::TextureItem}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::{component::Component, material::{Material, TextureType}}, scene::Scene, texture::TextureItem}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std::string::String, TextureItem>, ui: &mut Ui, scene_id: u64)
+pub fn build_texture_list(editor_state: &mut EditorState, scene: &mut Box<Scene>, ui: &mut Ui, scene_id: u64)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
-        for (_texture_hash, texture) in textures
+        for (_texture_hash, texture_arc) in &scene.textures
         {
-            let texture = texture.read().unwrap();
+            let texture = texture_arc.read().unwrap();
             let headline_name = format!("⚫ {}: {}", texture.id, cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
 
             let filter = editor_state.hierarchy_filter.to_lowercase();
@@ -28,9 +26,34 @@ pub fn build_texture_list(editor_state: &mut EditorState, textures: &HashMap<std
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::Texture && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
+            let toggle = ui.toggle_value(&mut selection, heading);
+
+            if toggle.clicked()
             {
-                if selection
+                if editor_state.pick_mode == PickType::Texture && editor_state.pick_id != ""
+                {
+                    if editor_state.selected_type == SelectionType::Material
+                    {
+                        let (material_id, ..) = editor_state.get_object_ids();
+
+                        if let Some(material_id) = material_id
+                        {
+                            if let Some(material) = scene.get_material_by_id(material_id)
+                            {
+                                component_downcast_mut!(material, Material);
+
+                                let parts: Vec<&str> = editor_state.pick_id.split('_').collect();
+                                if let Some(tex_type) = parts.last()
+                                {
+                                    material.set_texture_from_string_type(texture_arc.clone(), tex_type);
+                                }
+                            }
+                        }
+                    }
+
+                    editor_state.pick_mode = PickType::None;
+                }
+                else if selection
                 {
 
                     editor_state.selected_object = id;

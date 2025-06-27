@@ -693,7 +693,7 @@ fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorSta
             });
         }).body(|ui|
         {
-            build_texture_list(editor_state, &scene.textures, ui, scene_id);
+            build_texture_list(editor_state, scene, ui, scene_id);
         });
     }
 

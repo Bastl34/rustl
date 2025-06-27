@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::{editor::MAX_NAME_LENGTH, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
+use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -188,9 +188,9 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                 else
                 {
                     let title = format!("🖼 {}", texture_type.to_string());
-                    let id = format!("texture_{}", texture_type.to_string());
+                    let id: String = format!("texture_{}_{}", material_id, texture_type.to_string());
 
-                    generic_items::collapse(ui, id, true, None, |ui|
+                    generic_items::collapse(ui, id.clone(), true, None, |ui|
                     {
                         ui.label(RichText::new(title).heading().strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -203,24 +203,38 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                                 let mut enabled = false;
                                 ui.toggle_value(&mut enabled, toggle_text)
                             });
+
+                            let mut toggle_value = if editor_state.pick_mode == PickType::Texture && editor_state.pick_id == id { true } else { false };
+                            if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick texture").changed()
+                            {
+                                if toggle_value
+                                {
+                                    editor_state.pick_id = id.clone();
+                                    editor_state.pick_mode = PickType::Texture;
+                                }
+                                else
+                                {
+                                    editor_state.pick_id = "".to_string();
+                                    editor_state.pick_mode = PickType::None;
+                                }
+                            }
                         });
                     },
                     |ui|
                     {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
                         {
-                            if ui.button(RichText::new("Use texture").heading().strong()).clicked()
+                            ui.horizontal(|ui|
                             {
-                                // TODO
-                            }
-                            if ui.button(RichText::new("Load new texture").heading().strong()).clicked()
-                            {
-                                let main_queue = main_queue.clone();
-                                spawn_thread(move ||
+                                if ui.button(RichText::new("Load new texture").heading().strong()).clicked()
                                 {
-                                    load_texture_dialog(main_queue.clone(), Some(texture_type), scene_id, Some(material_id), mipmapping, max_tex_res);
-                                });
-                            }
+                                    let main_queue = main_queue.clone();
+                                    spawn_thread(move ||
+                                    {
+                                        load_texture_dialog(main_queue.clone(), Some(texture_type), scene_id, Some(material_id), mipmapping, max_tex_res);
+                                    });
+                                }
+                            });
                         });
                     });
                 }

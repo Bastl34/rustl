@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 
+use std::str::FromStr;
+
 use nalgebra::{Vector3, Vector4};
-use strum_macros::{Display, EnumIter};
+use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
@@ -18,7 +20,7 @@ pub type MaterialItem = ComponentItem;
 //pub type MaterialBoxItem = Box<dyn Any + Send + Sync>;
 //pub type MaterialItem = Arc<RwLock<MaterialBoxItem>>;
 
-#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, FromRepr, EnumString)]
 pub enum TextureType
 {
     AmbientEmissive,
@@ -420,6 +422,20 @@ impl Material
             TextureType::Custom2 => { data.texture_custom2 = Some(TextureState::new(tex.clone())); },
             TextureType::Custom3 => { data.texture_custom3 = Some(TextureState::new(tex.clone())); },
         }
+    }
+
+    pub fn set_texture_from_string_type(&mut self, tex: TextureItem, tex_type: &str)
+    {
+        let tex_type = TextureType::from_str(tex_type);
+
+        if tex_type.is_err()
+        {
+            dbg!("Invalid texture type: {}", tex_type.unwrap_err());
+            return;
+        }
+
+        let texture_type = tex_type.unwrap();
+        self.set_texture(tex, texture_type);
     }
 
     pub fn set_texture_state(&mut self, tex_type: TextureType, state: bool)

@@ -65,6 +65,7 @@ pub enum PickType
     Camera,
     Parent,
     AnimationCopy,
+    Texture,
     None
 }
 
@@ -116,6 +117,7 @@ pub struct EditorState
     pub gizmo_rotation: bool,
     pub gizmo_scale: bool,
 
+    pub pick_id: String,
     pub pick_mode: PickType,
 
     pub grid_size: f32,
@@ -188,6 +190,7 @@ impl EditorState
             gizmo_rotation: false,
             gizmo_scale: false,
 
+            pick_id: "".to_string(),
             pick_mode: PickType::None,
 
             grid_size: DEFAULT_GRID_SIZE,
