@@ -423,7 +423,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     ui.horizontal(|ui|
     {
-        ui.checkbox(&mut editor_state.show_internal_nodes, "Show Editor Nodes").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+        ui.checkbox(&mut editor_state.show_internal_nodes, "Show Internal Nodes").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
     });
 
     ui.separator();
