@@ -16,7 +16,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     let inner_predicate = predicate.clone();
     let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, _check_instance_id: Option<u64>| -> bool
     {
-        if node_arc.read().unwrap().tags.contains("internal")
+        if node_arc.read().unwrap().tags.contains("internal") || node_arc.read().unwrap().tags.contains("editor_internal")
         {
             return false;
         }
@@ -356,13 +356,13 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
     for node in all_child_nodes
     {
         let mut node = node.write().unwrap();
-        node.tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+        node.tags.insert_with_color_locked("editor_internal", tags::DEFAULT_RED_COLOR, true);
 
         let materials = node.find_components::<Material>();
         for material in materials
         {
             let mut material = material.write().unwrap();
-            material.get_base_mut().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+            material.get_base_mut().tags.insert_with_color_locked("editor_internal", tags::DEFAULT_RED_COLOR, true);
         }
     }
 }

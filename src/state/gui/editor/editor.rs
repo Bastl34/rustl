@@ -111,7 +111,7 @@ impl Editor
 
         let editor_utils = scene.add_empty_node("editor utils", None);
         {
-            editor_utils.write().unwrap().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+            editor_utils.write().unwrap().tags.insert_with_color_locked("editor_internal", tags::DEFAULT_RED_COLOR, true);
         }
 
         let editor_utils_id = editor_utils.read().unwrap().id;

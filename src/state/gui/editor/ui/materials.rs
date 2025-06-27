@@ -15,7 +15,7 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let material = material.read().unwrap();
             let headline_name = format!("⚫ {}: {}", material_id, cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
 
-            let is_internal = material.get_base().tags.contains("internal");
+            let is_internal = material.get_base().tags.contains("internal") || material.get_base().tags.contains("editor_internal");
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_nodes);
 
             let filter = editor_state.hierarchy_filter.to_lowercase();

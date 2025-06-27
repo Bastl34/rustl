@@ -22,7 +22,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         let name = node.name.clone();
         let node_id = node.id;
 
-        let is_internal_node = node.has_tag("internal");
+        let is_internal_node = node.has_tag("internal") || node.has_tag("editor_internal");
         let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_nodes);
 
         let filter = editor_state.hierarchy_filter.to_lowercase();

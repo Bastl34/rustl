@@ -7,7 +7,7 @@ use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 
-use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::Component, sound::Sound}}};
+use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::{components::{component::Component, sound::Sound}, utilities::tags}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
 
@@ -498,6 +498,7 @@ impl Scene
         let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        material_arc.write().unwrap().get_base_mut().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
         self.add_material(&material_arc);
 
         material_arc
