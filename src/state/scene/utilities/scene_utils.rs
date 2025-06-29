@@ -2,7 +2,7 @@
 
 use std::{sync::{RwLock, Arc}, path::Path};
 
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -33,10 +33,10 @@ pub fn load_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_
     let image_bytes = resources::load_binary(path)?;
     let name = file::get_stem(path);
 
-    Ok(load_texture_byte_or_reuse(scene_id, main_queue, max_tex_res, &image_bytes, name.as_str(), extension))
+    Ok(load_texture_byte_or_reuse(scene_id, main_queue, max_tex_res, &image_bytes, name.as_str(), path, extension))
 }
 
-pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
+pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, image_bytes: &Vec<u8>, name: &str, path: &str, extension: Option<String>) -> TextureItem
 {
     let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
     let hash_clone = hash.clone();
@@ -73,7 +73,8 @@ pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem,
     }
 
     // ***** if not found -> load *****
-    let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
+    let mut texture = Texture::new(name, &image_bytes, extension, max_tex_res);
+    texture.source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
     let arc = Arc::new(RwLock::new(Box::new(texture)));
 
     // ***** add to scene textures *****
@@ -163,6 +164,8 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Op
 
     let bytes = load_binary(path).unwrap();
 
+    let texture_path = path.to_string();
+
     let mut main_queue = main_queue.write().unwrap();
     main_queue.add(Box::new(move |state|
     {
@@ -170,6 +173,11 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Op
         {
             let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
             tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
+
+            if tex.read().unwrap().source.is_none()
+            {
+                tex.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(texture_path.clone()));
+            }
 
             if texture_type == Some(TextureType::Environment)
             {

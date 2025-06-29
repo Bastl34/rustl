@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{resources::resources::load_string, state::scene::{components::{mesh::Mesh, material::{Material, TextureType, MaterialItem}, component::Component}, scene::Scene, node::Node, utilities::scene_utils::{load_texture_or_reuse, execute_on_scene_mut_and_wait}}, helper::{self, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component};
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component, resources::resources::load_string, state::scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_texture_or_reuse}}};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -392,7 +392,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     loaded_ids.push(root_node.read().unwrap().id);
 
     root_node.write().unwrap().root_node = true;
-    root_node.write().unwrap().source = Some(path.to_string());
+    root_node.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
 
     // ********** mark components **********
     {

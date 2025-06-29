@@ -4,8 +4,9 @@ use std::sync::{RwLock, Arc};
 
 use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};
 use nalgebra::{Vector2, Vector4};
+use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
 
 use super::manager::id_manager;
 
@@ -14,7 +15,7 @@ pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 const PREVIEW_SIZE: u32 = 256;
 const MAX_MIPMAPS: usize = 10; // max allowed mipmaps 10 (+ original texture)
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TextureAddressMode
 {
     ClampToEdge,
@@ -23,14 +24,14 @@ pub enum TextureAddressMode
     ClampToBorder
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TextureFilterMode
 {
     Nearest,
     Linear
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum MipmapSamplingFilterType
 {
     Nearest,
@@ -40,7 +41,7 @@ pub enum MipmapSamplingFilterType
     Lanczos3,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct TextureTransform
 {
     pub offset: Vector2::<f32>,
@@ -65,10 +66,14 @@ impl TextureTransform
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TextureData
 {
+    #[serde(skip, default)]
     pub preview: DynamicImage,
+    #[serde(skip, default)]
     pub image: DynamicImage,
+    #[serde(skip, default)]
     pub mipmap_cache: Option<Vec<DynamicImage>>,
 
     pub width: u64,
@@ -90,11 +95,12 @@ pub struct TextureData
     pub mipmap_filter: TextureFilterMode,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Texture
 {
     pub id: u64,
     pub uuid: String,
-    pub source: Option<String>,
+    pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
     pub extension: Option<String>,
@@ -102,7 +108,10 @@ pub struct Texture
 
     pub data: ChangeTracker<TextureData>,
 
+    #[serde(skip, default)]
     pub egui_preview: Option<egui::TextureHandle>,
+
+    #[serde(skip, default)]
     pub render_item: RenderItemOption
 }
 
@@ -283,7 +292,7 @@ impl Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
-            source: None,
+            source: texture.source.clone(),
 
             name: name.to_string(),
             extension: texture.extension.clone(),
@@ -574,6 +583,10 @@ impl Texture
         if let Some(extension) = &self.extension
         {
             ui.label(format!("original format: {}", extension));
+        }
+        if let Some(source) = &self.source
+        {
+            ui.label(format!("Source: {}", source.get_full_descriptor()));
         }
         ui.label(format!("hash: {}", self.hash));
     }

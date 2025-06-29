@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}}, resources::resources::load_binary, state::scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}};
 
 
 pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -36,9 +36,13 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
     for gltf_texture in gltf.textures()
     {
-        let (bytes, extension) = load_texture(path, &gltf_texture, &buffers);
+        let (bytes, texture_path, extension) = load_texture(path, &gltf_texture, &buffers);
 
-        let tex = load_texture_byte_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, &bytes, gltf_texture.name().unwrap_or("unknown"), extension);
+        let tex = load_texture_byte_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, &bytes, gltf_texture.name().unwrap_or("unknown"), path, extension);
+        if let Some(source) = &mut tex.write().unwrap().source
+        {
+            source.inner_path = texture_path.clone();
+        }
         apply_texture_filtering_settings(tex.clone(), &gltf_texture, create_mipmaps);
 
         if tex.read().unwrap().get_data().mipmapping && tex.read().unwrap().get_data().mipmap_cache.is_none()
@@ -103,7 +107,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     loaded_ids.push(root_node.read().unwrap().id);
 
     root_node.write().unwrap().root_node = true;
-    root_node.write().unwrap().source = Some(path.to_string());
+    root_node.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
 
     println!("reading nodes...");
     for gltf_scene in gltf.scenes()
@@ -1326,6 +1330,11 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
             apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
 
+            if let Some(source) = &mut tex_arc.write().unwrap().source
+            {
+                source.variation = "Reflectivity".to_string();
+            }
+
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Reflectivity);
             data.texture_reflectivity = Some(TextureState::new(tex_arc));
 
@@ -1365,6 +1374,11 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
 
             apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+
+            if let Some(source) = &mut tex_arc.write().unwrap().source
+            {
+                source.variation = "Roughness".to_string();
+            }
 
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Roughness);
             data.texture_roughness = Some(TextureState::new(tex_arc));
@@ -1509,7 +1523,7 @@ pub fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &gltf::B
 }
 
 // inpired from here: https://github.com/flomonster/easy-gltf/blob/master/src/utils/gltf_data.rs
-pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<gltf::buffer::Data>) -> (Vec<u8>, Option<String>)
+pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<gltf::buffer::Data>) -> (Vec<u8>, String, Option<String>)
 {
     let image = texture.source();
 
@@ -1522,7 +1536,7 @@ pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<
             let mime_type = mime_type.replace('/', ".");
             let extension = Path::new(&mime_type).extension().and_then(OsStr::to_str);
 
-            (data.to_vec(), extension.map(str::to_string))
+            (data.to_vec(), format!("#ImageView{}",texture.index()), extension.map(str::to_string))
         }
         gltf::image::Source::Uri { uri, mime_type } =>
         {
@@ -1542,7 +1556,7 @@ pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<
                 let mime_type = mime_type.replace('/', ".");
                 let extension = Path::new(&mime_type).extension().and_then(OsStr::to_str);
 
-                (data, extension.map(str::to_string))
+                (data, format!("#ImageData_{}",texture.index()), extension.map(str::to_string))
             }
             else
             {
@@ -1554,11 +1568,11 @@ pub fn load_texture(gltf_path: &str, texture: &gltf::Texture<'_>, buffers: &Vec<
                 {
                     let mime_type = mime_type.replace('/', ".");
                     extension = Path::new(&mime_type).extension().and_then(OsStr::to_str);
-                    (bytes, extension.map(str::to_string))
+                    (bytes, item_path, extension.map(str::to_string))
                 }
                 else
                 {
-                    (bytes, None)
+                    (bytes, item_path, None)
                 }
             }
         }

@@ -279,7 +279,7 @@ impl Editor
 
                 if let Some(source) = &node.source
                 {
-                    self.editor_state.copy_asset = Some(source.clone());
+                    self.editor_state.copy_asset = Some(source.origin_path.clone());
                     self.editor_state.copy_asset_transform = None;
 
                     if let Some(transform) = node.find_component::<Transformation>()
@@ -349,7 +349,7 @@ impl Editor
                 let copy_node_id = self.editor_state.copy_node_id.clone();
                 let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
 
-                self.load_asset(state, source.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                self.load_asset(state, source.origin_path.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                 {
                     // copy over transformation
                     if let Some(transform_data) = copy_asset_transform.clone()

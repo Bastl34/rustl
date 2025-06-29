@@ -565,7 +565,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             ui.label(format!("Name: {}", node.name));
             ui.label(format!("Id: {}", node.id));
             ui.label(format!("UUID: {}", node.uuid));
-            ui.label(format!("Source: {:?}", node.source));
+            if let Some(source) = &node.source
+            {
+                ui.label(format!("Source: {:?}", source.get_full_descriptor()));
+            }
 
             if let Some(bounding_box_info) = bounding_box_info
             {
