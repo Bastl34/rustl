@@ -6,7 +6,7 @@ use instant::Instant;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::resources::{sound_source::SoundSourceItem, texture::TextureItem}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, sound::Sound}, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -93,24 +93,6 @@ pub struct Statistics
     pub frame: u64,
 }
 
-pub struct Resources
-{
-    pub textures: HashMap<String, TextureItem>,
-    pub sound_sources: HashMap<String, SoundSourceItem>,
-}
-
-impl Resources
-{
-    pub fn new() -> Resources
-    {
-        Resources
-        {
-            textures: HashMap::new(),
-            sound_sources: HashMap::new(),
-        }
-    }
-}
-
 pub struct State
 {
     pub project: Project,
@@ -119,6 +101,9 @@ pub struct State
     pub rendering: Rendering,
     pub input_manager: InputManager,
     pub audio_device: AudioDeviceItem,
+
+    pub textures: HashMap<String, TextureItem>,
+    pub sound_sources: HashMap<String, SoundSourceItem>,
 
     pub main_thread_execution_queue: ExecutionQueueItem,
 
@@ -207,6 +192,9 @@ impl State
             input_manager: InputManager::new(),
             audio_device,
 
+            textures: HashMap::new(),
+            sound_sources: HashMap::new(),
+
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
             running: false,
@@ -269,6 +257,199 @@ impl State
         }
     }
 
+        pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
+    {
+        let image_bytes = load_binary_async(path).await?;
+
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
+    }
+
+    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
+    {
+        let image_bytes = load_binary(path)?;
+
+        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
+    }
+
+    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>, max_tex_res: u32) -> TextureItem
+    {
+        let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
+
+        if self.textures.contains_key(&hash)
+        {
+            println!("reusing texture {}", name);
+            return self.textures.get_mut(&hash).unwrap().clone();
+        }
+
+        let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
+
+        let arc = Arc::new(RwLock::new(Box::new(texture)));
+
+        self.textures.insert(hash, arc.clone());
+
+        arc
+    }
+
+    pub fn load_sound_source_byte_or_reuse(&mut self, sound_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> SoundSourceItem
+    {
+        let hash = helper::crypto::get_hash_from_byte_vec(&sound_bytes);
+
+        if self.sound_sources.contains_key(&hash)
+        {
+            println!("reusing sound source {}", name);
+            return self.sound_sources.get_mut(&hash).unwrap().clone();
+        }
+
+        let sound_source = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
+
+        let arc = Arc::new(RwLock::new(Box::new(sound_source)));
+
+        self.sound_sources.insert(hash, arc.clone());
+
+        arc
+    }
+
+    pub fn insert_texture_or_reuse(&mut self, texture: Texture, name: &str) -> TextureItem
+    {
+        let hash = texture.hash.clone();
+
+        if self.textures.contains_key(&hash)
+        {
+            println!("reusing texture {}", name);
+            return self.textures.get_mut(&hash).unwrap().clone();
+        }
+
+        let arc = Arc::new(RwLock::new(Box::new(texture)));
+
+        self.textures.insert(hash, arc.clone());
+
+        arc
+    }
+
+    pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
+    {
+        for texture_arc in self.textures.values()
+        {
+            let texture =  texture_arc.read().unwrap();
+            if texture.id == id
+            {
+                return Some(texture_arc.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn delete_texture_by_id(&mut self, id: u64) -> bool
+    {
+        for scene in &mut self.scenes
+        {
+            // remove texture from all materials
+            for material in &mut scene.materials
+            {
+                let material = material.1;
+                component_downcast_mut!(material, Material);
+                material.remove_texture_by_id(id);
+            }
+
+            // remove texture from environment map
+            if scene.get_data().environment_texture.is_some() && scene.get_data().environment_texture.as_ref().unwrap().item.read().unwrap().id == id
+            {
+                scene.get_data_mut().get_mut().environment_texture = None;
+            }
+        }
+
+        let len = self.textures.len();
+        self.textures.retain(|_key, texture|
+        {
+            let texture = texture.read().unwrap();
+            texture.id != id
+        });
+
+        self.textures.len() != len
+    }
+
+    pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
+    {
+        for sound_arc in self.sound_sources.values()
+        {
+            let sound =  sound_arc.read().unwrap();
+            if sound.id == id
+            {
+                return Some(sound_arc.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
+    {
+        // remove sound component from all nodes
+        for scene in &mut self.scenes
+        {
+            let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+
+            for node in all_nodes
+            {
+                let mut node = node.write().unwrap();
+
+                node.components.retain(|component|
+                {
+                    let component = component.read().unwrap();
+
+                    if let Some(sound) = component.as_any().downcast_ref::<Sound>()
+                    {
+                        if let Some(sound_source) = &sound.sound_source
+                        {
+                            let sound_source = sound_source.read().unwrap();
+                            if sound_source.id == id
+                            {
+                                return false;
+                            }
+                        }
+                    }
+
+                    true
+                });
+
+                for instance in node.instances.get_mut()
+                {
+                    let mut instance = instance.write().unwrap();
+
+                    instance.components.retain(|component|
+                    {
+                        let component = component.read().unwrap();
+
+                        if let Some(sound) = component.as_any().downcast_ref::<Sound>()
+                        {
+                            if let Some(sound_source) = &sound.sound_source
+                            {
+                                let sound_source = sound_source.read().unwrap();
+                                if sound_source.id == id
+                                {
+                                    return false;
+                                }
+                            }
+                        }
+
+                        true
+                    });
+                }
+            }
+        }
+
+        // remove sound source
+        let len = self.sound_sources.len();
+        self.sound_sources.retain(|_key, sound|
+        {
+            let sound = sound.read().unwrap();
+            sound.id != id
+        });
+
+        self.sound_sources.len() != len
+    }
+
     pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
     {
         let path = path.to_string().clone();
@@ -278,7 +459,7 @@ impl State
         let max_res = self.max_texture_resolution();
         spawn_thread(move ||
         {
-            load_texture(path.as_str(), main_queue.clone(), Some(TextureType::Environment), scene_id, None, true, max_res);
+            load_texture(path.as_str(), main_queue.clone(), Some(TextureType::Environment), Some(scene_id), None, true, max_res);
         });
     }
 
@@ -361,6 +542,21 @@ impl State
         {
             scene.update(&mut self.input_manager, time, time_delta, frame);
         }
+
+        // check for delete later textures
+        self.textures.retain(|_key, texture|
+        {
+            if texture.read().unwrap().delete_later_request
+            {
+                return false;
+            }
+            true
+        });
+    }
+
+    pub fn clear(&mut self)
+    {
+        self.textures.clear();
     }
 
     pub fn print(&self)

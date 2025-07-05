@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}}};
 
 
 pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -38,7 +38,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     {
         let (bytes, texture_path, extension) = load_texture(path, &gltf_texture, &buffers);
 
-        let tex = load_texture_byte_or_reuse(scene_id, main_queue.clone(), max_texture_resolution, &bytes, gltf_texture.name().unwrap_or("unknown"), path, extension);
+        let tex = load_texture_byte_or_reuse(main_queue.clone(), max_texture_resolution, &bytes, gltf_texture.name().unwrap_or("unknown"), path, extension);
         if let Some(source) = &mut tex.write().unwrap().source
         {
             source.inner_path = texture_path.clone();
@@ -86,7 +86,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         }
         else
         {
-            let material = load_material(&gltf_material, scene_id, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, max_texture_resolution, resource_name.clone().clone());
+            let material = load_material(&gltf_material, main_queue.clone(), &loaded_textures, &mut clear_textures, create_mipmaps, max_texture_resolution, resource_name.clone().clone());
             let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
 
             let material_arc_clone = material_arc.clone();
@@ -178,13 +178,35 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         }
     }));
 
-    // cleanup
-    println!("cleanup...");
-    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
+    // ********** cleanup **********
+
+    // check if textures where loaded which are not used by any material
+    for texture in loaded_textures
+    {
+        let mut used = false;
+        for material in loaded_materials.values()
+        {
+            component_downcast!(material, Material);
+            if material.has_texture_id(texture.0.read().unwrap().id)
+            {
+                used = true;
+                break;
+            }
+        }
+
+        if !used
+        {
+            clear_textures.push(texture.0.clone());
+        }
+    }
+
+    println!("cleanup unused textures: {}", clear_textures.len());
+    execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
     {
         for clear_texture in &clear_textures
         {
-            scene.delete_texture_by_id(clear_texture.read().unwrap().id);
+            println!(" - texture: {} ({})", clear_texture.read().unwrap().name, clear_texture.read().unwrap().id);
+            state.delete_texture_by_id(clear_texture.read().unwrap().id);
         }
     }));
 
@@ -1209,7 +1231,7 @@ fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_tex
     }
 }
 
-pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_queue: ExecutionQueueItem, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool, max_texture_resolution: u32, resource_name: String) -> Material
+pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQueueItem, loaded_textures: &Vec<(Arc<RwLock<Box<Texture>>>, usize)>, clear_textures: &mut Vec<TextureItem>, create_mipmaps: bool, max_texture_resolution: u32, resource_name: String) -> Material
 {
     let mut material = Material::new(gltf_material.name().unwrap_or("unknown"));
     let material_name = material.get_base().name.clone();
@@ -1319,7 +1341,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
                 tex_name = tex.name.clone();
                 reflectivity_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 2, max_texture_resolution);
             }
-            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), reflectivity_tex, tex_name.as_str());
+            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(main_queue.clone(), reflectivity_tex, tex_name.as_str());
 
             // create mipmap cache
             if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
@@ -1364,7 +1386,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
                 tex_name = tex.name.clone();
                 roughness_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 1, max_texture_resolution);
             }
-            let tex_arc = insert_texture_or_reuse(scene_id, main_queue.clone(), roughness_tex, tex_name.as_str());
+            let tex_arc = insert_texture_or_reuse(main_queue.clone(), roughness_tex, tex_name.as_str());
 
             // create mipmap cache
             if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
@@ -1428,7 +1450,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
                 tex_name = tex.name.clone();
                 ao_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 0, max_texture_resolution);
             }
-            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(scene_id, main_queue.clone(), ao_tex, tex_name.as_str());
+            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(main_queue.clone(), ao_tex, tex_name.as_str());
 
             // create mipmap cache
             if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
@@ -1453,6 +1475,97 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, scene_id: u64, main_que
 
             // add texture to clearable textures
             clear_textures.push(texture.clone());
+        }
+    }
+
+    // pbr specular glossiness
+    if let Some(pbr_specular_glossiness) = gltf_material.pbr_specular_glossiness()
+    {
+        let base_color = pbr_specular_glossiness.diffuse_factor();
+        data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
+
+        // diffuse to --> base/albedo texture
+        if let Some(tex) = pbr_specular_glossiness.diffuse_texture()
+        {
+            if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
+            {
+                set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Base);
+                data.texture_base = Some(TextureState::new(texture));
+
+                if let Some(transform) = tex.texture_transform()
+                {
+                    let tex = &data.texture_base.as_mut().unwrap().item;
+
+                    apply_texture_transform(&transform, tex.clone());
+                }
+            }
+        }
+
+        // specular color
+        let specular_color_factor = pbr_specular_glossiness.specular_factor();
+        let glossiness_color_factor = pbr_specular_glossiness.glossiness_factor();
+
+        data.base_color = Vector3::<f32>::new(specular_color_factor[0], specular_color_factor[1], specular_color_factor[2]);
+        data.specular_color = Vector3::<f32>::new(specular_color_factor[0], specular_color_factor[1], specular_color_factor[2]);
+
+        data.roughness = 1.0 - glossiness_color_factor;
+
+        // specular-glossiness texture is an RGBA texture, containing the specular color (RGB) encoded with the sRGB transfer function and the linear glossiness value (A).
+        if let Some(specular_glossiness_texture) = pbr_specular_glossiness.specular_glossiness_texture()
+        {
+            // roughness is stored in the alpha channel (3) of the specular-glossiness texture
+            if let Some(texture) = get_texture_by_index(&specular_glossiness_texture, &loaded_textures)
+            {
+                let new_tex;
+                let tex_name;
+                {
+                    let tex = texture.read().unwrap();
+                    tex_name = tex.name.clone();
+                    new_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 3, max_texture_resolution);
+                }
+                let tex_arc = insert_texture_or_reuse(main_queue.clone(), new_tex, tex_name.as_str());
+
+                // create mipmap cache
+                if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
+                {
+                    tex_arc.write().unwrap().create_mipmap_cache();
+                }
+
+                apply_texture_filtering_settings(tex_arc.clone(), &specular_glossiness_texture.texture(), create_mipmaps);
+                tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+
+                if let Some(source) = &mut tex_arc.write().unwrap().source
+                {
+                    source.variation = "Reflecivity".to_string();
+                }
+
+                set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Reflectivity);
+                data.texture_reflectivity = Some(TextureState::new(tex_arc));
+
+                if let Some(transform) = specular_glossiness_texture.texture_transform()
+                {
+                    let tex = &data.texture_reflectivity.as_mut().unwrap().item;
+
+                    apply_texture_transform(&transform, tex.clone());
+                }
+            }
+
+            // specular color is stored in the RGB channels (0, 1, 2) of the specular-glossiness texture
+            // use RGBA even if A is not used
+            if let Some(texture) = get_texture_by_index(&specular_glossiness_texture, &loaded_textures)
+            {
+                texture.write().unwrap().make_fully_opaque();
+
+                set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Specular);
+                data.texture_specular = Some(TextureState::new(texture));
+
+                if let Some(transform) = specular_glossiness_texture.texture_transform()
+                {
+                    let tex = &data.texture_base.as_mut().unwrap().item;
+
+                    apply_texture_transform(&transform, tex.clone());
+                }
+            }
         }
     }
 

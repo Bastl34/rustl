@@ -2,15 +2,15 @@ use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::{component::Component, material::Material}, scene::Scene}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::components::{component::Component, material::Material}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_texture_list(editor_state: &mut EditorState, scene: &mut Box<Scene>, ui: &mut Ui, scene_id: u64)
+pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mut Ui)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
-        for (_texture_hash, texture_arc) in &scene.textures
+        for (_texture_hash, texture_arc) in &state.textures
         {
             let texture = texture_arc.read().unwrap();
             let headline_name = format!("⚫ {}: {}", texture.id, cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
@@ -38,14 +38,17 @@ pub fn build_texture_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
 
                         if let Some(material_id) = material_id
                         {
-                            if let Some(material) = scene.get_material_by_id(material_id)
+                            for scene in &state.scenes
                             {
-                                component_downcast_mut!(material, Material);
-
-                                let parts: Vec<&str> = editor_state.pick_id.split('_').collect();
-                                if let Some(tex_type) = parts.last()
+                                if let Some(material) = scene.get_material_by_id(material_id)
                                 {
-                                    material.set_texture_from_string_type(texture_arc.clone(), tex_type);
+                                    component_downcast_mut!(material, Material);
+
+                                    let parts: Vec<&str> = editor_state.pick_id.split('_').collect();
+                                    if let Some(tex_type) = parts.last()
+                                    {
+                                        material.set_texture_from_string_type(texture_arc.clone(), tex_type);
+                                    }
                                 }
                             }
                         }
@@ -55,9 +58,8 @@ pub fn build_texture_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
                 }
                 else if selection
                 {
-
                     editor_state.selected_object = id;
-                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::Texture;
                     editor_state.settings = SettingsPanel::Texture;
                 }
@@ -73,21 +75,13 @@ pub fn build_texture_list(editor_state: &mut EditorState, scene: &mut Box<Scene>
 
 pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    // no scene selected
-    if editor_state.selected_scene_id.is_none() { return; }
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
-
     let (texture_id, ..) = editor_state.get_object_ids();
-
-    let scene = state.find_scene_by_id_mut(scene_id);
-    if scene.is_none() { return; }
-
-    let scene = scene.unwrap();
 
     if texture_id.is_none() { return; }
     let texture_id = texture_id.unwrap();
 
-    if let Some(texture) = scene.get_texture_by_id(texture_id)
+
+    if let Some(texture) = state.get_texture_by_id(texture_id)
     {
         collapse_with_title(ui, "texture_info", true, "🖼 Texture Info", None, |ui|
         {
@@ -130,26 +124,29 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
         collapse_with_title(ui, "texture_usage", true, "👆 Texture used by Materials", None, |ui|
         {
             let mut used = false;
-            for (material_id, material) in &scene.materials
+            for scene in &state.scenes
             {
-                component_downcast!(material, Material);
-                if material.has_texture_id(texture_id)
+                for (material_id, material) in &scene.materials
                 {
-                    ui.horizontal(|ui|
+                    component_downcast!(material, Material);
+                    if material.has_texture_id(texture_id)
                     {
-                        ui.label(format!(" ⚫ {}: {}", material_id, material.get_base().name));
-
-                        // link to the material setting
-                        if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to material").clicked()
+                        ui.horizontal(|ui|
                         {
-                            editor_state.selected_object = format!("material_{}", material_id);
-                            editor_state.selected_scene_id = Some(scene_id);
-                            editor_state.selected_type = SelectionType::Material;
-                            editor_state.settings = SettingsPanel::Material;
-                        }
-                    });
+                            ui.label(format!(" ⚫ {}: {}", material_id, material.get_base().name));
 
-                    used = true;
+                            // link to the material setting
+                            if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to material").clicked()
+                            {
+                                editor_state.selected_object = format!("material_{}", material_id);
+                                editor_state.selected_scene_id = Some(scene.id);
+                                editor_state.selected_type = SelectionType::Material;
+                                editor_state.settings = SettingsPanel::Material;
+                            }
+                        });
+
+                        used = true;
+                    }
                 }
             }
 
@@ -195,7 +192,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
         {
             if ui.button(RichText::new("Dispose Texture").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
-                scene.delete_texture_by_id(texture_id);
+                state.delete_texture_by_id(texture_id);
             }
         });
     }

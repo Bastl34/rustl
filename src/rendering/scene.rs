@@ -7,7 +7,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, ut
 
 use crate::{component_downcast, component_downcast_mut, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::{Texture, TextureFormat}, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 
@@ -219,7 +219,7 @@ impl Scene
         }
     }
 
-    pub fn update_textures(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_textures(&mut self, _wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
         // check if the scene env texture has changed
         if let Some(env_tex) = &scene.get_data().environment_texture
@@ -235,68 +235,6 @@ impl Scene
                     let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
 
                     if !material.has_texture(TextureType::Environment) || material.has_texture_id(env_texture_id)
-                    {
-                        material.get_data_mut().force_change();
-                    }
-                }
-            }
-        }
-
-        // check all individual textures
-        for (_texture_id, texture) in &mut scene.textures
-        {
-            let mut buffer_recreate_needed = false;
-
-            {
-                let mut texture = texture.write().unwrap();
-                let texture_changed = texture.get_data_mut().consume_change();
-
-                // check if buffer recreation is needed
-                // TODO: check if this even needed anymore (because of the changetracker data from texture)
-                if let Some(render_item) = &texture.render_item
-                {
-                    let render_item = get_render_item::<Texture>(render_item);
-                    buffer_recreate_needed = render_item.width != texture.width() || render_item.height != texture.height();
-                }
-
-                if texture.render_item.is_none() || buffer_recreate_needed || texture_changed
-                {
-                    let mut format = TextureFormat::Srgba;
-                    if texture.channels() == 1
-                    {
-                        format = TextureFormat::Gray;
-                    }
-
-                    let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, format);
-                    texture.render_item = Some(Box::new(render_item));
-                    buffer_recreate_needed = true;
-                }
-                /*
-                else if texture_changed
-                {
-                    let mut render_item = texture.render_item.take();
-
-                    {
-                        let render_item = get_render_item_mut::<Texture>(render_item.as_mut().unwrap());
-                        render_item.update_buffer(wgpu, &texture);
-                    }
-
-                    texture.render_item = render_item;
-                }
-                 */
-            }
-
-            // mark material as "dirty" if the buffer needs a recreate
-            if buffer_recreate_needed
-            {
-                let texture = texture.read().unwrap();
-
-                for (_, material) in &mut scene.materials
-                {
-                    let mut material = material.write().unwrap();
-                    let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
-
-                    if material.has_texture_id(texture.id)
                     {
                         material.get_data_mut().force_change();
                     }

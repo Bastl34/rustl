@@ -6,6 +6,7 @@ mod rendering
     pub(crate) mod vertex_buffer;
     pub(crate) mod instance;
     pub(crate) mod texture;
+    pub(crate) mod state;
     pub(crate) mod scene;
     pub(crate) mod camera;
     pub(crate) mod uniform;

@@ -607,10 +607,19 @@ impl Editor
                 if self.editor_state.selected_type == SelectionType::Texture
                 {
                     let (texture_id, _) = self.editor_state.get_object_ids();
-                    let scene = self.editor_state.get_selected_scene(state);
-                    if let (Some(texture_id), Some(scene)) = (texture_id, scene)
+                    if let Some(texture_id) = texture_id
                     {
-                        scene.delete_texture_by_id(texture_id);
+                        state.delete_texture_by_id(texture_id);
+                    }
+                }
+
+                // sound source
+                if self.editor_state.selected_type == SelectionType::SoundSource
+                {
+                    let (sound_source_id, _) = self.editor_state.get_object_ids();
+                    if let Some(sound_source_id) = sound_source_id
+                    {
+                        state.delete_sound_source_by_id(sound_source_id);
                     }
                 }
             }

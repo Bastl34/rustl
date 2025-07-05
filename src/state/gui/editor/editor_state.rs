@@ -43,7 +43,8 @@ pub enum SettingsPanel
     Light,
     Scene,
     Object,
-    General
+    General,
+    Resources,
 }
 
 #[derive(PartialEq, Eq)]
@@ -262,7 +263,7 @@ impl EditorState
     pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
         // no scene selected
-        if self.selected_scene_id == None || self.selected_object.is_empty()
+        if self.selected_scene_id == None && self.selected_object.is_empty()
         {
             return (None, None);
         }

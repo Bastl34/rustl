@@ -34,7 +34,7 @@ xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 parry3d = "0.21"
 bvh = "0.11.0"
 
-arboard = "3.5.0"
+arboard = "3.6.0"
 
 tobj = { version = "4.0", features = ["async"]}
 
@@ -48,6 +48,7 @@ gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "KHR_materials_unlit",
   "KHR_texture_transform",
   "KHR_materials_emissive_strength",
+  "KHR_materials_pbrSpecularGlossiness",
   "EXT_texture_webp"
 ]}
 

@@ -2,7 +2,7 @@
 
 use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};
+use image::{imageops, DynamicImage, GenericImageView, GrayImage, ImageFormat, Pixel};
 use nalgebra::{Vector2, Vector4};
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +110,10 @@ pub struct Texture
     pub egui_preview: Option<egui::TextureHandle>,
 
     #[serde(skip, default)]
-    pub render_item: RenderItemOption
+    pub render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub delete_later_request: bool,
 }
 
 impl Texture
@@ -155,7 +158,9 @@ impl Texture
             data: ChangeTracker::new(data),
 
             egui_preview: None,
-            render_item: None
+            render_item: None,
+
+            delete_later_request: false
         }
     }
 
@@ -228,7 +233,9 @@ impl Texture
             data: ChangeTracker::new(data),
 
             egui_preview: None,
-            render_item: None
+            render_item: None,
+
+            delete_later_request: false
         }
     }
 
@@ -299,8 +306,15 @@ impl Texture
             data: ChangeTracker::new(data),
 
             egui_preview: None,
-            render_item: None
+            render_item: None,
+
+            delete_later_request: false
         }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 
     pub fn create_mipmap_cache(&mut self)
@@ -308,6 +322,21 @@ impl Texture
         let mipmaps = self.create_mipmap_levels();
 
         self.get_data_mut().get_mut().mipmap_cache = Some(mipmaps);
+    }
+
+    pub fn make_fully_opaque(&mut self)
+    {
+        let image = self.get_dynamic_image_mut();
+
+        image.as_mut_rgba8().map(|buf|
+        {
+            for px in buf.pixels_mut()
+            {
+                px[3] = 255;
+            }
+        });
+
+        self.get_data_mut().get_mut().has_transparency = false;
     }
 
     pub fn create_mipmap_levels(&self) -> Vec<DynamicImage>
@@ -566,6 +595,8 @@ impl Texture
         }
 
         let data = self.get_data();
+
+        ui.label(format!("{}: {}", &self.id, &self.name));
 
         if let Some(preview) = &self.egui_preview
         {

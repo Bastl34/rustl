@@ -1,7 +1,7 @@
-use egui::{Ui, Color32};
+use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::state::{state::State, gui::helper::generic_items::collapse_with_title};
+use crate::{component_downcast, state::{gui::helper::generic_items::collapse_with_title, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::State}};
 
 use super::super::editor_state::EditorState;
 
@@ -13,6 +13,108 @@ pub fn create_general_settings(editor_state: &mut EditorState, state: &mut State
 
 pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
+    // general statistics
+    let mut instances_amout = 0;
+    let mut meshes_amout = 0;
+    let mut nodes_solid_amout = 0;
+    let mut nodes_transparent_amout = 0;
+
+    let mut materials_amout = 0;
+    let mut cameras_amout = 0;
+    let mut lights_amout = 0;
+
+    let mut nodes_amount = 0;
+    let mut vertices_amout = 0;
+    let mut indices_amout = 0;
+
+    for scene in &state.scenes
+    {
+        let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+
+        for node in &all_nodes
+        {
+            let node = node.read().unwrap();
+            instances_amout += node.instances.get_ref().len();
+
+            let mesh = node.find_component::<Mesh>();
+            if let Some(mesh) = mesh
+            {
+                component_downcast!(mesh, Mesh);
+
+                meshes_amout += 1;
+                vertices_amout += mesh.get_data().vertices.len();
+                indices_amout += mesh.get_data().indices.len();
+            }
+
+            if let Some(material) = node.find_component::<Material>()
+            {
+                component_downcast!(material, Material);
+                if material.has_transparency()
+                {
+                    nodes_transparent_amout += 1;
+                }
+                else
+                {
+                    nodes_solid_amout += 1;
+                }
+            }
+        }
+
+        nodes_amount += all_nodes.len();
+
+        materials_amout += scene.materials.len();
+        cameras_amout += scene.cameras.len();
+        lights_amout += scene.lights.get_ref().len();
+    }
+
+    let mut tex_memory_usage = 0.0;
+    let mut tex_gpu_memory_usage = 0.0;
+    for texture in &state.textures
+    {
+        let texture = texture.1.as_ref().read().unwrap();
+        let texture = texture.as_ref();
+        tex_memory_usage += texture.memory_usage() as f32;
+        tex_gpu_memory_usage += texture.gpu_usage() as f32;
+    }
+
+    tex_memory_usage = tex_memory_usage / 1024.0 / 1024.0;
+    tex_gpu_memory_usage = tex_gpu_memory_usage / 1024.0 / 1024.0;
+
+    // statistics
+    collapse_with_title(ui, "general_info", true, "📈 Info", None, |ui|
+    {
+        ui.label(RichText::new("🎬 scenes").strong());
+        ui.label(format!(" ⚫ scenes: {}", state.scenes.len()));
+        ui.label(format!(" ⚫ nodes: {}", nodes_amount));
+
+        ui.horizontal(|ui|
+        {
+            ui.add_space(16.0);
+            ui.vertical(|ui|
+            {
+                ui.label(format!(" ⚫ solid: {}", nodes_solid_amout));
+                ui.label(format!(" ⚫ transparent: {}", nodes_transparent_amout));
+            });
+        });
+        ui.label(format!(" ⚫ instances: {}", instances_amout));
+        ui.label(format!(" ⚫ materials: {}", materials_amout));
+        ui.label(format!(" ⚫ textures: {}", state.textures.len()));
+        ui.label(format!(" ⚫ cameras: {}", cameras_amout));
+        ui.label(format!(" ⚫ lights: {}", lights_amout));
+
+        ui.label(RichText::new("◼ geometry").strong());
+        ui.label(format!(" ⚫ meshes: {}", meshes_amout));
+        ui.label(format!(" ⚫ vertices: {}", vertices_amout));
+        ui.label(format!(" ⚫ indices: {}", indices_amout));
+
+        ui.label(RichText::new("🖴 RAM memory usage").strong());
+        ui.label(format!(" ⚫ textures: {:.2} MB", tex_memory_usage));
+
+        ui.label(RichText::new("🖵 GPU memory usage").strong());
+        ui.label(format!(" ⚫ textures: {:.2} MB", tex_gpu_memory_usage));
+        ui.label(format!(" ⚫ buffers: TODO"));
+    });
+
     // general rendering settings
     collapse_with_title(ui, "render_settings", true, "📷 Rendering Settings", None, |ui|
     {

@@ -8,7 +8,7 @@ use crate::{helper::{concurrency::thread::spawn_thread, generic::cut_string_to_l
 use crate::state::gui::editor::ui::dialogs::load_sound_dialog;
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &HashMap<std::string::String, SoundSourceItem>, ui: &mut Ui, scene_id: u64)
+pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &HashMap<std::string::String, SoundSourceItem>, ui: &mut Ui)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
@@ -34,7 +34,7 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
                 {
 
                     editor_state.selected_object = id;
-                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::SoundSource;
                     editor_state.settings = SettingsPanel::SoundSource;
                 }
@@ -50,21 +50,12 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
 
 pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    // no scene selected
-    if editor_state.selected_scene_id.is_none() { return; }
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
-
     let (sound_source_id, ..) = editor_state.get_object_ids();
-
-    let scene = state.find_scene_by_id_mut(scene_id);
-    if scene.is_none() { return; }
-
-    let scene = scene.unwrap();
 
     if sound_source_id.is_none() { return; }
     let sound_source_id = sound_source_id.unwrap();
 
-    if let Some(sound_source) = scene.get_sound_source_by_id(sound_source_id)
+    if let Some(sound_source) = state.get_sound_source_by_id(sound_source_id)
     {
         collapse_with_title(ui, "sound_source_info", true, "🔊 Sound Info", None, |ui|
         {
@@ -108,30 +99,33 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
         {
             let mut used = false;
 
-            let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
-
-            for node in all_nodes
+            for scene in &state.scenes
             {
-                for component in node.read().unwrap().find_components::<Sound>()
+                let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+
+                for node in all_nodes
                 {
-                    let component = component.read().unwrap();
-                    let component_id = component.id();
-
-                    ui.horizontal(|ui|
+                    for component in node.read().unwrap().find_components::<Sound>()
                     {
-                        ui.label(format!(" ⚫ {}: {}", component_id, component.get_base().name));
+                        let component = component.read().unwrap();
+                        let component_id = component.id();
 
-                        // link to the material setting
-                        if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                        ui.horizontal(|ui|
                         {
-                            editor_state.selected_object = format!("sound_{}", component_id);
-                            editor_state.selected_scene_id = Some(scene_id);
-                            editor_state.selected_type = SelectionType::Sound;
-                            editor_state.settings = SettingsPanel::Sound;
-                        }
-                    });
+                            ui.label(format!(" ⚫ {}: {}", component_id, component.get_base().name));
 
-                    used = true;
+                            // link to the material setting
+                            if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                            {
+                                editor_state.selected_object = format!("sound_{}", component_id);
+                                editor_state.selected_scene_id = Some(scene.id);
+                                editor_state.selected_type = SelectionType::Sound;
+                                editor_state.settings = SettingsPanel::Sound;
+                            }
+                        });
+
+                        used = true;
+                    }
                 }
             }
 
@@ -161,7 +155,7 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
         {
             if ui.button(RichText::new("Dispose Sound Source").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
-                scene.delete_sound_source_by_id(sound_source_id);
+                state.delete_sound_source_by_id(sound_source_id);
             }
         });
     }
@@ -199,7 +193,7 @@ pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, 
                 let main_queue = main_queue.clone();
                 spawn_thread(move ||
                 {
-                    load_sound_dialog(main_queue.clone(), scene_id, Some(sound_id));
+                    load_sound_dialog(main_queue.clone(), Some(sound_id));
                 });
             }
         });

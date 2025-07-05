@@ -406,6 +406,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
             SettingsPanel::General => create_general_settings(editor_state, state, ui),
+            SettingsPanel::Resources => create_general_settings(editor_state, state, ui),
         }
     });
 }
@@ -428,6 +429,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     ui.separator();
 
+    // ******************* scenes *******************
     let exec_queue = state.main_thread_execution_queue.clone();
 
     let mut scenes = vec![];
@@ -477,13 +479,48 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     }
 
     swap(&mut scenes, &mut state.scenes);
+
+    ui.separator();
+
+    // ******************* resources *******************
+
+    let exec_queue = state.main_thread_execution_queue.clone();
+
+    let ui_id = ui.make_persistent_id("resources");
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, true).show_header(ui, |ui|
+    {
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+        {
+            let mut selection; if editor_state.selected_scene_id == None && editor_state.settings == SettingsPanel::Resources && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
+            let toggle = ui.toggle_value(&mut selection, RichText::new("🗄 Resources").strong());
+
+            if toggle.clicked()
+            {
+                if selection
+                {
+                    editor_state.selected_scene_id = None;
+                    editor_state.selected_object.clear();
+                    editor_state.selected_type = SelectionType::None;
+                    editor_state.settings = SettingsPanel::Resources;
+                }
+                else
+                {
+                    editor_state.selected_scene_id = None;
+                    editor_state.settings = SettingsPanel::General;
+                }
+            }
+        });
+    }).body(|ui|
+    {
+        //self.build_node_list(ui, &scene.nodes, scene_id, true);
+        create_resources_entries(state, editor_state, exec_queue.clone(), ui);
+    });
+
 }
 
-fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)
+fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui)
 {
     let scene_id = scene.id;
-    let mipmapping = state.rendering.create_mipmaps;
-    let max_tex_res = state.max_texture_resolution();
 
     // objects
     {
@@ -650,24 +687,29 @@ fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorSta
             build_material_list(editor_state, &scene.materials, ui, scene_id);
         });
     }
+}
+
+fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, ui: &mut Ui)
+{
+    let mipmapping = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
 
     // textures
     {
-        let id = format!("textures_{}", scene.id);
-        let ui_id = ui.make_persistent_id(id.clone());
+        let ui_id = ui.make_persistent_id("textures");
         let exec_queue = exec_queue.clone();
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", scene.textures.len())).color(Color32::LIGHT_BLUE).strong());
+                let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", state.textures.len())).color(Color32::LIGHT_BLUE).strong());
 
                 if toggle.clicked()
                 {
                     if selection
                     {
-                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_scene_id = None;
                         editor_state.selected_object.clear();
                         editor_state.selected_type = SelectionType::Texture;
                     }
@@ -685,7 +727,7 @@ fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorSta
                         let exec_queue = exec_queue.clone();
                         spawn_thread(move ||
                         {
-                            load_texture_dialog(exec_queue.clone(), None, scene_id, None, mipmapping, max_tex_res);
+                            load_texture_dialog(exec_queue.clone(), None, None, None, mipmapping, max_tex_res);
                         });
                         ui.close();
                     }
@@ -693,24 +735,23 @@ fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorSta
             });
         }).body(|ui|
         {
-            build_texture_list(editor_state, scene, ui, scene_id);
+            build_texture_list(editor_state, &state, ui);
         });
     }
 
-    // sounds
+    // sound sources
     {
-        let id = format!("sounds_{}", scene.id);
-        let ui_id = ui.make_persistent_id(id.clone());
+        let ui_id = ui.make_persistent_id("sound_sources");
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", scene.sound_sources.len())).color(Color32::LIGHT_GRAY).strong()).clicked()
+                let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
+                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", state.sound_sources.len())).color(Color32::LIGHT_GRAY).strong()).clicked()
                 {
                     if selection
                     {
-                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_scene_id = None;
                         editor_state.selected_object.clear();
                         editor_state.selected_type = SelectionType::SoundSource;
                     }
@@ -723,7 +764,7 @@ fn create_hierarchy_type_entries(state: &mut State, editor_state: &mut EditorSta
             });
         }).body(|ui|
         {
-            build_sound_sources_list(editor_state, &scene.sound_sources, ui, scene_id);
+            build_sound_sources_list(editor_state, &state.sound_sources, ui);
         });
     }
 }

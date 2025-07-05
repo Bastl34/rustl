@@ -20,6 +20,7 @@ use crate::input::input_point::PointState;
 use crate::input::keyboard::Modifier;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
+use crate::rendering;
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
 use crate::state::gui::editor::editor::Editor;
@@ -352,6 +353,8 @@ impl MainInterface
             }
 
             state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+
+            rendering::state::update(&mut self.context.wgpu, state);
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];

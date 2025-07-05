@@ -231,7 +231,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                                     let main_queue = main_queue.clone();
                                     spawn_thread(move ||
                                     {
-                                        load_texture_dialog(main_queue.clone(), Some(texture_type), scene_id, Some(material_id), mipmapping, max_tex_res);
+                                        load_texture_dialog(main_queue.clone(), Some(texture_type), None, Some(material_id), mipmapping, max_tex_res);
                                     });
                                 }
                             });

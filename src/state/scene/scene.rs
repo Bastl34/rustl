@@ -1,14 +1,13 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::{HashMap, HashSet}, mem::swap, sync::{Arc, RwLock}};
+use std::{cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}};
 
-use anyhow::Ok;
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, resources::{sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -68,9 +67,7 @@ pub struct Scene
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
-    pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
-    pub sound_sources: HashMap<String, SoundSourceItem>,
 
     // TODO: check and use serializeable and deserializable from SceneController trait <----------------------
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
@@ -107,9 +104,7 @@ impl Scene
             nodes: vec![],
             cameras: vec![],
             lights: ChangeTracker::new(vec![]),
-            textures: HashMap::new(),
             materials: HashMap::new(),
-            sound_sources: HashMap::new(),
 
             pre_controller: vec![],
             post_controller: vec![],
@@ -222,7 +217,7 @@ impl Scene
 
     pub fn print(&self)
     {
-        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len(), self.textures.len());
+        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len());
 
         //nodes
         for node in &self.nodes
@@ -272,75 +267,6 @@ impl Scene
         self.nodes.clear();
     }
 
-    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
-    {
-        let image_bytes = resources::load_binary_async(path).await?;
-
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
-    }
-
-    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
-    {
-        let image_bytes = resources::load_binary(path)?;
-
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
-    }
-
-    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>, max_tex_res: u32) -> TextureItem
-    {
-        let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
-
-        if self.textures.contains_key(&hash)
-        {
-            println!("reusing texture {}", name);
-            return self.textures.get_mut(&hash).unwrap().clone();
-        }
-
-        let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
-
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-        self.textures.insert(hash, arc.clone());
-
-        arc
-    }
-
-    pub fn load_sound_source_byte_or_reuse(&mut self, sound_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> SoundSourceItem
-    {
-        let hash = helper::crypto::get_hash_from_byte_vec(&sound_bytes);
-
-        if self.sound_sources.contains_key(&hash)
-        {
-            println!("reusing sound source {}", name);
-            return self.sound_sources.get_mut(&hash).unwrap().clone();
-        }
-
-        let sound_source = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
-
-        let arc = Arc::new(RwLock::new(Box::new(sound_source)));
-
-        self.sound_sources.insert(hash, arc.clone());
-
-        arc
-    }
-
-    pub fn insert_texture_or_reuse(&mut self, texture: Texture, name: &str) -> TextureItem
-    {
-        let hash = texture.hash.clone();
-
-        if self.textures.contains_key(&hash)
-        {
-            println!("reusing texture {}", name);
-            return self.textures.get_mut(&hash).unwrap().clone();
-        }
-
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-        self.textures.insert(hash, arc.clone());
-
-        arc
-    }
-
     fn clear_empty_nodes_recursive(nodes: &mut Vec<NodeItem>)
     {
         nodes.retain(|node|
@@ -367,19 +293,12 @@ impl Scene
         self.cameras.clear();
 
         self.materials.clear();
-        self.textures.clear();
 
         self.pre_controller.clear();
         self.post_controller.clear();
 
         // re-add defaults
         self.add_defaults();
-
-        if let Some(env_texture) = &self.get_data().environment_texture
-        {
-            let hash = env_texture.item.read().unwrap().hash.clone();
-            self.textures.insert(hash, env_texture.item.clone());
-        }
     }
 
     pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>)
@@ -597,118 +516,6 @@ impl Scene
         }
 
         false
-    }
-
-    pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
-    {
-        for texture_arc in self.textures.values()
-        {
-            let texture =  texture_arc.read().unwrap();
-            if texture.id == id
-            {
-                return Some(texture_arc.clone());
-            }
-        }
-
-        None
-    }
-
-    pub fn delete_texture_by_id(&mut self, id: u64) -> bool
-    {
-        // remove texture from all materials
-        for material in &mut self.materials
-        {
-            let material = material.1;
-            component_downcast_mut!(material, Material);
-            material.remove_texture_by_id(id);
-        }
-
-        let len = self.textures.len();
-        self.textures.retain(|_key, texture|
-        {
-            let texture = texture.read().unwrap();
-            texture.id != id
-        });
-
-        self.textures.len() != len
-    }
-
-    pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
-    {
-        for sound_arc in self.sound_sources.values()
-        {
-            let sound =  sound_arc.read().unwrap();
-            if sound.id == id
-            {
-                return Some(sound_arc.clone());
-            }
-        }
-
-        None
-    }
-
-    pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
-    {
-        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
-
-        // remove sound component from all nodes
-        for node in all_nodes
-        {
-            let mut node = node.write().unwrap();
-
-            node.components.retain(|component|
-            {
-                let component = component.read().unwrap();
-
-                if let Some(sound) = component.as_any().downcast_ref::<Sound>()
-                {
-                    if let Some(sound_source) = &sound.sound_source
-                    {
-                        let sound_source = sound_source.read().unwrap();
-                        if sound_source.id == id
-                        {
-                            return false;
-                        }
-                    }
-                }
-
-                true
-            });
-
-            for instance in node.instances.get_mut()
-            {
-                let mut instance = instance.write().unwrap();
-
-                instance.components.retain(|component|
-                {
-                    let component = component.read().unwrap();
-
-                    if let Some(sound) = component.as_any().downcast_ref::<Sound>()
-                    {
-                        if let Some(sound_source) = &sound.sound_source
-                        {
-                            let sound_source = sound_source.read().unwrap();
-                            if sound_source.id == id
-                            {
-                                return false;
-                            }
-                        }
-                    }
-
-                    true
-                });
-            }
-        }
-
-        // remove sound source
-        let len = self.sound_sources.len();
-        self.sound_sources.retain(|_key, sound|
-        {
-            let sound = sound.read().unwrap();
-            sound.id != id
-        });
-
-        self.sound_sources.len() != len
     }
 
     pub fn get_sound_by_id(&self, id: u64) -> Option<ComponentItem>
@@ -1004,7 +811,7 @@ impl Scene
             }
 
             // find all affecting
-            let mut textures_to_delete: HashSet<u64> = HashSet::new();
+            let mut textures_to_delete: HashMap<u64, TextureItem> = HashMap::new();
 
             // find all textures from materials and delete them from materials
             for (_material_id, material) in &materials_to_delete
@@ -1013,15 +820,14 @@ impl Scene
                 let textures = material.get_all_textures();
                 for texture in &textures
                 {
-                    let texture_id = texture.read().unwrap().id;
-                    textures_to_delete.insert(texture_id);
+                    textures_to_delete.insert(texture.read().unwrap().id, texture.clone());
                 }
 
                 material.remove_all_textures();
             }
 
             // delete textures if not in use anymore
-            for texture_id in textures_to_delete
+            for (texture_id, texture) in textures_to_delete
             {
                 let mut usage = 0;
                 for (_material_id, material) in &self.materials
@@ -1035,7 +841,8 @@ impl Scene
 
                 if usage == 0
                 {
-                    self.delete_texture_by_id(texture_id);
+                    dbg!("deleting texture", &texture.read().unwrap().name, texture_id);
+                    texture.write().unwrap().delete_later();
                 }
             }
         }
