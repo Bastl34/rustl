@@ -492,9 +492,9 @@ impl Component for Sound
         self._update(Some(node), None, false);
     }
 
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self._update(Some(node), Some(instance), false);
+        self._update(node, Some(instance), false);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)

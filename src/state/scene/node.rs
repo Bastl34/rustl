@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
-use std::sync::{Arc, RwLock};
+use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
 use bvh::aabb::Bounded;
 use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
+use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -15,6 +16,7 @@ pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct NodeSettings
 {
     pub render_children_first: bool,
@@ -47,17 +49,16 @@ pub struct Node
 
     pub settings: NodeSettings,
 
-    pub parent: Option<NodeItem>,
+    pub parent: OptionOrId<NodeItem>,
 
-    pub skin: Vec<NodeItem>,
+    pub skin: Vec<OptionOrId<NodeItem>>,
 
     pub extras: Extras,
     pub tags: Tags,
 
     pub nodes: Vec<NodeItem>,
     pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
-
-    pub components: Vec<ComponentItem>,
+    pub components: Vec<ComponentItem>, // TODO
 
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
@@ -69,18 +70,284 @@ pub struct Node
     delete_later_request: bool,
 }
 
+impl Serialize for Node
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("uuid", &self.uuid)?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("visible", &self.visible)?;
+        map.serialize_entry("locked", &self.locked)?;
+        map.serialize_entry("pickable", &self.pickable)?;
+        map.serialize_entry("root_node", &self.root_node)?;
+        map.serialize_entry("settings", &self.settings)?;
+        map.serialize_entry("extras", &self.extras)?;
+        map.serialize_entry("tags", &self.tags)?;
+
+        if let Some(parent) = self.parent.as_ref()
+        {
+            map.serialize_entry("parent", &parent.read().unwrap().uuid)?;
+        }
+
+        let skin: Vec<_> = self.skin.iter().filter_map(|skin_node|
+        {
+            if let OptionOrId::Some(node_item) = skin_node
+            {
+                Some(node_item.read().unwrap().uuid.clone())
+            }
+            else
+            {
+                None
+            }
+        }).collect();
+        map.serialize_entry("skin", &skin)?;
+
+        let instance_guards: Vec<_> = self.instances.get_ref().iter().map(|arc| arc.read().unwrap()).collect();
+        let instance_refs: Vec<&Instance> = instance_guards.iter().map(|guard| guard.as_ref()).collect();
+        map.serialize_entry("instances", &instance_refs)?;
+
+        let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
+        let node_refs: Vec<&Node> = node_guards.iter().map(|guard| guard.as_ref()).collect();
+        map.serialize_entry("nodes", &node_refs)?;
+
+        // TODO: components
+
+        if let Some(source) = &self.source
+        {
+            map.serialize_entry("source", source)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Node
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de>
+    {
+        struct NodeVisitor;
+
+        impl<'de> Visitor<'de> for NodeVisitor
+        {
+            type Value = Node;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
+            {
+                formatter.write_str("struct Node")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Node, V::Error>
+            where V: MapAccess<'de>
+            {
+                let mut node = Node::default();
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                        "uuid" => node.uuid = map.next_value()?,
+                        "name" => node.name = map.next_value()?,
+                        "visible" => node.visible = map.next_value()?,
+                        "locked" => node.locked = map.next_value()?,
+                        "pickable" => node.pickable = map.next_value()?,
+                        "root_node" => node.root_node = map.next_value()?,
+                        "parent" => node.parent = OptionOrId::from_id_or_none(map.next_value()?),
+                        "settings" => node.settings = map.next_value()?,
+                        "extras" => node.extras = map.next_value()?,
+                        "tags" => node.tags = map.next_value()?,
+                        "skin" => node.skin = OptionOrId::from_id_vec(&map.next_value()?),
+                        "source" => node.source = Some(map.next_value()?),
+                        "instances" =>
+                        {
+                            node.instances = ChangeTracker::new
+                            (
+                                map.next_value()
+                                    .into_iter()
+                                    .map(|inst| Arc::new(RwLock::new(Box::new(inst))))
+                                    .collect()
+                            )
+                        }
+                        "nodes" =>
+                        {
+                            node.nodes = map.next_value()
+                            .into_iter()
+                            .map(|node| Arc::new(RwLock::new(Box::new(node))))
+                            .collect()
+                        }
+                        _ =>
+                        {
+                            // ignore
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                /*
+                let mut uuid: Option<String> = None;
+                let mut name: Option<String> = None;
+                let mut visible: Option<bool> = None;
+                let mut locked: Option<bool> = None;
+                let mut pickable: Option<bool> = None;
+                let mut root_node: Option<bool> = None;
+                let mut parent: Option<String> = None;
+                let mut settings: Option<NodeSettings> = None;
+                let mut extras: Option<Extras> = None;
+                let mut tags: Option<Tags> = None;
+                let mut skin: Option<Vec<String>> = None;
+                let mut source: Option<AssetPathDesciptor> = None;
+                let mut instances: Option<Vec<Instance>> = None;
+                let mut nodes: Option<Vec<Node>> = None;
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                        "uuid" =>
+                        {
+                            if uuid.is_some() { return Err(de::Error::duplicate_field("uuid")); }
+                            uuid = Some(map.next_value()?);
+                        }
+                        "name" =>
+                        {
+                            if name.is_some() { return Err(de::Error::duplicate_field("name")); }
+                            name = Some(map.next_value()?);
+                        }
+                        "visible" =>
+                        {
+                            if visible.is_some() { return Err(de::Error::duplicate_field("visible")); }
+                            visible = Some(map.next_value()?);
+                        }
+                        "locked" =>
+                        {
+                            if locked.is_some() { return Err(de::Error::duplicate_field("locked")); }
+                            locked = Some(map.next_value()?);
+                        }
+                        "pickable" =>
+                        {
+                            if pickable.is_some() { return Err(de::Error::duplicate_field("pickable")); }
+                            pickable = Some(map.next_value()?);
+                        }
+                        "root_node" =>
+                        {
+                            if root_node.is_some() { return Err(de::Error::duplicate_field("root_node")); }
+                            root_node = Some(map.next_value()?);
+                        }
+                        "parent" =>
+                        {
+                            if parent.is_some() { return Err(de::Error::duplicate_field("parent")); }
+                            parent = Some(map.next_value()?);
+                        }
+                        "settings" =>
+                        {
+                            if settings.is_some() { return Err(de::Error::duplicate_field("settings")); }
+                            settings = Some(map.next_value()?);
+                        }
+                        "extras" =>
+                        {
+                            if extras.is_some() { return Err(de::Error::duplicate_field("extras")); }
+                            extras = Some(map.next_value()?);
+                        }
+                        "tags" =>
+                        {
+                            if tags.is_some() { return Err(de::Error::duplicate_field("tags")); }
+                            tags = Some(map.next_value()?);
+                        }
+                        "skin" =>
+                        {
+                            if skin.is_some() { return Err(de::Error::duplicate_field("skin")); }
+                            skin = Some(map.next_value()?);
+                        }
+                        "source" =>
+                        {
+                            if source.is_some() { return Err(de::Error::duplicate_field("source")); }
+                            source = Some(map.next_value()?);
+                        }
+                        "instances" =>
+                        {
+                            if instances.is_some() { return Err(de::Error::duplicate_field("instances")); }
+                            instances = Some(map.next_value()?);
+                        }
+                        "nodes" =>
+                        {
+                            if nodes.is_some() { return Err(de::Error::duplicate_field("nodes")); }
+                            nodes = Some(map.next_value()?);
+                        }
+                        _ =>
+                        {
+                            // unbekannte Felder ignorieren
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                Ok(Node
+                {
+                    id: id_manager::get_next_node_id(),
+                    uuid: uuid.ok_or_else(|| de::Error::missing_field("uuid"))?,
+                    name: name.ok_or_else(|| de::Error::missing_field("name"))?,
+                    visible: visible.unwrap_or(true),
+                    locked: locked.unwrap_or(false),
+                    pickable: pickable.unwrap_or(true),
+                    root_node: root_node.unwrap_or(false),
+                    settings: settings.unwrap_or_default(),
+                    extras: extras.unwrap_or_default(),
+                    tags: tags.unwrap_or_default(),
+                    source,
+                    instances: ChangeTracker::new
+                    (
+                        instances.unwrap_or_default()
+                            .into_iter()
+                            .map(|inst| Arc::new(RwLock::new(Box::new(inst))))
+                            .collect()
+                    ),
+                    nodes: nodes.unwrap_or_default()
+                        .into_iter()
+                        .map(|node| Arc::new(RwLock::new(Box::new(node))))
+                        .collect(),
+
+                    parent: OptionOrId::from_id_or_none(parent),
+                    skin: OptionOrId::from_id_vec(&skin.unwrap_or(vec![])),
+                    components: vec![],
+                    instance_render_item: Default::default(),
+                    skeleton_render_item: Default::default(),
+                    skeleton_morph_target_bind_group_render_item: Default::default(),
+                    b_box_node_index: 0,
+                    delete_later_request: false,
+                })
+                 */
+
+                Ok(node)
+            }
+        }
+
+        deserializer.deserialize_map(NodeVisitor)
+    }
+}
+
 impl Node
 {
     pub fn new(name: &str) -> NodeItem
     {
-        let node = Self
+        let mut node = Self::default();
+        node.name = name.to_string();
+
+        Arc::new(RwLock::new(Box::new(node)))
+    }
+
+    pub fn default() -> Self
+    {
+        Self
         {
             id: id_manager::get_next_node_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
 
             source: None,
 
-            name: name.to_string(),
+            name: "default".to_string(),
             visible: true,
             locked: false,
             pickable: true,
@@ -100,7 +367,7 @@ impl Node
 
             components: vec![],
 
-            parent: None,
+            parent: OptionOrId::None,
 
             skin: vec![],
 
@@ -117,9 +384,7 @@ impl Node
             b_box_node_index: 0,
 
             delete_later_request: false
-        };
-
-        Arc::new(RwLock::new(Box::new(node)))
+        }
     }
 
     pub fn cleanup_cyclic_references(nodes: &Vec<NodeItem>)
@@ -132,7 +397,7 @@ impl Node
             node.clear_instances();
 
             // remove cyclic reference to parent
-            node.parent = None;
+            node.parent = OptionOrId::None;
         }
     }
 
@@ -178,7 +443,7 @@ impl Node
 
         {
             let mut child_node = child_node.write().unwrap();
-            child_node.parent = Some(node.clone());
+            child_node.parent = OptionOrId::Some(node.clone());
         }
     }
 
@@ -227,7 +492,7 @@ impl Node
     pub fn set_parent(node: NodeItem, new_parent: NodeItem)
     {
         // remove from old node list
-        if let Some(old_parent) = &node.read().unwrap().parent
+        if let Some(old_parent) = node.read().unwrap().parent.as_ref()
         {
             let id = node.read().unwrap().id;
 
@@ -241,7 +506,7 @@ impl Node
         // add to new node list
         new_parent.write().unwrap().nodes.push(node.clone());
 
-        node.write().unwrap().parent = Some(new_parent);
+        node.write().unwrap().parent = OptionOrId::Some(new_parent);
 
         node.write().unwrap().force_instances_update();
     }
@@ -462,7 +727,7 @@ impl Node
         {
             let parent_clone = parent.clone();
 
-            if let Some(parent) = parent
+            if let OptionOrId::Some(parent) = parent
             {
                 if parent.read().unwrap().id == parent_node.read().unwrap().id
                 {
@@ -493,7 +758,7 @@ impl Node
         {
             let parent_clone = parent.clone();
 
-            if let Some(parent) = parent
+            if let OptionOrId::Some(parent) = parent
             {
                 if parent.read().unwrap().id == parent_node_id
                 {
@@ -666,7 +931,7 @@ impl Node
         let (node_transform, node_parent_inheritance) = self.get_transform();
         let mut parent_trans = Matrix4::<f32>::identity();
 
-        if let Some(parent_node) = &self.parent
+        if let Some(parent_node) = self.parent.as_ref()
         {
             let parent_node = parent_node.read().unwrap();
             parent_trans = parent_node.get_full_transform();
@@ -755,7 +1020,7 @@ impl Node
 
             let mut parent_transform = Matrix4::<f32>::identity();
 
-            if let Some(parent) = &self.parent
+            if let Some(parent) = self.parent.as_ref()
             {
                 parent_transform = parent.read().unwrap().get_joint_transform(animated);
             }
@@ -776,14 +1041,23 @@ impl Node
         let mut joints = vec![];
         for joint in &self.skin
         {
-            let mut transform = joint.read().unwrap().get_joint_transform(animated);
+            let mut transform = Matrix4::<f32>::identity();
 
-            // inverse bind transform
-            let joint_component = joint.read().unwrap().find_component::<Joint>();
-            if let Some(joint_component) = joint_component
+            if let OptionOrId::Some(joint) = joint
             {
-                component_downcast!(joint_component, Joint);
-                transform = transform * joint_component.get_inverse_bind_transform();
+                transform = joint.read().unwrap().get_joint_transform(animated);
+
+                // inverse bind transform
+                let joint_component = joint.read().unwrap().find_component::<Joint>();
+                if let Some(joint_component) = joint_component
+                {
+                    component_downcast!(joint_component, Joint);
+                    transform = transform * joint_component.get_inverse_bind_transform();
+                }
+            }
+            else
+            {
+                dbg!("Node {} has an empty skin joint with id which is not supported!", &self.name);
             }
 
             joints.push(transform);
@@ -1279,7 +1553,7 @@ impl Node
         let (node_alpha, node_parent_inheritance) = node.get_alpha();
         let mut parent_alpha = 1.0;
 
-        if let Some(parent_node) = &node.parent
+        if let Some(parent_node) = node.parent.as_ref()
         {
             parent_alpha = Self::get_full_alpha(parent_node.clone());
         }
@@ -1319,11 +1593,13 @@ impl Node
 
     pub fn create_default_instance(&mut self, self_node_item: NodeItem) -> u64
     {
-        let instance = Instance::new
+        let mut instance = Instance::new
         (
             "instance".to_string(),
             self_node_item
         );
+
+        instance.is_default = true;
 
         let instance_id = instance.id;
 
@@ -1512,7 +1788,15 @@ impl Node
         }
 
         self.clear_instances();
-        self.create_default_instance(node);
+
+        if let Some(node) = node.as_ref()
+        {
+            self.create_default_instance(node.clone());
+        }
+        else
+        {
+            dbg!("merge_instances: Node has no parent node to create default instance");
+        }
 
         true
     }
@@ -1615,7 +1899,7 @@ impl Node
             return Some(node);
         }
 
-        if let Some(parent) = &node.read().unwrap().parent
+        if let Some(parent) = node.read().unwrap().parent.as_ref()
         {
             return Self::find_root_node(parent.clone());
         }

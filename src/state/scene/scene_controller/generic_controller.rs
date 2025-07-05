@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::component_downcast_mut;
 use crate::state::scene::components::mesh::Mesh;
 use crate::state::scene::scene::Scene;
@@ -7,6 +9,7 @@ use crate::state::gui::helper::info_box::warn_box;
 use super::scene_controller::{SceneController, SceneControllerBase};
 
 
+#[derive(Serialize, Deserialize)]
 pub struct GenericController
 {
     base: SceneControllerBase,
@@ -26,6 +29,20 @@ impl GenericController
 impl SceneController for GenericController
 {
     scene_controller_impl_default!();
+
+    fn serializable(&self) -> bool
+    {
+        true
+    }
+
+    fn deserializable(&self) -> bool
+    {
+        true
+    }
+
+    fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene)
+    {
+    }
 
     fn cleanup(&mut self)
     {

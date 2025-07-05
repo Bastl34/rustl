@@ -1,12 +1,18 @@
 #![allow(dead_code)]
 
+use std::fmt;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 
 use nalgebra::{Vector3, Vector4};
+use serde::de::{self, MapAccess, Visitor};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
+use crate::state::scene::texture::Texture;
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::scene::texture::TextureItem, helper};
@@ -73,6 +79,81 @@ pub struct TextureState
 {
     pub item: TextureItem,
     pub enabled: bool
+}
+
+impl Serialize for TextureState
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        let tex_guard = &self.item.read().unwrap();
+        let tex_ref = tex_guard.as_ref();
+
+        map.serialize_entry("enabled", &self.enabled)?;
+        map.serialize_entry("item", &tex_ref)?;
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TextureState
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de>
+    {
+        struct TextureStateVisitor;
+
+        impl<'de> Visitor<'de> for TextureStateVisitor
+        {
+            type Value = TextureState;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
+            {
+                formatter.write_str("struct TextureState")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<TextureState, V::Error>
+            where V: MapAccess<'de>
+            {
+                let mut enabled = None;
+                let mut item = None;
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                        "enabled" =>
+                        {
+                            if enabled.is_some() { return Err(de::Error::duplicate_field("enabled")); }
+                            enabled = Some(map.next_value()?);
+                        }
+                        "item" =>
+                        {
+                            if item.is_some() { return Err(de::Error::duplicate_field("item")); }
+                            item = Some(map.next_value()?);
+                        }
+                        _ =>
+                        {
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                let enabled = enabled.ok_or_else(|| de::Error::missing_field("enabled"))?;
+                let item: Texture = item.ok_or_else(|| de::Error::missing_field("item"))?;
+
+                Ok(TextureState
+                {
+                    enabled,
+                    item: Arc::new(RwLock::new(Box::new(item))),
+                })
+            }
+        }
+
+        deserializer.deserialize_map(TextureStateVisitor)
+    }
 }
 
 impl TextureState

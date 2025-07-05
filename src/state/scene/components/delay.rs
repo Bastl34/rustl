@@ -205,7 +205,7 @@ impl Component for Delay
         }
     }
 
-    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         if let Some(target_id) = self.target_id
         {

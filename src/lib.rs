@@ -191,6 +191,7 @@ mod helper
     pub(crate) mod easing;
     pub(crate) mod stopwatch;
     pub(crate) mod asset_path_descriptor;
+    pub(crate) mod option_or_id;
 }
 
 mod resources

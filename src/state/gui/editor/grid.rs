@@ -35,7 +35,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                 }
 
                 // move to front
-                if let Some(parent) = &root_node.read().unwrap().parent
+                if let Some(parent) = root_node.read().unwrap().parent.as_ref()
                 {
                     parent.write().unwrap().move_to_front(root_node.clone());
                 }
@@ -65,7 +65,7 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
                 root_node.write().unwrap().name = "grid root".to_string();
 
                 // move to front
-                if let Some(parent) = &root_node.read().unwrap().parent
+                if let Some(parent) = root_node.read().unwrap().parent.as_ref()
                 {
                     parent.write().unwrap().move_to_front(root_node.clone());
                 }

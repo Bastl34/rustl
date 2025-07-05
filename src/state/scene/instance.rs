@@ -3,13 +3,13 @@
 use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Vector3, Vector4};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::change_tracker::ChangeTracker, input::input_manager::InputManager};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, input::input_manager::InputManager};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
 pub type InstanceItem = Box<Instance>;
-
 
 pub struct ComputedInstanceData
 {
@@ -31,8 +31,11 @@ impl Default for ComputedInstanceData
     }
 }
 
+
+#[derive(Serialize, Deserialize)]
 pub struct InstanceData
 {
+    #[serde(skip, default)]
     pub computed: ComputedInstanceData,
 
     pub visible: bool,
@@ -42,15 +45,57 @@ pub struct InstanceData
     pub color: Vector4::<f32>
 }
 
+fn serialize_node<S>(node: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match node
+    {
+        OptionOrId::Some(node_item) =>
+        {
+            let guard = node_item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Instance
 {
     pub id: u64,
     pub uuid: String,
+    pub is_default: bool,
 
     pub name: String,
     pub pickable: bool,
 
-    pub node: NodeItem,
+    #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+
+    // TODO --> do not skip
+    #[serde(skip, default)]
     pub components: Vec<ComponentItem>,
 
     force_update: bool,
@@ -66,11 +111,43 @@ impl Instance
         {
             id: id_manager::get_next_instance_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
 
             name,
             pickable: true,
 
-            node: node,
+            node: OptionOrId::Some(node),
+            components: vec![],
+
+            force_update: true, // force update on creation
+
+            data: ChangeTracker::new(InstanceData
+            {
+                computed: ComputedInstanceData::default(),
+
+                visible: true,
+                highlight: false,
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
+            })
+        };
+
+        instance
+    }
+
+    pub fn default() -> Instance
+    {
+        let instance = Instance
+        {
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
+
+            name: "default".to_string(),
+            pickable: true,
+
+            node: OptionOrId::None,
             components: vec![],
 
             force_update: true, // force update on creation
@@ -96,11 +173,12 @@ impl Instance
         {
             id: id_manager::get_next_instance_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
 
             name,
             pickable: true,
 
-            node: node,
+            node: OptionOrId::Some(node),
             components: vec![],
 
             force_update: true, // force update on creation
@@ -223,7 +301,7 @@ impl Instance
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.clone(), instance, input_manager, time, frame_scale, frame);
+            component_write.update_instance(node.as_ref().cloned(), instance, input_manager, time, frame_scale, frame);
         }
 
         // ***** reassign components *****
@@ -302,7 +380,10 @@ impl Instance
         }
 
         // ********** check node and parents **********
-        changed = Instance::find_changed_parent_data(self.node.clone()) || changed;
+        if let Some (node) = self.node.as_ref()
+        {
+            changed = Instance::find_changed_parent_data(node.clone()) || changed;
+        }
 
         changed
     }
@@ -345,7 +426,7 @@ impl Instance
             }
         }
 
-        if let Some(parent) = &node_read.parent
+        if let Some(parent) = node_read.parent.as_ref()
         {
             return Instance::find_changed_parent_data(parent.clone());
         }
@@ -357,8 +438,15 @@ impl Instance
     {
         let node_trans;
         {
-            let node = self.node.read().unwrap();
-            node_trans = node.get_full_transform();
+            if let Some(node) = self.node.as_ref()
+            {
+                let node = node.read().unwrap();
+                node_trans = node.get_full_transform();
+            }
+            else
+            {
+                node_trans = Matrix4::identity();
+            }
         }
         let transform_component = self.find_component::<Transformation>();
 
@@ -416,7 +504,11 @@ impl Instance
     {
         let instance_color_alpha = self.get_data().color.w;
 
-        let node_alpha = Node::get_full_alpha(self.node.clone());
+        let mut node_alpha = 1.0;
+        if let Some(node) = self.node.as_ref()
+        {
+            node_alpha = Node::get_full_alpha(node.clone());
+        }
 
         let alpha_components = self.find_components::<Alpha>();
 
@@ -452,8 +544,13 @@ impl Instance
             return true;
         }
 
-        let node = self.node.read().unwrap();
-        node.is_locked()
+        if let Some(node) = self.node.as_ref()
+        {
+            let node = node.read().unwrap();
+            return node.is_locked();
+        }
+
+        false
     }
 
     pub fn get_cached_world_transform(&self) -> Matrix4::<f32>

@@ -12,7 +12,7 @@ pub struct TagData
     pub locked: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct Tags
 {
     pub tags: HashMap<String, TagData>,

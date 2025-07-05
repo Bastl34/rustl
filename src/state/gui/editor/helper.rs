@@ -303,7 +303,7 @@ pub fn get_parent_world_transform_from_selected_node(editor_state: &mut EditorSt
     {
         let node = node.read().unwrap();
 
-        if let Some(parent) = &node.parent
+        if let Some(parent) = node.parent.as_ref()
         {
             let parent = parent.read().unwrap();
             transform = parent.get_full_transform();
@@ -330,7 +330,7 @@ pub fn transform_vec_to_parent_local(instance_id: Option<u64>, selected_node: No
     {
         let node = selected_node.read().unwrap();
 
-        if let Some(parent) = &node.parent
+        if let Some(parent) = node.parent.as_ref()
         {
             let parent = parent.read().unwrap();
             vec = parent.transform_vec_global_to_local(&Vector4::<f32>::new(vec.x, vec.y, vec.z, 0.0)).xyz();

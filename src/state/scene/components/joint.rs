@@ -151,7 +151,7 @@ impl Joint
 
             let mut inverse_bindpose_matrix = local_trans.try_inverse().unwrap();
 
-            if let Some(parent) = &node.parent
+            if let Some(parent) = node.parent.as_ref()
             {
                 //if parent.read().unwrap().find_component::<Joint>().is_some()
                 if !parent.read().unwrap().root_node

@@ -31,7 +31,7 @@ pub trait Component: Any
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
     fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
 
     fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
@@ -195,7 +195,7 @@ macro_rules! component_impl_no_update
         {
         }
 
-        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };
@@ -206,7 +206,7 @@ macro_rules! component_impl_no_update_instance
 {
     () =>
     {
-        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };

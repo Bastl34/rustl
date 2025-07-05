@@ -12,6 +12,14 @@ pub struct ChangeTracker<T>
     data: T
 }
 
+impl<T: Default> Default for ChangeTracker<T>
+{
+    fn default() -> Self
+    {
+        ChangeTracker::new(T::default())
+    }
+}
+
 impl<T> ChangeTracker<T>
 {
     pub fn new(data: T) -> ChangeTracker<T>

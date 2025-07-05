@@ -4,6 +4,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
 use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::get_delta_t}};
 
@@ -57,6 +58,52 @@ enum AnimationMixing
     Fade
 }
 
+pub struct AnimationComponents
+{
+    idle: Option<ComponentItem>,
+    walk: Option<ComponentItem>,
+    run: Option<ComponentItem>,
+    jump: Option<ComponentItem>,
+    crouch: Option<ComponentItem>,
+    roll: Option<ComponentItem>,
+    strafe_left_walk: Option<ComponentItem>,
+    strafe_right_walk: Option<ComponentItem>,
+    strafe_left_run: Option<ComponentItem>,
+    strafe_right_run: Option<ComponentItem>,
+    fall_idle: Option<ComponentItem>,
+    fall_landing: Option<ComponentItem>,
+
+    actions: Vec<ComponentItem>,
+    blending: Option<ComponentItem>,
+}
+
+impl Default for AnimationComponents
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            idle: None,
+            walk: None,
+            run: None,
+            jump: None,
+            crouch: None,
+            roll: None,
+            strafe_left_walk: None,
+            strafe_right_walk: None,
+            strafe_left_run: None,
+            strafe_right_run: None,
+            fall_idle: None,
+            fall_landing: None,
+
+            actions: vec![],
+
+            blending: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct CharacterController
 {
     base: SceneControllerBase,
@@ -97,26 +144,16 @@ pub struct CharacterController
 
     pub update_only_on_move: bool,
 
-    node: Option<NodeItem>,
+    #[serde(skip, default)]
+    node: Option<NodeItem>, // TODO: serialize deserialize
+
+    #[serde(skip, default)]
     animation_node: Option<NodeItem>,
 
-    animation_idle: Option<ComponentItem>,
-    animation_walk: Option<ComponentItem>,
-    animation_run: Option<ComponentItem>,
-    animation_jump: Option<ComponentItem>,
-    animation_crouch: Option<ComponentItem>,
-    animation_roll: Option<ComponentItem>,
-    animation_strafe_left_walk: Option<ComponentItem>,
-    animation_strafe_right_walk: Option<ComponentItem>,
-    animation_strafe_left_run: Option<ComponentItem>,
-    animation_strafe_right_run: Option<ComponentItem>,
-    animation_fall_idle: Option<ComponentItem>,
-    animation_fall_landing: Option<ComponentItem>,
+    #[serde(skip, default)]
+    animations: AnimationComponents,
 
-    animation_actions: Vec<ComponentItem>,
-
-    animation_blending: Option<ComponentItem>,
-
+    #[serde(skip, default)]
     transformation: Option<ComponentItem>
 }
 
@@ -166,22 +203,7 @@ impl CharacterController
             node: None,
             animation_node: None,
 
-            animation_idle: None,
-            animation_walk: None,
-            animation_run: None,
-            animation_jump: None,
-            animation_crouch: None,
-            animation_roll: None,
-            animation_strafe_left_walk: None,
-            animation_strafe_right_walk: None,
-            animation_strafe_left_run: None,
-            animation_strafe_right_run: None,
-            animation_fall_idle: None,
-            animation_fall_landing: None,
-
-            animation_actions: vec![],
-
-            animation_blending: None,
+            animations: AnimationComponents::default(),
 
             transformation: None
         }
@@ -219,6 +241,7 @@ impl CharacterController
 
         let cam = cam.unwrap();
         cam.node = Some(node_arc.clone());
+        self.cam_name = cam.name.clone();
 
         let mut target_rotation_controller = TargetRotationController::default();
         target_rotation_controller.data.get_mut().alpha = 0.0;
@@ -233,7 +256,7 @@ impl CharacterController
             let node = node.read().unwrap();
             let node_has_joint = node.find_component::<Joint>().is_some();
 
-            if let Some(parent) = &node.parent
+            if let Some(parent) = node.parent.as_ref()
             {
                 let parent = parent.read().unwrap();
                 let parent_has_joint = parent.find_component::<Joint>().is_some();
@@ -266,36 +289,36 @@ impl CharacterController
                 {
                     let animation_node = animation_node.read().unwrap();
 
-                    self.animation_blending = animation_node.find_component::<AnimationBlending>();
+                    self.animations.blending = animation_node.find_component::<AnimationBlending>();
                 }
 
-                if self.animation_blending.is_none()
+                if self.animations.blending.is_none()
                 {
                     let animation_blending = AnimationBlending::new_empty("Animation Blending");
                     animation_node.write().unwrap().add_component_front(Arc::new(RwLock::new(Box::new(animation_blending))));
 
-                    self.animation_blending = animation_node.read().unwrap().find_component::<AnimationBlending>();
+                    self.animations.blending = animation_node.read().unwrap().find_component::<AnimationBlending>();
                 }
             }
 
             let node = node_arc.read().unwrap();
 
-            self.animation_idle = node.find_animation_by_regex("(?i)^idle");
-            self.animation_walk = node.find_animation_by_include_exclude(&["walk".to_string()].to_vec(), &["strafe".to_string()].to_vec());
-            self.animation_run = node.find_animation_by_include_exclude(&["run".to_string()].to_vec(), &["strafe".to_string()].to_vec());
-            self.animation_jump = node.find_animation_by_regex("(?i)jump.*");
-            self.animation_crouch = node.find_animation_by_regex("(?i)crouch.*");
-            self.animation_roll = node.find_animation_by_regex("(?i)roll.*");
-            self.animation_strafe_left_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "walk".to_string()].to_vec(), &vec![]);
-            self.animation_strafe_right_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "walk".to_string()].to_vec(), &vec![]);
-            self.animation_strafe_left_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "run".to_string()].to_vec(), &vec![]);
-            self.animation_strafe_right_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "run".to_string()].to_vec(), &vec![]);
-            self.animation_fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
-            self.animation_fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
-            self.animation_actions = node.find_animations_by_regex("(?i)action.*");
+            self.animations.idle = node.find_animation_by_regex("(?i)^idle");
+            self.animations.walk = node.find_animation_by_include_exclude(&["walk".to_string()].to_vec(), &["strafe".to_string()].to_vec());
+            self.animations.run = node.find_animation_by_include_exclude(&["run".to_string()].to_vec(), &["strafe".to_string()].to_vec());
+            self.animations.jump = node.find_animation_by_regex("(?i)jump.*");
+            self.animations.crouch = node.find_animation_by_regex("(?i)crouch.*");
+            self.animations.roll = node.find_animation_by_regex("(?i)roll.*");
+            self.animations.strafe_left_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "walk".to_string()].to_vec(), &vec![]);
+            self.animations.strafe_right_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "walk".to_string()].to_vec(), &vec![]);
+            self.animations.strafe_left_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "run".to_string()].to_vec(), &vec![]);
+            self.animations.strafe_right_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "run".to_string()].to_vec(), &vec![]);
+            self.animations.fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
+            self.animations.fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
+            self.animations.actions = node.find_animations_by_regex("(?i)action.*");
 
             // set jump animation in place
-            if let Some(jump_animation) = &self.animation_jump
+            if let Some(jump_animation) = &self.animations.jump
             {
                 if let Some(animation_node) = self.animation_node.clone()
                 {
@@ -333,19 +356,19 @@ impl CharacterController
         match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.clone(),
-            CharAnimationType::Walk => self.animation_walk.clone(),
-            CharAnimationType::Run => self.animation_run.clone(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.clone(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.clone(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.clone(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.clone(),
-            CharAnimationType::Jump => self.animation_jump.clone(),
-            CharAnimationType::Crouch => self.animation_crouch.clone(),
-            CharAnimationType::Roll => self.animation_roll.clone(),
-            CharAnimationType::Fall => self.animation_fall_idle.clone(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.clone(),
-            CharAnimationType::Action => self.animation_actions.get(index).cloned(),
+            CharAnimationType::Idle => self.animations.idle.clone(),
+            CharAnimationType::Walk => self.animations.walk.clone(),
+            CharAnimationType::Run => self.animations.run.clone(),
+            CharAnimationType::StrafeLeftWalk => self.animations.strafe_left_walk.clone(),
+            CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.clone(),
+            CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.clone(),
+            CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.clone(),
+            CharAnimationType::Jump => self.animations.jump.clone(),
+            CharAnimationType::Crouch => self.animations.crouch.clone(),
+            CharAnimationType::Roll => self.animations.roll.clone(),
+            CharAnimationType::Fall => self.animations.fall_idle.clone(),
+            CharAnimationType::FallLanding => self.animations.fall_landing.clone(),
+            CharAnimationType::Action => self.animations.actions.get(index).cloned(),
         }
     }
 
@@ -354,19 +377,19 @@ impl CharacterController
         let animation_item = match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.as_ref(),
-            CharAnimationType::Walk => self.animation_walk.as_ref(),
-            CharAnimationType::Run => self.animation_run.as_ref(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.as_ref(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.as_ref(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.as_ref(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.as_ref(),
-            CharAnimationType::Jump => self.animation_jump.as_ref(),
-            CharAnimationType::Crouch => self.animation_crouch.as_ref(),
-            CharAnimationType::Roll => self.animation_roll.as_ref(),
-            CharAnimationType::Fall => self.animation_fall_idle.as_ref(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.as_ref(),
-            CharAnimationType::Action => self.animation_actions.get(index),
+            CharAnimationType::Idle => self.animations.idle.as_ref(),
+            CharAnimationType::Walk => self.animations.walk.as_ref(),
+            CharAnimationType::Run => self.animations.run.as_ref(),
+            CharAnimationType::StrafeLeftWalk => self.animations.strafe_left_walk.as_ref(),
+            CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.as_ref(),
+            CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.as_ref(),
+            CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.as_ref(),
+            CharAnimationType::Jump => self.animations.jump.as_ref(),
+            CharAnimationType::Crouch => self.animations.crouch.as_ref(),
+            CharAnimationType::Roll => self.animations.roll.as_ref(),
+            CharAnimationType::Fall => self.animations.fall_idle.as_ref(),
+            CharAnimationType::FallLanding => self.animations.fall_landing.as_ref(),
+            CharAnimationType::Action => self.animations.actions.get(index),
         };
 
         if let Some(animation_item) = animation_item
@@ -383,19 +406,19 @@ impl CharacterController
         let animation_item = match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.as_ref(),
-            CharAnimationType::Walk => self.animation_walk.as_ref(),
-            CharAnimationType::Run => self.animation_run.as_ref(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.as_ref(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.as_ref(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.as_ref(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.as_ref(),
-            CharAnimationType::Jump => self.animation_jump.as_ref(),
-            CharAnimationType::Crouch => self.animation_crouch.as_ref(),
-            CharAnimationType::Roll => self.animation_roll.as_ref(),
-            CharAnimationType::Fall => self.animation_fall_idle.as_ref(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.as_ref(),
-            CharAnimationType::Action => self.animation_actions.get(index),
+            CharAnimationType::Idle => self.animations.idle.as_ref(),
+            CharAnimationType::Walk => self.animations.walk.as_ref(),
+            CharAnimationType::Run => self.animations.run.as_ref(),
+            CharAnimationType::StrafeLeftWalk => self.animations.strafe_left_walk.as_ref(),
+            CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.as_ref(),
+            CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.as_ref(),
+            CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.as_ref(),
+            CharAnimationType::Jump => self.animations.jump.as_ref(),
+            CharAnimationType::Crouch => self.animations.crouch.as_ref(),
+            CharAnimationType::Roll => self.animations.roll.as_ref(),
+            CharAnimationType::Fall => self.animations.fall_idle.as_ref(),
+            CharAnimationType::FallLanding => self.animations.fall_landing.as_ref(),
+            CharAnimationType::Action => self.animations.actions.get(index),
         };
 
         if let Some(animation_item) = animation_item
@@ -411,21 +434,21 @@ impl CharacterController
     {
         let mut animation_items = vec!
         [
-            self.animation_idle.clone(),
-            self.animation_walk.clone(),
-            self.animation_run.clone(),
-            self.animation_strafe_left_walk.clone(),
-            self.animation_strafe_right_walk.clone(),
-            self.animation_strafe_left_run.clone(),
-            self.animation_strafe_right_run.clone(),
-            self.animation_jump.clone(),
-            self.animation_crouch.clone(),
-            self.animation_roll.clone(),
-            self.animation_fall_idle.clone(),
-            self.animation_fall_landing.clone(),
+            self.animations.idle.clone(),
+            self.animations.walk.clone(),
+            self.animations.run.clone(),
+            self.animations.strafe_left_walk.clone(),
+            self.animations.strafe_right_walk.clone(),
+            self.animations.strafe_left_run.clone(),
+            self.animations.strafe_right_run.clone(),
+            self.animations.jump.clone(),
+            self.animations.crouch.clone(),
+            self.animations.roll.clone(),
+            self.animations.fall_idle.clone(),
+            self.animations.fall_landing.clone(),
         ];
 
-        for action in &self.animation_actions
+        for action in &self.animations.actions
         {
             animation_items.push(Some(action.clone()));
         }
@@ -449,21 +472,21 @@ impl CharacterController
     {
         let mut animation_items = vec!
         [
-            self.animation_idle.clone(),
-            self.animation_walk.clone(),
-            self.animation_run.clone(),
-            self.animation_strafe_left_walk.clone(),
-            self.animation_strafe_right_walk.clone(),
-            self.animation_strafe_left_run.clone(),
-            self.animation_strafe_right_run.clone(),
-            self.animation_jump.clone(),
-            self.animation_crouch.clone(),
-            self.animation_roll.clone(),
-            self.animation_fall_idle.clone(),
-            self.animation_fall_landing.clone(),
+            self.animations.idle.clone(),
+            self.animations.walk.clone(),
+            self.animations.run.clone(),
+            self.animations.strafe_left_walk.clone(),
+            self.animations.strafe_right_walk.clone(),
+            self.animations.strafe_left_run.clone(),
+            self.animations.strafe_right_run.clone(),
+            self.animations.jump.clone(),
+            self.animations.crouch.clone(),
+            self.animations.roll.clone(),
+            self.animations.fall_idle.clone(),
+            self.animations.fall_landing.clone(),
         ];
 
-        for action in &self.animation_actions
+        for action in &self.animations.actions
         {
             animation_items.push(Some(action.clone()));
         }
@@ -489,21 +512,21 @@ impl CharacterController
     {
         let mut animation_items = vec!
         [
-            self.animation_idle.clone(),
-            self.animation_walk.clone(),
-            self.animation_run.clone(),
-            self.animation_strafe_left_walk.clone(),
-            self.animation_strafe_right_walk.clone(),
-            self.animation_strafe_left_run.clone(),
-            self.animation_strafe_right_run.clone(),
-            self.animation_jump.clone(),
-            self.animation_crouch.clone(),
-            self.animation_roll.clone(),
-            self.animation_fall_idle.clone(),
-            self.animation_fall_landing.clone(),
+            self.animations.idle.clone(),
+            self.animations.walk.clone(),
+            self.animations.run.clone(),
+            self.animations.strafe_left_walk.clone(),
+            self.animations.strafe_right_walk.clone(),
+            self.animations.strafe_left_run.clone(),
+            self.animations.strafe_right_run.clone(),
+            self.animations.jump.clone(),
+            self.animations.crouch.clone(),
+            self.animations.roll.clone(),
+            self.animations.fall_idle.clone(),
+            self.animations.fall_landing.clone(),
         ];
 
-        for action in &self.animation_actions
+        for action in &self.animations.actions
         {
             animation_items.push(Some(action.clone()));
         }
@@ -529,7 +552,7 @@ impl CharacterController
 
     fn is_jumping(&self) -> bool
     {
-        if let Some(animation_jump) = &self.animation_jump
+        if let Some(animation_jump) = &self.animations.jump
         {
             component_downcast!(animation_jump, Animation);
             return animation_jump.running() && animation_jump.animation_time() < animation_jump.to - self.fade_speed
@@ -540,7 +563,7 @@ impl CharacterController
 
     fn is_rolling(&self) -> bool
     {
-        if let Some(animation_roll) = &self.animation_roll
+        if let Some(animation_roll) = &self.animations.roll
         {
             component_downcast!(animation_roll, Animation);
             return animation_roll.running() && animation_roll.animation_time() < animation_roll.to - self.fade_speed
@@ -551,7 +574,7 @@ impl CharacterController
 
     fn is_landing(&self) -> bool
     {
-        if let Some(animation_fall_landing) = &self.animation_fall_landing
+        if let Some(animation_fall_landing) = &self.animations.fall_landing
         {
             component_downcast!(animation_fall_landing, Animation);
             return animation_fall_landing.running() && animation_fall_landing.animation_time() < animation_fall_landing.to - self.fade_speed
@@ -562,7 +585,7 @@ impl CharacterController
 
     fn is_action(&self) -> bool
     {
-        for animation in &self.animation_actions
+        for animation in &self.animations.actions
         {
             component_downcast!(animation, Animation);
             if animation.running() && animation.animation_time() < animation.to - self.fade_speed
@@ -590,7 +613,7 @@ impl CharacterController
         }
 
         // reset fade item
-        if let Some(animation_blending) = &self.animation_blending
+        if let Some(animation_blending) = &self.animations.blending
         {
             component_downcast_mut!(animation_blending, AnimationBlending);
             animation_blending.to = None;
@@ -599,26 +622,26 @@ impl CharacterController
         let animation_item = match animation
         {
             CharAnimationType::None => None,
-            CharAnimationType::Idle => self.animation_idle.as_ref(),
-            CharAnimationType::Walk => self.animation_walk.as_ref(),
-            CharAnimationType::Run => self.animation_run.as_ref(),
-            CharAnimationType::StrafeLeftWalk => self.animation_strafe_left_walk.as_ref(),
-            CharAnimationType::StrafeRightWalk => self.animation_strafe_right_walk.as_ref(),
-            CharAnimationType::StrafeLeftRun => self.animation_strafe_left_run.as_ref(),
-            CharAnimationType::StrafeRightRun => self.animation_strafe_right_run.as_ref(),
-            CharAnimationType::Jump => self.animation_jump.as_ref(),
-            CharAnimationType::Crouch => self.animation_crouch.as_ref(),
-            CharAnimationType::Roll => self.animation_roll.as_ref(),
-            CharAnimationType::Fall => self.animation_fall_idle.as_ref(),
-            CharAnimationType::FallLanding => self.animation_fall_landing.as_ref(),
-            CharAnimationType::Action => self.animation_actions.get(index),
+            CharAnimationType::Idle => self.animations.idle.as_ref(),
+            CharAnimationType::Walk => self.animations.walk.as_ref(),
+            CharAnimationType::Run => self.animations.run.as_ref(),
+            CharAnimationType::StrafeLeftWalk => self.animations.strafe_left_walk.as_ref(),
+            CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.as_ref(),
+            CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.as_ref(),
+            CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.as_ref(),
+            CharAnimationType::Jump => self.animations.jump.as_ref(),
+            CharAnimationType::Crouch => self.animations.crouch.as_ref(),
+            CharAnimationType::Roll => self.animations.roll.as_ref(),
+            CharAnimationType::Fall => self.animations.fall_idle.as_ref(),
+            CharAnimationType::FallLanding => self.animations.fall_landing.as_ref(),
+            CharAnimationType::Action => self.animations.actions.get(index),
         };
 
         if mix_type == AnimationMixing::Fade && animation_item.is_some()
         {
             let animation_item = animation_item.clone().unwrap();
 
-            if let Some(animation_blending) = &self.animation_blending
+            if let Some(animation_blending) = &self.animations.blending
             {
                 component_downcast_mut!(animation_blending, AnimationBlending);
                 animation_blending.speed = self.fade_speed;
@@ -656,22 +679,22 @@ impl SceneController for CharacterController
         self.node = None;
         self.animation_node = None;
 
-        self.animation_idle = None;
-        self.animation_walk = None;
-        self.animation_run = None;
-        self.animation_jump = None;
-        self.animation_crouch = None;
-        self.animation_roll = None;
-        self.animation_strafe_left_walk = None;
-        self.animation_strafe_right_walk = None;
-        self.animation_strafe_left_run = None;
-        self.animation_strafe_right_run = None;
-        self.animation_fall_idle = None;
-        self.animation_fall_landing = None;
+        self.animations.idle = None;
+        self.animations.walk = None;
+        self.animations.run = None;
+        self.animations.jump = None;
+        self.animations.crouch = None;
+        self.animations.roll = None;
+        self.animations.strafe_left_walk = None;
+        self.animations.strafe_right_walk = None;
+        self.animations.strafe_left_run = None;
+        self.animations.strafe_right_run = None;
+        self.animations.fall_idle = None;
+        self.animations.fall_landing = None;
 
-        self.animation_actions.clear();
+        self.animations.actions.clear();
 
-        self.animation_blending = None;
+        self.animations.blending = None;
 
         self.transformation = None;
     }
@@ -688,6 +711,21 @@ impl SceneController for CharacterController
         }
 
         false
+    }
+
+    fn serializable(&self) -> bool
+    {
+        true
+    }
+
+    fn deserializable(&self) -> bool
+    {
+        true
+    }
+
+    fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene)
+    {
+        self.auto_setup(scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
     }
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool

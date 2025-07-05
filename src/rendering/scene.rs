@@ -697,15 +697,18 @@ impl Scene
 
         for joint in &node.skin
         {
-            let joint = joint.read().unwrap();
-            let joint_component = joint.find_component::<Joint>();
-            if let Some(joint_component) = joint_component
+            if let Some(joint) = joint.as_ref()
             {
-                component_downcast!(joint_component, Joint);
-
-                if joint_component.get_data_tracker().changed()
+                let joint = joint.read().unwrap();
+                let joint_component = joint.find_component::<Joint>();
+                if let Some(joint_component) = joint_component
                 {
-                    return true;
+                    component_downcast!(joint_component, Joint);
+
+                    if joint_component.get_data_tracker().changed()
+                    {
+                        return true;
+                    }
                 }
             }
         }

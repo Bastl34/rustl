@@ -191,7 +191,7 @@ impl Component for TransformationAnimation
         self._update(node.find_component::<Transformation>(), input_manager, time, frame_scale, frame);
     }
 
-    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
     {
         let instance = instance.read().unwrap();
         self._update(instance.find_component::<Transformation>(), input_manager, time, frame_scale, frame);

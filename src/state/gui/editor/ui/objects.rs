@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length, option_or_id::OptionOrId}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -655,24 +655,27 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     });
 
     // Skeleton
-    if let Some(skin_node) = node.read().unwrap().skin.first()
+    if let Some(skin_node_or_id) = node.read().unwrap().skin.first()
     {
-        collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", None, |ui|
+        if let Some(skin_node_arc) = skin_node_or_id.as_ref()
         {
-            ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
-            ui.horizontal(|ui|
+            collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", None, |ui|
             {
-                ui.label("Link to Skeleton: ");
-                if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
+                ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
+                ui.horizontal(|ui|
                 {
-                    editor_state.de_select_current_item(state);
+                    ui.label("Link to Skeleton: ");
+                    if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
+                    {
+                        editor_state.de_select_current_item(state);
 
-                    editor_state.selected_object = format!("objects_{}", skin_node.read().unwrap().id);
-                    editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Object;
-                }
+                        editor_state.selected_object = format!("objects_{}", skin_node_arc.read().unwrap().id);
+                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_type = SelectionType::Object;
+                    }
+                });
             });
-        });
+        }
     }
 
     // statistics
@@ -768,9 +771,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         // parenting
         ui.horizontal(|ui|
         {
-            let parent: Option<std::sync::Arc<std::sync::RwLock<Box<crate::state::scene::node::Node>>>> = node.read().unwrap().parent.clone();
+            let parent = node.read().unwrap().parent.clone();
             let mut parent_name = "".to_string();
-            if let Some(parent) = parent
+            if let Some(parent) = parent.as_ref()
             {
                 parent_name = parent.read().unwrap().name.clone();
             }
@@ -819,7 +822,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                     {
                         let parent = node.read().unwrap().parent.clone();
 
-                        if let Some(parent) = parent
+                        if let Some(parent) = parent.as_ref()
                         {
                             let parent = parent.read().unwrap();
                             editor_state.selected_object = format!("objects_{}", parent.id);

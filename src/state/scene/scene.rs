@@ -6,6 +6,7 @@ use anyhow::Ok;
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
 use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::{components::{component::Component, sound::Sound}, utilities::tags}}};
 
@@ -42,12 +43,13 @@ impl ScenePickRes
 }
 
 
+#[derive(Serialize, Deserialize)]
 pub struct SceneData
 {
     pub max_lights: u32,
-    pub environment_texture: Option<TextureState>,
+    pub environment_texture: Option<TextureState>, // TODO reuse loaded one
     pub gamma: Option<f32>,
-    pub exposure: Option<f32>
+    pub exposure: Option<f32>,
 }
 
 pub struct Scene
@@ -70,12 +72,14 @@ pub struct Scene
     pub materials: HashMap<u64, MaterialItem>,
     pub sound_sources: HashMap<String, SoundSourceItem>,
 
+    // TODO: check and use serializeable and deserializable from SceneController trait <----------------------
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
     pub post_controller: Vec<SceneControllerBox>, // after scene updates
 
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
 }
+
 
 impl Scene
 {

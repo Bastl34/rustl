@@ -18,7 +18,7 @@ pub enum ExtraType
     Float64(f64)
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct Extras
 {
     pub extras: HashMap<String, ExtraType>,
