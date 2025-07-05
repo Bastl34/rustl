@@ -2,7 +2,7 @@ use std::{mem::swap, collections::HashMap};
 
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
-use crate::{render_item_impl_default, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, scene::{components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}, texture::TextureItem}}};
+use crate::{render_item_impl_default, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
 use super::{texture::{Texture, TextureFormat, TextureTransform}, uniform, wgpu::WGpu};
 

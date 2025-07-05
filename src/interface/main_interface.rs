@@ -61,7 +61,7 @@ impl MainInterface
 
             wgpu = WGpu::new(window.clone(), state).await;
 
-            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.adapter.max_msaa_samples));
+            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.rendering_adapter.max_msaa_samples));
             samlpes = *(state.rendering.msaa.get_ref());
 
             wgpu.create_msaa_texture(samlpes);

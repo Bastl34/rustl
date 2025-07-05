@@ -12,10 +12,10 @@ use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
-use crate::state::scene::texture::Texture;
+use crate::state::resources::texture::Texture;
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
-use crate::{state::scene::texture::TextureItem, helper};
+use crate::{state::resources::texture::TextureItem, helper};
 
 use super::component::{Component, ComponentItem, ComponentBase};
 

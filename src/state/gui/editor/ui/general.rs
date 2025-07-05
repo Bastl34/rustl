@@ -74,10 +74,10 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
             changed = ui.selectable_value(& mut msaa, 1, "1").changed() || changed;
 
-            if state.adapter.max_msaa_samples >= 2 { changed = ui.selectable_value(& mut msaa, 2, "2").changed() || changed; }
-            if state.adapter.max_msaa_samples >= 4 { changed = ui.selectable_value(& mut msaa, 4, "4").changed() || changed; }
-            if state.adapter.max_msaa_samples >= 8 { changed = ui.selectable_value(& mut msaa, 8, "8").changed() || changed; }
-            if state.adapter.max_msaa_samples >= 16 { changed = ui.selectable_value(& mut msaa, 16, "16").changed() || changed; }
+            if state.rendering_adapter.max_msaa_samples >= 2 { changed = ui.selectable_value(& mut msaa, 2, "2").changed() || changed; }
+            if state.rendering_adapter.max_msaa_samples >= 4 { changed = ui.selectable_value(& mut msaa, 4, "4").changed() || changed; }
+            if state.rendering_adapter.max_msaa_samples >= 8 { changed = ui.selectable_value(& mut msaa, 8, "8").changed() || changed; }
+            if state.rendering_adapter.max_msaa_samples >= 16 { changed = ui.selectable_value(& mut msaa, 16, "16").changed() || changed; }
 
             if changed
             {
@@ -89,7 +89,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         {
             ui.label("Max Texture Res:");
 
-            let max = state.adapter.max_texture_resolution;
+            let max = state.rendering_adapter.max_texture_resolution;
             let mut current = if let Some(max_texture_resolution) = state.rendering.max_texture_resolution { max_texture_resolution } else { max };
 
             let mut possibilities = vec![];

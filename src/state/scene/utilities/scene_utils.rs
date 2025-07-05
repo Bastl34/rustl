@@ -2,7 +2,7 @@
 
 use std::{sync::{RwLock, Arc}, path::Path};
 
-use crate::{component_downcast_mut, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{resources::{sound_source::SoundSource, texture::{Texture, TextureItem}}, scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>

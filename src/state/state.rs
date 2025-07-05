@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::VecDeque, rc::Rc, sync::{Arc, RwLock}};
+use std::{cell::RefCell, collections::{HashMap, VecDeque}, rc::Rc, sync::{Arc, RwLock}};
 
 use instant::Instant;
 use nalgebra::Vector3;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem};
+use crate::{helper::{change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::resources::{sound_source::SoundSourceItem, texture::TextureItem}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -23,13 +23,13 @@ pub fn get_delta_t(frame_scale: f32) -> f32
     frame_scale / REFERENCE_UPDATE_FRAMES
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Project
 {
     pub name: String,
 }
 
-pub struct AdapterFeatures
+pub struct RenderingAdapterFeatures
 {
     pub name: String,
     pub driver: String,
@@ -42,7 +42,7 @@ pub struct AdapterFeatures
     pub max_supported_texture_resolution: u32
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Rendering
 {
     pub clear_color: ChangeTracker<Vector3<f32>>,
@@ -93,11 +93,29 @@ pub struct Statistics
     pub frame: u64,
 }
 
+pub struct Resources
+{
+    pub textures: HashMap<String, TextureItem>,
+    pub sound_sources: HashMap<String, SoundSourceItem>,
+}
+
+impl Resources
+{
+    pub fn new() -> Resources
+    {
+        Resources
+        {
+            textures: HashMap::new(),
+            sound_sources: HashMap::new(),
+        }
+    }
+}
+
 pub struct State
 {
     pub project: Project,
 
-    pub adapter: AdapterFeatures,
+    pub rendering_adapter: RenderingAdapterFeatures,
     pub rendering: Rendering,
     pub input_manager: InputManager,
     pub audio_device: AudioDeviceItem,
@@ -161,7 +179,7 @@ impl State
             {
                 name: "Uknown".to_string(),
             },
-            adapter: AdapterFeatures
+            rendering_adapter: RenderingAdapterFeatures
             {
                 name: String::new(),
                 driver: String::new(),
@@ -333,7 +351,7 @@ impl State
             return max_tex_resolution;
         }
 
-        self.adapter.max_texture_resolution
+        self.rendering_adapter.max_texture_resolution
     }
 
     pub fn update(&mut self, time: u128, time_delta: f32, frame: u64)
@@ -349,12 +367,12 @@ impl State
     {
         println!("");
         println!("ADAPTER:");
-        println!(" - adapter: {}", self.adapter.name);
-        println!(" - driver: {}", self.adapter.driver);
-        println!(" - driver info: {}", self.adapter.driver_info);
-        println!(" - backend: {}", self.adapter.backend);
-        println!(" - storage_buffer_array_support: {}", self.adapter.storage_buffer_array_support);
-        println!(" - max msaa_samples: {}", self.adapter.max_msaa_samples);
+        println!(" - adapter: {}", self.rendering_adapter.name);
+        println!(" - driver: {}", self.rendering_adapter.driver);
+        println!(" - driver info: {}", self.rendering_adapter.driver_info);
+        println!(" - backend: {}", self.rendering_adapter.backend);
+        println!(" - storage_buffer_array_support: {}", self.rendering_adapter.storage_buffer_array_support);
+        println!(" - max msaa_samples: {}", self.rendering_adapter.max_msaa_samples);
 
         println!("");
 

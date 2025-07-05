@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use egui::{Color32, RichText, Ui};
 use rfd::FileDialog;
 
-use crate::{helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::sound::Sound, scene::Scene, sound_source::SoundSourceItem}, state::State}};
+use crate::{helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::{generic_items::collapse_with_title, info_box::info_box}}, resources::sound_source::SoundSourceItem, scene::{components::sound::Sound, scene::Scene}, state::State}};
 
 use crate::state::gui::editor::ui::dialogs::load_sound_dialog;
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};

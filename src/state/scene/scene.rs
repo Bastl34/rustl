@@ -8,9 +8,9 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::{components::{component::Component, sound::Sound}, utilities::tags}}};
+use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, resources::{sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
@@ -315,9 +315,9 @@ impl Scene
             return self.sound_sources.get_mut(&hash).unwrap().clone();
         }
 
-        let texture = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
+        let sound_source = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
 
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
+        let arc = Arc::new(RwLock::new(Box::new(sound_source)));
 
         self.sound_sources.insert(hash, arc.clone());
 

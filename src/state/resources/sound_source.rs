@@ -4,9 +4,7 @@ use std::{fs, io::Cursor, sync::{Arc, RwLock}};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor}, output::audio_device::AudioDeviceItem};
-
-use super::manager::id_manager;
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor}, output::audio_device::AudioDeviceItem, state::scene::manager::id_manager};
 
 pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 

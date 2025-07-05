@@ -2,7 +2,7 @@ use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::{component::Component, material::{Material, TextureType}}, scene::Scene, texture::TextureItem}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::{components::{component::Component, material::Material}, scene::Scene}, state::State}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 

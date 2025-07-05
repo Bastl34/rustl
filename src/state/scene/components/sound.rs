@@ -7,8 +7,8 @@ use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
-use crate::state::scene::sound_source::Decodable;
+use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}}};
+use crate::state::resources::sound_source::Decodable;
 
 use super::component::{Component, ComponentBase, ComponentItem};
 

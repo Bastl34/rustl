@@ -6,9 +6,7 @@ use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayIm
 use nalgebra::{Vector2, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
-
-use super::manager::id_manager;
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::manager::id_manager}};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 

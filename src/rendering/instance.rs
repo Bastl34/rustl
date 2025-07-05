@@ -73,7 +73,6 @@ impl Instance
                     format: wgpu::VertexFormat::Float32x4,
                 },
 
-
                 // ***** highlight *****
                 wgpu::VertexAttribute
                 {
