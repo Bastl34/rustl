@@ -179,6 +179,13 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     }));
 
     // ********** cleanup **********
+    let mut cleanup_map = HashMap::new();
+
+    // add cleanup textures to map
+    for texture in &clear_textures
+    {
+        cleanup_map.insert(texture.read().unwrap().id, texture.clone());
+    }
 
     // check if textures where loaded which are not used by any material
     for texture in loaded_textures
@@ -196,14 +203,14 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
         if !used
         {
-            clear_textures.push(texture.0.clone());
+            cleanup_map.insert(texture.0.read().unwrap().id, texture.0.clone());
         }
     }
 
     println!("cleanup unused textures: {}", clear_textures.len());
     execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
     {
-        for clear_texture in &clear_textures
+        for (_, clear_texture) in &cleanup_map
         {
             println!(" - texture: {} ({})", clear_texture.read().unwrap().name, clear_texture.read().unwrap().id);
             state.delete_texture_by_id(clear_texture.read().unwrap().id);
