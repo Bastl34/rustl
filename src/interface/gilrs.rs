@@ -7,12 +7,12 @@ pub fn gilrs_initialize(state: &mut State, gilrs: &mut Gilrs)
     for (id, gamepad) in gilrs.gamepads()
     {
         let id: usize = id.into();
-        let mut gamepad_input = state.input_manager.gamepads.get_mut(&id);
+        let mut gamepad_input = state.io.input_manager.gamepads.get_mut(&id);
 
         if gamepad_input.is_none()
         {
-            state.input_manager.gamepads.insert(id, Gamepad::new(id, gamepad.name().to_string()));
-            gamepad_input = state.input_manager.gamepads.get_mut(&id);
+            state.io.input_manager.gamepads.insert(id, Gamepad::new(id, gamepad.name().to_string()));
+            gamepad_input = state.io.input_manager.gamepads.get_mut(&id);
         }
 
         let gamepad_input = gamepad_input.unwrap();
@@ -23,7 +23,7 @@ pub fn gilrs_initialize(state: &mut State, gilrs: &mut Gilrs)
     }
 
     // delete old disconnected gamepads
-    state.input_manager.gamepads.retain(|_, gamepad|
+    state.io.input_manager.gamepads.retain(|_, gamepad|
     {
         !gamepad.can_be_deleted()
     });
@@ -36,7 +36,7 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
     while let Some(gilrs::Event { id, event, time: _ , .. }) = gilrs.next_event()
     {
         let id: usize = id.into();
-        let gamepad = state.input_manager.gamepads.get_mut(&id);
+        let gamepad = state.io.input_manager.gamepads.get_mut(&id);
 
         if gamepad.is_none()
         {

@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, input::input_manager::InputManager};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::state::InputOutput};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -264,7 +264,7 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> bool
+    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> bool
     {
         let node;
         {
@@ -301,7 +301,7 @@ impl Instance
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.as_ref().cloned(), instance, input_manager, time, frame_scale, frame);
+            component_write.update_instance(node.as_ref().cloned(), instance, io, time, frame_scale, frame);
         }
 
         // ***** reassign components *****

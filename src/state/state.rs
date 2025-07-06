@@ -93,14 +93,20 @@ pub struct Statistics
     pub frame: u64,
 }
 
+pub struct InputOutput
+{
+    pub input_manager: InputManager,
+    pub audio_device: AudioDeviceItem,
+}
+
 pub struct State
 {
     pub project: Project,
 
     pub rendering_adapter: RenderingAdapterFeatures,
     pub rendering: Rendering,
-    pub input_manager: InputManager,
-    pub audio_device: AudioDeviceItem,
+
+    pub io : InputOutput,
 
     pub textures: HashMap<String, TextureItem>,
     pub sound_sources: HashMap<String, SoundSourceItem>,
@@ -189,8 +195,11 @@ impl State
                 max_texture_resolution: None
             },
 
-            input_manager: InputManager::new(),
-            audio_device,
+            io: InputOutput
+            {
+                input_manager: InputManager::new(),
+                audio_device,
+            },
 
             textures: HashMap::new(),
             sound_sources: HashMap::new(),
@@ -300,7 +309,7 @@ impl State
             return self.sound_sources.get_mut(&hash).unwrap().clone();
         }
 
-        let sound_source = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
+        let sound_source = SoundSource::new(name, self.io.audio_device.clone(), &sound_bytes, extension);
 
         let arc = Arc::new(RwLock::new(Box::new(sound_source)));
 
@@ -540,7 +549,7 @@ impl State
         // update scenes
         for scene in &mut self.scenes
         {
-            scene.update(&mut self.input_manager, time, time_delta, frame);
+            scene.update(&mut self.io, time, time_delta, frame);
         }
 
         // check for delete later textures

@@ -3,7 +3,7 @@
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, component_downcast, helper::{change_tracker::ChangeTracker, math::{self}}, input::input_manager::InputManager, state::scene::{camera::CameraData, components::transformation::Transformation, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, component_downcast, helper::{change_tracker::ChangeTracker, math}, state::{scene::{camera::CameraData, components::transformation::Transformation, node::NodeItem, scene::Scene}, state::InputOutput}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -41,7 +41,7 @@ impl CameraController for FollowController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, node: Option<NodeItem>, _scene: &mut Scene, _input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, _frame_scale: f32) -> bool
+    fn update(&mut self, node: Option<NodeItem>, _scene: &mut Scene, _io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, _frame_scale: f32) -> bool
     {
         let mut change = false;
 

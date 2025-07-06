@@ -4,7 +4,7 @@ use std::any::Any;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{state::scene::node::NodeItem, input::input_manager::InputManager};
+use crate::{state::{scene::node::NodeItem, state::InputOutput}};
 
 pub type SceneControllerBox = Box<dyn SceneController + Send + Sync>;
 
@@ -25,7 +25,7 @@ pub trait SceneController: Any
 
     fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene);
 
-    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool;
+    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool;
 }
 
 #[derive(Serialize, Deserialize)]

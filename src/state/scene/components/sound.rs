@@ -7,7 +7,7 @@ use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 use crate::state::resources::sound_source::Decodable;
 
 use super::component::{Component, ComponentBase, ComponentItem};
@@ -487,12 +487,12 @@ impl Component for Sound
         Some(Arc::new(RwLock::new(Box::new(sound))))
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
         self._update(Some(node), None, false);
     }
 
-    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
         self._update(node, Some(instance), false);
     }

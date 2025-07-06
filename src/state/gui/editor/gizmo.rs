@@ -158,8 +158,8 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
         return;
     }
 
-    let input_active = state.input_manager.mouse.is_holding(MouseButton::Left)  || state.input_manager.touch.has_touches();
-    let first_action = state.input_manager.mouse.is_first_action(MouseButton::Left, state.stats.frame) || state.input_manager.touch.is_first_action(state.stats.frame);
+    let input_active = state.io.input_manager.mouse.is_holding(MouseButton::Left)  || state.io.input_manager.touch.has_touches();
+    let first_action = state.io.input_manager.mouse.is_first_action(MouseButton::Left, state.stats.frame) || state.io.input_manager.touch.is_first_action(state.stats.frame);
 
     // reset state if needed
     if editor_state.selected_gizmo.is_some() && !input_active
@@ -173,8 +173,8 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
         }
     }
 
-    let pointer_pos = state.input_manager.get_pointer_input().pos;
-    let pointer_pos_last = state.input_manager.get_pointer_input().last_pos;
+    let pointer_pos = state.io.input_manager.get_pointer_input().pos;
+    let pointer_pos_last = state.io.input_manager.get_pointer_input().last_pos;
     if pointer_pos.is_none() || pointer_pos_last.is_none()
     {
         return;
@@ -228,7 +228,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
     // set gizmo state based on axis
     if first_action && editor_state.selected_gizmo.is_none()
     {
-        let pick_res = pick_node(state, gizmo_position.clone(), state.input_manager.mouse.point.pos.unwrap(), false, true);
+        let pick_res = pick_node(state, gizmo_position.clone(), state.io.input_manager.mouse.point.pos.unwrap(), false, true);
         if let Some((_, pick_res)) = pick_res
         {
             let axis = pick_res.node.read().unwrap().name.clone();
@@ -369,7 +369,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                     }
 
                     // ********** snap to grid center **********
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+                    if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                     {
                         let bounding_info = node.read().unwrap().get_world_bounding_info(instance_id, true, None);
                         if let Some((b_min, b_max)) = bounding_info
@@ -390,7 +390,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                         }
                     }
                     // ********** bottom left snapping **********
-                    else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    else if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         let bounding_info = node.read().unwrap().get_world_bounding_info(instance_id, true, None);
                         if let Some((b_min, b_max)) = bounding_info
@@ -446,7 +446,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
     // set gizmo state based on axis
     if first_action && editor_state.selected_gizmo.is_none()
     {
-        let pick_res = pick_node(state, gizmo_rotation.clone(), state.input_manager.mouse.point.pos.unwrap(), false, true);
+        let pick_res = pick_node(state, gizmo_rotation.clone(), state.io.input_manager.mouse.point.pos.unwrap(), false, true);
         if let Some((_, pick_res)) = pick_res
         {
             let axis = pick_res.node.read().unwrap().name.clone();
@@ -529,7 +529,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                 {
                     let mut angle = signed_angle_between_points(&gizmo_pos, &p0, &p1, &plane_normal);
 
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         angle *= GIZMO_ROTATION_SLOW_FACTOR;
                     }
@@ -568,7 +568,7 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                     }
 
                     // ********** snap if needed **********
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+                    if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
                     {
                         let edit_transformation = find_transform_component(editor_state, state);
                         component_downcast_mut!(edit_transformation, Transformation);
@@ -625,7 +625,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
     // set gizmo state based on axis
     if first_action && editor_state.selected_gizmo.is_none()
     {
-        let pick_res = pick_node(state, gizmo_scale.clone(), state.input_manager.mouse.point.pos.unwrap(), false, true);
+        let pick_res = pick_node(state, gizmo_scale.clone(), state.io.input_manager.mouse.point.pos.unwrap(), false, true);
         if let Some((_, pick_res)) = pick_res
         {
             let axis = pick_res.node.read().unwrap().name.clone();
@@ -725,7 +725,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
                     };
 
                     // uniform scale for holding shift
-                    if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         scale_vec = Vector3::new(scale, scale, scale);
                         uniform_scale = true;
@@ -749,7 +749,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
                         editor_state.selected_object_gizmo_value = Some(scale);
                     }
 
-                    let snapping = state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo);
+                    let snapping = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo);
 
                     // ********** without snap **********
                     if !snapping
@@ -905,7 +905,7 @@ pub fn hover_gizmos(pointer_pos: Point2<f32>, editor_state: &mut EditorState, st
                 gizmo_node.write().unwrap().set_highlighted(false);
             }
 
-            if !state.input_manager.is_main_pointer_action_active()
+            if !state.io.input_manager.is_main_pointer_action_active()
             {
                 if let Some((_scene_id, pick_res)) = pick_node(state, gizmo_node, pointer_pos, false, true)
                 {

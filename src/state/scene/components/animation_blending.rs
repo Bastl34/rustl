@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::approx_zero, input::input_manager::InputManager, state::{scene::node::NodeItem, state::REFERENCE_UPDATE_FRAMES}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::approx_zero, state::{scene::node::NodeItem, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
@@ -84,7 +84,7 @@ impl Component for AnimationBlending
         None
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, time: u128, frame_scale: f32, _frame: u64)
     {
         //if (self.get_data().from.is_none() && self.get_data().to.is_none()) || !self.base.is_enabled
         if !self.base.is_enabled

@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{input_manager::InputManager, keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::get_delta_t}};
+use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -728,7 +728,7 @@ impl SceneController for CharacterController
         self.auto_setup(scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
     }
 
-    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
     {
         if self.node.is_none()
         {
@@ -749,7 +749,7 @@ impl SceneController for CharacterController
         let mut is_action = self.is_action();
 
         // ********** fly mode **********
-        if input_manager.keyboard.is_pressed(Key::Y)
+        if io.input_manager.keyboard.is_pressed(Key::Y)
         {
             self.fly_mode = !self.fly_mode;
 
@@ -790,9 +790,9 @@ impl SceneController for CharacterController
         }
 
         // ********** forward/backward **********
-        if !input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
+        if !io.input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
         {
-            if input_manager.keyboard.is_holding(Key::W) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            if io.input_manager.keyboard.is_holding(Key::W) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -802,7 +802,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { self.fly_speed } else { self.movement_speed };
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::S) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if io.input_manager.keyboard.is_holding(Key::S) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -811,7 +811,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::W) && input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if io.input_manager.keyboard.is_holding(Key::W) && io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -821,7 +821,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::S) && input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if io.input_manager.keyboard.is_holding(Key::S) && io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -836,15 +836,15 @@ impl SceneController for CharacterController
         // ********** left/right **********
         if !is_landing
         {
-            if input_manager.keyboard.is_holding(Key::A)
+            if io.input_manager.keyboard.is_holding(Key::A)
             {
-                if (!self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)) && !is_first_person
+                if (!self.strafe || io.input_manager.keyboard.is_holding(Key::W) || io.input_manager.keyboard.is_holding(Key::S)) && !is_first_person
                 {
                     rotation.y = self.rotation_speed;
                 }
                 else
                 {
-                    if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         if !self.fly_mode
                         {
@@ -864,15 +864,15 @@ impl SceneController for CharacterController
 
                 has_change = true;
             }
-            else if input_manager.keyboard.is_holding(Key::D)
+            else if io.input_manager.keyboard.is_holding(Key::D)
             {
-                if (!self.strafe || input_manager.keyboard.is_holding(Key::W) || input_manager.keyboard.is_holding(Key::S)) && !is_first_person
+                if (!self.strafe || io.input_manager.keyboard.is_holding(Key::W) || io.input_manager.keyboard.is_holding(Key::S)) && !is_first_person
                 {
                     rotation.y = -self.rotation_speed;
                 }
                 else
                 {
-                    if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                     {
                         if !self.fly_mode
                         {
@@ -895,9 +895,9 @@ impl SceneController for CharacterController
         }
 
         // ********** up/down **********
-        if input_manager.keyboard.is_holding(Key::C) && self.fly_mode
+        if io.input_manager.keyboard.is_holding(Key::C) && self.fly_mode
         {
-            if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 movement.y = -self.movement_speed_fast;
             }
@@ -909,9 +909,9 @@ impl SceneController for CharacterController
             has_change = true;
         }
 
-        if input_manager.keyboard.is_holding(Key::Space) && self.fly_mode
+        if io.input_manager.keyboard.is_holding(Key::Space) && self.fly_mode
         {
-            if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 movement.y = self.movement_speed_fast;
             }
@@ -924,7 +924,7 @@ impl SceneController for CharacterController
         }
 
         // ********** jump **********
-        if input_manager.keyboard.is_pressed_no_wait(Key::Space) && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && self.grounded
+        if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && self.grounded
         {
             let animation_speed = self.gravity / EARTH_GRAVITY;
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, animation_speed, false, false, true);
@@ -932,13 +932,13 @@ impl SceneController for CharacterController
             has_change = true;
         }
         // ********** crouch **********
-        else if (input_manager.keyboard.is_holding(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
+        else if (io.input_manager.keyboard.is_holding(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, 1.0, false, false, false);
             has_change = true;
         }
         // ********** roll **********
-        else if input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
+        else if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
             if movement.z > 0.0
             {
@@ -954,14 +954,14 @@ impl SceneController for CharacterController
         // ********** action **********
         else if approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key3) { self.start_animation(CharAnimationType::Action, 2, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key4) { self.start_animation(CharAnimationType::Action, 3, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
-            if input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key1) { self.start_animation(CharAnimationType::Action, 0, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key2) { self.start_animation(CharAnimationType::Action, 1, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key3) { self.start_animation(CharAnimationType::Action, 2, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key4) { self.start_animation(CharAnimationType::Action, 3, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
+            if io.input_manager.keyboard.is_pressed_no_wait(Key::Key5) { self.start_animation(CharAnimationType::Action, 4, AnimationMixing::Fade, 1.0, false, false, true); has_change = true;}
         }
         // ********** stop **********
-        else if input_manager.keyboard.is_pressed_no_wait(Key::Escape) && !self.fly_mode
+        else if io.input_manager.keyboard.is_pressed_no_wait(Key::Escape) && !self.fly_mode
         {
             self.start_animation(CharAnimationType::None, 0, AnimationMixing::Stop, 1.0, false, false, false);
             has_change = true;
@@ -974,7 +974,7 @@ impl SceneController for CharacterController
         is_rolling = self.is_rolling();
 
         // ********** idle **********
-        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !input_manager.keyboard.is_holding(Key::C) && !self.fly_mode
+        if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, 1.0, true, false, false);
         }

@@ -7,7 +7,7 @@ use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, input::input_manager::InputManager, state::{helper::render_item::RenderItemOption, scene::scene::Scene}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -1613,7 +1613,7 @@ impl Node
         self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
     }
 
-    pub fn update(node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
+    pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
     {
         // ***** copy all components *****
         let all_components;
@@ -1646,7 +1646,7 @@ impl Node
             }
 
             let mut component_write = component.write().unwrap();
-            component_write.update(node.clone(), input_manager, time, frame_scale, frame);
+            component_write.update(node.clone(), io, time, frame_scale, frame);
         }
 
         // ***** reassign components *****
@@ -1668,7 +1668,7 @@ impl Node
                 let node_read = node.read().unwrap();
                 for instance in node_read.instances.get_ref()
                 {
-                    if Instance::update(&instance, input_manager, time, frame_scale, frame)
+                    if Instance::update(&instance, io, time, frame_scale, frame)
                     {
                         updates += 1;
                     }
@@ -1697,7 +1697,7 @@ impl Node
         let node_read = node.read().unwrap();
         for child_node in &node_read.nodes
         {
-            let mut update_result = Self::update(child_node.clone(), input_manager, time, frame_scale, frame);
+            let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame);
 
             if update_result.delete_nodes.len() > 0
             {

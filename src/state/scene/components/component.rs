@@ -6,12 +6,12 @@ use std::any::Any;
 
 use serde::{Deserialize, Serialize};
 
-use crate::input::input_manager::InputManager;
 use crate::state::helper::render_item::RenderItemOption;
 use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
+use crate::state::state::InputOutput;
 
 pub type ComponentBox = Box<dyn Component + Send + Sync>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
@@ -30,8 +30,8 @@ pub trait Component: Any
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
-    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
 
     fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
@@ -191,11 +191,11 @@ macro_rules! component_impl_no_update
 {
     () =>
     {
-        fn update(&mut self, _node: NodeItem, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update(&mut self, _node: NodeItem, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
 
-        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };
@@ -206,7 +206,7 @@ macro_rules! component_impl_no_update_instance
 {
     () =>
     {
-        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };

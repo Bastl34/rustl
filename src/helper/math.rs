@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-
 use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
 use parry3d::query::Ray;
 

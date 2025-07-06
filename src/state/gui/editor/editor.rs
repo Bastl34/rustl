@@ -98,7 +98,7 @@ impl Editor
         // use or create new scene if needed
         let scene = if state.scenes.is_empty()
         {
-            let mut scene = crate::state::scene::scene::Scene::new("main scene", state.audio_device.clone());
+            let mut scene = crate::state::scene::scene::Scene::new("main scene");
             scene.add_defaults();
 
             state.scenes.push(Box::new(scene));
@@ -131,7 +131,7 @@ impl Editor
         self.apply_internal_asset_drag(state, &egui.ctx);
 
         // stop text input when the user wants to move/navigate in 3d space
-        if state.input_manager.mouse.is_any_button_holding()
+        if state.io.input_manager.mouse.is_any_button_holding()
         {
             egui.ctx.memory_mut(|mem| { mem.stop_text_input() });
         }
@@ -177,31 +177,31 @@ impl Editor
     pub fn update_modes(&mut self, state: &mut State)
     {
         // start try out mde
-        if !self.editor_state.try_mode && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.input_manager.keyboard.is_pressed(Key::R)
+        if !self.editor_state.try_mode && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::R)
         {
             self.editor_state.set_try_mode(state, true);
         }
 
         // end try out mode
-        if self.editor_state.try_mode && state.input_manager.keyboard.is_pressed(Key::Escape)
+        if self.editor_state.try_mode && state.io.input_manager.keyboard.is_pressed(Key::Escape)
         {
             self.editor_state.set_try_mode(state, false);
         }
 
         // hide ui
-        if state.input_manager.keyboard.is_pressed(Key::H)
+        if state.io.input_manager.keyboard.is_pressed(Key::H)
         {
             self.editor_state.visible = !self.editor_state.visible;
         }
 
         // full screen
-        if state.input_manager.keyboard.is_pressed(Key::F)
+        if state.io.input_manager.keyboard.is_pressed(Key::F)
         {
             state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
         }
 
         // escape
-        if state.input_manager.keyboard.is_pressed(Key::Escape)
+        if state.io.input_manager.keyboard.is_pressed(Key::Escape)
         {
             if self.editor_state.edit_mode.is_some()
             {
@@ -220,7 +220,7 @@ impl Editor
         }
 
         // create instance
-        if state.input_manager.keyboard.is_pressed(Key::I)
+        if state.io.input_manager.keyboard.is_pressed(Key::I)
         {
             if self.editor_state.selected_type == SelectionType::Object
             {
@@ -235,9 +235,9 @@ impl Editor
         self.copy_paste(state);
 
         // save project
-        if state.input_manager.keyboard.is_holding(Key::S) && (state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        if state.io.input_manager.keyboard.is_holding(Key::S) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
         {
-            if state.input_manager.keyboard.is_pressed_no_wait(Key::S)
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
                 json::export(state, (("data/".to_string()) + &self.editor_state.project_name).as_str());
             }
@@ -262,10 +262,10 @@ impl Editor
             *self.editor_state.copy_node_id.write().unwrap() = None;
         }
 
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+        if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
         {
             // copy
-            if state.input_manager.keyboard.is_pressed_no_wait(Key::C)
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::C)
             {
                 let (scene, node, _) = self.editor_state.get_selected_node(state);
 
@@ -291,14 +291,14 @@ impl Editor
             }
 
             // paste
-            if state.input_manager.keyboard.is_pressed_no_wait(Key::V)
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::V)
             {
                 // do not paste while loading
                 if *self.editor_state.loading.read().unwrap() { return; }
 
                 if let Some(copy_asset) = &self.editor_state.copy_asset
                 {
-                    let pos = state.input_manager.mouse.point.pos.unwrap();
+                    let pos = state.io.input_manager.mouse.point.pos.unwrap();
 
                     let copy_node_id = self.editor_state.copy_node_id.clone();
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
@@ -326,7 +326,7 @@ impl Editor
                 }
             }
         }
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.input_manager.keyboard.is_pressed_no_wait(Key::D)
+        if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.io.input_manager.keyboard.is_pressed_no_wait(Key::D)
         {
             // do not paste while loading
             if *self.editor_state.loading.read().unwrap() { return; }
@@ -344,7 +344,7 @@ impl Editor
 
             if let Some(source) = &node.source
             {
-                let pos = state.input_manager.mouse.point.pos.unwrap();
+                let pos = state.io.input_manager.mouse.point.pos.unwrap();
 
                 let copy_node_id = self.editor_state.copy_node_id.clone();
                 let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
@@ -383,15 +383,15 @@ impl Editor
         //if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
         if !self.editor_state.try_mode && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
-            let left_mouse_button = state.input_manager.mouse.clicked(MouseButton::Left);
-            let right_mouse_button = state.input_manager.mouse.clicked(MouseButton::Right);
-            let tapped = state.input_manager.touch.tapped_any().is_some();
+            let left_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Left);
+            let right_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Right);
+            let tapped = state.io.input_manager.touch.tapped_any().is_some();
 
-            let mut pos = state.input_manager.mouse.point.pos;
+            let mut pos = state.io.input_manager.mouse.point.pos;
 
-            if let Some(touch_id) = state.input_manager.touch.tapped_any()
+            if let Some(touch_id) = state.io.input_manager.touch.tapped_any()
             {
-                pos = state.input_manager.touch.get_touch_by_id(touch_id).unwrap().pos;
+                pos = state.io.input_manager.touch.get_touch_by_id(touch_id).unwrap().pos;
             }
 
             if left_mouse_button || right_mouse_button || tapped
@@ -544,8 +544,8 @@ impl Editor
     {
         if !self.editor_state.selected_object.is_empty()
         {
-            //if state.input_manager.keyboard.is_pressed(Key::X) || state.input_manager.keyboard.is_pressed(Key::Delete)
-            if state.input_manager.keyboard.is_pressed(Key::Delete) || state.input_manager.keyboard.is_pressed(Key::Backspace)
+            //if state.io.input_manager.keyboard.is_pressed(Key::X) || state.io.input_manager.keyboard.is_pressed(Key::Delete)
+            if state.io.input_manager.keyboard.is_pressed(Key::Delete) || state.io.input_manager.keyboard.is_pressed(Key::Backspace)
             {
                 // object
                 if self.editor_state.selected_type == SelectionType::Object
@@ -664,7 +664,7 @@ impl Editor
         // if its in rotation mode -> just end rotation mode on left click
         if let Some(EditMode::Rotate(start_pos, _, _, _)) = self.editor_state.edit_mode
         {
-            if state.input_manager.mouse.is_pressed(MouseButton::Left)
+            if state.io.input_manager.mouse.is_pressed(MouseButton::Left)
             {
                 self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
                 return;
@@ -672,14 +672,14 @@ impl Editor
         }
 
         // ********** mode change **********
-        if state.input_manager.keyboard.is_pressed(Key::G)
+        if state.io.input_manager.keyboard.is_pressed(Key::G)
         {
-            let start_pos = state.input_manager.mouse.point.pos.unwrap();
+            let start_pos = state.io.input_manager.mouse.point.pos.unwrap();
             self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
         }
-        if state.input_manager.keyboard.is_pressed(Key::R)
+        if state.io.input_manager.keyboard.is_pressed(Key::R)
         {
-            let start_pos = state.input_manager.mouse.point.pos.unwrap();
+            let start_pos = state.io.input_manager.mouse.point.pos.unwrap();
             self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
         }
 
@@ -693,9 +693,9 @@ impl Editor
                 EditMode::Rotate(pos, _, _, _) => { moving = false; start_pos = pos.clone(); },
             }
 
-            if state.input_manager.keyboard.is_pressed(Key::X)
+            if state.io.input_manager.keyboard.is_pressed(Key::X)
             {
-                if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                if !state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos.clone(), true, false, false)); }
                     else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos.clone(), true, false, false)); }
@@ -707,9 +707,9 @@ impl Editor
                 }
             }
 
-            if state.input_manager.keyboard.is_pressed(Key::Y)
+            if state.io.input_manager.keyboard.is_pressed(Key::Y)
             {
-                if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                if !state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, true, false)); }
                     else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, true, false)); }
@@ -721,9 +721,9 @@ impl Editor
                 }
             }
 
-            if state.input_manager.keyboard.is_pressed(Key::Z)
+            if state.io.input_manager.keyboard.is_pressed(Key::Z)
             {
-                if !state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                if !state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     if moving { self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, false, false, true)); }
                     else      { self.editor_state.edit_mode = Some(EditMode::Rotate  (start_pos, false, false, true)); }
@@ -770,7 +770,7 @@ impl Editor
             EditMode::Rotate(pos, _, _, _) => { start_pos = pos.clone(); },
         }
 
-        let pointer_pos = state.input_manager.get_pointer_input().pos;
+        let pointer_pos = state.io.input_manager.get_pointer_input().pos;
         if pointer_pos.is_none()
         {
             return;
@@ -813,14 +813,14 @@ impl Editor
         }
 
         // rotate with mouse wheel
-        if !approx_zero(state.input_manager.mouse.wheel_delta_y)
+        if !approx_zero(state.io.input_manager.mouse.wheel_delta_y)
         {
-            let delta = state.input_manager.mouse.wheel_delta_y.signum() * PI / 16.0;
+            let delta = state.io.input_manager.mouse.wheel_delta_y.signum() * PI / 16.0;
             let movement = Vector3::<f32>::new(delta, delta, delta);
             self.rotate_object(state, movement, false, true, false, false);
 
             // "consume" mouse wheel
-            state.input_manager.mouse.wheel_delta_y = 0.0;
+            state.io.input_manager.mouse.wheel_delta_y = 0.0;
         }
 
     }
@@ -839,7 +839,7 @@ impl Editor
 
         if apply_x
         {
-            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+            if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
             {
                 if movement.z.abs() >= angle_steps || !movement_check
                 {
@@ -849,7 +849,7 @@ impl Editor
                     use_rotation_vec = true;
                 }
             }
-            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 component_downcast!(edit_transformation, Transformation);
 
@@ -871,7 +871,7 @@ impl Editor
 
         if apply_y
         {
-            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+            if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
             {
                 if movement.x.abs() >= angle_steps || !movement_check
                 {
@@ -881,7 +881,7 @@ impl Editor
                     use_rotation_vec = true;
                 }
             }
-            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 component_downcast!(edit_transformation, Transformation);
 
@@ -903,7 +903,7 @@ impl Editor
 
         if apply_z
         {
-            if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+            if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
             {
                 if movement.x.abs() >= angle_steps || !movement_check
                 {
@@ -912,7 +912,7 @@ impl Editor
                     use_rotation_vec = true;
                 }
             }
-            else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
             {
                 component_downcast!(edit_transformation, Transformation);
 
@@ -951,7 +951,7 @@ impl Editor
         let grid_size = self.editor_state.grid_size;
 
         // ********** enable movement if nothing is selected **********
-        if self.editor_state.selected_object.is_empty() || self.editor_state.selected_type != SelectionType::Object || state.input_manager.mouse.point.pos.is_none()
+        if self.editor_state.selected_object.is_empty() || self.editor_state.selected_type != SelectionType::Object || state.io.input_manager.mouse.point.pos.is_none()
         {
             self.editor_state.edit_moving = false;
 
@@ -964,10 +964,10 @@ impl Editor
             return;
         }
 
-        let mut pointer_pos = state.input_manager.mouse.point.pos;
-        let mut pointer_velocity = state.input_manager.mouse.point.velocity;
+        let mut pointer_pos = state.io.input_manager.mouse.point.pos;
+        let mut pointer_velocity = state.io.input_manager.mouse.point.velocity;
 
-        if let Some(touch) = state.input_manager.touch.get_first_touch()
+        if let Some(touch) = state.io.input_manager.touch.get_first_touch()
         {
             pointer_pos = touch.pos;
             pointer_velocity = touch.velocity;
@@ -1011,7 +1011,7 @@ impl Editor
         // ********** check that first interaction (after selection) was on the selected object **********
         let engine_frame = state.stats.frame;
 
-        if !self.editor_state.edit_moving && (state.input_manager.mouse.is_first_action(MouseButton::Left, engine_frame) || state.input_manager.mouse.is_first_action(MouseButton::Right, engine_frame) || state.input_manager.touch.is_first_action(engine_frame))
+        if !self.editor_state.edit_moving && (state.io.input_manager.mouse.is_first_action(MouseButton::Left, engine_frame) || state.io.input_manager.mouse.is_first_action(MouseButton::Right, engine_frame) || state.io.input_manager.touch.is_first_action(engine_frame))
         {
             let pick_res = pick(state, pos, false, false, false, None);
 
@@ -1030,7 +1030,7 @@ impl Editor
             }
         }
 
-        else if self.editor_state.edit_moving && !state.input_manager.mouse.is_holding(MouseButton::Left) && !state.input_manager.mouse.is_holding(MouseButton::Right) && !state.input_manager.touch.has_touches()
+        else if self.editor_state.edit_moving && !state.io.input_manager.mouse.is_holding(MouseButton::Left) && !state.io.input_manager.mouse.is_holding(MouseButton::Right) && !state.io.input_manager.touch.has_touches()
         {
             self.editor_state.edit_moving = false;
         }
@@ -1206,7 +1206,7 @@ impl Editor
         // see up ^
 
         // ********** snap to grid center **********
-        if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
+        if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
         {
             let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
             if let Some((b_min, b_max)) = bounding_info
@@ -1225,7 +1225,7 @@ impl Editor
             }
         }
         // ********** bottom left snapping **********
-        else if state.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+        else if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
         {
             let bounding_info = selected_node.read().unwrap().get_world_bounding_info(instance_id, true, None);
             if let Some((b_min, b_max)) = bounding_info

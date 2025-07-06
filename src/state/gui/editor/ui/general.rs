@@ -234,7 +234,7 @@ pub fn create_audio_settings(_editor_state: &mut EditorState, state: &mut State,
         let mut volume;
 
         {
-            let audio_device = state.audio_device.read().unwrap();
+            let audio_device = state.io.audio_device.read().unwrap();
             let audio_device_data = audio_device.data.get_ref();
 
             volume = audio_device_data.volume;
@@ -246,7 +246,7 @@ pub fn create_audio_settings(_editor_state: &mut EditorState, state: &mut State,
 
         if changed
         {
-            let mut audio_device = state.audio_device.write().unwrap();
+            let mut audio_device = state.io.audio_device.write().unwrap();
             let audio_device_data = audio_device.data.get_mut();
 
             audio_device_data.volume = volume;

@@ -4,8 +4,6 @@ use std::{path::{PathBuf, Path}, env};
 use std::fs::File;
 use std::io::prelude::*;
 
-use egui::epaint::tessellator::path;
-
 pub fn get_current_working_dir() -> std::io::Result<PathBuf>
 {
     env::current_dir()

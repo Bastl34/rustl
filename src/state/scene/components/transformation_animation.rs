@@ -2,7 +2,7 @@
 
 use nalgebra::{Vector3, Vector4};
 
-use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::{InstanceItemArc, NodeItem}};
+use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{keyboard::{get_keys_as_string_vec, Key}}, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
@@ -102,11 +102,11 @@ impl TransformationAnimation
         &mut self.data
     }
 
-    fn _update(&mut self, transform_component: Option<ComponentItem>, input_manager: &mut InputManager, _time: u128, frame_scale: f32, _frame: u64)
+    fn _update(&mut self, transform_component: Option<ComponentItem>, io: &mut InputOutput, _time: u128, frame_scale: f32, _frame: u64)
     {
         if let Some(keyboard_key) = self.keyboard_key
         {
-            if !input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
+            if !io.input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
             {
                 return;
             }
@@ -185,16 +185,16 @@ impl Component for TransformationAnimation
         None
     }
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
         let node = node.write().unwrap();
-        self._update(node.find_component::<Transformation>(), input_manager, time, frame_scale, frame);
+        self._update(node.find_component::<Transformation>(), io, time, frame_scale, frame);
     }
 
-    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
         let instance = instance.read().unwrap();
-        self._update(instance.find_component::<Transformation>(), input_manager, time, frame_scale, frame);
+        self._update(instance.find_component::<Transformation>(), io, time, frame_scale, frame);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)

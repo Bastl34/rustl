@@ -190,7 +190,7 @@ impl MainInterface
             }
 
             // reset input states
-            state.input_manager.reset();
+            state.io.input_manager.reset();
         }
 
         if let Some(app) = &mut self.app
@@ -204,7 +204,7 @@ impl MainInterface
         //init scene
         let state = &mut *(self.context.state.borrow_mut());
 
-        let mut scene = crate::state::scene::scene::Scene::new("main scene", state.audio_device.clone());
+        let mut scene = crate::state::scene::scene::Scene::new("main scene");
         scene.add_defaults();
         scene.main = true;
 
@@ -456,13 +456,13 @@ impl MainInterface
         // ******************** update inputs ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            state.input_manager.update();
+            state.io.input_manager.update();
         }
 
         // ******************** mouse visibility ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
+            let (visible, changed) = state.io.input_manager.mouse.visible.consume_borrow();
             if changed
             {
                 self.context.window.set_cursor_visible(*visible);
@@ -486,7 +486,7 @@ impl MainInterface
         // ******************** reset global change tracker ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            state.audio_device.write().unwrap().data.consume_change();
+            state.io.audio_device.write().unwrap().data.consume_change();
         }
 
         // ******************** frame time ********************
@@ -544,11 +544,11 @@ impl MainInterface
 
                     if event.state == ElementState::Pressed
                     {
-                        global_state.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
                     }
                     else
                     {
-                        global_state.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
@@ -556,31 +556,31 @@ impl MainInterface
                     // TODO: Check if windows/linux is able to catch left/right difference
                     if is_mac()
                     {
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
                     }
                     else
                     {
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
@@ -594,7 +594,7 @@ impl MainInterface
 
                     let button = winit_map_mouse_button(button);
 
-                    global_state.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
+                    global_state.io.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseWheel { device_id: _, delta, phase: _, ..} =>
                 {
@@ -602,13 +602,13 @@ impl MainInterface
                     {
                         winit::event::MouseScrollDelta::LineDelta(x, y) =>
                         {
-                            global_state.input_manager.mouse.set_wheel_delta_x(*x);
-                            global_state.input_manager.mouse.set_wheel_delta_y(*y);
+                            global_state.io.input_manager.mouse.set_wheel_delta_x(*x);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(*y);
                         },
                         winit::event::MouseScrollDelta::PixelDelta(delta) =>
                         {
-                            global_state.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
-                            global_state.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
                         },
                     }
                 },
@@ -619,7 +619,7 @@ impl MainInterface
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
-                    global_state.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                    global_state.io.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
                 },
                 winit::event::WindowEvent::Touch(touch) =>
                 {
@@ -642,12 +642,12 @@ impl MainInterface
                         winit::event::TouchPhase::Cancelled => PointState::Up,
                     };
 
-                    global_state.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
+                    global_state.io.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
                     global_state.in_focus = *focus;
-                    global_state.input_manager.reset();
+                    global_state.io.input_manager.reset();
                 },
                 winit::event::WindowEvent::DroppedFile(path) =>
                 {
@@ -671,7 +671,7 @@ impl MainInterface
             winit::event::DeviceEvent::MouseMotion { delta } =>
             {
                 let velocity = Vector2::<f32>::new(delta.0 as f32, -delta.1 as f32);
-                global_state.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
+                global_state.io.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
             },
             _ => {}
         }
@@ -682,7 +682,7 @@ impl MainInterface
         let global_state = &mut *(self.context.state.borrow_mut());
 
         // center mouse (needed on windows)
-        if !*global_state.input_manager.mouse.visible.get_ref() && !is_mac()
+        if !*global_state.io.input_manager.mouse.visible.get_ref() && !is_mac()
         {
             let window_size = self.context.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);

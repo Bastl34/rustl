@@ -290,12 +290,12 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
     let grid_size = editor_state.grid_size;
 
     // create instance
-    let move_up = state.input_manager.keyboard.is_pressed(Key::Plus);
-    let move_down = state.input_manager.keyboard.is_pressed(Key::Minus);
+    let move_up = state.io.input_manager.keyboard.is_pressed(Key::Plus);
+    let move_down = state.io.input_manager.keyboard.is_pressed(Key::Minus);
 
     let mut move_grid_y_to = None;
 
-    if state.input_manager.keyboard.is_pressed(Key::Numpad8)
+    if state.io.input_manager.keyboard.is_pressed(Key::Numpad8)
     {
         if let (Some(_), Some(node), instance_id) = editor_state.get_selected_node(state)
         {
@@ -306,7 +306,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             }
         }
     }
-    else if state.input_manager.keyboard.is_pressed(Key::Numpad2)
+    else if state.io.input_manager.keyboard.is_pressed(Key::Numpad2)
     {
         if let (Some(_), Some(node), instance_id) = editor_state.get_selected_node(state)
         {
@@ -317,7 +317,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             }
         }
     }
-    else if state.input_manager.keyboard.is_pressed(Key::Numpad0)
+    else if state.io.input_manager.keyboard.is_pressed(Key::Numpad0)
     {
         move_grid_y_to = Some(0.0);
     }

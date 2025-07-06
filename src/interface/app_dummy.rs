@@ -323,7 +323,7 @@ impl App for AppDummy
 
 
         let main_queue_clone = main_queue.clone();
-        let audio_device = state.audio_device.clone();
+        let audio_device = state.io.audio_device.clone();
 
         spawn_thread(move ||
         {

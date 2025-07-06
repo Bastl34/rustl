@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}};
 
 use egui::RichText;
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::math::approx_zero, input::input_manager::InputManager, state::scene::node::{InstanceItemArc, NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, helper::math::approx_zero, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 
 use super::component::{Component, ComponentBase, ComponentItem};
 
@@ -110,7 +110,7 @@ impl Delay
         self.start_time = None;
     }
 
-    fn _update(&mut self, component: Option<ComponentItem>, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, _frame: u64)
+    fn _update(&mut self, component: Option<ComponentItem>, _io: &mut InputOutput, time: u128, _frame_scale: f32, _frame: u64)
     {
         if component.is_none()
         {
@@ -196,21 +196,21 @@ impl Component for Delay
         Some(Arc::new(RwLock::new(Box::new(delay))))
     }
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
         if let Some(target_id) = self.target_id
         {
             let node = node.read().unwrap();
-            self._update(node.find_component_by_id(target_id), input_manager, time, frame_scale, frame);
+            self._update(node.find_component_by_id(target_id), io, time, frame_scale, frame);
         }
     }
 
-    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
         if let Some(target_id) = self.target_id
         {
             let instance = instance.read().unwrap();
-            self._update(instance.find_component_by_id(target_id), input_manager, time, frame_scale, frame);
+            self._update(instance.find_component_by_id(target_id), io, time, frame_scale, frame);
         }
     }
 

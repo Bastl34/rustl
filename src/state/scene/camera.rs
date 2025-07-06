@@ -6,7 +6,7 @@ use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, 
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
+use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, state::{helper::render_item::RenderItemOption, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
 
@@ -218,7 +218,7 @@ impl Camera
         self.init_matrices();
     }
 
-    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
     {
         let mut changed = false;
         let mut controller: Option<CameraControllerBox> = None;
@@ -231,7 +231,7 @@ impl Camera
                 let node = self.node.clone();
                 let data = self.get_data_mut();
 
-                let processed = controller.update(node, scene, input_manager, data, frame_scale);
+                let processed = controller.update(node, scene, io, data, frame_scale);
 
                 // re-calculate matrices on if there was a change
                 if processed

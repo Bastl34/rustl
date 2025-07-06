@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::{input_manager::InputManager, keyboard::{get_keys_as_string_vec, Key}}, state::scene::node::NodeItem};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::{keyboard::{get_keys_as_string_vec, Key}}, state::{scene::node::NodeItem, state::InputOutput}};
 use crate::helper::easing::{Easing, easing, get_easing_as_string_vec};
 
 use super::{component::{Component, ComponentBase}, morph_target::MorphTarget};
@@ -160,7 +160,7 @@ impl Component for MorphTargetAnimation
         Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, _time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, _time: u128, frame_scale: f32, _frame: u64)
     {
         if self.target_id.is_none() || !self.base.is_enabled
         {
@@ -169,7 +169,7 @@ impl Component for MorphTargetAnimation
 
         if let Some(keyboard_key) = self.keyboard_key
         {
-            if !input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
+            if !io.input_manager.keyboard.is_holding(Key::from_repr(keyboard_key).unwrap())
             {
                 return;
             }

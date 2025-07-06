@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::component_downcast_mut;
 use crate::state::scene::components::mesh::Mesh;
 use crate::state::scene::scene::Scene;
-use crate::{input::input_manager::InputManager, scene_controller_impl_default};
+use crate::state::state::InputOutput;
+use crate::scene_controller_impl_default;
 use crate::state::gui::helper::info_box::warn_box;
 
 use super::scene_controller::{SceneController, SceneControllerBase};
@@ -40,7 +41,7 @@ impl SceneController for GenericController
         true
     }
 
-    fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene)
+    fn init_after_deserialize(&mut self, _scene: &mut crate::state::scene::scene::Scene)
     {
     }
 
@@ -53,7 +54,7 @@ impl SceneController for GenericController
         false
     }
 
-    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, _input_manager: &mut InputManager, _frame_scale: f32) -> bool
+    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, _frame_scale: f32) -> bool
     {
         let mut updated = false;
 
@@ -88,7 +89,7 @@ impl SceneController for GenericController
             {
                 let (left, right) = cam.get_left_right_ear_positions();
 
-                let mut audio_device = scene.audio_device.write().unwrap();
+                let mut audio_device = io.audio_device.write().unwrap();
                 audio_device.data.get_mut().left_ear_pos = left;
                 audio_device.data.get_mut().right_ear_pos = right;
 

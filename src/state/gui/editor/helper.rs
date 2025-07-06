@@ -171,7 +171,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
 
 pub fn get_pointer_world_position(state: &State) -> Option<Point3<f32>>
 {
-    let pointer_pos = state.input_manager.get_pointer_input().pos;
+    let pointer_pos = state.io.input_manager.get_pointer_input().pos;
 
     if let Some(pointer_pos) = pointer_pos
     {

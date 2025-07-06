@@ -2,7 +2,7 @@
 
 use nalgebra::Matrix4;
 
-use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, state::scene::node::NodeItem};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, state::{scene::node::NodeItem, state::InputOutput}};
 
 use super::{component::{ComponentBase, Component}, transformation::Transformation};
 
@@ -200,7 +200,7 @@ impl Component for Joint
         None
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
         let local_trans = self.get_changed_local_transform(node.clone());
 

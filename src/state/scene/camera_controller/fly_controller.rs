@@ -4,7 +4,7 @@ use nalgebra::{Vector2, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, input_manager::InputManager, keyboard::{Key, Modifier}}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, keyboard::{Key, Modifier}}, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::InputOutput}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -82,7 +82,7 @@ impl CameraController for FlyController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, _node: Option<NodeItem>, scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
+    fn update(&mut self, _node: Option<NodeItem>, scene: &mut Scene, io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;
 
@@ -94,16 +94,16 @@ impl CameraController for FlyController
         {
             if
             (
-                input_manager.mouse.is_any_button_holding() && *input_manager.mouse.visible.get_ref()
+                io.input_manager.mouse.is_any_button_holding() && *io.input_manager.mouse.visible.get_ref()
             )
             ||
-                !*input_manager.mouse.visible.get_ref()
+                !*io.input_manager.mouse.visible.get_ref()
             {
-                angle_velocity = input_manager.mouse.point.velocity;
+                angle_velocity = io.input_manager.mouse.point.velocity;
 
-                if !*input_manager.mouse.visible.get_ref()
+                if !*io.input_manager.mouse.visible.get_ref()
                 {
-                    angle_velocity = input_manager.mouse.raw_velocity.velocity;
+                    angle_velocity = io.input_manager.mouse.raw_velocity.velocity;
                 }
 
                 angle_velocity.x *= self.mouse_sensitivity.x;
@@ -114,7 +114,7 @@ impl CameraController for FlyController
         // gamepad
         if self.gamepad_movement
         {
-            for (_, gamepad) in &mut input_manager.gamepads
+            for (_, gamepad) in &mut io.input_manager.gamepads
             {
                 if gamepad.is_axis_active(GamepadAxis::RightStickX)
                 {
@@ -167,34 +167,34 @@ impl CameraController for FlyController
         if self.keyboard_movement
         {
             let keys = vec![Key::W, Key::A, Key::S, Key::D, Key::Space, Key::C];
-            if input_manager.keyboard.is_holding_by_keys(&keys) || input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
+            if io.input_manager.keyboard.is_holding_by_keys(&keys) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)
             {
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::W)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::W)
                 {
                     movement.z = 1.0;
                 }
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::S)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::S)
                 {
                     movement.z = -1.0;
                 }
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::D)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::D)
                 {
                     movement.x = -1.0;
                 }
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::A)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::A)
                 {
                     movement.x = 1.0;
                 }
-                if input_manager.keyboard.is_holding(Key::Space)
+                if io.input_manager.keyboard.is_holding(Key::Space)
                 {
                     movement.y = 1.0;
                 }
-                //if input_manager.keyboard.is_holding_and_not_consumed(Key::C) || input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
-                if input_manager.keyboard.is_holding_and_not_consumed(Key::C)
+                //if io.input_manager.keyboard.is_holding_and_not_consumed(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::Ctrl)
+                if io.input_manager.keyboard.is_holding_and_not_consumed(Key::C)
                 {
                     movement.y = -1.0;
                 }
-                if input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
                 {
                     fast_movement = true;
                 }
@@ -204,7 +204,7 @@ impl CameraController for FlyController
         // gamepad
         if self.gamepad_movement
         {
-            for (_, gamepad) in &mut input_manager.gamepads
+            for (_, gamepad) in &mut io.input_manager.gamepads
             {
                 if gamepad.is_holding(GamepadButton::DPadLeft)
                 {

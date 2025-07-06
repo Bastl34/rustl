@@ -532,7 +532,7 @@ impl EditorState
         self.try_mode = try_out;
         self.visible = !try_out;
         state.rendering.fullscreen.set(try_out);
-        state.input_manager.mouse.visible.set(!try_out);
+        state.io.input_manager.mouse.visible.set(!try_out);
 
         if try_out
         {

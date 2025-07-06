@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::InputOutput}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -62,8 +62,6 @@ pub struct Scene
 
     data: ChangeTracker<SceneData>,
 
-    pub audio_device: AudioDeviceItem,
-
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
@@ -80,7 +78,7 @@ pub struct Scene
 
 impl Scene
 {
-    pub fn new(name: &str, audio_device: AudioDeviceItem) -> Scene
+    pub fn new(name: &str) -> Scene
     {
         Self
         {
@@ -98,8 +96,6 @@ impl Scene
                 gamma: None,
                 exposure: None,
             }),
-
-            audio_device,
 
             nodes: vec![],
             cameras: vec![],
@@ -130,7 +126,7 @@ impl Scene
         all_nodes.len()
     }
 
-    pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
         // check moved nodes (if a node has a parent -> remove it from scene nodes)
         // this can happen when a node parent was set via set_parent
@@ -158,7 +154,7 @@ impl Scene
         {
             if controller_item.get_base().is_enabled
             {
-                controller_item.update(self, input_manager, frame_scale);
+                controller_item.update(self, io, frame_scale);
             }
         }
 
@@ -168,7 +164,7 @@ impl Scene
         let mut delete_nodes = vec![];
         for node in &self.nodes
         {
-            let mut update_result = Node::update(node.clone(), input_manager, time, frame_scale, frame);
+            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame);
 
             if update_result.delete_nodes.len() > 0
             {
@@ -181,7 +177,7 @@ impl Scene
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
         {
-            cam.update(self, input_manager, frame_scale);
+            cam.update(self, io, frame_scale);
         }
 
         swap(&mut cameras, &mut self.cameras);
@@ -193,7 +189,7 @@ impl Scene
         {
             if controller_item.get_base().is_enabled
             {
-                controller_item.update(self, input_manager, frame_scale);
+                controller_item.update(self, io, frame_scale);
             }
         }
 
