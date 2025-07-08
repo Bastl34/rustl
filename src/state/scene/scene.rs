@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -224,9 +224,15 @@ impl Scene
         &mut self.data
     }
 
-    pub fn get_node_amount_recursive(&self) -> usize
+    pub fn get_node_amount_recursive(&self, include_internals: bool) -> usize
     {
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+
+        if !include_internals
+        {
+            return all_nodes.iter().filter(|node| !node.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+        }
+
         all_nodes.len()
     }
 
@@ -522,7 +528,7 @@ impl Scene
         let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
-        material_arc.write().unwrap().get_base_mut().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+        material_arc.write().unwrap().get_base_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
         self.add_material(&material_arc);
 
         material_arc

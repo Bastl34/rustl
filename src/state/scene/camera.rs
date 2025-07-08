@@ -6,7 +6,7 @@ use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, 
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, state::InputOutput}};
+use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
 
@@ -140,6 +140,8 @@ pub struct Camera
     pub enabled: bool,
 
     pub data: ChangeTracker<CameraData>,
+
+    pub tags: Tags,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<CameraControllerBox>,
@@ -287,6 +289,8 @@ impl Camera
                 view: Matrix4::<f32>::identity(),
                 view_inverse: Matrix4::<f32>::identity(),
             }),
+
+            tags: Tags::new(),
 
             controller: None,
             node: OptionOrId::None,

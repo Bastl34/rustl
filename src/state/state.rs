@@ -18,6 +18,9 @@ pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
+pub const ENGINE_INTERNAL_TAG_PREFX: &str = "__internal_";
+pub const ENGINE_INTERNAL_TAG: &str = "__internal_engine";
+
 pub fn get_delta_t(frame_scale: f32) -> f32
 {
     frame_scale / REFERENCE_UPDATE_FRAMES

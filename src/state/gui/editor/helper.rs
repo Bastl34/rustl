@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::State};
+use crate::state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG}};
 
 use super::editor_state::EditorState;
 
@@ -16,7 +16,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     let inner_predicate = predicate.clone();
     let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, _check_instance_id: Option<u64>| -> bool
     {
-        if node_arc.read().unwrap().tags.contains("internal") || node_arc.read().unwrap().tags.contains("editor_internal")
+        if node_arc.read().unwrap().tags.contains(ENGINE_INTERNAL_TAG) || node_arc.read().unwrap().tags.contains(EDITOR_INTERNAL_TAG)
         {
             return false;
         }
@@ -356,13 +356,13 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
     for node in all_child_nodes
     {
         let mut node = node.write().unwrap();
-        node.tags.insert_with_color_locked("editor_internal", tags::DEFAULT_RED_COLOR, true);
+        node.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
         let materials = node.find_components::<Material>();
         for material in materials
         {
             let mut material = material.write().unwrap();
-            material.get_base_mut().tags.insert_with_color_locked("editor_internal", tags::DEFAULT_RED_COLOR, true);
+            material.get_base_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
         }
     }
 }

@@ -10,6 +10,8 @@ use serde_json::Value;
 use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}}};
 
 
+const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
+
 pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     println!("load gltf file {}", path);
@@ -622,7 +624,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     scene_node.add_component(component.clone());
                 }
 
-                scene_node.extras.insert("_json_index", node_index);
+                scene_node.extras.insert(INTERNAL_JSON_INDEX, node_index);
 
                 // add material
                 if let Some(material_index) = material_index
@@ -676,7 +678,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
 
             let scene_node = Node::new(name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
-            scene_node.write().unwrap().extras.insert("_json_index", node_index);
+            scene_node.write().unwrap().extras.insert(INTERNAL_JSON_INDEX, node_index);
 
             // add transformation
             if !approx_zero_vec3(&translate) || !approx_zero_vec3(&rotation) || !approx_one_vec3(&scale)
@@ -771,7 +773,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
             // find target node
             for node in &all_nodes
             {
-                if let Some(json_index) = node.read().unwrap().extras.get::<usize>("_json_index")
+                if let Some(json_index) = node.read().unwrap().extras.get::<usize>(INTERNAL_JSON_INDEX)
                 {
                     if *json_index == target_node_index
                     {
@@ -940,7 +942,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
             {
                 let mut node = node_arc.write().unwrap();
 
-                let json_index = node.extras.get::<usize>("_json_index");
+                let json_index = node.extras.get::<usize>(INTERNAL_JSON_INDEX);
 
                 if let Some(json_index) = json_index
                 {

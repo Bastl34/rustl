@@ -19,6 +19,7 @@ pub enum ExtraType
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(transparent)]
 pub struct Extras
 {
     pub extras: HashMap<String, ExtraType>,

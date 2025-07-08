@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -22,8 +22,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         let name = node.name.clone();
         let node_id = node.id;
 
-        let is_internal_node = node.has_tag("internal") || node.has_tag("editor_internal");
-        let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_nodes);
+        let is_internal_node = node.has_tag(ENGINE_INTERNAL_TAG) || node.has_tag(EDITOR_INTERNAL_TAG);
+        let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_entries);
 
         let filter = editor_state.hierarchy_filter.to_lowercase();
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
+use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -15,8 +15,8 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let material = material.read().unwrap();
             let headline_name = format!("⚫ {}: {}", material_id, cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
 
-            let is_internal = material.get_base().tags.contains("internal") || material.get_base().tags.contains("editor_internal");
-            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_nodes);
+            let is_internal = material.get_base().tags.contains(ENGINE_INTERNAL_TAG) || material.get_base().tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
 
             let filter = editor_state.hierarchy_filter.to_lowercase();
             if !show_from_tags || !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()

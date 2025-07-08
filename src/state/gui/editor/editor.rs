@@ -19,6 +19,8 @@ const SCENES_DIR: &str = "scenes/";
 
 pub const MAX_NAME_LENGTH: usize = 24;
 
+pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
+
 pub struct Editor
 {
     pub editor_state: EditorState,
@@ -111,7 +113,7 @@ impl Editor
 
         let editor_utils = scene.add_empty_node("editor utils", None);
         {
-            editor_utils.write().unwrap().tags.insert_with_color_locked("editor_internal", tags::DEFAULT_RED_COLOR, true);
+            editor_utils.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
         }
 
         let editor_utils_id = editor_utils.read().unwrap().id;

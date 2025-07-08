@@ -4,6 +4,7 @@ use std::mem::swap;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::state::gui::editor::helper::get_pointer_world_position;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
+use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
@@ -424,7 +425,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     ui.horizontal(|ui|
     {
-        ui.checkbox(&mut editor_state.show_internal_nodes, "Show Internal Nodes").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+        ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
     });
 
     ui.separator();
@@ -522,6 +523,8 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
 {
     let scene_id = scene.id;
 
+    let show_internal = editor_state.show_internal_entries;
+
     // objects
     {
         let id = format!("objects_{}", scene.id);
@@ -531,7 +534,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive())).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive(show_internal))).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
 
                 if toggle.clicked()
                 {
@@ -572,9 +575,14 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
+                let mut cameras_amount = scene.cameras.len();
+                if !show_internal
+                {
+                    cameras_amount = scene.cameras.iter().filter(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                }
 
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("📷 Cameras ({})", scene.cameras.len())).color(Color32::LIGHT_RED).strong());
+                let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Camera { selection = true; } else { selection = false; }
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("📷 Cameras ({})", cameras_amount)).color(Color32::LIGHT_RED).strong());
 
                 if toggle.clicked()
                 {
@@ -614,8 +622,14 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
+                let mut lights_amount = scene.lights.get_ref().len();
+                if !show_internal
+                {
+                    lights_amount = scene.lights.get_ref().iter().filter(|light| !light.borrow().get_ref().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                }
+
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Light { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("💡 Lights ({})", scene.lights.get_ref().len())).color(Color32::YELLOW).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("💡 Lights ({})", lights_amount)).color(Color32::YELLOW).strong());
 
                 if toggle.clicked()
                 {
@@ -655,8 +669,14 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
+                let mut materials_amount = scene.materials.len();
+                if !show_internal
+                {
+                    materials_amount = scene.materials.iter().filter(|(_, material)| !material.read().unwrap().get_base().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                }
+
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Material { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", scene.materials.len())).color(Color32::GOLD).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎨 Materials ({})", materials_amount)).color(Color32::GOLD).strong());
 
                 if toggle.clicked()
                 {
@@ -694,6 +714,8 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
     let mipmapping = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
 
+    let show_internal = editor_state.show_internal_entries;
+
     // textures
     {
         let ui_id = ui.make_persistent_id("textures");
@@ -702,8 +724,14 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
+                let mut textures_amount = state.textures.len();
+                if !show_internal
+                {
+                    textures_amount = state.textures.iter().filter(|(_, texture)| !texture.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                }
+
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", state.textures.len())).color(Color32::LIGHT_BLUE).strong());
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🖼 Textures ({})", textures_amount)).color(Color32::LIGHT_BLUE).strong());
 
                 if toggle.clicked()
                 {
@@ -746,8 +774,14 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
+                let mut sound_sources_amount = state.sound_sources.len();
+                if !show_internal
+                {
+                    sound_sources_amount = state.sound_sources.iter().filter(|(_, sound_source)| !sound_source.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                }
+
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", state.sound_sources.len())).color(Color32::LIGHT_GRAY).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong()).clicked()
                 {
                     if selection
                     {

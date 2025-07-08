@@ -6,7 +6,7 @@ use image::{imageops, DynamicImage, GenericImageView, GrayImage, ImageFormat, Pi
 use nalgebra::{Vector2, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::manager::id_manager}};
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::tags::Tags}}};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
@@ -103,6 +103,7 @@ pub struct Texture
     pub name: String,
     pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
+    pub tags: Tags,
 
     pub data: ChangeTracker<TextureData>,
 
@@ -154,6 +155,7 @@ impl Texture
             name: "empty".to_string(),
             extension: None,
             hash: "".to_string(),
+            tags: Tags::new(),
 
             data: ChangeTracker::new(data),
 
@@ -229,6 +231,7 @@ impl Texture
             name: name.to_string(),
             extension,
             hash,
+            tags: Tags::new(),
 
             data: ChangeTracker::new(data),
 
@@ -302,6 +305,7 @@ impl Texture
             name: name.to_string(),
             extension: texture.extension.clone(),
             hash,
+            tags: texture.tags.clone(),
 
             data: ChangeTracker::new(data),
 

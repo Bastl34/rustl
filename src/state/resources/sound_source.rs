@@ -4,7 +4,7 @@ use std::{fs, io::Cursor, sync::{Arc, RwLock}};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor}, output::audio_device::AudioDeviceItem, state::scene::manager::id_manager};
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor}, output::audio_device::AudioDeviceItem, state::scene::{manager::id_manager, utilities::tags::Tags}};
 
 pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 
@@ -18,6 +18,7 @@ pub struct SoundSource
     pub name: String,
     pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a sound already loaded (in dynamic textires - this may does not get updates)
+    pub tags: Tags,
 
     #[serde(skip, default)]
     pub bytes: Arc<Vec<u8>>,
@@ -70,6 +71,7 @@ impl SoundSource
             name: name.to_string(),
             extension,
             hash,
+            tags: Tags::new(),
 
             audio_device,
 

@@ -136,7 +136,7 @@ pub struct EditorState
 
     pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
-    pub show_internal_nodes: bool,
+    pub show_internal_entries: bool,
 
     pub component_filter: String,
 
@@ -209,7 +209,7 @@ impl EditorState
 
             hierarchy_expand_all: true,
             hierarchy_filter: String::new(),
-            show_internal_nodes: false,
+            show_internal_entries: false,
 
             component_filter: String::new(),
 

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::helper::change_tracker::ChangeTracker;
+use crate::{helper::change_tracker::ChangeTracker, state::scene::utilities::tags::Tags};
 
 use super::manager::id_manager;
 
@@ -34,6 +34,8 @@ pub struct Light
 
     pub enabled: bool,
 
+    pub tags: Tags,
+
     pub pos: Point3<f32>,
     pub dir: Vector3<f32>,
     pub color: Vector3<f32>,
@@ -57,6 +59,8 @@ impl Light
 
             enabled: true,
 
+            tags: Tags::new(),
+
             pos: pos,
             dir: Vector3::<f32>::new(0.0, -1.0, 0.0),
             color: color,
@@ -78,6 +82,8 @@ impl Light
             name: name,
 
             enabled: true,
+
+            tags: Tags::new(),
 
             pos: pos,
             dir: dir,
@@ -101,6 +107,8 @@ impl Light
 
             enabled: true,
 
+            tags: Tags::new(),
+
             pos: pos,
             dir: dir,
             color: color,
@@ -122,6 +130,8 @@ impl Light
             name: name,
 
             enabled: true,
+
+            tags: Tags::new(),
 
             pos: Point3::<f32>::new(0.0, 0.0, 0.0),
             dir: dir,

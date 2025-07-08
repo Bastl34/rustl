@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde_json::{to_value, Map, Serializer, Value};
 
 use crate::state::scene::scene::Scene;
-use crate::state::state::State;
+use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
 use crate::helper::file::write_string_to_tile;
 
 fn insert_kv(obj: &mut Value, key: &str, val: Value)
@@ -37,16 +37,6 @@ pub fn export(state: &State, path: &str) -> bool
 
     let mut export = Value::Object(Map::new());
 
-    /*
-    let mut scenes = vec![];
-
-    for scene in &state.scenes
-    {
-        let scene_json = export_scene(scene);
-        scenes.push(scene_json);
-    }
-     */
-
     if let Value::Object(ref mut export) = export
     {
         // metadata
@@ -68,6 +58,8 @@ pub fn export(state: &State, path: &str) -> bool
         );
     }
 
+    clean_internal_fields(&mut export);
+
     let output = to_pretty_json_with_indent(&export, b"    ");
     if write_string_to_tile(format!("{}.json", path).as_str(), output).is_ok()
     {
@@ -77,18 +69,46 @@ pub fn export(state: &State, path: &str) -> bool
     false
 }
 
-/*
-pub fn export_scene(scene: &Scene) -> Value
+fn clean_internal_fields(value: &mut Value)
 {
-    let mut value = Value::Object(Map::new());
-
-    if let Value::Object(ref mut map) = value
+    match value
     {
-        map.insert("name".to_string(), Value::String("Alice".to_string()));
-        map.insert("age".to_string(), Value::Number(30.into()));
-        map.insert("active".to_string(), Value::Bool(true));
-    }
+        Value::Object(map) =>
+        {
+            // remove internal stuff from "extras"
+            if let Some(Value::Object(extras)) = map.get_mut("extras")
+            {
+                extras.retain(|k, _| !k.starts_with(ENGINE_INTERNAL_TAG_PREFX));
+            }
 
-    value
+            // remove internal nodes and entries
+            if let Some(Value::Object(tags)) = map.get("tags")
+            {
+                let has_internal_tag = tags.keys().any(|k| k.starts_with(ENGINE_INTERNAL_TAG_PREFX));
+                if has_internal_tag
+                {
+                    *value = Value::Null;
+                    return;
+                }
+            }
+
+            for (_k, v) in map.iter_mut()
+            {
+                clean_internal_fields(v);
+            }
+        }
+
+        Value::Array(arr) =>
+        {
+            for item in arr.iter_mut()
+            {
+                clean_internal_fields(item);
+            }
+
+            // remove all null values
+            arr.retain(|v| !v.is_null());
+        }
+
+        _ => {}
+    }
 }
-*/
