@@ -109,7 +109,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             if let Some(camera_id) = camera_id
                             {
                                 let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
-                                camera.node = Some(node.clone());
+                                camera.set_node(node.clone());
                             }
                         }
                         editor_state.pick_mode = PickType::None;

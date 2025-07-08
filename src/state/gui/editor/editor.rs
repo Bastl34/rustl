@@ -429,7 +429,7 @@ impl Editor
 
                         if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
                         {
-                            camera.node = Some(hit.node.clone());
+                            camera.set_node(hit.node.clone());
                         }
                     }
                     // pick parent target

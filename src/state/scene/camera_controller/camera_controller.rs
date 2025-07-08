@@ -4,14 +4,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::{scene::node::NodeItem, state::InputOutput};
 
-pub type CameraControllerBox = Box<dyn CameraController + Send + Sync>;
+//pub type CameraControllerBox = Box<dyn SerializableCameraController + Send + Sync>;
+pub type CameraControllerBox = Box<dyn CameraController>;
 
-pub trait CameraController: Any
+#[typetag::serde(tag = "type")]
+pub trait CameraController: Any + Send + Sync
 {
     fn get_base(&self) -> &CameraControllerBase;
     fn get_base_mut(&mut self) -> &mut CameraControllerBase;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn serializable(&self) -> bool { true }
+    fn deserializable(&self) -> bool { true }
 
     fn ui(&mut self, ui: &mut egui::Ui);
 
@@ -67,3 +72,33 @@ macro_rules! camera_controller_impl_default
         }
     };
 }
+
+#[macro_export]
+macro_rules! impl_unserializable
+{
+    ($t:ty) =>
+    {
+        impl serde::Serialize for $t
+        {
+            fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Err(serde::ser::Error::custom(concat!(stringify!($t), " cannot be serialized")))
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $t
+        {
+            fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                Err(serde::de::Error::custom(concat!(stringify!($t), " cannot be deserialized")))
+            }
+        }
+    };
+}
+
+// usage:
+// impl_unserializable!(MyCameraController);

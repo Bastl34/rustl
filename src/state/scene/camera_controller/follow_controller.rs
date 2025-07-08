@@ -37,6 +37,7 @@ impl FollowController
     }
 }
 
+#[typetag::serde]
 impl CameraController for FollowController
 {
     camera_controller_impl_default!();

@@ -159,6 +159,7 @@ impl TargetRotationController
 
 }
 
+#[typetag::serde]
 impl CameraController for TargetRotationController
 {
     camera_controller_impl_default!();

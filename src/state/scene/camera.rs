@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use std::{mem::swap, f32::consts::PI};
+use std::{f32::consts::PI, fmt, mem::swap};
 
 use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
-use serde::{Deserialize, Serialize};
+use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, state::{helper::render_item::RenderItemOption, state::InputOutput}};
+use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
 
@@ -94,6 +94,43 @@ pub struct CameraData
     pub view_inverse: Matrix4<f32>,
 }
 
+fn serialize_node<S>(node: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match node
+    {
+        OptionOrId::Some(node_item) =>
+        {
+            let guard = node_item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Camera
 {
     pub id: u64,
@@ -104,12 +141,100 @@ pub struct Camera
 
     pub data: ChangeTracker<CameraData>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<CameraControllerBox>,
-    pub node: Option<NodeItem>,
 
+    #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+
+    #[serde(skip, default)]
     pub render_item: RenderItemOption,
+
+    #[serde(skip, default)]
     pub bind_group_render_item: RenderItemOption,
 }
+
+impl Default for Camera
+{
+    fn default() -> Self
+    {
+        Camera::new("Default Camera".to_string())
+    }
+}
+
+/*
+impl Serialize for Camera
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("uuid", &self.uuid)?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("enabled", &self.enabled)?;
+        map.serialize_entry("data", &self.data)?;
+
+        map.serialize_entry("data", &self.data)?;
+        map.serialize_entry("controller", &self.controller)?;
+
+        if let Some(node) = self.node.as_ref()
+        {
+            map.serialize_entry("node", &node.read().unwrap().uuid)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Camera
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de>
+    {
+        struct CameraVisitor;
+
+        impl<'de> Visitor<'de> for CameraVisitor
+        {
+            type Value = Camera;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
+            {
+                formatter.write_str("struct Camera")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Camera, V::Error>
+            where V: MapAccess<'de>
+            {
+                let mut cam: Camera = Camera::default();
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                        "uuid" => cam.uuid = map.next_value()?,
+                        "name" => cam.name = map.next_value()?,
+                        "enabled" => cam.enabled = map.next_value()?,
+                        "data" => cam.data = map.next_value()?,
+                        "controller" => cam.controller = map.next_value()?,
+                        "node" => cam.node = OptionOrId::from_id_or_none(map.next_value()?),
+                        _ =>
+                        {
+                            // ignore
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+
+                Ok(cam)
+            }
+        }
+
+        deserializer.deserialize_map(CameraVisitor)
+    }
+}
+*/
 
 impl Camera
 {
@@ -164,7 +289,7 @@ impl Camera
             }),
 
             controller: None,
-            node: None,
+            node: OptionOrId::None,
 
             render_item: None,
             bind_group_render_item: None
@@ -179,6 +304,16 @@ impl Camera
     pub fn get_data_tracker(&self) -> &ChangeTracker<CameraData>
     {
         &self.data
+    }
+
+    pub fn set_node(&mut self, node: NodeItem)
+    {
+        self.node = OptionOrId::Some(node);
+    }
+
+    pub fn remove_node(&mut self)
+    {
+        self.node = OptionOrId::None;
     }
 
     pub fn get_forward(&self) -> Vector3<f32>
@@ -228,7 +363,7 @@ impl Camera
         {
             if controller.get_base().is_enabled
             {
-                let node = self.node.clone();
+                let node = self.node.as_ref().cloned();
                 let data = self.get_data_mut();
 
                 let processed = controller.update(node, scene, io, data, frame_scale);

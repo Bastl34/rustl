@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, input::{keyboard::{Key, Modifier}}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -240,7 +240,7 @@ impl CharacterController
         self.node_name = node_arc.read().unwrap().name.clone();
 
         let cam = cam.unwrap();
-        cam.node = Some(node_arc.clone());
+        cam.node = OptionOrId::Some(node_arc.clone());
         self.cam_name = cam.name.clone();
 
         let mut target_rotation_controller = TargetRotationController::default();

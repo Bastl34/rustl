@@ -116,7 +116,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
 
                 if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("remove target").clicked()
                 {
-                    camera.node = None;
+                    camera.remove_node();
                 }
             });
 

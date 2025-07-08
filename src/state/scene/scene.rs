@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::HashMap, mem::swap, sync::{Arc, RwLock}};
+use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}};
 
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
-use serde::{Deserialize, Serialize};
+use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::InputOutput}};
 
@@ -75,6 +75,110 @@ pub struct Scene
     pub lights_render_item: RenderItemOption,
 }
 
+impl Default for Scene
+{
+    fn default() -> Self
+    {
+        Scene::new("default")
+    }
+}
+
+impl Serialize for Scene
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("uuid", &self.uuid)?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("visible", &self.visible)?;
+        map.serialize_entry("main", &self.main)?;
+        map.serialize_entry("data", &self.data)?;
+
+        let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
+        let node_refs: Vec<&Node> = node_guards.iter().map(|guard| guard.as_ref()).collect();
+        map.serialize_entry("nodes", &node_refs)?;
+
+        let camera_refs: Vec<&Camera> = self.cameras.iter().map(|cam| cam.as_ref()).collect();
+        map.serialize_entry("cameras", &camera_refs)?;
+
+        let lights_guards: Vec<_> = self.lights.get_ref().iter().map(|cell| cell.borrow()).collect();
+        let lights_refs: Vec<&Light> = lights_guards.iter().map(|tracker| tracker.get_ref().as_ref()).collect();
+        map.serialize_entry("lights", &lights_refs)?;
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Scene
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de>
+    {
+        struct SceneVisitor;
+
+        impl<'de> Visitor<'de> for SceneVisitor
+        {
+            type Value = Scene;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
+            {
+                formatter.write_str("struct Scene")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Scene, V::Error>
+            where V: MapAccess<'de>
+            {
+                let mut scene = Scene::default();
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                        "uuid" => scene.uuid = map.next_value()?,
+                        "name" => scene.name = map.next_value()?,
+                        "visible" => scene.visible = map.next_value()?,
+                        "main" => scene.main = map.next_value()?,
+                        "data" => scene.data = map.next_value()?,
+                        "nodes" =>
+                        {
+                            scene.nodes = map.next_value()
+                            .into_iter()
+                            .map(|node| Arc::new(RwLock::new(Box::new(node))))
+                            .collect()
+                        }
+                        "cameras" =>
+                        {
+                            scene.cameras = map.next_value()
+                                .into_iter()
+                                .collect();
+                        }
+                        "lights" =>
+                        {
+                            scene.lights = ChangeTracker::new
+                            (
+                                map.next_value()
+                                    .into_iter()
+                                    .map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst))))
+                                    .collect()
+                            )
+                        }
+                        _ =>
+                        {
+                            // ignore
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                Ok(scene)
+            }
+        }
+
+        deserializer.deserialize_map(SceneVisitor)
+    }
+}
 
 impl Scene
 {
@@ -308,18 +412,19 @@ impl Scene
         // check camera targets and remove
         for camera in &mut self.cameras
         {
-            if let Some(cam_node) = camera.node.clone()
+            if let Some(cam_node) = camera.node.as_ref().cloned()
+
             {
                 if from_node_id.is_none()
                 {
-                    camera.node = None;
+                    camera.remove_node();
                 }
 
                 if let Some(node_id) = from_node_id
                 {
                     if cam_node.read().unwrap().id == node_id
                     {
-                        camera.node = None;
+                        camera.remove_node();
                     }
                 }
             }

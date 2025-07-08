@@ -37,6 +37,7 @@ pub fn export(state: &State, path: &str) -> bool
 
     let mut export = Value::Object(Map::new());
 
+    /*
     let mut scenes = vec![];
 
     for scene in &state.scenes
@@ -44,6 +45,7 @@ pub fn export(state: &State, path: &str) -> bool
         let scene_json = export_scene(scene);
         scenes.push(scene_json);
     }
+     */
 
     if let Value::Object(ref mut export) = export
     {
@@ -52,7 +54,18 @@ pub fn export(state: &State, path: &str) -> bool
         export.insert("rendering_settings".to_string(), to_value(&state.rendering).unwrap());
         export.insert("exporter_version".to_string(), Value::String("1.0.0".to_string()));
 
-        export.insert("scenes".to_string(), Value::Array(scenes));
+        //export.insert("scenes".to_string(), Value::Array(scenes));
+        export.insert
+        (
+            "scenes".to_string(),
+            Value::Array
+            (
+                state.scenes
+                    .iter()
+                    .map(|scene| serde_json::to_value(scene).unwrap())
+                    .collect(),
+            ),
+        );
     }
 
     let output = to_pretty_json_with_indent(&export, b"    ");
@@ -64,6 +77,7 @@ pub fn export(state: &State, path: &str) -> bool
     false
 }
 
+/*
 pub fn export_scene(scene: &Scene) -> Value
 {
     let mut value = Value::Object(Map::new());
@@ -77,3 +91,4 @@ pub fn export_scene(scene: &Scene) -> Value
 
     value
 }
+*/

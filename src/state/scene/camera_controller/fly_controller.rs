@@ -78,6 +78,7 @@ impl FlyController
     }
 }
 
+#[typetag::serde]
 impl CameraController for FlyController
 {
     camera_controller_impl_default!();
