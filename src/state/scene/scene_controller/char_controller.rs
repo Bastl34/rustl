@@ -4,7 +4,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{component_downcast, component_downcast_mut, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
@@ -103,6 +103,42 @@ impl Default for AnimationComponents
     }
 }
 
+fn serialize_node<S>(node: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match node
+    {
+        OptionOrId::Some(node_item) =>
+        {
+            let guard = node_item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct CharacterController
 {
@@ -144,8 +180,8 @@ pub struct CharacterController
 
     pub update_only_on_move: bool,
 
-    #[serde(skip, default)]
-    node: Option<NodeItem>, // TODO: serialize deserialize
+    #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
 
     #[serde(skip, default)]
     animation_node: Option<NodeItem>,
@@ -200,7 +236,7 @@ impl CharacterController
 
             update_only_on_move: false,
 
-            node: None,
+            node: OptionOrId::None,
             animation_node: None,
 
             animations: AnimationComponents::default(),
@@ -235,7 +271,7 @@ impl CharacterController
             return Some("auto setup failed - camera not found".to_string());
         }
 
-        self.node = Some(node.unwrap());
+        self.node = OptionOrId::Some(node.unwrap());
         let node_arc = self.node.clone().unwrap();
         self.node_name = node_arc.read().unwrap().name.clone();
 
@@ -670,13 +706,14 @@ impl CharacterController
     }
 }
 
+#[typetag::serde]
 impl SceneController for CharacterController
 {
     scene_controller_impl_default!();
 
     fn cleanup(&mut self)
     {
-        self.node = None;
+        self.node = OptionOrId::None;
         self.animation_node = None;
 
         self.animations.idle = None;
@@ -701,26 +738,16 @@ impl SceneController for CharacterController
 
     fn cleanup_node(&mut self, node: NodeItem) -> bool
     {
-        if let Some(own_node) = &self.node
+        if let Some(own_node) = self.node.as_ref()
         {
             if node.read().unwrap().id == own_node.read().unwrap().id
             {
-                self.node = None;
+                self.node = OptionOrId::None;
                 return true;
             }
         }
 
         false
-    }
-
-    fn serializable(&self) -> bool
-    {
-        true
-    }
-
-    fn deserializable(&self) -> bool
-    {
-        true
     }
 
     fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene)
@@ -784,7 +811,7 @@ impl SceneController for CharacterController
         }
 
         // do not show charactar in first person mode
-        if let Some(node) = &self.node
+        if let Some(node) = self.node.as_ref()
         {
             node.write().unwrap().visible = !is_first_person;
         }

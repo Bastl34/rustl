@@ -113,7 +113,6 @@ where
     }
 }
 
-
 pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
 where
     D: Deserializer<'de>,
@@ -130,6 +129,28 @@ where
     }
 }
 
+fn serialize_controller<S>(controller: &Option<CameraControllerBox>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+
+    if let Some(controller) = controller
+    {
+        if controller.is_serializable()
+        {
+            controller.serialize(serializer)
+        }
+        else
+        {
+            Err(serde::ser::Error::custom(format!("CameraController '{}' is not serializable", controller.get_base().name)))
+        }
+    }
+    else
+    {
+        serializer.serialize_none()
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Camera
 {
@@ -143,7 +164,7 @@ pub struct Camera
 
     pub tags: Tags,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_controller")]
     pub controller: Option<CameraControllerBox>,
 
     #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
@@ -163,80 +184,6 @@ impl Default for Camera
         Camera::new("Default Camera".to_string())
     }
 }
-
-/*
-impl Serialize for Camera
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer
-    {
-        let mut map = serializer.serialize_map(None)?;
-
-        map.serialize_entry("uuid", &self.uuid)?;
-        map.serialize_entry("name", &self.name)?;
-        map.serialize_entry("enabled", &self.enabled)?;
-        map.serialize_entry("data", &self.data)?;
-
-        map.serialize_entry("data", &self.data)?;
-        map.serialize_entry("controller", &self.controller)?;
-
-        if let Some(node) = self.node.as_ref()
-        {
-            map.serialize_entry("node", &node.read().unwrap().uuid)?;
-        }
-
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Camera
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de>
-    {
-        struct CameraVisitor;
-
-        impl<'de> Visitor<'de> for CameraVisitor
-        {
-            type Value = Camera;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
-            {
-                formatter.write_str("struct Camera")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<Camera, V::Error>
-            where V: MapAccess<'de>
-            {
-                let mut cam: Camera = Camera::default();
-
-                while let Some(key) = map.next_key::<String>()?
-                {
-                    match key.as_str()
-                    {
-                        "uuid" => cam.uuid = map.next_value()?,
-                        "name" => cam.name = map.next_value()?,
-                        "enabled" => cam.enabled = map.next_value()?,
-                        "data" => cam.data = map.next_value()?,
-                        "controller" => cam.controller = map.next_value()?,
-                        "node" => cam.node = OptionOrId::from_id_or_none(map.next_value()?),
-                        _ =>
-                        {
-                            // ignore
-                            let _: serde::de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-
-                Ok(cam)
-            }
-        }
-
-        deserializer.deserialize_map(CameraVisitor)
-    }
-}
-*/
 
 impl Camera
 {

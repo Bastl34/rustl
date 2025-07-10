@@ -6,6 +6,7 @@ use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::{json, Value};
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
@@ -67,7 +68,6 @@ pub struct Scene
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub materials: HashMap<u64, MaterialItem>,
 
-    // TODO: check and use serializeable and deserializable from SceneController trait <----------------------
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
     pub post_controller: Vec<SceneControllerBox>, // after scene updates
 
@@ -106,6 +106,18 @@ impl Serialize for Scene
         let lights_guards: Vec<_> = self.lights.get_ref().iter().map(|cell| cell.borrow()).collect();
         let lights_refs: Vec<&Light> = lights_guards.iter().map(|tracker| tracker.get_ref().as_ref()).collect();
         map.serialize_entry("lights", &lights_refs)?;
+
+        // materials TODO
+
+        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter()
+            .filter(|controller| controller.is_serializable())
+            .collect();
+        map.serialize_entry("pre_controller", &pre_controller)?;
+
+        let post_controller: Vec<&SceneControllerBox> = self.post_controller.iter()
+            .filter(|controller| controller.is_serializable())
+            .collect();
+        map.serialize_entry("post_controller", &post_controller)?;
 
         map.end()
     }
@@ -164,6 +176,20 @@ impl<'de> Deserialize<'de> for Scene
                                     .collect()
                             )
                         }
+                        "materials" =>
+                        {
+                            // TODO
+                        }
+                        "pre_controller" =>
+                        {
+                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
+                            scene.pre_controller = controllers;
+                        }
+                        "post_controller" =>
+                        {
+                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
+                            scene.post_controller = controllers;
+                        }
                         _ =>
                         {
                             // ignore
@@ -213,6 +239,111 @@ impl Scene
             lights_render_item: None,
         }
     }
+
+    /*
+    pub fn serialize(&self) -> serde_json::Value
+    {
+        let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
+        let node_refs: Vec<&Node> = node_guards.iter().map(|guard| guard.as_ref()).collect();
+
+        let camera_refs: Vec<&Camera> = self.cameras.iter().map(|cam| cam.as_ref()).collect();
+
+        let lights_guards: Vec<_> = self.lights.get_ref().iter().map(|cell| cell.borrow()).collect();
+        let lights_refs: Vec<&Light> = lights_guards.iter().map(|tracker| tracker.get_ref().as_ref()).collect();
+
+        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter()
+            .filter(|controller| controller.is_serializable())
+            .collect();
+
+        let post_controller: Vec<&SceneControllerBox> = self.pre_controller.iter()
+            .filter(|controller| controller.is_serializable())
+            .collect();
+
+        // TODO: materials
+
+        json!
+        ({
+            "uuid": self.uuid,
+            "name": self.name,
+            "visible": self.visible,
+            "main": self.main,
+            "data": self.data,
+            "nodes": node_refs,
+            "cameras": camera_refs,
+            "lights": lights_refs,
+            // "materials": materials
+
+            "pre_controller": pre_controller,
+            "post_controller": post_controller,
+        })
+    }
+
+    pub fn deserialize(value: &Value) -> Result<Self, String>
+    {
+        let obj = value.as_object().ok_or("Expected JSON object for Scene")?;
+
+        let mut scene = Scene::default();
+
+        if let Some(uuid) = obj.get("uuid").and_then(Value::as_str)
+        {
+            scene.uuid = uuid.to_string();
+        }
+
+        if let Some(name) = obj.get("name").and_then(Value::as_str)
+        {
+            scene.name = name.to_string();
+        }
+
+        if let Some(visible) = obj.get("visible").and_then(Value::as_bool)
+        {
+            scene.visible = visible;
+        }
+
+        if let Some(visible) = obj.get("main").and_then(Value::as_bool)
+        {
+            scene.visible = visible;
+        }
+
+        if let Some(data) = obj.get("data")
+        {
+            scene.data = serde_json::from_value(data.clone()).map_err(|e| format!("Error parsing data: {e}"))?;
+        }
+
+        if let Some(nodes) = obj.get("nodes")
+        {
+            let nodes_vec: Vec<Box<Node>> = serde_json::from_value(nodes.clone()).map_err(|e| format!("Error parsing nodes: {e}"))?;
+            scene.nodes = nodes_vec.into_iter().map(|node| Arc::new(RwLock::new(node))).collect();
+        }
+
+        if let Some(cameras) = obj.get("cameras")
+        {
+            scene.cameras = serde_json::from_value(cameras.clone()).map_err(|e| format!("Error parsing cameras: {e}"))?;
+        }
+
+        if let Some(lights) = obj.get("lights")
+        {
+            let lights_vec: Vec<Light> = serde_json::from_value(lights.clone()).map_err(|e| format!("Error parsing lights: {e}"))?;
+            scene.lights = ChangeTracker::new(lights_vec.into_iter().map(|l| RefCell::new(ChangeTracker::new(Box::new(l)))).collect());
+        }
+
+        // TODO: materials
+
+        if let Some(pre_controller_value) = obj.get("pre_controller")
+        {
+            let controllers: Vec<SceneControllerBox> = serde_json::from_value(pre_controller_value.clone()).map_err(|e| format!("Error parsing pre_controller: {e}"))?;
+            scene.pre_controller = controllers;
+        }
+
+        if let Some(post_controller) = obj.get("post_controller")
+        {
+            let controllers: Vec<SceneControllerBox> = serde_json::from_value(post_controller.clone()).map_err(|e| format!("Error parsing pre_controller: {e}"))?;
+            scene.post_controller = controllers;
+        }
+
+        Ok(scene)
+    }
+     */
+
 
     pub fn get_data(&self) -> &SceneData
     {

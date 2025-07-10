@@ -6,17 +6,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{state::{scene::node::NodeItem, state::InputOutput}};
 
-pub type SceneControllerBox = Box<dyn SceneController + Send + Sync>;
+pub type SceneControllerBox = Box<dyn SceneController>;
 
-pub trait SceneController: Any
+#[typetag::serde(tag = "type")]
+pub trait SceneController: Any + Send + Sync
 {
     fn get_base(&self) -> &SceneControllerBase;
     fn get_base_mut(&mut self) -> &mut SceneControllerBase;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn serializable(&self) -> bool;
-    fn deserializable(&self) -> bool;
+    fn is_serializable(&self) -> bool { true }
 
     fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene);
 
@@ -83,12 +83,7 @@ macro_rules! scene_controller_impl_no_serialization
 {
     () =>
     {
-        fn serializable(&self) -> bool
-        {
-            false
-        }
-
-        fn deserializable(&self) -> bool
+        fn is_serializable(&self) -> bool
         {
             false
         }

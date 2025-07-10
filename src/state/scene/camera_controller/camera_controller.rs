@@ -15,8 +15,7 @@ pub trait CameraController: Any + Send + Sync
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn serializable(&self) -> bool { true }
-    fn deserializable(&self) -> bool { true }
+    fn is_serializable(&self) -> bool { true }
 
     fn ui(&mut self, ui: &mut egui::Ui);
 
