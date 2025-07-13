@@ -1,21 +1,18 @@
 #![allow(dead_code)]
 
-use std::fmt;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
 
 use nalgebra::{Vector3, Vector4};
-use serde::de::{self, MapAccess, Visitor};
-use serde::ser::SerializeMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
-use crate::state::resources::texture::Texture;
+use crate::helper::option_or_id::OptionOrId;
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
+use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -26,7 +23,7 @@ pub type MaterialItem = ComponentItem;
 //pub type MaterialBoxItem = Box<dyn Any + Send + Sync>;
 //pub type MaterialItem = Arc<RwLock<MaterialBoxItem>>;
 
-#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, FromRepr, EnumString)]
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, FromRepr, EnumString, Serialize, Deserialize)]
 pub enum TextureType
 {
     AmbientEmissive,
@@ -46,7 +43,7 @@ pub enum TextureType
     Custom3
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, Serialize, Deserialize)]
 pub enum BlendMode
 {
     Opaque,
@@ -74,86 +71,12 @@ pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
     TextureType::Custom3
 ];
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TextureState
 {
-    pub item: TextureItem,
+    #[serde(serialize_with = "serialization_helper::serialize_texture", deserialize_with = "serialization_helper::deserialize_texture")]
+    pub item: OptionOrId<TextureItem>,
     pub enabled: bool
-}
-
-impl Serialize for TextureState
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer
-    {
-        let mut map = serializer.serialize_map(None)?;
-
-        let tex_guard = &self.item.read().unwrap();
-        let tex_ref = tex_guard.as_ref();
-
-        map.serialize_entry("enabled", &self.enabled)?;
-        map.serialize_entry("item", &tex_ref)?;
-
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for TextureState
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de>
-    {
-        struct TextureStateVisitor;
-
-        impl<'de> Visitor<'de> for TextureStateVisitor
-        {
-            type Value = TextureState;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
-            {
-                formatter.write_str("struct TextureState")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<TextureState, V::Error>
-            where V: MapAccess<'de>
-            {
-                let mut enabled = None;
-                let mut item = None;
-
-                while let Some(key) = map.next_key::<String>()?
-                {
-                    match key.as_str()
-                    {
-                        "enabled" =>
-                        {
-                            if enabled.is_some() { return Err(de::Error::duplicate_field("enabled")); }
-                            enabled = Some(map.next_value()?);
-                        }
-                        "item" =>
-                        {
-                            if item.is_some() { return Err(de::Error::duplicate_field("item")); }
-                            item = Some(map.next_value()?);
-                        }
-                        _ =>
-                        {
-                            let _: de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-                let enabled = enabled.ok_or_else(|| de::Error::missing_field("enabled"))?;
-                let item: Texture = item.ok_or_else(|| de::Error::missing_field("item"))?;
-
-                Ok(TextureState
-                {
-                    enabled,
-                    item: Arc::new(RwLock::new(Box::new(item))),
-                })
-            }
-        }
-
-        deserializer.deserialize_map(TextureStateVisitor)
-    }
 }
 
 impl TextureState
@@ -162,17 +85,18 @@ impl TextureState
     {
         TextureState
         {
-            item,
+            item: OptionOrId::Some(item),
             enabled: true
         }
     }
 
-    pub fn get(&self) -> &TextureItem
+    pub fn get(&self) -> Option<&TextureItem>
     {
-        &self.item
+        self.item.as_ref()
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MaterialData
 {
     pub ambient_color: Vector3<f32>,
@@ -221,6 +145,7 @@ pub struct MaterialData
     pub backface_culling: bool
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Material
 {
     base: ComponentBase,
@@ -378,9 +303,11 @@ impl Material
                 if $default_material_tex.is_some() != $new_mat_tex.is_some()
                     ||
                     (
-                        $default_material_tex.is_some() && $new_mat_tex.is_some()
+                        $default_material_tex.is_some() && $new_mat_tex.is_some() && $new_mat_tex.unwrap().get().is_some()
                         &&
-                        $default_material_tex.unwrap().get().read().unwrap().hash != $new_mat_tex.unwrap().get().read().unwrap().hash
+                        $default_material_tex.unwrap().get().is_some()
+                        &&
+                        $default_material_tex.unwrap().get().unwrap().read().unwrap().hash != $new_mat_tex.unwrap().get().unwrap().read().unwrap().hash
                     )
                 {
                     $self_tex = $new_mat_tex.clone();
@@ -535,7 +462,7 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                if texture.get().read().unwrap().id == texture_id
+                if texture.get().is_some() && texture.get().unwrap().read().unwrap().id == texture_id
                 {
                     return true;
                 }
@@ -571,7 +498,7 @@ impl Material
         // base texture alpha channel
         if let Some(texture_base) = &data.texture_base
         {
-            if texture_base.get().read().unwrap().get_data().has_transparency
+            if texture_base.get().is_some() && texture_base.get().unwrap().read().unwrap().get_data().has_transparency
             {
                 return true;
             }
@@ -648,7 +575,10 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                textures.push(texture.item.clone());
+                if let Some(tex_item) = texture.get()
+                {
+                    textures.push(tex_item.clone());
+                }
             }
         }
 
@@ -676,7 +606,7 @@ impl Material
         {
             if let Some(texture) = self.get_texture_by_type(texture_type)
             {
-                if texture.get().read().unwrap().id == id
+                if texture.get().is_some() && texture.get().unwrap().read().unwrap().id == id
                 {
                     self.remove_texture(texture_type);
                     removed = true;
@@ -689,11 +619,12 @@ impl Material
 
     pub fn texture_dimension(&self, tex_type: TextureType) -> (u32, u32)
     {
-        let tex = self.get_texture_by_type(tex_type);
-
-        if tex.is_some()
+        if let Some(tex_state) = self.get_texture_by_type(tex_type).as_ref()
         {
-            return tex.unwrap().get().read().unwrap().dimensions()
+            if let Some(texture) = tex_state.get().as_ref()
+            {
+                return texture.read().unwrap().dimensions().clone();
+            }
         }
 
         (0,0)
@@ -706,11 +637,12 @@ impl Material
             return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
         }
 
-        let tex = self.get_texture_by_type(tex_type);
-
-        if tex.is_some()
+        if let Some(tex_state) = self.get_texture_by_type(tex_type).as_ref()
         {
-            return tex.unwrap().get().read().unwrap().get_pixel_as_float_vec(x, y);
+            if let Some(texture) = tex_state.get().as_ref()
+            {
+                return texture.read().unwrap().get_pixel_as_float_vec(x, y).clone();
+            }
         }
 
         Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0)
@@ -724,10 +656,14 @@ impl Material
         }
 
         let tex = self.get_texture_by_type(tex_type);
+        if tex.is_none() || tex.clone().unwrap().get().is_none()
+        {
+            return Vector4::<f32>::new(0.0, 0.0, 0.0, 1.0);
+        }
 
-        let tex_arc = tex.unwrap();
-        let tex_arc = tex_arc.get();
-        let tex = tex_arc.read().unwrap();
+        let tex = tex.as_ref().unwrap();
+        let tex = tex.get().unwrap();
+        let tex = tex.read().unwrap();
 
         let width = tex.width();
         let height = tex.height();
@@ -766,12 +702,37 @@ impl Material
     }
 }
 
+#[typetag::serde]
 impl Component for Material
 {
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        // textures
+        for texture_type in ALL_TEXTURE_TYPES
+        {
+            if let Some(texture) = self.get_texture_by_type_mut(texture_type)
+            {
+                if texture.item.is_ref()
+                {
+                    let texture_found = context.textures.iter().find(|tex| tex.read().unwrap().uuid == texture.item.id().unwrap());
+                    if let Some(tex) = texture_found
+                    {
+                        texture.item = OptionOrId::Some(tex.clone());
+                    }
+                    else
+                    {
+                        texture.item = OptionOrId::None;
+                        println!("Material: Texture with id {} not found", texture.item.id().unwrap());
+                    }
+                }
+            }
+        }
+    }
 
     fn instantiable() -> bool
     {

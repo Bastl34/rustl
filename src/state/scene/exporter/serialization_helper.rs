@@ -1,0 +1,184 @@
+use std::sync::{Arc, RwLock};
+
+use serde::{Deserialize, Deserializer, Serializer};
+
+use crate::{helper::option_or_id::OptionOrId, state::{resources::{sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::component::{Component, ComponentItem}, node::NodeItem}}};
+
+// ******************** node serialization ********************
+
+pub fn serialize_node<S>(item: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match item
+    {
+        OptionOrId::Some(item) =>
+        {
+            let guard = item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+// ******************** sound source serialization ********************
+
+pub fn serialize_sound_source<S>(item: &OptionOrId<SoundSourceItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match item
+    {
+        OptionOrId::Some(item) =>
+        {
+            let guard = item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_sound_source<'de, D>(deserializer: D) -> Result<OptionOrId<SoundSourceItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+// ******************** sound source serialization ********************
+
+pub fn serialize_texture<S>(item: &OptionOrId<TextureItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match item
+    {
+        OptionOrId::Some(item) =>
+        {
+            let guard = item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_texture<'de, D>(deserializer: D) -> Result<OptionOrId<TextureItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+// ******************** components serialization ********************
+
+pub fn serialize_component<S>(item: &OptionOrId<ComponentItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match item
+    {
+        OptionOrId::Some(item) =>
+        {
+            let guard = item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.get_base().uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_component<'de, D>(deserializer: D) -> Result<OptionOrId<ComponentItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+pub fn serialize_component_vec<S>(items: &Vec<ComponentItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::SerializeSeq;
+
+    let mut seq = serializer.serialize_seq(Some(items.len()))?;
+    for item in items
+    {
+        let guard = item.read().map_err(serde::ser::Error::custom)?;
+        seq.serialize_element(&*guard)?;
+    }
+    seq.end()
+}
+
+
+pub fn deserialize_component_vec<'de, D>(deserializer: D) -> Result<Vec<ComponentItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw_components: Vec<Box<dyn Component>> = Deserialize::deserialize(deserializer)?;
+    Ok(raw_components
+        .into_iter()
+        .map(|c| Arc::new(RwLock::new(c)))
+        .collect())
+}

@@ -6,20 +6,22 @@ use egui::RichText;
 use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
+use serde::{Deserialize, Serialize};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 use crate::state::resources::sound_source::Decodable;
+use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum SoundType
 {
     Spatial,
     Stereo
 }
 
-#[derive( Copy, Clone)]
+#[derive( Copy, Clone, Serialize, Deserialize)]
 pub struct SoundData
 {
     pub sound_type: SoundType,
@@ -32,19 +34,24 @@ pub struct SoundData
 
     pub delete_after_playback: bool
 }
-
+#[derive(Serialize, Deserialize)]
 pub struct Sound
 {
     base: ComponentBase,
 
     data: ChangeTracker<SoundData>,
 
-    pub sound_source: Option<SoundSourceItem>,
+    #[serde(serialize_with = "serialization_helper::serialize_sound_source", deserialize_with = "serialization_helper::deserialize_sound_source")]
+    pub sound_source: OptionOrId<SoundSourceItem>,
     pub duration: f32,
 
+    #[serde(skip, default)]
     audio_device: Option<AudioDeviceItem>,
 
+    #[serde(skip, default)]
     sink: Option<Sink>,
+
+    #[serde(skip, default)]
     sink_spatial: Option<SpatialSink>,
 }
 
@@ -56,7 +63,7 @@ impl Sound
         {
             base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
-            sound_source: Some(sound_source.clone()),
+            sound_source: OptionOrId::Some(sound_source.clone()),
             duration: 0.0,
 
             data: ChangeTracker::new(SoundData
@@ -88,7 +95,7 @@ impl Sound
         {
             base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
-            sound_source: None,
+            sound_source: OptionOrId::None,
             duration: 0.0,
 
             data: ChangeTracker::new(SoundData
@@ -147,7 +154,7 @@ impl Sound
     {
         self.reset();
 
-        self.sound_source = Some(sound_source.clone());
+        self.sound_source = OptionOrId::Some(sound_source.clone());
         self.audio_device = Some(sound_source.read().unwrap().audio_device.clone());
 
         let sound_source = sound_source.read().unwrap();
@@ -430,10 +437,34 @@ impl Drop for Sound
     }
 }
 
+#[typetag::serde]
 impl Component for Sound
 {
     component_impl_default!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        if self.sound_source.is_ref()
+        {
+            // resolve sound source
+            let sound_source_found = context.sound_sources.iter().find(|s| s.read().unwrap().uuid == self.sound_source.id().unwrap());
+            if let Some(sound_source) = sound_source_found
+            {
+                self.set_sound_source(sound_source.clone());
+            }
+            else
+            {
+                self.sound_source = OptionOrId::None;
+                println!("Sound: SoundSource with id {} not found", self.sound_source.id().unwrap());
+            }
+        }
+        else
+        {
+            self.sound_source = OptionOrId::None;
+            println!("Sound: no SoundSource found");
+        }
+    }
 
     fn instantiable() -> bool
     {
@@ -479,7 +510,7 @@ impl Component for Sound
             sink_spatial: None,
         };
 
-        if let Some(sound_source) = &source.sound_source
+        if let Some(sound_source) = source.sound_source.as_ref()
         {
             sound.set_sound_source(sound_source.clone());
         }
@@ -504,7 +535,7 @@ impl Component for Sound
             return;
         }
 
-        if let Some(sound_source) = &self.sound_source
+        if let Some(sound_source) = self.sound_source.as_ref()
         {
             sound_source.read().unwrap().ui_info(ui);
         }

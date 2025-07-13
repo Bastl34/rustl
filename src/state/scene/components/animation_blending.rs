@@ -1,11 +1,14 @@
 #![allow(dead_code)]
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::approx_zero, state::{scene::node::NodeItem, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::math::approx_zero, state::{scene::node::NodeItem, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
 const INFO_STRING: &str = "The changes are applies on the Animation Component.\nIf there is no Animation Component: Nothing is happening.";
 
+#[derive(Serialize, Deserialize)]
 pub struct AnimationBlending
 {
     base: ComponentBase,
@@ -55,11 +58,13 @@ impl AnimationBlending
     }
 }
 
+#[typetag::serde]
 impl Component for AnimationBlending
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {

@@ -42,6 +42,10 @@ impl CameraController for FollowController
 {
     camera_controller_impl_default!();
 
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+    }
+
     fn update(&mut self, node: Option<NodeItem>, _scene: &mut Scene, _io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, _frame_scale: f32) -> bool
     {
         let mut change = false;

@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
 use nalgebra::Matrix4;
+use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, state::{scene::node::NodeItem, state::InputOutput}};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, state::{scene::node::NodeItem, state::InputOutput}};
 
 use super::{component::{ComponentBase, Component}, transformation::Transformation};
 
-
+#[derive(Serialize, Deserialize)]
 pub struct JointData
 {
     pub root_joint: bool,
@@ -15,12 +16,17 @@ pub struct JointData
     pub inverse_bind_trans: Matrix4<f32>,
     //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
+    #[serde(skip, default)]
     pub animation_weight: f32,
+
+    #[serde(skip, default)]
     pub animation_update_frame: Option<u64>,
 
+    #[serde(skip, default)]
     pub animation_trans: Option<Matrix4<f32>>
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Joint
 {
     base: ComponentBase,
@@ -168,11 +174,13 @@ impl Joint
     }
 }
 
+#[typetag::serde]
 impl Component for Joint
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {

@@ -365,9 +365,21 @@ impl State
             }
 
             // remove texture from environment map
-            if scene.get_data().environment_texture.is_some() && scene.get_data().environment_texture.as_ref().unwrap().item.read().unwrap().id == id
+            if let Some(env_tex) = scene.get_data().environment_texture.as_ref()
             {
-                scene.get_data_mut().get_mut().environment_texture = None;
+                if let Some(item) = env_tex.get()
+                {
+                    let same_id =
+                    {
+                        let texture_guard = item.read().unwrap();
+                        texture_guard.id == id
+                    };
+
+                    if same_id
+                    {
+                        scene.get_data_mut().get_mut().environment_texture = None;
+                    }
+                }
             }
         }
 
@@ -412,7 +424,7 @@ impl State
 
                     if let Some(sound) = component.as_any().downcast_ref::<Sound>()
                     {
-                        if let Some(sound_source) = &sound.sound_source
+                        if let Some(sound_source) = sound.sound_source.as_ref()
                         {
                             let sound_source = sound_source.read().unwrap();
                             if sound_source.id == id
@@ -435,7 +447,7 @@ impl State
 
                         if let Some(sound) = component.as_any().downcast_ref::<Sound>()
                         {
-                            if let Some(sound_source) = &sound.sound_source
+                            if let Some(sound_source) = sound.sound_source.as_ref()
                             {
                                 let sound_source = sound_source.read().unwrap();
                                 if sound_source.id == id

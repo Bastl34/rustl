@@ -1,13 +1,15 @@
 #![allow(dead_code)]
 
 use nalgebra::{Vector3, Vector4};
+use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, helper::{self, change_tracker::ChangeTracker}, input::{keyboard::{get_keys_as_string_vec, Key}}, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::{component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, helper::{self, change_tracker::ChangeTracker}, input::keyboard::{get_keys_as_string_vec, Key}, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation};
 
 const INFO_STRING: &str = "The changes are applies on the Transform Component.\nThey are multiplied by frame_scale for each frame.\nIf there is no Transform Component: Nothing is happening.";
 
+#[derive(Serialize, Deserialize)]
 pub struct TransformationAnimationData
 {
     pub translation: Vector3<f32>,
@@ -16,6 +18,7 @@ pub struct TransformationAnimationData
     pub scale: Vector3<f32>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TransformationAnimation
 {
     base: ComponentBase,
@@ -154,10 +157,12 @@ impl TransformationAnimation
     }
 }
 
+#[typetag::serde]
 impl Component for TransformationAnimation
 {
     component_impl_default!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {

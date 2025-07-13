@@ -1,10 +1,12 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update, helper::change_tracker::ChangeTracker, state::scene::node::NodeItem};
 
 use super::component::{ComponentBase, Component};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct AlphaData
 {
     pub alpha_inheritance: bool,
@@ -12,6 +14,7 @@ pub struct AlphaData
     pub alpha: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Alpha
 {
     base: ComponentBase,
@@ -63,11 +66,13 @@ impl Alpha
     }
 }
 
+#[typetag::serde]
 impl Component for Alpha
 {
     component_impl_default!();
     component_impl_no_update!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {

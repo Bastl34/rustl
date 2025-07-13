@@ -79,6 +79,16 @@ impl<T> OptionOrId<T>
             _ => panic!("called `RefOrValue::unwrap()` on a non-Value variant"),
         }
     }
+
+    pub fn unwrap_or(self, default: T) -> T
+    {
+        match self
+        {
+            OptionOrId::Some(v) => v,
+            _ => default,
+        }
+    }
+
 }
 
 impl<T> Default for OptionOrId<T>

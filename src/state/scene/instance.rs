@@ -3,11 +3,13 @@
 use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Vector3, Vector4};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::state::InputOutput};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
+
+use crate::state::scene::exporter::serialization_helper;
 
 pub type InstanceItem = Box<Instance>;
 
@@ -45,42 +47,6 @@ pub struct InstanceData
     pub color: Vector4::<f32>
 }
 
-fn serialize_node<S>(node: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match node
-    {
-        OptionOrId::Some(node_item) =>
-        {
-            let guard = node_item.read().map_err(serde::ser::Error::custom)?;
-            serializer.serialize_str(&guard.uuid)
-        }
-        OptionOrId::Id(uuid) =>
-        {
-            serializer.serialize_str(uuid)
-        }
-        OptionOrId::None => serializer.serialize_none(),
-    }
-}
-
-
-pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let uuid_opt = Option::<String>::deserialize(deserializer)?;
-
-    if let Some(uuid) = uuid_opt
-    {
-        Ok(OptionOrId::from_id(uuid))
-    }
-    else
-    {
-        Ok(OptionOrId::None)
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct Instance
 {
@@ -91,11 +57,10 @@ pub struct Instance
     pub name: String,
     pub pickable: bool,
 
-    #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
     pub node: OptionOrId<NodeItem>,
 
-    // TODO --> do not skip
-    #[serde(skip, default)]
+    #[serde(serialize_with = "serialization_helper::serialize_component_vec", deserialize_with = "serialization_helper::deserialize_component_vec")]
     pub components: Vec<ComponentItem>,
 
     force_update: bool,

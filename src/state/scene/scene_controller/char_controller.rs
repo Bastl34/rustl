@@ -362,7 +362,14 @@ impl CharacterController
                     let root_node_arc = animation_node.find_child_node_by_regex("(?i)(root)|(hips)|(spine)");
 
                     component_downcast_mut!(jump_animation, Animation);
-                    jump_animation.in_place_joint_node = root_node_arc.clone();
+                    if let Some(root_node_arc) = root_node_arc
+                    {
+                        jump_animation.in_place_joint_node = OptionOrId::Some(root_node_arc.clone());
+                    }
+                    else
+                    {
+                        jump_animation.in_place_joint_node = OptionOrId::None;
+                    }
                 }
             }
         }
@@ -750,9 +757,24 @@ impl SceneController for CharacterController
         false
     }
 
-    fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene)
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
     {
-        self.auto_setup(scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
+        // resolve node
+        if self.node.is_ref()
+        {
+            let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == self.node.id().unwrap());
+            if let Some(node) = node_found
+            {
+                self.node = OptionOrId::Some(node.clone());
+            }
+            else
+            {
+                self.node = OptionOrId::None;
+                println!("CharacterController: Node with id {} not found", self.node.id().unwrap());
+            }
+        }
+
+        self.auto_setup(&mut context.scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
     }
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool

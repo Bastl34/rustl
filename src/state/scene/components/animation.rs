@@ -6,15 +6,18 @@ use std::collections::HashMap;
 
 use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
+use serde::{Deserialize, Serialize};
 
 use crate::component_downcast;
+use crate::helper::option_or_id::OptionOrId;
 use crate::state::state::InputOutput;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
+use crate::state::scene::exporter::serialization_helper;
 
 use super::sound::Sound;
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Interpolation
 {
     Linear,
@@ -22,7 +25,7 @@ pub enum Interpolation
     CubicSpline
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Channel
 {
     pub interpolation: Interpolation,
@@ -33,7 +36,8 @@ pub struct Channel
     pub transform_scale: Vec<Vector3<f32>>,
     pub transform_morph: Vec<Vec<f32>>,
 
-    pub target: NodeItem
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub target: OptionOrId<NodeItem>
 }
 
 impl Channel
@@ -50,7 +54,7 @@ impl Channel
             transform_scale: vec![],
             transform_morph: vec![],
 
-            target
+            target: OptionOrId::Some(target)
         }
     }
 }
@@ -65,6 +69,15 @@ struct TargetMapItem
     pub skip_joint: bool
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct JointFilter
+{
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+    pub include: bool,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Animation
 {
     base: ComponentBase,
@@ -86,12 +99,15 @@ pub struct Animation
 
     pub channels: Vec<Channel>,
 
-    pub joint_filter: Vec<(NodeItem, bool)>, // only apply parts of the animation for specific nodes
-    pub in_place_joint_node: Option<NodeItem>, // apply the animation in place (only for the hips)
+    joint_filter: Vec<JointFilter>, // only apply parts of the animation for specific nodes
+
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub in_place_joint_node: OptionOrId<NodeItem>, // apply the animation in place (only for the hips)
 
     pub in_place_axis: Vector3<bool>,
 
-    pub sound_component: Option<ComponentItem>,
+    #[serde(serialize_with = "serialization_helper::serialize_component", deserialize_with = "serialization_helper::deserialize_component")]
+    pub sound_component: OptionOrId<ComponentItem>,
 
     current_time: u128,
     current_local_time: f32,
@@ -126,10 +142,10 @@ impl Animation
             channels: vec![],
 
             joint_filter: vec![],
-            in_place_joint_node: None,
+            in_place_joint_node: OptionOrId::None,
             in_place_axis: Vector3::new(true, true, true),
 
-            sound_component: None,
+            sound_component: OptionOrId::None,
 
             current_time: 0,
             current_local_time: 0.0,
@@ -175,7 +191,7 @@ impl Animation
         self.pause_time = None;
         self.current_iteration = 0;
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.start();
@@ -189,7 +205,7 @@ impl Animation
         self.start_time = Some(time);
         self.pause_time = None;
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.start();
@@ -206,7 +222,7 @@ impl Animation
         self.start_time = None;
         self.reset();
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.stop();
@@ -220,7 +236,7 @@ impl Animation
             return;
         }
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.stop();
@@ -241,7 +257,7 @@ impl Animation
             self.pause_time = Some(self.current_time);
             self.start_time = None;
 
-            if let Some(sound) = &self.sound_component
+            if let Some(sound) = self.sound_component.as_ref()
             {
                 component_downcast_mut!(sound, Sound);
                 sound.pause();
@@ -291,29 +307,32 @@ impl Animation
     {
         for channel in &self.channels
         {
-            let target = channel.target.write().unwrap();
-
-            if let Some(joint) = target.find_component::<Joint>()
+            if let Some(target) = channel.target.as_ref()
             {
-                component_downcast_mut!(joint, Joint);
+                let target = target.write().unwrap();
 
-                joint.get_data_mut().get_mut().animation_trans = None;
+                if let Some(joint) = target.find_component::<Joint>()
+                {
+                    component_downcast_mut!(joint, Joint);
 
-                joint.get_data_mut().get_mut().animation_update_frame = None;
-                joint.get_data_mut().get_mut().animation_weight = 0.0;
-            }
+                    joint.get_data_mut().get_mut().animation_trans = None;
 
-            if let Some(transformation) = target.find_component::<Transformation>()
-            {
-                component_downcast_mut!(transformation, Transformation);
+                    joint.get_data_mut().get_mut().animation_update_frame = None;
+                    joint.get_data_mut().get_mut().animation_weight = 0.0;
+                }
 
-                transformation.get_data_mut().get_mut().animation_position = None;
-                transformation.get_data_mut().get_mut().animation_rotation_quat = None;
-                transformation.get_data_mut().get_mut().animation_scale = None;
+                if let Some(transformation) = target.find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
 
-                transformation.get_data_mut().get_mut().animation_update_frame = None;
-                transformation.get_data_mut().get_mut().animation_weight = 0.0;
-                transformation.calc_transform();
+                    transformation.get_data_mut().get_mut().animation_position = None;
+                    transformation.get_data_mut().get_mut().animation_rotation_quat = None;
+                    transformation.get_data_mut().get_mut().animation_scale = None;
+
+                    transformation.get_data_mut().get_mut().animation_update_frame = None;
+                    transformation.get_data_mut().get_mut().animation_weight = 0.0;
+                    transformation.calc_transform();
+                }
             }
         }
 
@@ -414,10 +433,88 @@ fn get_animation_transform(transform: &TargetMapItem) -> Matrix4<f32>
     trans
 }
 
+#[typetag::serde]
 impl Component for Animation
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        // node
+        if self.in_place_joint_node.is_ref()
+        {
+            let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == self.in_place_joint_node.id().unwrap());
+            if let Some(node) = node_found
+            {
+                self.in_place_joint_node = OptionOrId::Some(node.clone());
+            }
+            else
+            {
+                self.in_place_joint_node = OptionOrId::None;
+                println!("Animation: Node with id {} not found", self.in_place_joint_node.id().unwrap());
+            }
+        }
+
+        // sound
+        if self.sound_component.is_ref()
+        {
+            // resolve component
+            let component = context.components.iter().find(|c| c.read().unwrap().get_base().uuid == self.sound_component.id().unwrap());
+            if let Some(component) = component
+            {
+                self.sound_component = OptionOrId::Some(component.clone());
+            }
+            else
+            {
+                self.sound_component = OptionOrId::None;
+                println!("Animation: sound_component with id {} not found", self.sound_component.id().unwrap());
+            }
+        }
+        else
+        {
+            self.sound_component = OptionOrId::None;
+            println!("Animation: no sound_component found");
+        }
+
+        // joint filter
+        for joint_filter in &mut self.joint_filter
+        {
+            if joint_filter.node.is_ref()
+            {
+                // resolve node
+                let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == joint_filter.node.id().unwrap());
+                if let Some(node) = node_found
+                {
+                    joint_filter.node = OptionOrId::Some(node.clone());
+                }
+                else
+                {
+                    joint_filter.node = OptionOrId::None;
+                    println!("Animation: JointFilter node with id {} not found", joint_filter.node.id().unwrap());
+                }
+            }
+        }
+
+        // channels
+        for channel in &mut self.channels
+        {
+            if channel.target.is_ref()
+            {
+                // resolve node
+                let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == channel.target.id().unwrap());
+                if let Some(node) = node_found
+                {
+                    channel.target = OptionOrId::Some(node.clone());
+                }
+                else
+                {
+                    channel.target = OptionOrId::None;
+                    println!("Animation: Channel target with id {} not found", channel.target.id().unwrap());
+                }
+            }
+        }
+    }
 
     fn instantiable() -> bool
     {
@@ -440,15 +537,19 @@ impl Component for Animation
     fn cleanup_node(&mut self, node: NodeItem) -> bool
     {
         // joints
-        self.joint_filter.retain(|(joint, _)|
+        self.joint_filter.retain(|joint|
         {
-            joint.read().unwrap().id != node.read().unwrap().id
+            if joint.node.is_none()
+            {
+                return true;
+            }
+            joint.node.as_ref().unwrap().read().unwrap().id != node.read().unwrap().id
         });
 
         // in place
         if self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == node.read().unwrap().id
         {
-            self.in_place_joint_node = None;
+            self.in_place_joint_node = OptionOrId::None;
         }
 
         // channels
@@ -456,7 +557,11 @@ impl Component for Animation
 
         self.channels.retain(|channel|
         {
-            channel.target.read().unwrap().id != node.read().unwrap().id
+            if let Some(target) = channel.target.as_ref()
+            {
+                return target.read().unwrap().id != node.read().unwrap().id
+            }
+            true
         });
 
         channels_amount != self.channels.len()
@@ -580,7 +685,13 @@ impl Component for Animation
         // ********** reset joints (if needed) **********
         for channel in &self.channels
         {
-            let target = channel.target.write().unwrap();
+            if channel.target.is_none()
+            {
+                continue;
+            }
+            let target = channel.target.as_ref().unwrap();
+            let target = target.write().unwrap();
+
             let joint = target.find_component::<Joint>();
             let transformation = target.find_component::<Transformation>();
 
@@ -630,13 +741,32 @@ impl Component for Animation
             let mut joint_included_found = false;
             let mut joint_excluded_found = false;
 
-            for (joint, include) in &self.joint_filter
+            if channel.target.is_none()
             {
-                let node = joint;
+                // NOT SUPPORTED
+                dbg!("empty target is not supported");
+                continue;
+            }
+            let target = channel.target.as_ref().unwrap();
 
-                if channel.target.read().unwrap().has_parent_or_is_equal(node.clone())
+            for joint_filter in &self.joint_filter
+            {
+                let node = joint_filter.node.as_ref();
+
+                if node.is_some() && target.read().unwrap().has_parent_or_is_equal(node.unwrap().clone())
                 {
-                    if *include
+                    if joint_filter.include
+                    {
+                        joint_included_found = true;
+                    }
+                    else
+                    {
+                        joint_excluded_found = true;
+                    }
+                }
+                else if node.is_none() && target.read().unwrap().id == 0 // root node
+                {
+                    if joint_filter.include
                     {
                         joint_included_found = true;
                     }
@@ -660,14 +790,13 @@ impl Component for Animation
 
             let joint;
             {
-                let target = channel.target.read().unwrap();
+                let target = target.read().unwrap();
                 joint = target.find_component::<Joint>();
             }
 
             let transformation;
             {
-                let target = channel.target.read().unwrap();
-
+                let target = target.read().unwrap();
                 transformation = target.find_component::<Transformation>();
             }
 
@@ -680,7 +809,7 @@ impl Component for Animation
 
             let target_node_id;
             {
-                let target = channel.target.read().unwrap();
+                let target = target.read().unwrap();
                 target_node_id = target.id;
             }
 
@@ -718,7 +847,7 @@ impl Component for Animation
                 {
                     let weights = &channel.transform_morph[0];
 
-                    let target = channel.target.read().unwrap();
+                    let target = target.read().unwrap();
                     let morph_targets = target.find_components::<MorphTarget>();
 
                     for morph_target in morph_targets
@@ -997,7 +1126,7 @@ impl Component for Animation
                         },
                     };
 
-                    let target = channel.target.read().unwrap();
+                    let target = target.read().unwrap();
                     let morph_targets = target.find_components::<MorphTarget>();
 
                     for morph_target in morph_targets
@@ -1222,16 +1351,15 @@ impl Component for Animation
         ui.horizontal(|ui|
         {
             ui.label("In Place Joint: ");
-            if let Some(in_place_joint_node) = self.in_place_joint_node.clone()
+            if let Some(in_place_joint_node) = self.in_place_joint_node.as_ref().cloned()
             {
                 let in_place_joint_node = in_place_joint_node.read().unwrap();
                 ui.label(in_place_joint_node.name.clone());
 
                 if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
                 {
-                    self.in_place_joint_node = None;
+                    self.in_place_joint_node = OptionOrId::None;
                 }
-
             }
             else if let Some(node) = node.clone()
             {
@@ -1261,7 +1389,7 @@ impl Component for Animation
                 if changed
                 {
                     let add_node = &all_nodes[selection - 1];
-                    self.in_place_joint_node = Some(add_node.clone());
+                    self.in_place_joint_node = OptionOrId::Some(add_node.clone());
                 }
             }
         });
@@ -1285,8 +1413,12 @@ impl Component for Animation
         let mut delete_id = None;
         for (i, item) in self.joint_filter.iter().enumerate()
         {
-            let node = item.0.clone();
-            let include = item.1;
+            if item.node.is_none()
+            {
+                continue;
+            }
+            let node = item.node.as_ref().unwrap();
+            let include = item.include;
 
             ui.horizontal(|ui|
             {
@@ -1345,24 +1477,24 @@ impl Component for Animation
             if changed
             {
                 let add_node = &all_nodes[selection - 1];
-                self.joint_filter.push((add_node.clone(), self.ui_joint_include_option));
+                self.joint_filter.push(JointFilter { node: OptionOrId::Some(add_node.clone()), include: self.ui_joint_include_option });
             }
         }
 
         ui.separator();
 
-        // ********** in place **********
+        // ********** sound **********
         ui.horizontal(|ui|
         {
             ui.label("Sound: ");
-            if let Some(sound_component) = self.sound_component.clone()
+            if let Some(sound_component) = self.sound_component.as_ref().cloned()
             {
                 let sound_component = sound_component.read().unwrap();
                 ui.label(sound_component.get_base().name.clone());
 
                 if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
                 {
-                    self.sound_component = None;
+                    self.sound_component = OptionOrId::None;
                 }
 
             }
@@ -1391,7 +1523,7 @@ impl Component for Animation
                 if changed
                 {
                     let souond_component = &sounds[selection - 1];
-                    self.sound_component = Some(souond_component.clone());
+                    self.sound_component = OptionOrId::Some(souond_component.clone());
                 }
             }
         });

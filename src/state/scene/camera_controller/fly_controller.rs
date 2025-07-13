@@ -83,6 +83,10 @@ impl CameraController for FlyController
 {
     camera_controller_impl_default!();
 
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+    }
+
     fn update(&mut self, _node: Option<NodeItem>, scene: &mut Scene, io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;

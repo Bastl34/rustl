@@ -101,8 +101,11 @@ impl MaterialUniform
 
             if let Some(texture) = texture
             {
-                let texture = texture.item.read().unwrap();
-                texture_transforms[i] = TextureTransform::new(&texture);
+                if let Some(texture) = texture.get()
+                {
+                    let texture = texture.read().unwrap();
+                    texture_transforms[i] = TextureTransform::new(&texture);
+                }
             }
         }
 
@@ -280,20 +283,27 @@ impl MaterialBuffer
             {
                 let enabled = texture.enabled;
 
-                if enabled
+
+                if let Some(texture_arc) = texture.get()
                 {
-                    let texture_arc = texture.get();
-                    let mut texture = texture_arc.write().unwrap();
-
-                    if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                    if enabled
                     {
-                        let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
-                        swap(&mut texture.render_item, &mut render_item);
+                        let mut texture = texture_arc.write().unwrap();
 
-                        texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone()));
+                        if !texture_render_items.contains_key(&texture.id) && texture.render_item.is_some()
+                        {
+                            let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                            swap(&mut texture.render_item, &mut render_item);
+
+                            texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone()));
+                        }
+
+                        texture_render_items_dir.push((Some(texture.id), bind_id));
                     }
-
-                    texture_render_items_dir.push((Some(texture.id), bind_id));
+                    else
+                    {
+                        texture_render_items_dir.push((None, bind_id));
+                    }
                 }
                 else
                 {

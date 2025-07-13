@@ -13,11 +13,11 @@ use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
 use crate::state::state::InputOutput;
 
-pub type ComponentBox = Box<dyn Component + Send + Sync>;
-pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
+pub type ComponentBox = Box<dyn Component>;
+pub type ComponentItem = Arc<RwLock<Box<dyn Component>>>;
 
-//pub trait Component: Any + Serialize + for<'de> Deserialize<'de> + Clone
-pub trait Component: Any
+#[typetag::serde(tag = "type")]
+pub trait Component: Any + Send + Sync
 {
     fn get_base(&self) -> &ComponentBase;
     fn get_base_mut(&mut self) -> &mut ComponentBase;
@@ -27,6 +27,9 @@ pub trait Component: Any
 
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn is_serializable(&self) -> bool { true }
+    fn run_after_deserialize(&mut self, context: &mut DeserializationContext);
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
@@ -63,6 +66,23 @@ pub trait Component: Any
     {
         self.get_base().name.as_str()
     }
+}
+
+pub struct DeserializationContext<'a>
+{
+    // resources
+    pub textures: Vec<crate::state::resources::texture::TextureItem>,
+    //pub meshes: Vec<MeshItem>, // TODO
+    pub sound_sources: Vec<crate::state::resources::sound_source::SoundSourceItem>,
+
+    // scene
+    pub scene: &'a mut crate::state::scene::scene::Scene,
+    pub nodes: Vec<NodeItem>,
+    pub instances: Vec<InstanceItemArc>,
+    pub components: Vec<ComponentItem>,
+
+    // io
+    pub io: &'a mut InputOutput,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -232,6 +252,18 @@ macro_rules! component_impl_no_cleanup_node
         fn cleanup_node(&mut self, _node: NodeItem) -> bool
         {
             false
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component_impl_no_post_deserialization
+{
+    () =>
+    {
+        fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+        {
+
         }
     };
 }

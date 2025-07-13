@@ -52,6 +52,7 @@ mod state
         pub(crate) mod exporter
         {
             pub(crate) mod json;
+            pub(crate) mod serialization_helper;
         }
 
         pub(crate) mod components

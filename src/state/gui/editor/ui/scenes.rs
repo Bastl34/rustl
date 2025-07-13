@@ -105,60 +105,64 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     {
         let mut enabled = texture.enabled;
         let texture = texture.get();
-        let mut texture = texture.write().unwrap();
 
-        let title = format!("🖼 {} Texture", TextureType::Environment.to_string());
-        let id = format!("texture_{}", TextureType::Environment.to_string());
-
-        let mut remove_texture = false;
-        let mut changed = false;
-
-        generic_items::collapse(ui, id, true, None, |ui|
+        if let Some(texture) = texture
         {
-            ui.label(RichText::new(title).heading().strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            let mut texture = texture.write().unwrap();
+
+            let title = format!("🖼 {} Texture", TextureType::Environment.to_string());
+            let id = format!("texture_{}", TextureType::Environment.to_string());
+
+            let mut remove_texture = false;
+            let mut changed = false;
+
+            generic_items::collapse(ui, id, true, None, |ui|
             {
-                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                ui.label(RichText::new(title).heading().strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                 {
-                    remove_texture = true;
-                }
+                    if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                    {
+                        remove_texture = true;
+                    }
 
-                // enabled toggle
-                let toggle_text;
-                if enabled
-                {
-                    toggle_text = RichText::new("⏺").color(Color32::GREEN);
-                }
-                else
-                {
-                    toggle_text = RichText::new("⏺").color(Color32::RED);
-                }
+                    // enabled toggle
+                    let toggle_text;
+                    if enabled
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::GREEN);
+                    }
+                    else
+                    {
+                        toggle_text = RichText::new("⏺").color(Color32::RED);
+                    }
 
 
-                if ui.toggle_value(&mut enabled, toggle_text).clicked()
-                {
-                    changed = true;
-                }
+                    if ui.toggle_value(&mut enabled, toggle_text).clicked()
+                    {
+                        changed = true;
+                    }
+                });
+            },
+            |ui|
+            {
+                texture.ui_info(ui);
             });
-        },
-        |ui|
-        {
-            texture.ui_info(ui);
-        });
 
-        if changed
-        {
-            let scene_data = scene.get_data_mut();
-            let scene_data = scene_data.get_mut();
-            let env_tex = scene_data.environment_texture.as_mut().unwrap();
-            env_tex.enabled = enabled;
-        }
+            if changed
+            {
+                let scene_data = scene.get_data_mut();
+                let scene_data = scene_data.get_mut();
+                let env_tex = scene_data.environment_texture.as_mut().unwrap();
+                env_tex.enabled = enabled;
+            }
 
-        if remove_texture
-        {
-            let scene_data = scene.get_data_mut();
-            let scene_data = scene_data.get_mut();
-            scene_data.environment_texture = None;
+            if remove_texture
+            {
+                let scene_data = scene.get_data_mut();
+                let scene_data = scene_data.get_mut();
+                scene_data.environment_texture = None;
+            }
         }
     }
     else

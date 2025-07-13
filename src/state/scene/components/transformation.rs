@@ -4,12 +4,13 @@ use std::sync::{Arc, RwLock};
 
 use egui::RichText;
 use nalgebra::{Vector3, Matrix4, Rotation3, Vector4, UnitQuaternion, Quaternion};
+use serde::{Deserialize, Serialize};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::scene::node::NodeItem};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update, helper::{change_tracker::ChangeTracker, math::{self, approx_zero_vec4}}, state::scene::node::NodeItem};
 
 use super::component::{Component, ComponentBase};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct TransformationData
 {
     pub parent_inheritance: bool,
@@ -32,6 +33,7 @@ pub struct TransformationData
     tran_inverse: Matrix4<f32>
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Transformation
 {
     base: ComponentBase,
@@ -285,7 +287,6 @@ impl Transformation
     {
         &self.data.get_ref().tran_inverse
     }
-
 
     pub fn apply_transformation(&mut self, translation: Option<Vector3<f32>>, scale: Option<Vector3<f32>>, rotation: Option<Vector3<f32>>)
     {
@@ -666,11 +667,13 @@ impl Transformation
     }
 }
 
+#[typetag::serde]
 impl Component for Transformation
 {
     component_impl_default!();
     component_impl_no_update!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {

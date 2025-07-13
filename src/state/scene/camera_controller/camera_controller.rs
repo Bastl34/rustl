@@ -16,6 +16,7 @@ pub trait CameraController: Any + Send + Sync
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn is_serializable(&self) -> bool { true }
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext);
 
     fn ui(&mut self, ui: &mut egui::Ui);
 

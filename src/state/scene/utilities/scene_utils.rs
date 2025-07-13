@@ -2,7 +2,7 @@
 
 use std::{sync::{RwLock, Arc}, path::Path};
 
-use crate::{component_downcast_mut, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureItem}, scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
+use crate::{component_downcast_mut, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureItem}, scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -300,7 +300,7 @@ pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, m
                 for animation in new_animations
                 {
                     component_downcast_mut!(animation, Animation);
-                    animation.in_place_joint_node = Some(in_place_joint_node.clone());
+                    animation.in_place_joint_node = OptionOrId::Some(in_place_joint_node.clone());
                 }
             }
         }

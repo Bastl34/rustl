@@ -18,7 +18,7 @@ pub trait SceneController: Any + Send + Sync
 
     fn is_serializable(&self) -> bool { true }
 
-    fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene);
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext);
 
     fn cleanup(&mut self);
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
@@ -88,7 +88,7 @@ macro_rules! scene_controller_impl_no_serialization
             false
         }
 
-        fn init_after_deserialize(&mut self, scene: &mut crate::state::scene::scene::Scene)
+        fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
         {
 
         }

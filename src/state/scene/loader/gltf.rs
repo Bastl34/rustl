@@ -1057,6 +1057,8 @@ fn map_animatables(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
             for channel in &animation.channels
             {
                 let target = channel.target.as_ref();
+                if target.is_none() { continue; }
+                let target = target.unwrap();
 
                 // check if transformation node is existing -> if not create one
                 if target.read().unwrap().find_component::<Joint>().is_none() && target.read().unwrap().find_component::<Transformation>().is_none()
@@ -1166,8 +1168,14 @@ pub fn get_path(item_path: &String, gltf_path: &str) -> String
 }
 
 
-fn apply_texture_transform(transform: &gltf::texture::TextureTransform, tex: Arc<RwLock<Box<Texture>>>)
+fn apply_texture_transform(transform: &gltf::texture::TextureTransform, tex: OptionOrId<Arc<RwLock<Box<Texture>>>>)
 {
+    if tex.is_none()
+    {
+        return;
+    }
+
+    let tex = tex.unwrap();
     let mut tex = tex.write().unwrap();
     let tex_data = tex.get_data_mut().get_mut();
 

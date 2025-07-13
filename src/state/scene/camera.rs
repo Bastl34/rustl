@@ -1,14 +1,16 @@
 #![allow(dead_code)]
 
-use std::{f32::consts::PI, fmt, mem::swap};
+use std::{f32::consts::PI, mem::swap};
 
 use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
-use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
+
+use crate::state::scene::exporter::serialization_helper;
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -94,40 +96,6 @@ pub struct CameraData
     pub view_inverse: Matrix4<f32>,
 }
 
-fn serialize_node<S>(node: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match node
-    {
-        OptionOrId::Some(node_item) =>
-        {
-            let guard = node_item.read().map_err(serde::ser::Error::custom)?;
-            serializer.serialize_str(&guard.uuid)
-        }
-        OptionOrId::Id(uuid) =>
-        {
-            serializer.serialize_str(uuid)
-        }
-        OptionOrId::None => serializer.serialize_none(),
-    }
-}
-
-pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let uuid_opt = Option::<String>::deserialize(deserializer)?;
-
-    if let Some(uuid) = uuid_opt
-    {
-        Ok(OptionOrId::from_id(uuid))
-    }
-    else
-    {
-        Ok(OptionOrId::None)
-    }
-}
 
 fn serialize_controller<S>(controller: &Option<CameraControllerBox>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -167,7 +135,7 @@ pub struct Camera
     #[serde(serialize_with = "serialize_controller")]
     pub controller: Option<CameraControllerBox>,
 
-    #[serde(serialize_with = "serialize_node", deserialize_with = "deserialize_node")]
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
     pub node: OptionOrId<NodeItem>,
 
     #[serde(skip, default)]

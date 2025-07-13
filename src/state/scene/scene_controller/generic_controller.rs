@@ -32,7 +32,7 @@ impl SceneController for GenericController
 {
     scene_controller_impl_default!();
 
-    fn init_after_deserialize(&mut self, _scene: &mut crate::state::scene::scene::Scene)
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
     {
     }
 

@@ -58,7 +58,7 @@ pub struct Node
 
     pub nodes: Vec<NodeItem>,
     pub instances: ChangeTracker<Vec<Arc<RwLock<InstanceItem>>>>,
-    pub components: Vec<ComponentItem>, // TODO
+    pub components: Vec<ComponentItem>,
 
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
@@ -113,7 +113,9 @@ impl Serialize for Node
         let node_refs: Vec<&Node> = node_guards.iter().map(|guard| guard.as_ref()).collect();
         map.serialize_entry("nodes", &node_refs)?;
 
-        // TODO: components
+        let components_guards: Vec<_> = self.components.iter().map(|arc| arc.read().unwrap()).collect();
+        let components_refs: Vec<&dyn Component> = components_guards.iter().map(|guard| guard.as_ref()).collect();
+        map.serialize_entry("components", &components_refs)?;
 
         if let Some(source) = &self.source
         {
@@ -177,6 +179,14 @@ impl<'de> Deserialize<'de> for Node
                             .into_iter()
                             .map(|node| Arc::new(RwLock::new(Box::new(node))))
                             .collect()
+                        },
+                        "components" =>
+                        {
+                            let components_vec: Vec<Box<dyn Component>> = map.next_value()?;
+                            node.components = components_vec
+                                .into_iter()
+                                .map(|component| Arc::new(RwLock::new(component)))
+                                .collect();
                         }
                         _ =>
                         {
@@ -185,140 +195,6 @@ impl<'de> Deserialize<'de> for Node
                         }
                     }
                 }
-
-                /*
-                let mut uuid: Option<String> = None;
-                let mut name: Option<String> = None;
-                let mut visible: Option<bool> = None;
-                let mut locked: Option<bool> = None;
-                let mut pickable: Option<bool> = None;
-                let mut root_node: Option<bool> = None;
-                let mut parent: Option<String> = None;
-                let mut settings: Option<NodeSettings> = None;
-                let mut extras: Option<Extras> = None;
-                let mut tags: Option<Tags> = None;
-                let mut skin: Option<Vec<String>> = None;
-                let mut source: Option<AssetPathDesciptor> = None;
-                let mut instances: Option<Vec<Instance>> = None;
-                let mut nodes: Option<Vec<Node>> = None;
-
-                while let Some(key) = map.next_key::<String>()?
-                {
-                    match key.as_str()
-                    {
-                        "uuid" =>
-                        {
-                            if uuid.is_some() { return Err(de::Error::duplicate_field("uuid")); }
-                            uuid = Some(map.next_value()?);
-                        }
-                        "name" =>
-                        {
-                            if name.is_some() { return Err(de::Error::duplicate_field("name")); }
-                            name = Some(map.next_value()?);
-                        }
-                        "visible" =>
-                        {
-                            if visible.is_some() { return Err(de::Error::duplicate_field("visible")); }
-                            visible = Some(map.next_value()?);
-                        }
-                        "locked" =>
-                        {
-                            if locked.is_some() { return Err(de::Error::duplicate_field("locked")); }
-                            locked = Some(map.next_value()?);
-                        }
-                        "pickable" =>
-                        {
-                            if pickable.is_some() { return Err(de::Error::duplicate_field("pickable")); }
-                            pickable = Some(map.next_value()?);
-                        }
-                        "root_node" =>
-                        {
-                            if root_node.is_some() { return Err(de::Error::duplicate_field("root_node")); }
-                            root_node = Some(map.next_value()?);
-                        }
-                        "parent" =>
-                        {
-                            if parent.is_some() { return Err(de::Error::duplicate_field("parent")); }
-                            parent = Some(map.next_value()?);
-                        }
-                        "settings" =>
-                        {
-                            if settings.is_some() { return Err(de::Error::duplicate_field("settings")); }
-                            settings = Some(map.next_value()?);
-                        }
-                        "extras" =>
-                        {
-                            if extras.is_some() { return Err(de::Error::duplicate_field("extras")); }
-                            extras = Some(map.next_value()?);
-                        }
-                        "tags" =>
-                        {
-                            if tags.is_some() { return Err(de::Error::duplicate_field("tags")); }
-                            tags = Some(map.next_value()?);
-                        }
-                        "skin" =>
-                        {
-                            if skin.is_some() { return Err(de::Error::duplicate_field("skin")); }
-                            skin = Some(map.next_value()?);
-                        }
-                        "source" =>
-                        {
-                            if source.is_some() { return Err(de::Error::duplicate_field("source")); }
-                            source = Some(map.next_value()?);
-                        }
-                        "instances" =>
-                        {
-                            if instances.is_some() { return Err(de::Error::duplicate_field("instances")); }
-                            instances = Some(map.next_value()?);
-                        }
-                        "nodes" =>
-                        {
-                            if nodes.is_some() { return Err(de::Error::duplicate_field("nodes")); }
-                            nodes = Some(map.next_value()?);
-                        }
-                        _ =>
-                        {
-                            // unbekannte Felder ignorieren
-                            let _: de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-                Ok(Node
-                {
-                    id: id_manager::get_next_node_id(),
-                    uuid: uuid.ok_or_else(|| de::Error::missing_field("uuid"))?,
-                    name: name.ok_or_else(|| de::Error::missing_field("name"))?,
-                    visible: visible.unwrap_or(true),
-                    locked: locked.unwrap_or(false),
-                    pickable: pickable.unwrap_or(true),
-                    root_node: root_node.unwrap_or(false),
-                    settings: settings.unwrap_or_default(),
-                    extras: extras.unwrap_or_default(),
-                    tags: tags.unwrap_or_default(),
-                    source,
-                    instances: ChangeTracker::new
-                    (
-                        instances.unwrap_or_default()
-                            .into_iter()
-                            .map(|inst| Arc::new(RwLock::new(Box::new(inst))))
-                            .collect()
-                    ),
-                    nodes: nodes.unwrap_or_default()
-                        .into_iter()
-                        .map(|node| Arc::new(RwLock::new(Box::new(node))))
-                        .collect(),
-
-                    parent: OptionOrId::from_id_or_none(parent),
-                    skin: OptionOrId::from_id_vec(&skin.unwrap_or(vec![])),
-                    components: vec![],
-                    instance_render_item: Default::default(),
-                    skeleton_render_item: Default::default(),
-                    skeleton_morph_target_bind_group_render_item: Default::default(),
-                    b_box_node_index: 0,
-                    delete_later_request: false,
-                })
-                 */
 
                 Ok(node)
             }
@@ -1503,12 +1379,19 @@ impl Node
             component_downcast_mut!(animation, Animation);
             for channel in &mut animation.channels
             {
-                let target_name = channel.target.read().unwrap().name.clone();
+                if channel.target.is_none()
+                {
+                    println!("warning: target not set for channel ");
+                    continue;
+                }
+                let target = channel.target.as_ref().unwrap();
+
+                let target_name = target.read().unwrap().name.clone();
                 let target_node_candidate = self.find_child_node_by_name(target_name.as_str());
 
                 if let Some(target_node_candidate) = target_node_candidate
                 {
-                    channel.target = target_node_candidate.clone();
+                    channel.target = OptionOrId::Some(target_node_candidate.clone());
                 }
                 else
                 {
@@ -1757,7 +1640,7 @@ impl Node
 
             let mut matrix = Matrix4::<f32>::identity();
 
-            let transform_component: Option<Arc<RwLock<Box<dyn Component + Send + Sync>>>> = instance.find_component::<Transformation>();
+            let transform_component = instance.find_component::<Transformation>();
 
             if let Some(transform_component) = transform_component
             {

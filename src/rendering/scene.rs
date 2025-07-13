@@ -224,19 +224,23 @@ impl Scene
         // check if the scene env texture has changed
         if let Some(env_tex) = &scene.get_data().environment_texture
         {
-            if env_tex.enabled && env_tex.item.read().unwrap().get_data_tracker().changed()
+            let enabled = env_tex.enabled;
+            if let Some(env_tex) = env_tex.get()
             {
-                dbg!("update all materials");
-                let env_texture_id = env_tex.item.read().unwrap().id;
-
-                for (_, material) in &mut scene.materials
+                if enabled && env_tex.read().unwrap().get_data_tracker().changed()
                 {
-                    let mut material = material.write().unwrap();
-                    let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+                    dbg!("update all materials");
+                    let env_texture_id = env_tex.read().unwrap().id;
 
-                    if !material.has_texture(TextureType::Environment) || material.has_texture_id(env_texture_id)
+                    for (_, material) in &mut scene.materials
                     {
-                        material.get_data_mut().force_change();
+                        let mut material = material.write().unwrap();
+                        let material = material.as_any_mut().downcast_mut::<MaterialComponent>().unwrap();
+
+                        if !material.has_texture(TextureType::Environment) || material.has_texture_id(env_texture_id)
+                        {
+                            material.get_data_mut().force_change();
+                        }
                     }
                 }
             }
@@ -728,24 +732,30 @@ impl Scene
 
                 let data = mat.get_data();
 
+                if let Some(base_tex) = data.texture_base.as_ref()
                 {
-                    let base_tex = data.texture_base.clone().unwrap();
-                    let base_tex = base_tex.get().read().unwrap();
-                    let render_item = base_tex.render_item.as_ref().unwrap();
-                    let render_item = get_render_item::<Texture>(&render_item);
+                    if let Some(base_tex) = base_tex.get()
+                    {
+                        let base_tex = base_tex.read().unwrap();
+                        let render_item = base_tex.render_item.as_ref().unwrap();
+                        let render_item = get_render_item::<Texture>(&render_item);
 
-                    let img_data = render_item.to_image(wgpu);
-                    img_data.save("data/base_texture.png").unwrap();
+                        let img_data = render_item.to_image(wgpu);
+                        img_data.save("data/base_texture.png").unwrap();
+                    }
                 }
 
+                if let Some(texture_normal) = data.texture_normal.as_ref()
                 {
-                    let base_tex = data.texture_normal.clone().unwrap();
-                    let base_tex = base_tex.get().read().unwrap();
-                    let render_item = base_tex.render_item.as_ref().unwrap();
-                    let render_item = get_render_item::<Texture>(&render_item);
+                    if let Some(texture_normal) = texture_normal.get()
+                    {
+                        let texture_normal = texture_normal.read().unwrap();
+                        let render_item = texture_normal.render_item.as_ref().unwrap();
+                        let render_item = get_render_item::<Texture>(&render_item);
 
-                    let img_data = render_item.to_image(wgpu);
-                    img_data.save("data/normal_texture.png").unwrap();
+                        let img_data = render_item.to_image(wgpu);
+                        img_data.save("data/normal_texture.png").unwrap();
+                    }
                 }
             }
 

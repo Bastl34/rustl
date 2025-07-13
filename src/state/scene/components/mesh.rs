@@ -3,6 +3,7 @@
 use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point2, Point3, Point4, Vector3};
 use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
+use serde::{Deserialize, Serialize};
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, math::calculate_normal}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, scene::node::NodeItem}};
 
@@ -36,11 +37,43 @@ pub struct MeshData
     pub morph_target_normals: Vec<Vec<Vector3<f32>>>,
     pub morph_target_tangents: Vec<Vec<Vector3<f32>>>,
 
-    pub flip_normals: bool,
-
     pub b_box: Aabb,
     pub b_box_skin: Option<Aabb>,
     pub b_box_skin_multiplier: f32,
+}
+
+impl Default for MeshData
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            mesh: TriMesh::new(vec![], vec![]).unwrap(),
+
+            vertices: vec![],
+            indices: vec![],
+
+            uvs_0: vec![],
+            uvs_1: vec![],
+            uvs_2: vec![],
+            uvs_3: vec![],
+            uv_indices: vec![],
+
+            normals: vec![],
+            normals_indices: vec![],
+
+            joints: vec![],
+            weights: vec![],
+
+            morph_target_positions: vec![],
+            morph_target_normals: vec![],
+            morph_target_tangents: vec![],
+
+            b_box: Aabb::new_invalid(),
+            b_box_skin: None,
+            b_box_skin_multiplier: DEFAULT_SKIN_B_BOX_SCALE
+        }
+    }
 }
 
 impl MeshData
@@ -90,11 +123,15 @@ impl MeshData
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Mesh
 {
     base: ComponentBase,
+
+    #[serde(skip)]
     data: ChangeTracker<MeshData>,
 
+    #[serde(skip)]
     pub morph_target_render_item: RenderItemOption,
 
     pub update_skin_bbox_on_animation: bool,
@@ -138,8 +175,6 @@ impl Mesh
             morph_target_positions: vec![],
             morph_target_normals: vec![],
             morph_target_tangents: vec![],
-
-            flip_normals: false,
 
             b_box: Aabb::new_invalid(),
             b_box_skin: None,
@@ -688,12 +723,18 @@ impl Mesh
     }
 }
 
+#[typetag::serde]
 impl Component for Mesh
 {
     component_impl_default!();
     component_impl_no_update!();
     component_impl_set_enabled!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        // TODO assign mesh from resources
+    }
 
     fn instantiable() -> bool
     {
@@ -732,8 +773,6 @@ impl Component for Mesh
             ui.label(format!(" ⚫ morph target positions: {}", data.morph_target_positions.len()));
             ui.label(format!(" ⚫ morph target normals: {}", data.morph_target_normals.len()));
             ui.label(format!(" ⚫ morph target tangents: {}", data.morph_target_tangents.len()));
-
-            ui.label(format!(" ⚫ flip_normals: {}", data.flip_normals));
 
             ui.label(format!(" ⚫ bbox min: [{:.3}, {:.3}, {:.3}]", data.b_box.mins.x, data.b_box.mins.z, data.b_box.mins.z));
             ui.label(format!(" ⚫ bbox max: [{:.3}, {:.3}, {:.3}]", data.b_box.maxs.x, data.b_box.maxs.z, data.b_box.maxs.z));

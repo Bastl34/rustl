@@ -2,14 +2,16 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::{keyboard::{get_keys_as_string_vec, Key}}, state::{scene::node::NodeItem, state::InputOutput}};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::math::{approx_equal, approx_zero}, input::keyboard::{get_keys_as_string_vec, Key}, state::{scene::node::NodeItem, state::InputOutput}};
 use crate::helper::easing::{Easing, easing, get_easing_as_string_vec};
 
 use super::{component::{Component, ComponentBase}, morph_target::MorphTarget};
 
 const INFO_STRING: &str = "The changes are applies on the Morph Target Component.\nThey are applied for each frame.\nIf there is no Morph Target Component: Nothing is happening.";
 
-
+#[derive(Serialize, Deserialize)]
 pub struct MorphTargetAnimation
 {
     base: ComponentBase,
@@ -98,11 +100,13 @@ impl MorphTargetAnimation
     }
 }
 
+#[typetag::serde]
 impl Component for MorphTargetAnimation
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {

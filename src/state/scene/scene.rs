@@ -6,7 +6,6 @@ use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{json, Value};
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
@@ -47,7 +46,7 @@ impl ScenePickRes
 pub struct SceneData
 {
     pub max_lights: u32,
-    pub environment_texture: Option<TextureState>, // TODO reuse loaded one
+    pub environment_texture: Option<TextureState>,
     pub gamma: Option<f32>,
     pub exposure: Option<f32>,
 }

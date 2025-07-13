@@ -41,7 +41,7 @@ pub struct TargetRotationController
     pub auto_rotate_timeout: u64,
 
     #[serde(skip, default)]
-    pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>,
+    pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>, // TODO -> find a better way to handle this
 
     pub collision_check: bool,
     pub collision_check_offset: f32,
@@ -163,6 +163,10 @@ impl TargetRotationController
 impl CameraController for TargetRotationController
 {
     camera_controller_impl_default!();
+
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+    }
 
     fn update(&mut self, node: Option<NodeItem>, scene: &mut Scene, io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
