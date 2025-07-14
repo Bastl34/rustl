@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -50,6 +50,12 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         if tex.read().unwrap().get_data().mipmapping && tex.read().unwrap().get_data().mipmap_cache.is_none()
         {
             tex.write().unwrap().create_mipmap_cache();
+        }
+
+        // extras
+        {
+            let mut tex = tex.write().unwrap();
+            read_extras(&mut tex.extras, gltf_texture.extras().as_ref());
         }
 
         loaded_textures.push((tex, gltf_texture.index()));
@@ -653,7 +659,10 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             }
 
             // extras
-            read_extras(node_arc.clone(), node);
+            {
+                let mut scene_node = node_arc.write().unwrap();
+                read_extras(&mut scene_node.extras, node.extras().as_ref());
+            }
 
             println!("{} - {} ({}) (mesh)", " ".repeat(level * 2), mesh_name.as_str(), node_index);
             Node::add_node(parent_node.clone(), node_arc.clone());
@@ -687,7 +696,10 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             }
 
             // extras
-            read_extras(scene_node.clone(), node);
+            {
+                let mut scene_node = scene_node.write().unwrap();
+                read_extras(&mut scene_node.extras, node.extras().as_ref());
+            }
 
             Node::add_node(parent_node.clone(), scene_node.clone());
 
@@ -702,15 +714,11 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     }
 }
 
-pub fn read_extras(node: NodeItem, gltf_node: &gltf::Node)
+pub fn read_extras(obj_extras: &mut Extras, gltf_extras: Option<&Box<serde_json::value::RawValue>>)
 {
-    let extras: Option<&Box<serde_json::value::RawValue>> = gltf_node.extras().as_ref();
-
-    let mut node = node.write().unwrap();
-
-    if let Some(extras) = extras
+    if let Some(gltf_extras) = gltf_extras
     {
-        if let Ok(json) = serde_json::from_str::<Value>(extras.get())
+        if let Ok(json) = serde_json::from_str::<Value>(gltf_extras.get())
         {
             let json_content = json.as_object();
 
@@ -720,23 +728,23 @@ pub fn read_extras(node: NodeItem, gltf_node: &gltf::Node)
                 {
                     if value.is_boolean()
                     {
-                        node.extras.insert::<bool>(key.as_str(), value.as_bool().unwrap());
+                        obj_extras.insert::<bool>(key.as_str(), value.as_bool().unwrap());
                     }
                     else if value.is_f64()
                     {
-                        node.extras.insert::<f64>(key.as_str(), value.as_f64().unwrap());
+                        obj_extras.insert::<f64>(key.as_str(), value.as_f64().unwrap());
                     }
                     else if value.is_i64()
                     {
-                        node.extras.insert::<i64>(key.as_str(), value.as_i64().unwrap());
+                        obj_extras.insert::<i64>(key.as_str(), value.as_i64().unwrap());
                     }
                     else if value.is_string()
                     {
-                        node.extras.insert::<String>(key.as_str(), value.as_str().unwrap().to_string());
+                        obj_extras.insert::<String>(key.as_str(), value.as_str().unwrap().to_string());
                     }
                     else if value.is_u64()
                     {
-                        node.extras.insert::<u64>(key.as_str(), value.as_u64().unwrap());
+                        obj_extras.insert::<u64>(key.as_str(), value.as_u64().unwrap());
                     }
                     else
                     {
