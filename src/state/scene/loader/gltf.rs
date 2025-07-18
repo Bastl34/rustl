@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, insert_texture_or_reuse, load_texture_byte_or_reuse}}}}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -122,7 +122,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     {
         for node in gltf_scene.nodes()
         {
-            read_node(&node, &buffers, object_only, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
+            read_node(&node, &buffers, path.to_string(), object_only, &loaded_materials, scene_id, main_queue.clone(), root_node.clone(), &Matrix4::<f32>::identity(), 1);
         }
     }
 
@@ -229,7 +229,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 }
 
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: String, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
@@ -540,15 +540,19 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
             let mut components: Vec<ComponentItem> = vec![];
 
             // mesh component
-            let mut mesh_component: Mesh = Mesh::new_with_data("Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
-            mesh_component.get_data_mut().get_mut().uvs_1 = uvs2;
-            mesh_component.get_data_mut().get_mut().uvs_2 = uvs3;
-            mesh_component.get_data_mut().get_mut().uvs_3 = uvs4;
+            let mut mesh_resource: MeshResource = MeshResource::new_with_data("Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
+
+            mesh_resource.source = Some(AssetPathDesciptor::new_from_path(file_path.clone()));
+            mesh_resource.source.as_mut().unwrap().inner_path = format!("#Primitive{}", primitive_id);
+
+            mesh_resource.get_data_mut().get_mut().uvs_1 = uvs2;
+            mesh_resource.get_data_mut().get_mut().uvs_2 = uvs3;
+            mesh_resource.get_data_mut().get_mut().uvs_3 = uvs4;
 
             if joints.len() == weights.len()
             {
-                mesh_component.get_data_mut().get_mut().joints = joints;
-                mesh_component.get_data_mut().get_mut().weights = weights;
+                mesh_resource.get_data_mut().get_mut().joints = joints;
+                mesh_resource.get_data_mut().get_mut().weights = weights;
             }
             else
             {
@@ -604,14 +608,30 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
                     //let morph_target = MorphTarget::new(component_id, name, target.0.clone(), target.1.clone(), target.2.clone());
                     let morph_target = MorphTarget::new(name, i as u32);
 
-                    let mesh_component_data = mesh_component.get_data_mut().get_mut();
-                    mesh_component_data.morph_target_positions.push(target.0.clone());
-                    mesh_component_data.morph_target_normals.push(target.1.clone());
-                    mesh_component_data.morph_target_tangents.push(target.2.clone());
+                    let mesh_resource_data = mesh_resource.get_data_mut().get_mut();
+                    mesh_resource_data.morph_target_positions.push(target.0.clone());
+                    mesh_resource_data.morph_target_normals.push(target.1.clone());
+                    mesh_resource_data.morph_target_tangents.push(target.2.clone());
 
                     components.push(Arc::new(RwLock::new(Box::new(morph_target))));
                 }
             }
+
+            let mesh_resource_result: Arc<RwLock<Option<MeshResourceItem>>> = Arc::new(RwLock::new(None));
+            let mesh_resource_result_clone = mesh_resource_result.clone();
+            let node_name_clone = node_name.to_string();
+
+            execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
+            {
+                let mut res = mesh_resource_result_clone.write().unwrap();
+                *res = Some(state.insert_mesh_resource_or_reuse(mesh_resource, node_name_clone.as_str()));
+            }));
+
+            let mesh_resource = mesh_resource_result.read().unwrap();
+            let mesh_resource_cloned = mesh_resource.as_ref().unwrap().clone();
+
+            let mut mesh_component: Mesh = Mesh::new("Mesh");
+            mesh_component.mesh_resource = OptionOrId::Some(mesh_resource_cloned);
 
             components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
 
@@ -710,7 +730,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, object_only: 
     // ********** children **********
     for child in node.children()
     {
-        read_node(&child, &buffers, object_only, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
+        read_node(&child, &buffers, file_path.clone(), object_only, loaded_materials, scene_id, main_queue.clone(), parent_node.clone(), &world_transform, level + 1);
     }
 }
 

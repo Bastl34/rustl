@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG}};
+use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::editor_state::EditorState;
 
@@ -358,11 +358,46 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
         let mut node = node.write().unwrap();
         node.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
-        let materials = node.find_components::<Material>();
-        for material in materials
+        // materials
         {
-            let mut material = material.write().unwrap();
-            material.get_base_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+            let materials = node.find_components::<Material>();
+            for material in materials
+            {
+                component_downcast_mut!(material, Material);
+                material.get_base_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+
+                // textures
+                for tex in material.get_all_textures()
+                {
+                    tex.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                }
+            }
+        }
+
+        // meshes
+        {
+            let meshes = node.find_components::<Mesh>();
+            for mesh in meshes
+            {
+                component_downcast_mut!(mesh, Mesh);
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    mesh_resource.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                }
+            }
+        }
+
+        // sound sources
+        {
+            let sounds = node.find_components::<Sound>();
+            for sound in sounds
+            {
+                component_downcast_mut!(sound, Sound);
+                if let Some(sound_source) = sound.sound_source.as_ref()
+                {
+                    sound_source.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                }
+            }
         }
     }
 }

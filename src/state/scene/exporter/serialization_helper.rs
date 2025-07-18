@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Deserializer, Serializer};
 
-use crate::{helper::option_or_id::OptionOrId, state::{resources::{sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::component::{Component, ComponentItem}, node::NodeItem}}};
+use crate::{helper::option_or_id::OptionOrId, state::{resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::component::{Component, ComponentItem}, node::NodeItem}}};
 
 // ******************** node serialization ********************
 
@@ -80,7 +80,45 @@ where
     }
 }
 
-// ******************** sound source serialization ********************
+// ******************** mesh serialization ********************
+
+pub fn serialize_mesh_resource<S>(item: &OptionOrId<MeshResourceItem>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match item
+    {
+        OptionOrId::Some(item) =>
+        {
+            let guard = item.read().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&guard.uuid)
+        }
+        OptionOrId::Id(uuid) =>
+        {
+            serializer.serialize_str(uuid)
+        }
+        OptionOrId::None => serializer.serialize_none(),
+    }
+}
+
+
+pub fn deserialize_mesh_resource<'de, D>(deserializer: D) -> Result<OptionOrId<MeshResourceItem>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let uuid_opt = Option::<String>::deserialize(deserializer)?;
+
+    if let Some(uuid) = uuid_opt
+    {
+        Ok(OptionOrId::from_id(uuid))
+    }
+    else
+    {
+        Ok(OptionOrId::None)
+    }
+}
+
+// ******************** texture serialization ********************
 
 pub fn serialize_texture<S>(item: &OptionOrId<TextureItem>, serializer: S) -> Result<S::Ok, S::Error>
 where

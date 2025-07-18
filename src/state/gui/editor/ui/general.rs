@@ -1,7 +1,7 @@
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, state::{gui::helper::generic_items::collapse_with_title, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::State}};
+use crate::{component_downcast, state::{gui::helper::generic_items::collapse_with_title, scene::{components::material::Material, scene::Scene}, state::State}};
 
 use super::super::editor_state::EditorState;
 
@@ -36,16 +36,6 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             let node = node.read().unwrap();
             instances_amout += node.instances.get_ref().len();
 
-            let mesh = node.find_component::<Mesh>();
-            if let Some(mesh) = mesh
-            {
-                component_downcast!(mesh, Mesh);
-
-                meshes_amout += 1;
-                vertices_amout += mesh.get_data().vertices.len();
-                indices_amout += mesh.get_data().indices.len();
-            }
-
             if let Some(material) = node.find_component::<Material>()
             {
                 component_downcast!(material, Material);
@@ -65,6 +55,14 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         materials_amout += scene.materials.len();
         cameras_amout += scene.cameras.len();
         lights_amout += scene.lights.get_ref().len();
+    }
+
+    meshes_amout += state.mesh_resources.len();
+    for mesh_resource in &state.mesh_resources
+    {
+        let mesh_resource = mesh_resource.1.read().unwrap();
+        vertices_amout += mesh_resource.get_data().vertices.len();
+        indices_amout += mesh_resource.get_data().indices.len();
     }
 
     let mut tex_memory_usage = 0.0;

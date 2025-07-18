@@ -96,7 +96,9 @@ pub struct TextureData
 #[derive(Serialize, Deserialize)]
 pub struct Texture
 {
+    #[serde(skip, default)]
     pub id: u64,
+
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
 

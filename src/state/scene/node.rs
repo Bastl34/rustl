@@ -451,6 +451,26 @@ impl Node
         self.find_components::<Mesh>()
     }
 
+    pub fn get_meshes_with_mesh_resource(&self) -> Vec<ComponentItem>
+    {
+        let meshes = self.find_components::<Mesh>();
+
+        meshes.iter().filter_map(|component|
+        {
+            let guard = component.read().ok()?;
+            let mesh = guard.as_any().downcast_ref::<Mesh>()?;
+            if mesh.mesh_resource.is_some()
+            {
+                Some(component.clone())
+            }
+            else
+            {
+                None
+            }
+        })
+        .collect()
+    }
+
     pub fn has_tag(&self, tag: &str) -> bool
     {
         self.tags.contains(tag)
@@ -485,38 +505,41 @@ impl Node
             {
                 component_downcast!(mesh, Mesh);
 
-                let bbox;
+                let mut bbox = None;
                 if let Some(skin_bbox) = mesh.get_data().b_box_skin
                 {
-                    bbox = skin_bbox;
+                    bbox = Some(skin_bbox);
                 }
-                else
+                else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
                 {
-                    bbox = mesh.get_data().b_box;
+                    bbox = Some(mesh_resource.read().unwrap().get_data().b_box);
                 }
 
-                let transformed_min = transform * Vector4::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z, 1.0);
-                let transformed_max = transform * Vector4::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z, 1.0);
+                if let Some(bbox) = bbox
+                {
+                    let transformed_min = transform * Vector4::<f32>::new(bbox.mins.x, bbox.mins.y, bbox.mins.z, 1.0);
+                    let transformed_max = transform * Vector4::<f32>::new(bbox.maxs.x, bbox.maxs.y, bbox.maxs.z, 1.0);
 
-                // sometimes coordinates are flipped because of the transformation -> check for min and max points
-                min.x = min.x.min(transformed_min.x);
-                min.y = min.y.min(transformed_min.y);
-                min.z = min.z.min(transformed_min.z);
+                    // sometimes coordinates are flipped because of the transformation -> check for min and max points
+                    min.x = min.x.min(transformed_min.x);
+                    min.y = min.y.min(transformed_min.y);
+                    min.z = min.z.min(transformed_min.z);
 
-                min.x = min.x.min(transformed_max.x);
-                min.y = min.y.min(transformed_max.y);
-                min.z = min.z.min(transformed_max.z);
+                    min.x = min.x.min(transformed_max.x);
+                    min.y = min.y.min(transformed_max.y);
+                    min.z = min.z.min(transformed_max.z);
 
 
-                max.x = max.x.max(transformed_min.x);
-                max.y = max.y.max(transformed_min.y);
-                max.z = max.z.max(transformed_min.z);
+                    max.x = max.x.max(transformed_min.x);
+                    max.y = max.y.max(transformed_min.y);
+                    max.z = max.z.max(transformed_min.z);
 
-                max.x = max.x.max(transformed_max.x);
-                max.y = max.y.max(transformed_max.y);
-                max.z = max.z.max(transformed_max.z);
+                    max.x = max.x.max(transformed_max.x);
+                    max.y = max.y.max(transformed_max.y);
+                    max.z = max.z.max(transformed_max.z);
 
-                found = true;
+                    found = true;
+                }
             }
         }
 
@@ -1610,10 +1633,18 @@ impl Node
         component_downcast!(merge_mesh, Mesh);
         component_downcast_mut!(current_mesh, Mesh);
 
-        let mesh_data = merge_mesh.get_data();
-        current_mesh.merge(mesh_data);
+        if current_mesh.mesh_resource.is_some() && merge_mesh.mesh_resource.is_some()
+        {
+            let current_mesh_res = current_mesh.mesh_resource.as_ref().unwrap();
+            let mut current_mesh_res = current_mesh_res.write().unwrap();
 
-        true
+            current_mesh_res.merge(merge_mesh.mesh_resource.as_ref().unwrap().read().unwrap().as_ref().get_data());
+            current_mesh_res.calc_hash();
+
+            return true;
+        }
+
+        false
     }
 
     pub fn merge_instances(&mut self) -> bool
@@ -1658,7 +1689,13 @@ impl Node
         for mesh in meshes
         {
             component_downcast_mut!(mesh, Mesh);
-            mesh.merge_by_transformations(&transformations);
+
+            if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+            {
+                let mut mesh_resource = mesh_resource.write().unwrap();
+                mesh_resource.merge_by_transformations(&transformations);
+                mesh_resource.calc_hash();
+            }
         }
 
         // clear and create new single instance
@@ -1814,35 +1851,17 @@ impl Bounded<f32, 3> for Node
             return bvh::aabb::Aabb::empty();
         }
 
-        let (trans, _) = self.get_transform();
+        let bbox = self.get_world_bounding_info(None, true, None);
 
-        let mesh = mesh.unwrap();
-        component_downcast!(mesh, Mesh);
-        let mesh_data = mesh.get_data();
-
-        let aabb = mesh_data.b_box;
-        let verts = aabb.vertices();
-
-        let mut min = verts[0];
-        let mut max = verts[0];
-
-        for vert in &verts
+        if let Some((min, max)) = bbox
         {
-            let transformed = trans * vert.to_homogeneous();
+            let min = Point3::new(min.x, min.y, min.z);
+            let max = Point3::new(max.x, max.y, max.z);
 
-            min.x = min.x.min(transformed.x);
-            min.y = min.y.min(transformed.y);
-            min.z = min.z.min(transformed.z);
-
-            max.x = max.x.max(transformed.x);
-            max.y = max.y.max(transformed.y);
-            max.z = max.z.max(transformed.z);
+            return bvh::aabb::Aabb::with_bounds(min, max);
         }
 
-        let min = Point3::new(min.x, min.y, min.z);
-        let max = Point3::new(max.x, max.y, max.z);
-
-        bvh::aabb::Aabb::with_bounds(min, max)
+        bvh::aabb::Aabb::empty()
     }
 }
 

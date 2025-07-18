@@ -2,7 +2,7 @@ use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::MAX_NAME_LENGTH, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::components::{component::Component, material::Material}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::generic::cut_string_to_length, state::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, scene::components::{component::Component, material::Material}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -15,8 +15,11 @@ pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mu
             let texture = texture_arc.read().unwrap();
             let headline_name = format!("⚫ {}: {}", texture.id, cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
 
+            let is_internal = texture.tags.contains(ENGINE_INTERNAL_TAG) || texture.tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
+
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && texture.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && texture.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }
@@ -121,7 +124,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
             }
         });
 
-        collapse_with_title(ui, "texture_usage", true, "👆 Texture used by Materials", None, |ui|
+        collapse_with_title(ui, "texture_usage", true, "👆 Used by Materials", None, |ui|
         {
             let mut used = false;
             for scene in &state.scenes

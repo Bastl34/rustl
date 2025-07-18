@@ -45,6 +45,7 @@ pub enum SettingsPanel
     Object,
     General,
     Resources,
+    MeshResource
 }
 
 #[derive(PartialEq, Eq)]
@@ -57,6 +58,7 @@ pub enum SelectionType
     Texture,
     Sound,
     SoundSource,
+    MeshResource,
     None
 }
 

@@ -6,7 +6,7 @@ use instant::Instant;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -113,6 +113,7 @@ pub struct State
 
     pub textures: HashMap<String, TextureItem>,
     pub sound_sources: HashMap<String, SoundSourceItem>,
+    pub mesh_resources: HashMap<String, MeshResourceItem>,
 
     pub main_thread_execution_queue: ExecutionQueueItem,
 
@@ -204,8 +205,10 @@ impl State
                 audio_device,
             },
 
+            // resouces
             textures: HashMap::new(),
             sound_sources: HashMap::new(),
+            mesh_resources: HashMap::new(),
 
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
@@ -269,7 +272,7 @@ impl State
         }
     }
 
-        pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
+    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
     {
         let image_bytes = load_binary_async(path).await?;
 
@@ -334,6 +337,23 @@ impl State
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
         self.textures.insert(hash, arc.clone());
+
+        arc
+    }
+
+    pub fn insert_mesh_resource_or_reuse(&mut self, mesh_resource: MeshResource, name: &str) -> MeshResourceItem
+    {
+        let hash = mesh_resource.hash.clone();
+
+        if self.mesh_resources.contains_key(&hash)
+        {
+            println!("reusing mesh resources {}", name);
+            return self.mesh_resources.get_mut(&hash).unwrap().clone();
+        }
+
+        let arc = Arc::new(RwLock::new(Box::new(mesh_resource)));
+
+        self.mesh_resources.insert(hash, arc.clone());
 
         arc
     }
@@ -409,7 +429,7 @@ impl State
 
     pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
     {
-        // remove sound component from all nodes
+        // remove sound source from all node and instance components
         for scene in &mut self.scenes
         {
             let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
@@ -472,6 +492,63 @@ impl State
         });
 
         self.sound_sources.len() != len
+    }
+
+    pub fn get_mesh_resource_by_id(&self, id: u64) -> Option<MeshResourceItem>
+    {
+        for mesh_arc in self.mesh_resources.values()
+        {
+            let mesh =  mesh_arc.read().unwrap();
+            if mesh.id == id
+            {
+                return Some(mesh_arc.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn delete_mesh_resource_by_id(&mut self, id: u64) -> bool
+    {
+        // remove mesh resource from all node components
+        for scene in &mut self.scenes
+        {
+            let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+
+            for node in all_nodes
+            {
+                let mut node = node.write().unwrap();
+
+                node.components.retain(|component|
+                {
+                    let component = component.read().unwrap();
+
+                    if let Some(mesh) = component.as_any().downcast_ref::<Mesh>()
+                    {
+                        if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                        {
+                            let mesh_resource = mesh_resource.read().unwrap();
+                            if mesh_resource.id == id
+                            {
+                                return false;
+                            }
+                        }
+                    }
+
+                    true
+                });
+            }
+        }
+
+        // remove mesh resource
+        let len = self.mesh_resources.len();
+        self.mesh_resources.retain(|_key, mesh|
+        {
+            let mesh = mesh.read().unwrap();
+            mesh.id != id
+        });
+
+        self.mesh_resources.len() != len
     }
 
     pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
@@ -561,16 +638,62 @@ impl State
 
     pub fn update(&mut self, time: u128, time_delta: f32, frame: u64)
     {
-        // update scenes
+        // ********** update scenes **********
         for scene in &mut self.scenes
         {
             scene.update(&mut self.io, time, time_delta, frame);
         }
 
+        // ********** textures **********
         // check for delete later textures
+        // see: delete_node_by_id
         self.textures.retain(|_key, texture|
         {
             if texture.read().unwrap().delete_later_request
+            {
+                return false;
+            }
+            true
+        });
+
+        // ********** mesh resources **********
+        // check for delete later mesh resources
+        // see: delete_node_by_id
+        self.mesh_resources.retain(|_key, mesh_resource|
+        {
+            if mesh_resource.read().unwrap().delete_later_request
+            {
+                return false;
+            }
+            true
+        });
+
+        // update hash
+        let mut mesh_resource_key_updates = vec![];
+        for (key, mesh_resource) in &self.mesh_resources
+        {
+            let new_hash = mesh_resource.read().unwrap().hash.clone();
+            if key != &new_hash
+            {
+                mesh_resource_key_updates.push(key.clone());
+            }
+        }
+
+        for old_mesh_resource_key in mesh_resource_key_updates
+        {
+            if let Some(value) = self.mesh_resources.remove(&old_mesh_resource_key)
+            {
+                let new_hash = value.read().unwrap().hash.clone();
+                self.mesh_resources.insert(new_hash, value);
+            }
+        }
+
+        // ********** sound sources **********
+        // check for delete later sound sources
+        // see: delete_node_by_id
+        self.sound_sources.retain(|_key, sound_source|
+        {
+            if sound_source.read().unwrap().delete_later_request
             {
                 return false;
             }

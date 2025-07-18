@@ -11,7 +11,9 @@ pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SoundSource
 {
+    #[serde(skip, default)]
     pub id: u64,
+
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
 
@@ -25,6 +27,9 @@ pub struct SoundSource
 
     #[serde(skip, default)]
     pub audio_device: AudioDeviceItem,
+
+    #[serde(skip, default)]
+    pub delete_later_request: bool,
 }
 
 impl AsRef<[u8]> for SoundSource
@@ -76,7 +81,14 @@ impl SoundSource
             audio_device,
 
             bytes: Arc::new(bytes),
+
+            delete_later_request: false
         }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 
     pub fn save(&self, path: &str) -> bool
@@ -89,6 +101,8 @@ impl SoundSource
     {
         let sound_size = self.bytes.len() as f32 / 1024.0 / 1024.0;
         let extension = self.extension.clone().unwrap_or("unknown".to_string());
+
+        ui.label(format!("Hash: {}", self.hash));
 
         ui.label(format!("Format: {}", extension));
         ui.label(format!("Size {:.2} MB", sound_size));

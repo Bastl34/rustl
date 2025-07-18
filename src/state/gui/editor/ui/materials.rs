@@ -86,7 +86,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             material.ui(ui, None);
         });
 
-        collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", None, |ui|
+        collapse_with_title(ui, "material_usage", true, "👆 Used by Objects", None, |ui|
         {
             let mut used = false;
             //Scene::list_all_child_nodes(nodes)

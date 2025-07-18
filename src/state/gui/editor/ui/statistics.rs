@@ -109,6 +109,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     ui.label(format!(" ⚫ textures: {}", state.textures.len()));
     ui.label(format!(" ⚫ sounds: {}", state.sound_sources.len()));
     ui.label(format!(" ⚫ materials: {}", materials));
+    ui.label(format!(" ⚫ meshes: {}", state.mesh_resources.len()));
 
     ui.label(RichText::new("✏ Editor").strong());
     ui.label(format!(" ⚫ update time: {:.3} ms", state.stats.egui_update_time));

@@ -565,7 +565,7 @@ impl Editor
                         else
                         {
                             let id = node.read().unwrap().id;
-                            scene.delete_node_by_id(id, true, true);
+                            scene.delete_node_by_id(id, true, true, true, true);
                         }
 
                         self.editor_state.de_select_current_item(state);

@@ -103,8 +103,14 @@ mod state
 
     pub(crate) mod resources
     {
+        pub(crate) mod utilities
+        {
+            pub(crate) mod resource_utils;
+        }
+
         pub(crate) mod texture;
         pub(crate) mod sound_source;
+        pub(crate) mod mesh_resource;
     }
 
     pub(crate) mod gui
@@ -137,6 +143,7 @@ mod state
                 pub(crate) mod general;
                 pub(crate) mod textures;
                 pub(crate) mod sound;
+                pub(crate) mod mesh;
                 pub(crate) mod assets;
             }
         }

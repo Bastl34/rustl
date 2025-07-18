@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file::get_stem}, new_component, resources::resources::load_string, state::scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, load_texture_or_reuse}}};
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::load_string, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, utilities::resource_utils::load_texture_or_reuse}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -57,7 +57,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
     let mut double_check_materials: Vec<(usize, MaterialItem)> = vec![];
 
-    for (_i, m) in models.iter().enumerate()
+    for (i, m) in models.iter().enumerate()
     {
         let mesh = &m.mesh;
 
@@ -367,14 +367,35 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 normals_indices = indices.clone();
             }
 
-            let item = Mesh::new_with_data("mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
+            //let mesh_component = Mesh::new_with_data("mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
+
+            let mut mesh_resource: MeshResource = MeshResource::new_with_data("Mesh", verts, indices, uvs, uv_indices, normals, normals_indices);
+            mesh_resource.source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
+            mesh_resource.source.as_mut().unwrap().inner_path = format!("#Primitive{}", i);
+
+            let mesh_resource_result: Arc<RwLock<Option<MeshResourceItem>>> = Arc::new(RwLock::new(None));
+            let mesh_resource_result_clone: Arc<RwLock<Option<Arc<RwLock<Box<MeshResource>>>>>> = mesh_resource_result.clone();
+            let node_name_clone = m.name.to_string();
+
+            execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
+            {
+                let mut res = mesh_resource_result_clone.write().unwrap();
+                *res = Some(state.insert_mesh_resource_or_reuse(mesh_resource, node_name_clone.as_str()));
+            }));
+
+            let mesh_resource = mesh_resource_result.read().unwrap();
+            let mesh_resource_cloned = mesh_resource.as_ref().unwrap().clone();
+
+            let mut mesh_component: Mesh = Mesh::new("Mesh");
+            mesh_component.mesh_resource = OptionOrId::Some(mesh_resource_cloned);
+
 
             let node_arc = Node::new(m.name.as_str());
             loaded_ids.push(node_arc.read().unwrap().id);
 
             {
                 let mut node = node_arc.write().unwrap();
-                node.add_component(Arc::new(RwLock::new(Box::new(item))));
+                node.add_component(Arc::new(RwLock::new(Box::new(mesh_component))));
 
                 // add material
                 node.add_component(material_arc);

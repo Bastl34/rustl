@@ -3,6 +3,11 @@
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+use bytemuck::cast_slice;
+use nalgebra::Point2;
+use nalgebra::Point3;
+use nalgebra::Vector3;
+
 pub fn get_millis() -> u64
 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
@@ -60,4 +65,19 @@ pub fn cut_string_to_length(s: &String, length: usize) -> String
     cut.push_str("...");
 
     cut
+}
+
+pub fn vec3_as_array(p: &Vector3<f32>) -> [f32; 3]
+{
+    [p.x, p.y, p.z]
+}
+
+pub fn point2_as_array(p: &Point2<f32>) -> [f32; 2]
+{
+    [p.x, p.y]
+}
+
+pub fn point3_as_array(p: &Point3<f32>) -> [f32; 3]
+{
+    [p.x, p.y, p.z]
 }

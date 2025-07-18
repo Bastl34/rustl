@@ -321,17 +321,17 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.delete_node_by_id(node_id, false, false);
+                            scene.delete_node_by_id(node_id, false, false, false, false);
                         }));
                     }
 
-                    if ui.button(RichText::new("🗑 Delete + materials/textures").color(Color32::LIGHT_RED)).clicked()
+                    if ui.button(RichText::new("🗑 Delete + Clear Resources").color(Color32::LIGHT_RED)).clicked()
                     {
                         ui.close();
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.delete_node_by_id(node_id, true, true);
+                            scene.delete_node_by_id(node_id, true, true, true, true);
                         }));
                     }
                 });
@@ -526,8 +526,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 component_downcast!(mesh, Mesh);
 
                 direct_meshes_amout += 1;
-                direct_vertices_amout += mesh.get_data().vertices.len();
-                direct_faces_amout += mesh.get_data().indices.len();
+
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    direct_vertices_amout += mesh_resource.read().unwrap().get_data().vertices.len();
+                    direct_faces_amout += mesh_resource.read().unwrap().get_data().indices.len();
+                }
             }
         }
 
@@ -548,8 +552,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 component_downcast!(mesh, Mesh);
 
                 all_meshes_amout += 1;
-                all_vertices_amout += mesh.get_data().vertices.len();
-                all_faces_amout += mesh.get_data().indices.len();
+
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    all_vertices_amout += mesh_resource.read().unwrap().get_data().vertices.len();
+                    all_faces_amout += mesh_resource.read().unwrap().get_data().indices.len();
+                }
             }
         }
     }
@@ -834,12 +842,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                scene.delete_node_by_id(node_id, false, false);
+                scene.delete_node_by_id(node_id, false, false, false, false);
             }
-            if ui.button(RichText::new("Dispose Node + materials/textures").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            if ui.button(RichText::new("Dispose Node + Clear Resources").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                scene.delete_node_by_id(node_id, true, true);
+                scene.delete_node_by_id(node_id, true, true, true, true);
             }
         });
     });

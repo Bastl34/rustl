@@ -7,6 +7,7 @@ use std::any::Any;
 use serde::{Deserialize, Serialize};
 
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::resources::mesh_resource::MeshResourceItem;
 use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
@@ -72,7 +73,7 @@ pub struct DeserializationContext<'a>
 {
     // resources
     pub textures: Vec<crate::state::resources::texture::TextureItem>,
-    //pub meshes: Vec<MeshItem>, // TODO
+    pub mesh_resources: Vec<MeshResourceItem>,
     pub sound_sources: Vec<crate::state::resources::sound_source::SoundSourceItem>,
 
     // scene

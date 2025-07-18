@@ -4,6 +4,7 @@ use std::mem::swap;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::state::gui::editor::helper::get_pointer_world_position;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
+use crate::state::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
@@ -322,9 +323,11 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
     let mut camera_settings = false;
     let mut light_settings = false;
     let mut material_settings = false;
+    let mut sound_settings = false;
+
     let mut texture_settings = false;
     let mut sound_source_settings = false;
-    let mut sound_settings = false;
+    let mut mesh_resource_settings = false;
 
     ui.horizontal(|ui|
     {
@@ -357,6 +360,18 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             material_settings = true;
         }
 
+        if editor_state.selected_type == SelectionType::Sound && !editor_state.selected_object.is_empty()
+        {
+            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Sound, "🔊 Sound");
+
+            sound_settings = true;
+        }
+
+        if editor_state.selected_scene_id.is_some()
+        {
+            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
+        }
+
         if editor_state.selected_type == SelectionType::Texture && !editor_state.selected_object.is_empty()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Texture, "🖼 Texture");
@@ -371,16 +386,11 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             sound_source_settings = true;
         }
 
-        if editor_state.selected_type == SelectionType::Sound && !editor_state.selected_object.is_empty()
+        if editor_state.selected_type == SelectionType::MeshResource && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Sound, "🔊 Sound");
+            ui.selectable_value(&mut editor_state.settings, SettingsPanel::MeshResource, "🔷 Mesh Resource");
 
-            sound_settings = true;
-        }
-
-        if editor_state.selected_scene_id.is_some()
-        {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
+            mesh_resource_settings = true;
         }
 
         ui.selectable_value(&mut editor_state.settings, SettingsPanel::General, "⛭ General");
@@ -403,6 +413,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Camera => if camera_settings { create_camera_settings(editor_state, state, ui); },
             SettingsPanel::Texture => if texture_settings { create_texture_settings(editor_state, state, ui);},
             SettingsPanel::SoundSource => if sound_source_settings { create_sound_source_settings(editor_state, state, ui);},
+            SettingsPanel::MeshResource => if mesh_resource_settings { create_mesh_resource_settings(editor_state, state, ui);},
             SettingsPanel::Sound => if sound_settings { create_sound_settings(editor_state, state, ui);},
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
@@ -767,6 +778,41 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         });
     }
 
+    // meshe resources
+    {
+        let ui_id = ui.make_persistent_id("mesh_resource");
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+            {
+                let mut mesh_resources_amount = state.mesh_resources.len();
+                if !show_internal
+                {
+                    mesh_resources_amount = state.mesh_resources.iter().filter(|(_, mesh_resource)| !mesh_resource.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                }
+
+                let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::MeshResource { selection = true; } else { selection = false; }
+                if ui.toggle_value(&mut selection, RichText::new(format!("🔷 Mesh Resources ({})", mesh_resources_amount)).color(Color32::LIGHT_YELLOW).strong()).clicked()
+                {
+                    if selection
+                    {
+                        editor_state.selected_scene_id = None;
+                        editor_state.selected_object.clear();
+                        editor_state.selected_type = SelectionType::MeshResource;
+                    }
+                    else
+                    {
+                        editor_state.selected_scene_id = None;
+                        editor_state.selected_type = SelectionType::None;
+                    }
+                }
+            });
+        }).body(|ui|
+        {
+            build_mesh_resources_list(editor_state, &state.mesh_resources, ui);
+        });
+    }
+
     // sound sources
     {
         let ui_id = ui.make_persistent_id("sound_sources");
@@ -781,7 +827,7 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
                 }
 
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sounds ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong()).clicked()
+                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sound Sources ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong()).clicked()
                 {
                     if selection
                     {

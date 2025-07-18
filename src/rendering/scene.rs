@@ -358,8 +358,6 @@ impl Scene
 
     pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>)
     {
-        //for node in scene.nodes.iter_mut()
-
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
         {
@@ -376,19 +374,34 @@ impl Scene
                 {
                     component_downcast_mut!(mesh, crate::state::scene::components::mesh::Mesh);
 
-                    let mesh_data_changed = mesh.get_data_mut().consume_change();
+                    let mut mesh_data_changed = mesh.get_data_mut().consume_change();
 
-                    if mesh_data_changed
+                    // mesh resource
+                    if let Some(mesh_resource) = mesh.mesh_resource.as_mut()
                     {
-                        let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh.get_data());
-                        mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
-
-                        if MorphTarget::get_morph_targets(mesh.get_data()) > 0
+                        let mut mesh_resource = mesh_resource.write().unwrap();
+                        let mesh_resource_data_changed = mesh_resource.get_data_mut().consume_change();
+                        if mesh_resource.render_item.is_none() || mesh_resource_data_changed
                         {
-                            let morph_target = MorphTarget::new(wgpu, "morph target", mesh.get_data());
-                            mesh.morph_target_render_item = Some(Box::new(morph_target));
+                            let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh_resource.get_data());
+                            mesh_resource.render_item = Some(Box::new(vertex_buffer));
 
-                            create_new_skeleton_morph_target_bind_group = true;
+                            mesh_data_changed = true;
+                        }
+
+                        // morph target
+                        if mesh_data_changed
+                        {
+                            //let vertex_buffer = VertexBuffer::new(wgpu, "vertex buffer", mesh.get_data());
+                            //mesh.get_base_mut().render_item = Some(Box::new(vertex_buffer));
+
+                            if MorphTarget::get_morph_targets(mesh_resource.get_data()) > 0
+                            {
+                                let morph_target = MorphTarget::new(wgpu, "morph target", mesh_resource.get_data());
+                                mesh.morph_target_render_item = Some(Box::new(morph_target));
+
+                                create_new_skeleton_morph_target_bind_group = true;
+                            }
                         }
                     }
                 }
@@ -469,37 +482,42 @@ impl Scene
                 {
                     component_downcast!(mesh, crate::state::scene::components::mesh::Mesh);
 
-                    let has_morph_targets = MorphTarget::get_morph_targets(mesh.get_data()) > 0;
-                    let has_skeleton = node.skin.len() > 0;
-
-                    if has_morph_targets || has_skeleton
+                    if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
                     {
-                        if node.skeleton_morph_target_bind_group_render_item.is_none() || create_new_skeleton_morph_target_bind_group
+                        let mesh_resource = mesh_resource.read().unwrap();
+
+                        let has_morph_targets = MorphTarget::get_morph_targets(mesh_resource.get_data()) > 0;
+                        let has_skeleton = node.skin.len() > 0;
+
+                        if has_morph_targets || has_skeleton
                         {
-                            // skeleton and morph targets
-                            if has_morph_targets && has_skeleton
+                            if node.skeleton_morph_target_bind_group_render_item.is_none() || create_new_skeleton_morph_target_bind_group
                             {
-                                let skeleton_render_item = get_render_item::<SkeletonBuffer>(node.skeleton_render_item.as_ref().unwrap());
-                                let morph_render_item = get_render_item::<MorphTarget>(mesh.morph_target_render_item.as_ref().unwrap());
+                                // skeleton and morph targets
+                                if has_morph_targets && has_skeleton
+                                {
+                                    let skeleton_render_item = get_render_item::<SkeletonBuffer>(node.skeleton_render_item.as_ref().unwrap());
+                                    let morph_render_item = get_render_item::<MorphTarget>(mesh.morph_target_render_item.as_ref().unwrap());
 
-                                let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Skeleton Morph Target", &skeleton_render_item, &morph_render_item);
-                                node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
-                            }
-                            // only skeleton
-                            else if has_skeleton
-                            {
-                                let skeleton_render_item = get_render_item::<SkeletonBuffer>(node.skeleton_render_item.as_ref().unwrap());
+                                    let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Skeleton Morph Target", &skeleton_render_item, &morph_render_item);
+                                    node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                                }
+                                // only skeleton
+                                else if has_skeleton
+                                {
+                                    let skeleton_render_item = get_render_item::<SkeletonBuffer>(node.skeleton_render_item.as_ref().unwrap());
 
-                                let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Skeleton and Empty Morph Target", &skeleton_render_item, &self.empty_morph_target);
-                                node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
-                            }
-                            // only morph targets
-                            else if has_morph_targets
-                            {
-                                let morph_render_item = get_render_item::<MorphTarget>(mesh.morph_target_render_item.as_ref().unwrap());
+                                    let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Skeleton and Empty Morph Target", &skeleton_render_item, &self.empty_morph_target);
+                                    node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                                }
+                                // only morph targets
+                                else if has_morph_targets
+                                {
+                                    let morph_render_item = get_render_item::<MorphTarget>(mesh.morph_target_render_item.as_ref().unwrap());
 
-                                let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Empty Skeleton Morph Target", &self.empty_skeleton, &morph_render_item);
-                                node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                                    let skeleton_morph_target_bind_group_render_item = SkeletonMorphTargetBindGroup::new(wgpu, "Empty Skeleton Morph Target", &self.empty_skeleton, &morph_render_item);
+                                    node.skeleton_morph_target_bind_group_render_item = Some(Box::new(skeleton_morph_target_bind_group_render_item));
+                                }
                             }
                         }
                     }
@@ -546,12 +564,13 @@ impl Scene
 
                 if all_instances_changed
                 {
-                    //dbg!(" ============ instances updated");
                     let instance_buffer;
                     {
                         let node = node_arc.read().unwrap();
                         let instances = node.instances.get_ref();
                         instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
+
+                        // println!(" ============ instances updated {}", &node.name);
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -603,7 +622,7 @@ impl Scene
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
                             render_item.update_buffer(wgpu, &instance, i);
 
-                            //dbg!(" ============ ONE instance updated");
+                            // println!(" ============ ONE instance updated {}", &node.name);
                         }
                     }
                 }
@@ -861,7 +880,7 @@ impl Scene
         {
             let read_node = node.read().unwrap();
             let mat = read_node.find_component::<MaterialComponent>();
-            let node_meshes = read_node.get_meshes();
+            let node_meshes = read_node.get_meshes_with_mesh_resource();
 
             if node_meshes.len() > 0
             {
@@ -924,10 +943,14 @@ impl Scene
                 for mesh in meshes
                 {
                     let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
-                    let center = mesh.get_data().b_box.center();
-                    mesh_middle.x += center.x;
-                    mesh_middle.y += center.y;
-                    mesh_middle.z += center.z;
+
+                    if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                    {
+                        let center = mesh_resource.read().unwrap().get_data().b_box.center();
+                        mesh_middle.x += center.x;
+                        mesh_middle.y += center.y;
+                        mesh_middle.z += center.z;
+                    }
                 }
 
                 let len_f32 = meshes.len() as f32;
@@ -1215,82 +1238,86 @@ impl Scene
                     continue;
                 }
 
-                if let Some(render_item) = mesh.get_base().render_item.as_ref()
+                //if let Some(render_item) = mesh.get_base().render_item.as_ref()
+                // existance of mesh_resource is guaranteed
+                if let Some(render_item) = mesh.mesh_resource.as_ref().unwrap().read().unwrap().render_item.as_ref()
                 {
                     let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);
 
-                    let instance_render_item = node.instance_render_item.as_ref().unwrap();
-                    let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
-
-                    if node.settings.depth_test && node.settings.depth_write
+                    if let Some(instance_render_item) = node.instance_render_item.as_ref()
                     {
-                        if color_pipeline
+                        let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
+
+                        if node.settings.depth_test && node.settings.depth_write
                         {
-                            pass.set_pipeline(&self.pipelines[PipelineType::Color as usize].get());
+                            if color_pipeline
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::Color as usize].get());
+                            }
+                            else
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::Depth as usize].get());
+                            }
+                        }
+                        else if !node.settings.depth_test && node.settings.depth_write
+                        {
+                            if color_pipeline
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::ColorNoCompare as usize].get());
+                            }
+                            else
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::DepthNoCompare as usize].get());
+                            }
+                        }
+                        else if node.settings.depth_test && !node.settings.depth_write
+                        {
+                            if color_pipeline
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWrite as usize].get());
+                            }
+                            else
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWrite as usize].get());
+                            }
                         }
                         else
                         {
-                            pass.set_pipeline(&self.pipelines[PipelineType::Depth as usize].get());
+                            if color_pipeline
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWriteNoCompare as usize].get());
+                            }
+                            else
+                            {
+                                pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWriteNoCompare as usize].get());
+                            }
                         }
-                    }
-                    else if !node.settings.depth_test && node.settings.depth_write
-                    {
-                        if color_pipeline
+
+                        pass.set_bind_group(0, material_bind_group, &[]);
+                        pass.set_bind_group(1, light_cam_bind_group, &[]);
+
+                        // skeleton
+                        let skeleton_morph_target_render_item = node.skeleton_morph_target_bind_group_render_item.as_ref();
+                        if let Some(skeleton_morph_target_render_item) = skeleton_morph_target_render_item
                         {
-                            pass.set_pipeline(&self.pipelines[PipelineType::ColorNoCompare as usize].get());
+                            let skeleton_morph_target_render_item = get_render_item::<SkeletonMorphTargetBindGroup>(skeleton_morph_target_render_item);
+                            pass.set_bind_group(2, &skeleton_morph_target_render_item.as_ref().bind_group, &[]);
                         }
                         else
                         {
-                            pass.set_pipeline(&self.pipelines[PipelineType::DepthNoCompare as usize].get());
+                            pass.set_bind_group(2, &self.empty_skeleton_morph_group.bind_group, &[]);
                         }
+
+                        pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
+
+                        // instancing
+                        pass.set_vertex_buffer(1, instance_buffer.get_buffer().slice(..));
+
+                        pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
+
+                        draw_calls += 1;
                     }
-                    else if node.settings.depth_test && !node.settings.depth_write
-                    {
-                        if color_pipeline
-                        {
-                            pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWrite as usize].get());
-                        }
-                        else
-                        {
-                            pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWrite as usize].get());
-                        }
-                    }
-                    else
-                    {
-                        if color_pipeline
-                        {
-                            pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWriteNoCompare as usize].get());
-                        }
-                        else
-                        {
-                            pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWriteNoCompare as usize].get());
-                        }
-                    }
-
-                    pass.set_bind_group(0, material_bind_group, &[]);
-                    pass.set_bind_group(1, light_cam_bind_group, &[]);
-
-                    // skeleton
-                    let skeleton_morph_target_render_item = node.skeleton_morph_target_bind_group_render_item.as_ref();
-                    if let Some(skeleton_morph_target_render_item) = skeleton_morph_target_render_item
-                    {
-                        let skeleton_morph_target_render_item = get_render_item::<SkeletonMorphTargetBindGroup>(skeleton_morph_target_render_item);
-                        pass.set_bind_group(2, &skeleton_morph_target_render_item.as_ref().bind_group, &[]);
-                    }
-                    else
-                    {
-                        pass.set_bind_group(2, &self.empty_skeleton_morph_group.bind_group, &[]);
-                    }
-
-                    pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));
-
-                    // instancing
-                    pass.set_vertex_buffer(1, instance_buffer.get_buffer().slice(..));
-
-                    pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
-
-                    draw_calls += 1;
                 }
             }
         }

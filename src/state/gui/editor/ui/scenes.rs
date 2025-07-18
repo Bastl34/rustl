@@ -34,9 +34,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
     let mut nodes_solid_amout = 0;
     let mut nodes_transparent_amout = 0;
 
-    let mut vertices_amout = 0;
-    let mut indices_amout = 0;
-
     let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
 
     for node in &all_nodes
@@ -45,13 +42,9 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         instances_amout += node.instances.get_ref().len();
 
         let mesh = node.find_component::<Mesh>();
-        if let Some(mesh) = mesh
+        if mesh.is_some()
         {
-            component_downcast!(mesh, Mesh);
-
             meshes_amout += 1;
-            vertices_amout += mesh.get_data().vertices.len();
-            indices_amout += mesh.get_data().indices.len();
         }
 
         if let Some(material) = node.find_component::<Material>()
@@ -90,8 +83,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         ui.label(RichText::new("◼ geometry").strong());
         ui.label(format!(" ⚫ meshes: {}", meshes_amout));
-        ui.label(format!(" ⚫ vertices: {}", vertices_amout));
-        ui.label(format!(" ⚫ indices: {}", indices_amout));
     });
 
     // Settings

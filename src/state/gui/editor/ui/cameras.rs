@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{helper::generic::cut_string_to_length, state::{gui::{editor::editor::MAX_NAME_LENGTH, helper::generic_items::{self, collapse_with_title}}, scene::camera::CameraItem, state::State}};
+use crate::{helper::generic::cut_string_to_length, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title}}, scene::camera::CameraItem, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -14,8 +14,11 @@ pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraIte
 
             let id = format!("camera_{}", camera.id);
 
+            let is_internal = camera.tags.contains(ENGINE_INTERNAL_TAG) || camera.tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
+
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }

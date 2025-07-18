@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}}, state::{helper::render_item::RenderItemOption, resources::texture::TextureItem, scene::{components::component::Component, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -438,7 +438,7 @@ impl Scene
         // delete requested "delete_later" nodes
         for node_id in delete_nodes
         {
-            self.delete_node_by_id(node_id, false, false);
+            self.delete_node_by_id(node_id, false, false, false, false);
         }
     }
 
@@ -963,7 +963,7 @@ impl Scene
         Node::find_mesh_node_by_ids(&self.nodes, ids)
     }
 
-    pub fn delete_node_by_id(&mut self, id: u64, delete_materials: bool, delete_textures: bool) -> bool
+    pub fn delete_node_by_id(&mut self, id: u64, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
     {
         if self.find_node_by_id(id).is_none()
         {
@@ -973,6 +973,92 @@ impl Scene
         if delete_textures && !delete_materials
         {
             println!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
+        }
+
+        // ********** delete mesh resource **********
+        if delete_mesh_resource
+        {
+            let mut mesh_resources_to_delete: HashMap<u64, MeshResourceItem> = HashMap::new();
+
+            let mut all_nodes_to_delete;
+            {
+                let delete_node = self.find_node_by_id(id);
+                let delete_node_arc = delete_node.unwrap();
+                let delete_node = delete_node_arc.read().unwrap();
+
+                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
+                all_nodes_to_delete.push(delete_node_arc.clone());
+            }
+
+            for node in all_nodes_to_delete
+            {
+                let node = node.read().unwrap();
+
+                for mesh in node.find_components::<Mesh>()
+                {
+                    component_downcast_mut!(mesh, Mesh);
+                    if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                    {
+                        mesh_resources_to_delete.insert(mesh_resource.read().unwrap().id, mesh_resource.clone());
+                    }
+
+                    mesh.mesh_resource = OptionOrId::None;
+                }
+            }
+
+            // delete mesh resources if not in use anymore
+            for (_, mesh_resource) in mesh_resources_to_delete
+            {
+                // used in mesh_resources_to_delete and state.mesh_resources
+                if Arc::strong_count(&mesh_resource) == 2
+                {
+                    let mut mesh_resource = mesh_resource.write().unwrap();
+                    mesh_resource.delete_later();
+                }
+            }
+        }
+
+        // ********** delete sound sources **********
+        if delete_sound_sources
+        {
+            let mut sound_sources_to_delete: HashMap<u64, SoundSourceItem> = HashMap::new();
+
+            let mut all_nodes_to_delete;
+            {
+                let delete_node = self.find_node_by_id(id);
+                let delete_node_arc = delete_node.unwrap();
+                let delete_node = delete_node_arc.read().unwrap();
+
+                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
+                all_nodes_to_delete.push(delete_node_arc.clone());
+            }
+
+            for node in all_nodes_to_delete
+            {
+                let node = node.read().unwrap();
+
+                for sound in node.find_components::<Sound>()
+                {
+                    component_downcast_mut!(sound, Sound);
+                    if let Some(sound_source) = sound.sound_source.as_ref()
+                    {
+                        sound_sources_to_delete.insert(sound_source.read().unwrap().id, sound_source.clone());
+                    }
+
+                    sound.sound_source = OptionOrId::None;
+                }
+            }
+
+            // delete sound sources if not in use anymore
+            for (_, sound_source) in sound_sources_to_delete
+            {
+                // used in mesh_resources_to_delete and state.mesh_resources
+                if Arc::strong_count(&sound_source) == 2
+                {
+                    let mut sound_source = sound_source.write().unwrap();
+                    sound_source.delete_later();
+                }
+            }
         }
 
         // ********** delete materials **********
@@ -1118,7 +1204,7 @@ impl Scene
         false
     }
 
-    pub fn delete_node_by_name(&mut self, name: &str, delete_materials: bool, delete_textures: bool) -> bool
+    pub fn delete_node_by_name(&mut self, name: &str, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
     {
         let mut node_id = None;
 
@@ -1133,7 +1219,7 @@ impl Scene
 
         if let Some(node_id) = node_id
         {
-            return self.delete_node_by_id(node_id, delete_materials, delete_textures);
+            return self.delete_node_by_id(node_id, delete_mesh_resource, delete_sound_sources, delete_materials, delete_textures);
         }
 
         false
