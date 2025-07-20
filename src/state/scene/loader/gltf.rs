@@ -12,7 +12,7 @@ use crate::{component_downcast, component_downcast_mut, helper::{asset_path_desc
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
 
-pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     println!("load gltf file {}", path);
 
@@ -166,6 +166,11 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
     // ********** add to scene **********
     println!("adding nodes to scene...");
+    if hide_root_node
+    {
+        root_node.write().unwrap().visible = false;
+    }
+
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
     {
         if let Some(parent_node_id) = parent_node_id

@@ -36,9 +36,9 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
     {
         create_grid(scene_id, Some(editor_utils_id), main_queue_clone.clone(), grid_amount, grid_size);
 
-        let pos = scene_utils::load_object("objects/gizmo/gizmo_pos.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), false, true, false, 0);
-        let rot = scene_utils::load_object("objects/gizmo/gizmo_rot.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), false, true, false, 0);
-        let scale = scene_utils::load_object("objects/gizmo/gizmo_scale.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), false, true, false, 0);
+        let pos = scene_utils::load_object("objects/gizmo/gizmo_pos.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
+        let rot = scene_utils::load_object("objects/gizmo/gizmo_rot.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
+        let scale = scene_utils::load_object("objects/gizmo/gizmo_scale.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
 
         if pos.is_err() || rot.is_err() || scale.is_err()
         {
@@ -64,16 +64,19 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
 
             if let Some(node) = scene.find_node_by_id(*pos_root)
             {
+                node.write().unwrap().visible = true;
                 node.write().unwrap().name = "gizmo_position".to_string();
             }
 
             if let Some(node) = scene.find_node_by_id(*rot_root)
             {
+                node.write().unwrap().visible = true;
                 node.write().unwrap().name = "gizmo_rotation".to_string();
             }
 
             if let Some(node) = scene.find_node_by_id(*sacle_root)
             {
+                node.write().unwrap().visible = true;
                 node.write().unwrap().name = "gizmo_scale".to_string();
             }
 

@@ -1324,5 +1324,4 @@ impl Scene
 
         draw_calls
     }
-
 }

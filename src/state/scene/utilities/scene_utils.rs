@@ -5,7 +5,7 @@ use std::{path::Path, sync::{Arc, Mutex, RwLock}};
 use crate::{component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
@@ -18,11 +18,11 @@ pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return wavefront::load(path, scene_id, parent_node_id, main_queue, hide_root_node, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return gltf::load(path, scene_id, parent_node_id, main_queue, hide_root_node, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
 
     Ok(vec![])
@@ -155,7 +155,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
 
 pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
 {
-    let animations = load_object(path, scene_id, None, main_queue.clone(), false, true, false, 0);
+    let animations = load_object(path, scene_id, None, main_queue.clone(), false, false, true, false, 0);
 
     if let Err(animations) = animations
     {

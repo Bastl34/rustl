@@ -19,8 +19,8 @@ pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: Execu
 
     let size = amount as f32 * spacing;
 
-    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), false, true, false, 0).unwrap();
+    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), false, true, true, false, 0).unwrap();
+    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), false, false, true, false, 0).unwrap();
 
     execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
     {

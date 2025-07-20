@@ -1314,7 +1314,7 @@ impl Editor
             dbg!("loading ...");
             *editor_state.write().unwrap() = true;
 
-            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), reuse_material, object_only, create_mipmaps, max_tex_res);
+            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
@@ -1366,6 +1366,8 @@ impl Editor
                         transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
 
                         root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+
+                        root_node.write().unwrap().visible = true;
                     }
                 }
 

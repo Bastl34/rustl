@@ -13,6 +13,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     let mut hit: Option<ScenePickRes> = None;
     let mut scene_id: u64 = 0;
 
+    // do not pick internal predicate
     let inner_predicate = predicate.clone();
     let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, _check_instance_id: Option<u64>| -> bool
     {
@@ -33,32 +34,8 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
 
     let do_not_pick_internal_nodes_predicate: Option<PickPredicate> = Some(do_not_pick_internal_nodes_predicate);
 
-
     for scene in scenes
     {
-        let set_grid_picking = |scene: &Box<Scene>, state: bool|
-        {
-            // find grid
-            let grid = scene.find_mesh_node_by_name("grid");
-
-            if let Some(grid) = grid
-            {
-                let mut grid = grid.write().unwrap();
-                let grid_instance = grid.instances.get_mut().first();
-                if let Some(grid_instance) = grid_instance
-                {
-                    grid_instance.write().unwrap().pickable = state;
-                }
-            }
-        };
-
-        /*
-        if allow_grid_picking
-        {
-            set_grid_picking(scene, true);
-        }
-        */
-
         for camera in &scene.cameras
         {
             // check if click is insight
@@ -72,9 +49,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
                     let grid = scene.find_mesh_node_by_name("grid");
                     if let Some(grid) = grid
                     {
-                        set_grid_picking(scene, true);
-                        grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, ignore_pickable, predicate.clone());
-                        set_grid_picking(scene, false);
+                        grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, predicate.clone());
                     }
                 }
 
