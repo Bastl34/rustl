@@ -530,8 +530,8 @@ impl Scene
                 let node_arc = nodes.get_mut(node_id).unwrap();
 
                 {
-                    let mut write = node_arc.write().unwrap();
-                    all_instances_changed = write.instances.consume_change();
+                    let mut node_write = node_arc.write().unwrap();
+                    all_instances_changed = node_write.instances.consume_change();
                 }
 
                 {
@@ -737,7 +737,7 @@ impl Scene
         self.update_nodes(wgpu, &mut all_nodes);
         Self::consume_changed_joints(&all_nodes);
 
-        // ********** screenshot stuff **********
+        // ********** save image stuff **********
         if state.save_image
         {
             let node_id = 0;

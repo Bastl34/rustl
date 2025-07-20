@@ -337,7 +337,7 @@ impl MainInterface
             ExecutionQueue::run_all(main_queue, state);
         }
 
-        // ******************** update scene ********************
+        // ******************** update scene and rendering ********************
         if !self.context.state.borrow().pause
         {
             let engine_update_time = Instant::now();

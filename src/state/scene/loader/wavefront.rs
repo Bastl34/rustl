@@ -429,6 +429,12 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         }
     }
 
+    // ********** add all to root node **********
+    for scene_node in &scene_nodes
+    {
+        Node::add_node(root_node.clone(), scene_node.clone());
+    }
+
     // ********** add to scene **********
     let root_node_clone = root_node.clone();
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
@@ -450,11 +456,6 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
             scene.add_node(root_node_clone.clone());
         }
     }));
-
-    for scene_node in &scene_nodes
-    {
-        Node::add_node(root_node.clone(), scene_node.clone());
-    }
 
     Ok(loaded_ids)
 }
