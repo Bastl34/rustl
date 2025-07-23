@@ -2,13 +2,14 @@
 
 use std::str::FromStr;
 
-use nalgebra::{Vector3, Vector4};
+use nalgebra::{Vector2, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
 use crate::helper::option_or_id::OptionOrId;
+use crate::state::helper::render_item::RenderItemOption;
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
@@ -71,12 +72,68 @@ pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
     TextureType::Custom3
 ];
 
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum TextureAddressMode
+{
+    ClampToEdge,
+    Repeat,
+    MirrorRepeat,
+    ClampToBorder
+}
+
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum TextureFilterMode
+{
+    Nearest,
+    Linear
+}
+
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct TextureTransform
+{
+    pub offset: Vector2::<f32>,
+    pub scale: Vector2::<f32>,
+    pub rotation: f32,
+
+    pub uv_index: u32,
+}
+
+impl TextureTransform
+{
+    pub fn default() -> TextureTransform
+    {
+        TextureTransform
+        {
+            offset: Vector2::<f32>::new(0.0, 0.0),
+            scale: Vector2::<f32>::new(1.0, 1.0),
+            rotation: 0.0,
+
+            uv_index: 0,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TextureSampler
+{
+    pub address_mode_u: TextureAddressMode,
+    pub address_mode_v: TextureAddressMode,
+    pub address_mode_w: TextureAddressMode,
+    pub mag_filter: TextureFilterMode,
+    pub min_filter: TextureFilterMode,
+    pub mipmap_filter: TextureFilterMode,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TextureState
 {
     #[serde(serialize_with = "serialization_helper::serialize_texture", deserialize_with = "serialization_helper::deserialize_texture")]
     pub item: OptionOrId<TextureItem>,
-    pub enabled: bool
+    pub enabled: bool,
+
+    pub sampler: TextureSampler,
+    pub transform: TextureTransform
 }
 
 impl TextureState
@@ -86,7 +143,19 @@ impl TextureState
         TextureState
         {
             item: OptionOrId::Some(item),
-            enabled: true
+            enabled: true,
+
+            sampler: TextureSampler
+            {
+                address_mode_u: TextureAddressMode::ClampToEdge,
+                address_mode_v: TextureAddressMode::ClampToEdge,
+                address_mode_w: TextureAddressMode::ClampToEdge,
+                mag_filter: TextureFilterMode::Linear,
+                min_filter: TextureFilterMode::Linear,
+                mipmap_filter: TextureFilterMode::Linear
+            },
+
+            transform: TextureTransform::default(),
         }
     }
 
@@ -699,6 +768,154 @@ impl Material
         let res = helper::math::interpolate_vec4(&p_res_1, &p_res_2, y_f);
 
         res
+    }
+
+    pub fn ui_texture_state(&mut self, ui: &mut egui::Ui, tex_type: TextureType)
+    {
+        if self.get_texture_by_type(tex_type).is_none()
+        {
+            return;
+        }
+
+        let mut address_mode_u;
+        let mut address_mode_v;
+        let mut address_mode_w;
+        let mut mag_filter;
+        let mut min_filter;
+        let mut mipmap_filter;
+
+        let mut uv_offset;
+        let mut uv_scale;
+        let mut uv_rotation_deg;
+        let mut uv_index;
+
+        {
+            let tex = self.get_texture_by_type(tex_type).unwrap();
+
+            address_mode_u = tex.sampler.address_mode_u;
+            address_mode_v = tex.sampler.address_mode_v;
+            address_mode_w = tex.sampler.address_mode_w;
+            mag_filter = tex.sampler.mag_filter;
+            min_filter = tex.sampler.min_filter;
+            mipmap_filter = tex.sampler.mipmap_filter;
+
+            uv_offset = tex.transform.offset;
+            uv_scale = tex.transform.scale;
+            uv_rotation_deg = tex.transform.rotation.to_degrees();
+            uv_index = tex.transform.uv_index;
+        }
+
+        let mut changed = false;
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Address Mode U:");
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
+            {
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Address Mode V:");
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
+            {
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Address Mode W:");
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
+            {
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mag Filter: ");
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
+            {
+                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Min Filter: ");
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
+            {
+                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mipmap Filter: ");
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
+            {
+                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+            });
+        });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("UV Offset:");
+            changed = ui.add(egui::DragValue::new(&mut uv_offset.x).speed(0.001).prefix("u: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut uv_offset.y).speed(0.001).prefix("v: ")).changed() || changed;
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("UV Scale:");
+            changed = ui.add(egui::DragValue::new(&mut uv_scale.x).speed(0.001).prefix("u: ")).changed() || changed;
+            changed = ui.add(egui::DragValue::new(&mut uv_scale.y).speed(0.001).prefix("v: ")).changed() || changed;
+        });
+
+        changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
+
+        changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
+
+        if changed
+        {
+            let tex = self.get_texture_by_type_mut(tex_type).unwrap();
+
+            tex.sampler.address_mode_u = address_mode_u;
+            tex.sampler.address_mode_v = address_mode_v;
+            tex.sampler.address_mode_w = address_mode_w;
+            tex.sampler.mag_filter = mag_filter;
+            tex.sampler.min_filter = min_filter;
+            tex.sampler.mipmap_filter = mipmap_filter;
+
+            tex.transform.offset = uv_offset;
+            tex.transform.scale = uv_scale;
+            tex.transform.rotation = uv_rotation_deg.to_radians();
+            tex.transform.uv_index = uv_index;
+        }
+
     }
 }
 

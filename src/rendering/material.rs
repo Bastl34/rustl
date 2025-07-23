@@ -4,7 +4,7 @@ use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
 use crate::{render_item_impl_default, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
-use super::{texture::{Texture, TextureFormat, TextureTransform}, uniform, wgpu::WGpu};
+use super::{texture::{Texture, TextureFormat}, uniform, wgpu::WGpu};
 
 //TODO: future: compile shaders for each texture combination to prevent branching/if statements
 
@@ -35,6 +35,46 @@ use super::{texture::{Texture, TextureFormat, TextureTransform}, uniform, wgpu::
 */
 
 //pub const ADDITIONAL_START_INDEX: u32 = 20;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct TextureTransform
+{
+    pub offset: [f32; 2],
+    pub scale: [f32; 2],
+    pub rotation: f32,
+
+    pub uv_index: u32,
+
+    pub _padding: [f32; 2]
+}
+
+impl TextureTransform
+{
+    pub fn new(texture_state: &TextureState) -> Self
+    {
+        Self
+        {
+            offset: [texture_state.transform.offset.x, texture_state.transform.offset.y],
+            scale: [texture_state.transform.scale.x, texture_state.transform.scale.y],
+            rotation: texture_state.transform.rotation,
+            uv_index: texture_state.transform.uv_index,
+            _padding: [0.0, 0.0],
+        }
+    }
+
+    pub fn default() -> Self
+    {
+        Self
+        {
+            offset: [0.0, 0.0],
+            scale: [1.0, 1.0],
+            rotation: 0.0,
+            uv_index: 0,
+            _padding: [0.0, 0.0],
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -97,15 +137,11 @@ impl MaterialUniform
 
         for (i, texture_type) in ALL_TEXTURE_TYPES.iter().enumerate()
         {
-            let texture = material.get_texture_by_type(*texture_type);
+            let texture_state = material.get_texture_by_type(*texture_type);
 
-            if let Some(texture) = texture
+            if let Some(texture_state) = texture_state.as_ref()
             {
-                if let Some(texture) = texture.get()
-                {
-                    let texture = texture.read().unwrap();
-                    texture_transforms[i] = TextureTransform::new(&texture);
-                }
+                texture_transforms[i] = TextureTransform::new(texture_state);
             }
         }
 
@@ -176,8 +212,10 @@ pub struct MaterialBuffer
 
     empty_texture: Texture,
 
+    default_texture_sampler: wgpu::Sampler,
+
     pub bind_group_layout: Option<BindGroupLayout>,
-    pub bind_group: Option<BindGroup>
+    pub bind_group: Option<BindGroup>,
 }
 
 impl RenderItem for MaterialBuffer
@@ -198,12 +236,14 @@ impl MaterialBuffer
         });
 
         let empty_texture = Texture::new_empty_texture(wgpu, format!("empty material {} texture", material.get_base().name).as_str(), TextureFormat::Srgba);
+        let default_texture_sampler = Texture::create_default_sampler(wgpu);
 
         let mut buffer = MaterialBuffer
         {
             name: material.get_base().name.clone(),
             buffer: empty_buffer,
             empty_texture,
+            default_texture_sampler,
             bind_group_layout: None,
             bind_group: None
         };
@@ -249,8 +289,6 @@ impl MaterialBuffer
 
     pub fn create_binding_groups(&mut self, wgpu: &mut WGpu, material: &Material, default_env_map: Option<TextureState>, additional_textures: Option<&Vec<(&Texture, u32)>>)
     {
-        let device = wgpu.device();
-
         let mut layout_group_vec: Vec<wgpu::BindGroupLayoutEntry> = vec![];
         let mut group_vec: Vec<wgpu::BindGroupEntry<'_>> = vec![];
 
@@ -263,7 +301,7 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
-        let mut texture_render_items: HashMap<u64, (RenderItemType, TextureItem)> = HashMap::new();
+        let mut texture_render_items: HashMap<u64, (RenderItemType, TextureItem, wgpu::Sampler)> = HashMap::new();
         let mut texture_render_items_dir = vec![];
 
         for texture_type in ALL_TEXTURE_TYPES
@@ -279,12 +317,11 @@ impl MaterialBuffer
                 texture = material.get_texture_by_type(texture_type).clone();
             }
 
-            if let Some(texture) = texture
+            if let Some(texture_state) = texture
             {
-                let enabled = texture.enabled;
+                let enabled = texture_state.enabled;
 
-
-                if let Some(texture_arc) = texture.get()
+                if let Some(texture_arc) = texture_state.get()
                 {
                     if enabled
                     {
@@ -295,7 +332,9 @@ impl MaterialBuffer
                             let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
                             swap(&mut texture.render_item, &mut render_item);
 
-                            texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone()));
+                            let sampler = Texture::create_sampler(wgpu, &texture_state);
+
+                            texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone(), sampler));
                         }
 
                         texture_render_items_dir.push((Some(texture.id), bind_id));
@@ -322,11 +361,11 @@ impl MaterialBuffer
         {
             if let Some(texture_id) = texture_id
             {
-                let render_item = texture_render_items.get(texture_id).unwrap();
-                let render_item = get_render_item::<Texture>(&render_item.0);
+                let render_item_obj = texture_render_items.get(texture_id).unwrap();
+                let render_item = get_render_item::<Texture>(&render_item_obj.0);
 
                 let textures_layout_group = render_item.get_bind_group_layout_entries(*bind_id);
-                let textures_group = render_item.get_bind_group_entries(*bind_id);
+                let textures_group = Texture::get_bind_group_entries(*bind_id, render_item.get_view(), &render_item_obj.2);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -334,7 +373,7 @@ impl MaterialBuffer
             else
             {
                 let textures_layout_group = self.empty_texture.get_bind_group_layout_entries(*bind_id);
-                let textures_group = self.empty_texture.get_bind_group_entries(*bind_id);
+                let textures_group = Texture::get_bind_group_entries(*bind_id, self.empty_texture.get_view(), &self.default_texture_sampler);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -347,7 +386,9 @@ impl MaterialBuffer
             for (texture, id) in additional_textures
             {
                 let textures_layout_group = texture.get_bind_group_layout_entries(*id);
-                let textures_group = texture.get_bind_group_entries(*id);
+
+                // TODO: additional textures texture state????
+                let textures_group = Texture::get_bind_group_entries(*id, texture.get_view(), &self.default_texture_sampler);
 
                 layout_group_vec.append(&mut textures_layout_group.to_vec());
                 group_vec.append(&mut textures_group.to_vec());
@@ -356,14 +397,14 @@ impl MaterialBuffer
 
         // ********* bind group *********
         let bind_group_layout_name = format!("{} material_bind_group_layout", self.name);
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries: &layout_group_vec.as_slice(),
             label: Some(bind_group_layout_name.as_str()),
         });
 
         let bind_group_name = format!("{} material_bind_group", self.name);
-        let bind_group = device.create_bind_group
+        let bind_group = wgpu.device().create_bind_group
         (
             &wgpu::BindGroupDescriptor
             {
@@ -374,7 +415,7 @@ impl MaterialBuffer
         );
 
         // ********* swap back *********
-        for (_tex_id, (render_item, texture)) in texture_render_items
+        for (_tex_id, (render_item, texture, _)) in texture_render_items
         {
             texture.write().unwrap().render_item = Some(render_item);
         }

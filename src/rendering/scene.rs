@@ -114,6 +114,7 @@ impl Scene
             buffer: create_empty_buffer(wgpu),
 
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
+
             depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
 
             empty_skeleton,

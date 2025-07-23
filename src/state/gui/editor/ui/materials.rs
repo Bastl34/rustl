@@ -132,11 +132,11 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                     let mut changed = false;
 
                     let texture = material.get_texture_by_type(texture_type);
-                    let texture = texture.unwrap();
+                    let texture_state = texture.unwrap();
 
-                    let mut enabled = texture.enabled;
+                    let mut enabled = texture_state.enabled;
 
-                    if let Some(texture) = texture.get()
+                    if let Some(texture) = texture_state.get()
                     {
                         let mut texture = texture.write().unwrap();
                         let texture_id = texture.id;
@@ -176,7 +176,9 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                         |ui|
                         {
                             texture.ui_info(ui);
-                    });
+                            ui.separator();
+                            material.ui_texture_state(ui, texture_type);
+                        });
                     }
 
                     if changed

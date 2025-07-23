@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureAddressMode, TextureFilterMode, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
+use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -45,7 +45,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         {
             source.inner_path = texture_path.clone();
         }
-        apply_texture_filtering_settings(tex.clone(), &gltf_texture, create_mipmaps);
+        tex.write().unwrap().get_data_mut().get_mut().mipmapping = create_mipmaps;
 
         if tex.read().unwrap().get_data().mipmapping && tex.read().unwrap().get_data().mipmap_cache.is_none()
         {
@@ -1201,53 +1201,40 @@ pub fn get_path(item_path: &String, gltf_path: &str) -> String
 }
 
 
-fn apply_texture_transform(transform: &gltf::texture::TextureTransform, tex: OptionOrId<Arc<RwLock<Box<Texture>>>>)
+fn apply_texture_transform(transform: &gltf::texture::TextureTransform, tex_state: &mut TextureState)
 {
-    if tex.is_none()
-    {
-        return;
-    }
-
-    let tex = tex.unwrap();
-    let mut tex = tex.write().unwrap();
-    let tex_data = tex.get_data_mut().get_mut();
-
-    tex_data.transform.offset = Vector2::<f32>::new(transform.offset()[0], transform.offset()[1]);
-    tex_data.transform.scale = Vector2::<f32>::new(transform.scale()[0], transform.scale()[1]);
-    tex_data.transform.rotation = transform.rotation();
+    tex_state.transform.offset = Vector2::<f32>::new(transform.offset()[0], transform.offset()[1]);
+    tex_state.transform.scale = Vector2::<f32>::new(transform.scale()[0], transform.scale()[1]);
+    tex_state.transform.rotation = transform.rotation();
 
     if let Some(uv_index) = transform.tex_coord()
     {
-        tex_data.transform.uv_index = uv_index;
+        tex_state.transform.uv_index = uv_index;
     }
 }
 
-fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_texture: &gltf::Texture<'a>, create_mipmaps: bool)
+fn apply_texture_filtering_settings<'a>(tex_state: &mut TextureState, gltf_texture: &gltf::Texture<'a>)
 {
-    let mut tex = tex.write().unwrap();
-    let tex_data = tex.get_data_mut().get_mut();
-    tex_data.mipmapping = create_mipmaps;
-
     match gltf_texture.sampler().wrap_s()
     {
-        texture::WrappingMode::ClampToEdge => tex_data.address_mode_u = TextureAddressMode::ClampToEdge,
-        texture::WrappingMode::MirroredRepeat => tex_data.address_mode_u = TextureAddressMode::MirrorRepeat,
-        texture::WrappingMode::Repeat => tex_data.address_mode_u = TextureAddressMode::Repeat,
+        texture::WrappingMode::ClampToEdge => tex_state.sampler.address_mode_u = TextureAddressMode::ClampToEdge,
+        texture::WrappingMode::MirroredRepeat => tex_state.sampler.address_mode_u = TextureAddressMode::MirrorRepeat,
+        texture::WrappingMode::Repeat => tex_state.sampler.address_mode_u = TextureAddressMode::Repeat,
     }
 
     match gltf_texture.sampler().wrap_t()
     {
-        texture::WrappingMode::ClampToEdge => tex_data.address_mode_v = TextureAddressMode::ClampToEdge,
-        texture::WrappingMode::MirroredRepeat => tex_data.address_mode_v = TextureAddressMode::MirrorRepeat,
-        texture::WrappingMode::Repeat => tex_data.address_mode_v = TextureAddressMode::Repeat,
+        texture::WrappingMode::ClampToEdge => tex_state.sampler.address_mode_v = TextureAddressMode::ClampToEdge,
+        texture::WrappingMode::MirroredRepeat => tex_state.sampler.address_mode_v = TextureAddressMode::MirrorRepeat,
+        texture::WrappingMode::Repeat => tex_state.sampler.address_mode_v = TextureAddressMode::Repeat,
     }
 
     if let Some(mag_filter) = gltf_texture.sampler().mag_filter()
     {
         match mag_filter
         {
-            texture::MagFilter::Nearest => tex_data.mag_filter = TextureFilterMode::Nearest,
-            texture::MagFilter::Linear => tex_data.mag_filter = TextureFilterMode::Linear,
+            texture::MagFilter::Nearest => tex_state.sampler.mag_filter = TextureFilterMode::Nearest,
+            texture::MagFilter::Linear => tex_state.sampler.mag_filter = TextureFilterMode::Linear,
         }
     }
 
@@ -1255,27 +1242,27 @@ fn apply_texture_filtering_settings<'a>(tex: Arc<RwLock<Box<Texture>>>, gltf_tex
     {
         match min_filter
         {
-            texture::MinFilter::Nearest => tex_data.min_filter = TextureFilterMode::Nearest,
-            texture::MinFilter::Linear => tex_data.min_filter = TextureFilterMode::Linear,
+            texture::MinFilter::Nearest => tex_state.sampler.min_filter = TextureFilterMode::Nearest,
+            texture::MinFilter::Linear => tex_state.sampler.min_filter = TextureFilterMode::Linear,
             texture::MinFilter::NearestMipmapNearest =>
             {
-                tex_data.min_filter = TextureFilterMode::Nearest;
-                tex_data.mipmap_filter = TextureFilterMode::Nearest;
+                tex_state.sampler.min_filter = TextureFilterMode::Nearest;
+                tex_state.sampler.mipmap_filter = TextureFilterMode::Nearest;
             },
             texture::MinFilter::LinearMipmapNearest =>
             {
-                tex_data.min_filter = TextureFilterMode::Linear;
-                tex_data.mipmap_filter = TextureFilterMode::Nearest;
+                tex_state.sampler.min_filter = TextureFilterMode::Linear;
+                tex_state.sampler.mipmap_filter = TextureFilterMode::Nearest;
             },
             texture::MinFilter::NearestMipmapLinear =>
             {
-                tex_data.min_filter = TextureFilterMode::Nearest;
-                tex_data.mipmap_filter = TextureFilterMode::Linear;
+                tex_state.sampler.min_filter = TextureFilterMode::Nearest;
+                tex_state.sampler.mipmap_filter = TextureFilterMode::Linear;
             },
             texture::MinFilter::LinearMipmapLinear =>
             {
-                tex_data.min_filter = TextureFilterMode::Linear;
-                tex_data.mipmap_filter = TextureFilterMode::Linear;
+                tex_state.sampler.min_filter = TextureFilterMode::Linear;
+                tex_state.sampler.mipmap_filter = TextureFilterMode::Linear;
             },
         }
     }
@@ -1285,26 +1272,26 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
 {
     let mut material = Material::new(gltf_material.name().unwrap_or("unknown"));
     let material_name = material.get_base().name.clone();
-    let data = material.get_data_mut().get_mut();
+    let material_data = material.get_data_mut().get_mut();
 
     let base_color = gltf_material.pbr_metallic_roughness().base_color_factor();
-    data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
-    data.alpha = base_color[3];
+    material_data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
+    material_data.alpha = base_color[3];
 
-    data.blend_mode = match gltf_material.alpha_mode()
+    material_data.blend_mode = match gltf_material.alpha_mode()
     {
         gltf::material::AlphaMode::Blend => BlendMode::Blend,
         gltf::material::AlphaMode::Mask => BlendMode::Mask,
         gltf::material::AlphaMode::Opaque => BlendMode::Opaque
     };
 
-    data.alpha_cutoff = gltf_material.alpha_cutoff();
+    material_data.alpha_cutoff = gltf_material.alpha_cutoff();
 
     //default alpha cutoff is 0.5 for mask blend mode
     // https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/AlphaBlendModeTest/README.md#problem-no-default-cutoff
-    if data.blend_mode == BlendMode::Mask && data.alpha_cutoff.is_none()
+    if material_data.blend_mode == BlendMode::Mask && material_data.alpha_cutoff.is_none()
     {
-        data.alpha_cutoff = Some(0.5);
+        material_data.alpha_cutoff = Some(0.5);
     }
 
     // base/albedo texture
@@ -1313,13 +1300,14 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
             set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Base);
-            data.texture_base = Some(TextureState::new(texture));
+            material_data.texture_base = Some(TextureState::new(texture));
+
+            apply_texture_filtering_settings(material_data.texture_base.as_mut().unwrap(), &tex.texture());
 
             if let Some(transform) = tex.texture_transform()
             {
-                let tex = &data.texture_base.as_mut().unwrap().item;
-
-                apply_texture_transform(&transform, tex.clone());
+                let tex = material_data.texture_base.as_mut().unwrap();
+                apply_texture_transform(&transform, tex);
             }
         }
     }
@@ -1330,14 +1318,16 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
         if let Some(texture) = get_normal_texture_by_index(&tex, &loaded_textures)
         {
             set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Normal);
-            data.texture_normal = Some(TextureState::new(texture));
+            material_data.texture_normal = Some(TextureState::new(texture));
+
+            apply_texture_filtering_settings(material_data.texture_normal.as_mut().unwrap(), &tex.texture());
 
             /*
             // uncomment when this is merged: https://github.com/gltf-rs/gltf/pull/394
             if let Some(transform) = tex.texture_transform()
             {
-                let tex = &data.texture_normal.as_mut().unwrap().item;
-                apply_texture_transform(&transform, tex.clone());
+                let tex = data.texture_normal.as_mut().unwrap();
+                apply_texture_transform(&transform, tex);
             }
             */
         }
@@ -1351,20 +1341,21 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
         let specular_color = specular.specular_color_factor();
         let specular_color_factor = specular.specular_factor();
 
-        data.specular_color = Vector3::<f32>::new(specular_color[0] * specular_color_factor, specular_color[1] * specular_color_factor, specular_color[2] * specular_color_factor);
+        material_data.specular_color = Vector3::<f32>::new(specular_color[0] * specular_color_factor, specular_color[1] * specular_color_factor, specular_color[2] * specular_color_factor);
 
         if let Some(specular_tex) = specular.specular_color_texture()
         {
             if let Some(texture) = get_texture_by_index(&specular_tex, &loaded_textures)
             {
                 set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Specular);
-                data.texture_specular = Some(TextureState::new(texture));
+                material_data.texture_specular = Some(TextureState::new(texture));
+
+                apply_texture_filtering_settings(material_data.texture_specular.as_mut().unwrap(), &specular_tex.texture());
 
                 if let Some(transform) = specular_tex.texture_transform()
                 {
-                    let tex = &data.texture_specular.as_mut().unwrap().item;
-
-                    apply_texture_transform(&transform, tex.clone());
+                    let tex = material_data.texture_specular.as_mut().unwrap();
+                    apply_texture_transform(&transform, tex);
                 }
             }
         }
@@ -1372,13 +1363,13 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
     else
     {
         // if there is no specular color -> use base color
-        data.specular_color = data.base_color * 0.8;
+        material_data.specular_color = material_data.base_color * 0.8;
     }
 
     // reflectivity (metallic and roughness are combined in the loaded texture)
     // do not use full metallic_factor as reflectivity --> otherwise the object will be just complete mirror if metallic is set to 1.0
     //data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor() * 0.5; // TODO CHECK ME
-    data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor();
+    material_data.reflectivity = gltf_material.pbr_metallic_roughness().metallic_factor();
 
     if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
     {
@@ -1399,7 +1390,6 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 tex_arc.write().unwrap().create_mipmap_cache();
             }
 
-            apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
 
             if let Some(source) = &mut tex_arc.write().unwrap().source
@@ -1408,13 +1398,14 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
             }
 
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Reflectivity);
-            data.texture_reflectivity = Some(TextureState::new(tex_arc));
+            material_data.texture_reflectivity = Some(TextureState::new(tex_arc));
+
+            apply_texture_filtering_settings(material_data.texture_reflectivity.as_mut().unwrap(), &metallic_roughness_tex.texture());
 
             if let Some(transform) = metallic_roughness_tex.texture_transform()
             {
-                let tex = &data.texture_reflectivity.as_mut().unwrap().item;
-
-                apply_texture_transform(&transform, tex.clone());
+                let tex = material_data.texture_reflectivity.as_mut().unwrap();
+                apply_texture_transform(&transform, tex);
             }
 
             // add texture to clearable textures
@@ -1423,7 +1414,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
     }
 
     // roughness (metallic and roughness are combined in the loaded texture)
-    data.roughness = gltf_material.pbr_metallic_roughness().roughness_factor();
+    material_data.roughness = gltf_material.pbr_metallic_roughness().roughness_factor();
 
     if let Some(metallic_roughness_tex) = gltf_material.pbr_metallic_roughness().metallic_roughness_texture()
     {
@@ -1444,7 +1435,6 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 tex_arc.write().unwrap().create_mipmap_cache();
             }
 
-            apply_texture_filtering_settings(tex_arc.clone(), &metallic_roughness_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
 
             if let Some(source) = &mut tex_arc.write().unwrap().source
@@ -1453,13 +1443,14 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
             }
 
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Roughness);
-            data.texture_roughness = Some(TextureState::new(tex_arc));
+            material_data.texture_roughness = Some(TextureState::new(tex_arc));
+
+            apply_texture_filtering_settings(material_data.texture_roughness.as_mut().unwrap(), &metallic_roughness_tex.texture());
 
             if let Some(transform) = metallic_roughness_tex.texture_transform()
             {
-                let tex = &data.texture_roughness.as_mut().unwrap().item;
-
-                apply_texture_transform(&transform, tex.clone());
+                let tex = material_data.texture_roughness.as_mut().unwrap();
+                apply_texture_transform(&transform, tex);
             }
 
             // add texture to clearable textures
@@ -1469,20 +1460,21 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
 
     // emissive / ambient
     let emissive = gltf_material.emissive_factor();
-    data.ambient_color = Vector3::<f32>::new(emissive[0], emissive[1], emissive[2]);
+    material_data.ambient_color = Vector3::<f32>::new(emissive[0], emissive[1], emissive[2]);
 
     if let Some(tex) = gltf_material.emissive_texture()
     {
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
             set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientEmissive);
-            data.texture_ambient = Some(TextureState::new(texture));
+            material_data.texture_ambient = Some(TextureState::new(texture));
+
+            apply_texture_filtering_settings(material_data.texture_ambient.as_mut().unwrap(), &tex.texture());
 
             if let Some(transform) = tex.texture_transform()
             {
-                let tex = &data.texture_ambient.as_mut().unwrap().item;
-
-                apply_texture_transform(&transform, tex.clone());
+                let tex = material_data.texture_ambient.as_mut().unwrap();
+                apply_texture_transform(&transform, tex);
             }
         }
     }
@@ -1508,11 +1500,12 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 tex_arc.write().unwrap().create_mipmap_cache();
             }
 
-            apply_texture_filtering_settings(tex_arc.clone(), &ao_gltf_tex.texture(), create_mipmaps);
             tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
 
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientOcclusion);
-            data.texture_ambient_occlusion = Some(TextureState::new(tex_arc));
+            material_data.texture_ambient_occlusion = Some(TextureState::new(tex_arc));
+
+            apply_texture_filtering_settings(material_data.texture_ambient_occlusion.as_mut().unwrap(), &ao_gltf_tex.texture());
 
             /*
             // uncomment when this is merged: https://github.com/gltf-rs/gltf/pull/394
@@ -1532,7 +1525,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
     if let Some(pbr_specular_glossiness) = gltf_material.pbr_specular_glossiness()
     {
         let base_color = pbr_specular_glossiness.diffuse_factor();
-        data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
+        material_data.base_color = Vector3::<f32>::new(base_color[0], base_color[1], base_color[2]);
 
         // diffuse to --> base/albedo texture
         if let Some(tex) = pbr_specular_glossiness.diffuse_texture()
@@ -1540,13 +1533,14 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
             if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
             {
                 set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Base);
-                data.texture_base = Some(TextureState::new(texture));
+                material_data.texture_base = Some(TextureState::new(texture));
+
+                apply_texture_filtering_settings(material_data.texture_base.as_mut().unwrap(), &tex.texture());
 
                 if let Some(transform) = tex.texture_transform()
                 {
-                    let tex = &data.texture_base.as_mut().unwrap().item;
-
-                    apply_texture_transform(&transform, tex.clone());
+                    let tex = material_data.texture_base.as_mut().unwrap();
+                    apply_texture_transform(&transform, tex);
                 }
             }
         }
@@ -1555,10 +1549,10 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
         let specular_color_factor = pbr_specular_glossiness.specular_factor();
         let glossiness_color_factor = pbr_specular_glossiness.glossiness_factor();
 
-        data.base_color = Vector3::<f32>::new(specular_color_factor[0], specular_color_factor[1], specular_color_factor[2]);
-        data.specular_color = Vector3::<f32>::new(specular_color_factor[0], specular_color_factor[1], specular_color_factor[2]);
+        material_data.base_color = Vector3::<f32>::new(specular_color_factor[0], specular_color_factor[1], specular_color_factor[2]);
+        material_data.specular_color = Vector3::<f32>::new(specular_color_factor[0], specular_color_factor[1], specular_color_factor[2]);
 
-        data.roughness = 1.0 - glossiness_color_factor;
+        material_data.roughness = 1.0 - glossiness_color_factor;
 
         // specular-glossiness texture is an RGBA texture, containing the specular color (RGB) encoded with the sRGB transfer function and the linear glossiness value (A).
         if let Some(specular_glossiness_texture) = pbr_specular_glossiness.specular_glossiness_texture()
@@ -1581,7 +1575,6 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                     tex_arc.write().unwrap().create_mipmap_cache();
                 }
 
-                apply_texture_filtering_settings(tex_arc.clone(), &specular_glossiness_texture.texture(), create_mipmaps);
                 tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
 
                 if let Some(source) = &mut tex_arc.write().unwrap().source
@@ -1590,13 +1583,14 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 }
 
                 set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::Reflectivity);
-                data.texture_reflectivity = Some(TextureState::new(tex_arc));
+                material_data.texture_reflectivity = Some(TextureState::new(tex_arc));
+
+                apply_texture_filtering_settings(material_data.texture_reflectivity.as_mut().unwrap(), &specular_glossiness_texture.texture());
 
                 if let Some(transform) = specular_glossiness_texture.texture_transform()
                 {
-                    let tex = &data.texture_reflectivity.as_mut().unwrap().item;
-
-                    apply_texture_transform(&transform, tex.clone());
+                    let tex = material_data.texture_reflectivity.as_mut().unwrap();
+                    apply_texture_transform(&transform, tex);
                 }
             }
 
@@ -1607,29 +1601,30 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 texture.write().unwrap().make_fully_opaque();
 
                 set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Specular);
-                data.texture_specular = Some(TextureState::new(texture));
+                material_data.texture_specular = Some(TextureState::new(texture));
+
+                apply_texture_filtering_settings(material_data.texture_specular.as_mut().unwrap(), &specular_glossiness_texture.texture());
 
                 if let Some(transform) = specular_glossiness_texture.texture_transform()
                 {
-                    let tex = &data.texture_base.as_mut().unwrap().item;
-
-                    apply_texture_transform(&transform, tex.clone());
+                    let tex = material_data.texture_base.as_mut().unwrap();
+                    apply_texture_transform(&transform, tex);
                 }
             }
         }
     }
 
     // backface culling
-    data.backface_culling = !gltf_material.double_sided();
+    material_data.backface_culling = !gltf_material.double_sided();
 
     // index of refraction
     if let Some(ior) = gltf_material.ior()
     {
-        data.refraction_index = ior;
+        material_data.refraction_index = ior;
     }
 
     // unlit
-    data.unlit_shading = gltf_material.unlit();
+    material_data.unlit_shading = gltf_material.unlit();
 
     material
 }

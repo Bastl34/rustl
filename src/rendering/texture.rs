@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Device, Sampler};
+use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Sampler};
 
-use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::material::TextureState}};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
+/*
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TextureTransform
@@ -22,7 +23,7 @@ pub struct TextureTransform
 
 impl TextureTransform
 {
-    pub fn new(scene_texture: &crate::state::resources::texture::Texture) -> Self
+    pub fn new(scene_texture: &crate::state::scene::components::material::Texture) -> Self
     {
         let data = scene_texture.get_data();
 
@@ -48,6 +49,7 @@ impl TextureTransform
         }
     }
 }
+*/
 
 #[derive(Debug)]
 pub enum TextureFormat
@@ -70,7 +72,7 @@ pub struct Texture
 
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    sampler: wgpu::Sampler
+    //sampler: wgpu::Sampler
 }
 
 impl RenderItem for Texture
@@ -189,7 +191,7 @@ impl Texture
             );
         }
 
-        let sampler = Self::create_sampler(device, scene_texture);
+        //let sampler = Self::create_sampler(device, scene_texture);
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         Self
@@ -204,7 +206,7 @@ impl Texture
 
             texture: texture,
             view: texture_view,
-            sampler: sampler
+            //sampler: sampler
         }
     }
 
@@ -251,6 +253,7 @@ impl Texture
 
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        /*
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor
         {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -261,6 +264,7 @@ impl Texture
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
+        */
 
         Self
         {
@@ -274,7 +278,7 @@ impl Texture
 
             texture: texture,
             view: texture_view,
-            sampler: sampler
+            //sampler: sampler
         }
     }
 
@@ -306,6 +310,7 @@ impl Texture
         let texture = device.create_texture(&desc);
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        /*
         let sampler = device.create_sampler
         (
             &wgpu::SamplerDescriptor
@@ -320,6 +325,7 @@ impl Texture
                 ..Default::default()
             }
         );
+         */
 
         Self
         {
@@ -332,65 +338,95 @@ impl Texture
             is_depth_texture: true,
 
             texture,
-            view,
-            sampler
+            view
+            //sampler
         }
 
     }
 
-    pub fn create_sampler(device: &Device, scene_texture: &crate::state::resources::texture::Texture) -> Sampler
+    pub fn create_default_sampler(wgpu: &mut WGpu) -> Sampler
     {
-        let tex_data = scene_texture.get_data();
-
-        let address_mode_u;
-        match tex_data.address_mode_u
+        wgpu.device().create_sampler(&wgpu::SamplerDescriptor
         {
-            crate::state::resources::texture::TextureAddressMode::ClampToEdge => address_mode_u = wgpu::AddressMode::ClampToEdge,
-            crate::state::resources::texture::TextureAddressMode::Repeat => address_mode_u = wgpu::AddressMode::Repeat,
-            crate::state::resources::texture::TextureAddressMode::MirrorRepeat => address_mode_u = wgpu::AddressMode::MirrorRepeat,
-            crate::state::resources::texture::TextureAddressMode::ClampToBorder => address_mode_u = wgpu::AddressMode::ClampToBorder,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        })
+    }
+
+    pub fn create_depth_sampler(wgpu: &mut WGpu) -> Sampler
+    {
+        wgpu.device().create_sampler
+        (
+            &wgpu::SamplerDescriptor
+            {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                ..Default::default()
+            }
+        )
+    }
+
+    pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState) -> Sampler
+    {
+        let address_mode_u;
+        match texture_state.sampler.address_mode_u
+        {
+            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_u = wgpu::AddressMode::ClampToEdge,
+            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_u = wgpu::AddressMode::Repeat,
+            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_u = wgpu::AddressMode::MirrorRepeat,
+            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_u = wgpu::AddressMode::ClampToBorder,
         }
 
         let address_mode_v;
-        match tex_data.address_mode_v
+        match texture_state.sampler.address_mode_v
         {
-            crate::state::resources::texture::TextureAddressMode::ClampToEdge => address_mode_v = wgpu::AddressMode::ClampToEdge,
-            crate::state::resources::texture::TextureAddressMode::Repeat => address_mode_v = wgpu::AddressMode::Repeat,
-            crate::state::resources::texture::TextureAddressMode::MirrorRepeat => address_mode_v = wgpu::AddressMode::MirrorRepeat,
-            crate::state::resources::texture::TextureAddressMode::ClampToBorder => address_mode_v = wgpu::AddressMode::ClampToBorder,
+            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_v = wgpu::AddressMode::ClampToEdge,
+            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_v = wgpu::AddressMode::Repeat,
+            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_v = wgpu::AddressMode::MirrorRepeat,
+            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_v = wgpu::AddressMode::ClampToBorder,
         }
 
         let address_mode_w;
-        match tex_data.address_mode_w
+        match texture_state.sampler.address_mode_w
         {
-            crate::state::resources::texture::TextureAddressMode::ClampToEdge => address_mode_w = wgpu::AddressMode::ClampToEdge,
-            crate::state::resources::texture::TextureAddressMode::Repeat => address_mode_w = wgpu::AddressMode::Repeat,
-            crate::state::resources::texture::TextureAddressMode::MirrorRepeat => address_mode_w = wgpu::AddressMode::MirrorRepeat,
-            crate::state::resources::texture::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
+            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_w = wgpu::AddressMode::ClampToEdge,
+            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_w = wgpu::AddressMode::Repeat,
+            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_w = wgpu::AddressMode::MirrorRepeat,
+            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
         }
 
         let mag_filter;
-        match tex_data.mag_filter
+        match texture_state.sampler.mag_filter
         {
-            crate::state::resources::texture::TextureFilterMode::Nearest => mag_filter = wgpu::FilterMode::Nearest,
-            crate::state::resources::texture::TextureFilterMode::Linear => mag_filter = wgpu::FilterMode::Linear,
+            crate::state::scene::components::material::TextureFilterMode::Nearest => mag_filter = wgpu::FilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => mag_filter = wgpu::FilterMode::Linear,
         }
 
         let min_filter;
-        match tex_data.min_filter
+        match texture_state.sampler.min_filter
         {
-            crate::state::resources::texture::TextureFilterMode::Nearest => min_filter = wgpu::FilterMode::Nearest,
-            crate::state::resources::texture::TextureFilterMode::Linear => min_filter = wgpu::FilterMode::Linear,
+            crate::state::scene::components::material::TextureFilterMode::Nearest => min_filter = wgpu::FilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => min_filter = wgpu::FilterMode::Linear,
         }
 
         let mipmap_filter;
-        match tex_data.mipmap_filter
+        match texture_state.sampler.mipmap_filter
         {
-            crate::state::resources::texture::TextureFilterMode::Nearest => mipmap_filter = wgpu::FilterMode::Nearest,
-            crate::state::resources::texture::TextureFilterMode::Linear => mipmap_filter = wgpu::FilterMode::Linear,
+            crate::state::scene::components::material::TextureFilterMode::Nearest => mipmap_filter = wgpu::FilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => mipmap_filter = wgpu::FilterMode::Linear,
         }
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor
+        let sampler = wgpu.device().create_sampler(&wgpu::SamplerDescriptor
         {
             address_mode_u: address_mode_u,
             address_mode_v: address_mode_v,
@@ -455,10 +491,12 @@ impl Texture
         &self.view
     }
 
+    /*
     pub fn get_sampler(&self) -> &wgpu::Sampler
     {
         &self.sampler
     }
+    */
 
     pub fn get_bind_group_layout_entries(&self, index_start: u32) -> [BindGroupLayoutEntry; 2]
     {
@@ -501,18 +539,18 @@ impl Texture
         ]
     }
 
-    pub fn get_bind_group_entries(&self, index_start: u32) -> [BindGroupEntry; 2]
+    pub fn get_bind_group_entries<'a>(index_start: u32, view: &'a wgpu::TextureView, sampler: &'a wgpu::Sampler) -> [BindGroupEntry<'a>; 2]
     {
         [
             wgpu::BindGroupEntry
             {
                 binding: index_start,
-                resource: wgpu::BindingResource::TextureView(&self.view),
+                resource: wgpu::BindingResource::TextureView(view),
             },
             wgpu::BindGroupEntry
             {
                 binding: index_start + 1,
-                resource: wgpu::BindingResource::Sampler(&self.sampler),
+                resource: wgpu::BindingResource::Sampler(sampler),
             }
         ]
     }

@@ -3,7 +3,7 @@
 use std::sync::{RwLock, Arc};
 
 use image::{imageops, DynamicImage, GenericImageView, GrayImage, ImageFormat, Pixel};
-use nalgebra::{Vector2, Vector4};
+use nalgebra::Vector4;
 use serde::{Deserialize, Serialize};
 
 use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::{extras::Extras, tags::Tags}}}};
@@ -13,6 +13,7 @@ pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 const PREVIEW_SIZE: u32 = 256;
 const MAX_MIPMAPS: usize = 10; // max allowed mipmaps 10 (+ original texture)
 
+/*
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TextureAddressMode
 {
@@ -27,16 +28,6 @@ pub enum TextureFilterMode
 {
     Nearest,
     Linear
-}
-
-#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
-pub enum MipmapSamplingFilterType
-{
-    Nearest,
-    Triangle,
-    CatmullRom,
-    Gaussian,
-    Lanczos3,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -63,6 +54,17 @@ impl TextureTransform
         }
     }
 }
+*/
+
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum MipmapSamplingFilterType
+{
+    Nearest,
+    Triangle,
+    CatmullRom,
+    Gaussian,
+    Lanczos3,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct TextureData
@@ -78,12 +80,14 @@ pub struct TextureData
     pub height: u64,
 
     pub mipmapping: bool,
-
-    pub transform: TextureTransform,
-
     pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
+
+    /*
+    pub transform: TextureTransform,
+
+    pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub address_mode_u: TextureAddressMode,
     pub address_mode_v: TextureAddressMode,
@@ -91,6 +95,7 @@ pub struct TextureData
     pub mag_filter: TextureFilterMode,
     pub min_filter: TextureFilterMode,
     pub mipmap_filter: TextureFilterMode,
+     */
 }
 
 #[derive(Serialize, Deserialize)]
@@ -134,19 +139,21 @@ impl Texture
             height: 0,
 
             mipmapping: false,
-
-            transform: TextureTransform::default(),
-
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            // transform: TextureTransform::default(),
+
 
             has_transparency: false,
 
+            /*
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Nearest,
             mipmap_filter: TextureFilterMode::Nearest
+             */
         };
 
         Texture
@@ -207,10 +214,9 @@ impl Texture
             height: image.height() as u64,
 
             mipmapping: false,
-
-            transform: TextureTransform::default(),
-
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            // transform: TextureTransform::default(),
 
             has_transparency: has_transparency,
 
@@ -218,12 +224,14 @@ impl Texture
             image: image,
             mipmap_cache: None,
 
+            /*
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Linear,
             mipmap_filter: TextureFilterMode::Linear
+            */
         };
 
         Texture
@@ -284,21 +292,22 @@ impl Texture
             has_transparency: false,
 
             mipmapping: false,
-
-            transform: data.transform.clone(),
-
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            // transform: data.transform.clone(),
 
             preview: Self::create_preview(&image),
             image: image,
             mipmap_cache: None,
 
+            /*
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Linear,
             mipmap_filter: TextureFilterMode::Linear
+            */
         };
 
         Texture
@@ -636,6 +645,7 @@ impl Texture
 
         let mut mipmap_sampling_type;
 
+        /*
         let mut address_mode_u;
         let mut address_mode_v;
         let mut address_mode_w;
@@ -647,6 +657,7 @@ impl Texture
         let mut uv_scale;
         let mut uv_rotation_deg;
         let mut uv_index;
+         */
 
         {
             let data = self.data.get_ref();
@@ -655,6 +666,7 @@ impl Texture
 
             mipmap_sampling_type = data.mipmap_sampling_type;
 
+            /*
             address_mode_u = data.address_mode_u;
             address_mode_v = data.address_mode_v;
             address_mode_w = data.address_mode_w;
@@ -666,6 +678,7 @@ impl Texture
             uv_scale = data.transform.scale;
             uv_rotation_deg = data.transform.rotation.to_degrees();
             uv_index = data.transform.uv_index;
+             */
         }
 
         let mut changed = false;
@@ -696,6 +709,7 @@ impl Texture
             });
         });
 
+        /*
         ui.horizontal(|ui|
         {
             ui.label("Address Mode U:");
@@ -769,7 +783,9 @@ impl Texture
         });
 
         ui.separator();
+        */
 
+        /*
         ui.horizontal(|ui|
         {
             ui.label("UV Offset:");
@@ -787,6 +803,7 @@ impl Texture
         changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
 
         changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
+         */
 
 
         if changed
@@ -795,6 +812,7 @@ impl Texture
 
             data.mipmapping = mipmapping;
 
+            /*
             data.mipmap_sampling_type = mipmap_sampling_type;
 
             data.address_mode_u = address_mode_u;
@@ -808,6 +826,7 @@ impl Texture
             data.transform.scale = uv_scale;
             data.transform.rotation = uv_rotation_deg.to_radians();
             data.transform.uv_index = uv_index;
+            */
         }
     }
 
