@@ -8,7 +8,7 @@ pub fn update(wgpu: &mut WGpu, state: &mut State)
 pub fn update_textures(wgpu: &mut WGpu, state: &mut State)
 {
     // check all individual textures
-    for (_texture_id, texture) in &mut state.textures
+    for (_texture_id, texture) in &mut state.resources.textures
     {
         let mut buffer_recreate_needed = false;
 

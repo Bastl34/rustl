@@ -943,7 +943,6 @@ impl Material
             tex.transform.rotation = uv_rotation_deg.to_radians();
             tex.transform.uv_index = uv_index;
         }
-
     }
 }
 

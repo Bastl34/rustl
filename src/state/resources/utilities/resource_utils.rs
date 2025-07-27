@@ -27,11 +27,11 @@ pub fn load_texture_byte_or_reuse(main_queue: ExecutionQueueItem, max_tex_res: u
         // ***** check for reuse *****
         res = main_queue.add(Box::new(move |state|
         {
-            if state.textures.contains_key(&hash_clone)
+            if state.resources.textures.contains_key(&hash_clone)
             {
                 println!("reusing texture {}", name_clone);
 
-                *res_texture_clone.write().unwrap() = Some(state.textures.get_mut(&hash_clone).unwrap().clone());
+                *res_texture_clone.write().unwrap() = Some(state.resources.textures.get_mut(&hash_clone).unwrap().clone());
             }
         }))
     }
@@ -56,7 +56,7 @@ pub fn load_texture_byte_or_reuse(main_queue: ExecutionQueueItem, max_tex_res: u
         let mut main_queue = main_queue.write().unwrap();
         res = main_queue.add(Box::new(move |state|
         {
-            state.textures.insert(hash_clone.clone(), arc_clone.clone());
+            state.resources.textures.insert(hash_clone.clone(), arc_clone.clone());
         }));
     }
     res.join();
@@ -79,11 +79,11 @@ pub fn insert_texture_or_reuse(main_queue: ExecutionQueueItem, texture: Texture,
         let mut main_queue = main_queue.write().unwrap();
         res = main_queue.add(Box::new(move |state|
         {
-            if state.textures.contains_key(&hash_clone)
+            if state.resources.textures.contains_key(&hash_clone)
             {
                 println!("reusing texture {}", name_clone);
 
-                *res_texture_clone.write().unwrap() = Some(state.textures.get_mut(&hash_clone).unwrap().clone());
+                *res_texture_clone.write().unwrap() = Some(state.resources.textures.get_mut(&hash_clone).unwrap().clone());
             }
         }));
     }
@@ -107,7 +107,7 @@ pub fn insert_texture_or_reuse(main_queue: ExecutionQueueItem, texture: Texture,
         let mut main_queue = main_queue.write().unwrap();
         res = main_queue.add(Box::new(move |state|
         {
-            state.textures.insert(hash_clone.clone(), arc_clone.clone());
+            state.resources.textures.insert(hash_clone.clone(), arc_clone.clone());
         }));
     }
     res.join();

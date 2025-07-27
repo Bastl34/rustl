@@ -10,7 +10,7 @@ pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mu
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
-        for (_texture_hash, texture_arc) in &state.textures
+        for (_texture_hash, texture_arc) in &state.resources.textures
         {
             let texture = texture_arc.read().unwrap();
             let headline_name = format!("⚫ {}: {}", texture.id, cut_string_to_length(&texture.name, MAX_NAME_LENGTH));

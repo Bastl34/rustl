@@ -735,10 +735,10 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut textures_amount = state.textures.len();
+                let mut textures_amount = state.resources.textures.len();
                 if !show_internal
                 {
-                    textures_amount = state.textures.iter().filter(|(_, texture)| !texture.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                    textures_amount = state.resources.textures.iter().filter(|(_, texture)| !texture.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
                 }
 
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Texture { selection = true; } else { selection = false; }
@@ -785,10 +785,10 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut mesh_resources_amount = state.mesh_resources.len();
+                let mut mesh_resources_amount = state.resources.mesh_resources.len();
                 if !show_internal
                 {
-                    mesh_resources_amount = state.mesh_resources.iter().filter(|(_, mesh_resource)| !mesh_resource.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                    mesh_resources_amount = state.resources.mesh_resources.iter().filter(|(_, mesh_resource)| !mesh_resource.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
                 }
 
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::MeshResource { selection = true; } else { selection = false; }
@@ -809,7 +809,7 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
             });
         }).body(|ui|
         {
-            build_mesh_resources_list(editor_state, &state.mesh_resources, ui);
+            build_mesh_resources_list(editor_state, &state.resources.mesh_resources, ui);
         });
     }
 
@@ -820,10 +820,10 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut sound_sources_amount = state.sound_sources.len();
+                let mut sound_sources_amount = state.resources.sound_sources.len();
                 if !show_internal
                 {
-                    sound_sources_amount = state.sound_sources.iter().filter(|(_, sound_source)| !sound_source.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+                    sound_sources_amount = state.resources.sound_sources.iter().filter(|(_, sound_source)| !sound_source.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
                 }
 
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
@@ -844,7 +844,7 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
             });
         }).body(|ui|
         {
-            build_sound_sources_list(editor_state, &state.sound_sources, ui);
+            build_sound_sources_list(editor_state, &state.resources.sound_sources, ui);
         });
     }
 }

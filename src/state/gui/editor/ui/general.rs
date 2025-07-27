@@ -57,8 +57,8 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         lights_amout += scene.lights.get_ref().len();
     }
 
-    meshes_amout += state.mesh_resources.len();
-    for mesh_resource in &state.mesh_resources
+    meshes_amout += state.resources.mesh_resources.len();
+    for mesh_resource in &state.resources.mesh_resources
     {
         let mesh_resource = mesh_resource.1.read().unwrap();
         vertices_amout += mesh_resource.get_data().vertices.len();
@@ -67,7 +67,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
     let mut tex_memory_usage = 0.0;
     let mut tex_gpu_memory_usage = 0.0;
-    for texture in &state.textures
+    for texture in &state.resources.textures
     {
         let texture = texture.1.as_ref().read().unwrap();
         let texture = texture.as_ref();
@@ -96,7 +96,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         });
         ui.label(format!(" ⚫ instances: {}", instances_amout));
         ui.label(format!(" ⚫ materials: {}", materials_amout));
-        ui.label(format!(" ⚫ textures: {}", state.textures.len()));
+        ui.label(format!(" ⚫ textures: {}", state.resources.textures.len()));
         ui.label(format!(" ⚫ cameras: {}", cameras_amout));
         ui.label(format!(" ⚫ lights: {}", lights_amout));
 

@@ -102,6 +102,13 @@ pub struct InputOutput
     pub audio_device: AudioDeviceItem,
 }
 
+pub struct Resources
+{
+    pub textures: HashMap<String, TextureItem>,
+    pub sound_sources: HashMap<String, SoundSourceItem>,
+    pub mesh_resources: HashMap<String, MeshResourceItem>,
+}
+
 pub struct State
 {
     pub project: Project,
@@ -111,9 +118,7 @@ pub struct State
 
     pub io : InputOutput,
 
-    pub textures: HashMap<String, TextureItem>,
-    pub sound_sources: HashMap<String, SoundSourceItem>,
-    pub mesh_resources: HashMap<String, MeshResourceItem>,
+    pub resources: Resources,
 
     pub main_thread_execution_queue: ExecutionQueueItem,
 
@@ -205,10 +210,12 @@ impl State
                 audio_device,
             },
 
-            // resouces
-            textures: HashMap::new(),
-            sound_sources: HashMap::new(),
-            mesh_resources: HashMap::new(),
+            resources: Resources
+            {
+                textures: HashMap::new(),
+                sound_sources: HashMap::new(),
+                mesh_resources: HashMap::new(),
+            },
 
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
@@ -290,17 +297,17 @@ impl State
     {
         let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
 
-        if self.textures.contains_key(&hash)
+        if self.resources.textures.contains_key(&hash)
         {
             println!("reusing texture {}", name);
-            return self.textures.get_mut(&hash).unwrap().clone();
+            return self.resources.textures.get_mut(&hash).unwrap().clone();
         }
 
         let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
-        self.textures.insert(hash, arc.clone());
+        self.resources.textures.insert(hash, arc.clone());
 
         arc
     }
@@ -309,17 +316,17 @@ impl State
     {
         let hash = helper::crypto::get_hash_from_byte_vec(&sound_bytes);
 
-        if self.sound_sources.contains_key(&hash)
+        if self.resources.sound_sources.contains_key(&hash)
         {
             println!("reusing sound source {}", name);
-            return self.sound_sources.get_mut(&hash).unwrap().clone();
+            return self.resources.sound_sources.get_mut(&hash).unwrap().clone();
         }
 
         let sound_source = SoundSource::new(name, self.io.audio_device.clone(), &sound_bytes, extension);
 
         let arc = Arc::new(RwLock::new(Box::new(sound_source)));
 
-        self.sound_sources.insert(hash, arc.clone());
+        self.resources.sound_sources.insert(hash, arc.clone());
 
         arc
     }
@@ -328,15 +335,15 @@ impl State
     {
         let hash = texture.hash.clone();
 
-        if self.textures.contains_key(&hash)
+        if self.resources.textures.contains_key(&hash)
         {
             println!("reusing texture {}", name);
-            return self.textures.get_mut(&hash).unwrap().clone();
+            return self.resources.textures.get_mut(&hash).unwrap().clone();
         }
 
         let arc = Arc::new(RwLock::new(Box::new(texture)));
 
-        self.textures.insert(hash, arc.clone());
+        self.resources.textures.insert(hash, arc.clone());
 
         arc
     }
@@ -345,22 +352,22 @@ impl State
     {
         let hash = mesh_resource.hash.clone();
 
-        if self.mesh_resources.contains_key(&hash)
+        if self.resources.mesh_resources.contains_key(&hash)
         {
             println!("reusing mesh resources {}", name);
-            return self.mesh_resources.get_mut(&hash).unwrap().clone();
+            return self.resources.mesh_resources.get_mut(&hash).unwrap().clone();
         }
 
         let arc = Arc::new(RwLock::new(Box::new(mesh_resource)));
 
-        self.mesh_resources.insert(hash, arc.clone());
+        self.resources.mesh_resources.insert(hash, arc.clone());
 
         arc
     }
 
     pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
     {
-        for texture_arc in self.textures.values()
+        for texture_arc in self.resources.textures.values()
         {
             let texture =  texture_arc.read().unwrap();
             if texture.id == id
@@ -403,19 +410,19 @@ impl State
             }
         }
 
-        let len = self.textures.len();
-        self.textures.retain(|_key, texture|
+        let len = self.resources.textures.len();
+        self.resources.textures.retain(|_key, texture|
         {
             let texture = texture.read().unwrap();
             texture.id != id
         });
 
-        self.textures.len() != len
+        self.resources.textures.len() != len
     }
 
     pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
     {
-        for sound_arc in self.sound_sources.values()
+        for sound_arc in self.resources.sound_sources.values()
         {
             let sound =  sound_arc.read().unwrap();
             if sound.id == id
@@ -484,19 +491,19 @@ impl State
         }
 
         // remove sound source
-        let len = self.sound_sources.len();
-        self.sound_sources.retain(|_key, sound|
+        let len = self.resources.sound_sources.len();
+        self.resources.sound_sources.retain(|_key, sound|
         {
             let sound = sound.read().unwrap();
             sound.id != id
         });
 
-        self.sound_sources.len() != len
+        self.resources.sound_sources.len() != len
     }
 
     pub fn get_mesh_resource_by_id(&self, id: u64) -> Option<MeshResourceItem>
     {
-        for mesh_arc in self.mesh_resources.values()
+        for mesh_arc in self.resources.mesh_resources.values()
         {
             let mesh =  mesh_arc.read().unwrap();
             if mesh.id == id
@@ -541,14 +548,14 @@ impl State
         }
 
         // remove mesh resource
-        let len = self.mesh_resources.len();
-        self.mesh_resources.retain(|_key, mesh|
+        let len = self.resources.mesh_resources.len();
+        self.resources.mesh_resources.retain(|_key, mesh|
         {
             let mesh = mesh.read().unwrap();
             mesh.id != id
         });
 
-        self.mesh_resources.len() != len
+        self.resources.mesh_resources.len() != len
     }
 
     pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
@@ -647,7 +654,7 @@ impl State
         // ********** textures **********
         // check for delete later textures
         // see: delete_node_by_id
-        self.textures.retain(|_key, texture|
+        self.resources.textures.retain(|_key, texture|
         {
             if texture.read().unwrap().delete_later_request
             {
@@ -659,7 +666,7 @@ impl State
         // ********** mesh resources **********
         // check for delete later mesh resources
         // see: delete_node_by_id
-        self.mesh_resources.retain(|_key, mesh_resource|
+        self.resources.mesh_resources.retain(|_key, mesh_resource|
         {
             if mesh_resource.read().unwrap().delete_later_request
             {
@@ -670,7 +677,7 @@ impl State
 
         // update hash
         let mut mesh_resource_key_updates = vec![];
-        for (key, mesh_resource) in &self.mesh_resources
+        for (key, mesh_resource) in &self.resources.mesh_resources
         {
             let new_hash = mesh_resource.read().unwrap().hash.clone();
             if key != &new_hash
@@ -681,17 +688,17 @@ impl State
 
         for old_mesh_resource_key in mesh_resource_key_updates
         {
-            if let Some(value) = self.mesh_resources.remove(&old_mesh_resource_key)
+            if let Some(value) = self.resources.mesh_resources.remove(&old_mesh_resource_key)
             {
                 let new_hash = value.read().unwrap().hash.clone();
-                self.mesh_resources.insert(new_hash, value);
+                self.resources.mesh_resources.insert(new_hash, value);
             }
         }
 
         // ********** sound sources **********
         // check for delete later sound sources
         // see: delete_node_by_id
-        self.sound_sources.retain(|_key, sound_source|
+        self.resources.sound_sources.retain(|_key, sound_source|
         {
             if sound_source.read().unwrap().delete_later_request
             {
@@ -703,7 +710,7 @@ impl State
 
     pub fn clear(&mut self)
     {
-        self.textures.clear();
+        self.resources.textures.clear();
     }
 
     pub fn print(&self)
