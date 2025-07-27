@@ -9,7 +9,6 @@ use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
 use crate::helper::option_or_id::OptionOrId;
-use crate::state::helper::render_item::RenderItemOption;
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
 use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
@@ -777,6 +776,8 @@ impl Material
             return;
         }
 
+        let tex_id;
+
         let mut address_mode_u;
         let mut address_mode_v;
         let mut address_mode_w;
@@ -791,6 +792,12 @@ impl Material
 
         {
             let tex = self.get_texture_by_type(tex_type).unwrap();
+
+            {
+                let tex = tex.get().unwrap();
+                let tex = tex.read().unwrap();
+                tex_id = tex.id;
+            }
 
             address_mode_u = tex.sampler.address_mode_u;
             address_mode_v = tex.sampler.address_mode_v;
@@ -807,97 +814,118 @@ impl Material
 
         let mut changed = false;
 
-        ui.horizontal(|ui|
+        // ********** sampler **********
+        let sampler_id = ui.make_persistent_id(format!("material_tex_sampler_{}",tex_id));
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), sampler_id, false).show_header(ui, |ui|
         {
-            ui.label("Address Mode U:");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                ui.label("Sampler")
+            });
+        }).body(|ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Address Mode U:");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_u")).selected_text(format!("{address_mode_u:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_u, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Address Mode V:");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Address Mode W:");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
+                    changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Mag Filter: ");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                    changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Min Filter: ");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                    changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                });
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Mipmap Filter: ");
+
+                egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
+                {
+                    changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
+                    changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                });
             });
         });
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Address Mode V:");
 
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_v")).selected_text(format!("{address_mode_v:?}")).show_ui(ui, |ui|
+        // ********** transform **********
+        let transform_id = ui.make_persistent_id(format!("material_tex_transform_{}",tex_id));
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), transform_id, false).show_header(ui, |ui|
+        {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_v, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                ui.label("Transform")
             });
-        });
-
-        ui.horizontal(|ui|
+        }).body(|ui|
         {
-            ui.label("Address Mode W:");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("address_mode_w")).selected_text(format!("{address_mode_w:?}")).show_ui(ui, |ui|
+            ui.horizontal(|ui|
             {
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToBorder, "ClampToBorder").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::ClampToEdge, "ClampToEdge").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::MirrorRepeat, "MirrorRepeat").changed() || changed;
-                changed = ui.selectable_value(& mut address_mode_w, TextureAddressMode::Repeat, "Repeat").changed() || changed;
+                ui.label("UV Offset:");
+                changed = ui.add(egui::DragValue::new(&mut uv_offset.x).speed(0.001).prefix("u: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut uv_offset.y).speed(0.001).prefix("v: ")).changed() || changed;
             });
-        });
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Mag Filter: ");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("mag_filter")).selected_text(format!("{mag_filter:?}")).show_ui(ui, |ui|
+            ui.horizontal(|ui|
             {
-                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
-                changed = ui.selectable_value(& mut mag_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
+                ui.label("UV Scale:");
+                changed = ui.add(egui::DragValue::new(&mut uv_scale.x).speed(0.001).prefix("u: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut uv_scale.y).speed(0.001).prefix("v: ")).changed() || changed;
             });
+
+            changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
+
+            changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
         });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Min Filter: ");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("min_filter")).selected_text(format!("{min_filter:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
-                changed = ui.selectable_value(& mut min_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Mipmap Filter: ");
-
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("mipmap_filter")).selected_text(format!("{mipmap_filter:?}")).show_ui(ui, |ui|
-            {
-                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Linear, "Linear").changed() || changed;
-                changed = ui.selectable_value(& mut mipmap_filter, TextureFilterMode::Nearest, "Nearest").changed() || changed;
-            });
-        });
-
-        ui.separator();
-
-        ui.horizontal(|ui|
-        {
-            ui.label("UV Offset:");
-            changed = ui.add(egui::DragValue::new(&mut uv_offset.x).speed(0.001).prefix("u: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut uv_offset.y).speed(0.001).prefix("v: ")).changed() || changed;
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("UV Scale:");
-            changed = ui.add(egui::DragValue::new(&mut uv_scale.x).speed(0.001).prefix("u: ")).changed() || changed;
-            changed = ui.add(egui::DragValue::new(&mut uv_scale.y).speed(0.001).prefix("v: ")).changed() || changed;
-        });
-
-        changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
-
-        changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
 
         if changed
         {

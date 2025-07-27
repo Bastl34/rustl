@@ -176,6 +176,8 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                         |ui|
                         {
                             texture.ui_info(ui);
+                            drop(texture); // drop texture object - otherwise write is still open
+
                             ui.separator();
                             material.ui_texture_state(ui, texture_type);
                         });
