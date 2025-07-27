@@ -44,9 +44,9 @@ pub fn export(state: &State, path: &str) -> bool
         export.insert("rendering_settings".to_string(), to_value(&state.rendering).unwrap());
         export.insert("exporter_version".to_string(), Value::String("1.0.0".to_string()));
 
-        // TODO resources
-        // textures, sound_sources, meshes
+        // resources
 
+        // scenes
         export.insert
         (
             "scenes".to_string(),
@@ -75,8 +75,26 @@ fn clean_internal_fields(value: &mut Value)
 {
     match value
     {
+        // object
         Value::Object(map) =>
         {
+            // check base of component
+            if map.contains_key("base")
+            {
+                if let Some(Value::Object(base_obj)) = map.get("base")
+                {
+                    if let Some(Value::Object(tags)) = base_obj.get("tags")
+                    {
+                        let has_internal_tag = tags.keys().any(|k| k.starts_with(ENGINE_INTERNAL_TAG_PREFX));
+                        if has_internal_tag
+                        {
+                            *value = Value::Null;
+                            return;
+                        }
+                    }
+                }
+            }
+
             // remove internal stuff from "extras"
             if let Some(Value::Object(extras)) = map.get_mut("extras")
             {
@@ -100,6 +118,7 @@ fn clean_internal_fields(value: &mut Value)
             }
         }
 
+        // array
         Value::Array(arr) =>
         {
             for item in arr.iter_mut()
@@ -112,5 +131,11 @@ fn clean_internal_fields(value: &mut Value)
         }
 
         _ => {}
+    }
+
+    // remove nulls from map level if it's an Object
+    if let Value::Object(map) = value
+    {
+        map.retain(|_, v| !v.is_null());
     }
 }

@@ -82,6 +82,26 @@ impl Default for Scene
     }
 }
 
+struct MaterialsMapSerializer<'a>
+{
+    materials: &'a HashMap<u64, ComponentItem>,
+}
+
+impl<'a> Serialize for MaterialsMapSerializer<'a>
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer
+    {
+        let mut map = serializer.serialize_map(Some(self.materials.len()))?;
+        for (id, item) in self.materials
+        {
+            let guard = item.read().map_err(serde::ser::Error::custom)?;
+            map.serialize_entry(id, &**guard)?;
+        }
+        map.end()
+    }
+}
+
 impl Serialize for Scene
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -106,7 +126,7 @@ impl Serialize for Scene
         let lights_refs: Vec<&Light> = lights_guards.iter().map(|tracker| tracker.get_ref().as_ref()).collect();
         map.serialize_entry("lights", &lights_refs)?;
 
-        // materials TODO
+        map.serialize_entry("materials", &MaterialsMapSerializer { materials: &self.materials })?;
 
         let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter()
             .filter(|controller| controller.is_serializable())
@@ -175,9 +195,12 @@ impl<'de> Deserialize<'de> for Scene
                                     .collect()
                             )
                         }
-                        "materials" =>
-                        {
-                            // TODO
+                        "materials" => {
+                            let material_map: HashMap<u64, Box<dyn Component>> = map.next_value()?;
+                            scene.materials = material_map
+                                .into_iter()
+                                .map(|(id, mat)| (id, Arc::new(RwLock::new(mat))))
+                                .collect();
                         }
                         "pre_controller" =>
                         {

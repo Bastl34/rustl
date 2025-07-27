@@ -94,8 +94,8 @@ impl SceneController for GenericController
     fn ui(&mut self, ui: &mut egui::Ui, _scene: &mut crate::state::scene::scene::Scene)
     {
         ui.label("Features:");
-        ui.label(" ⚫ update skin bbox on each animation");
-        ui.label(" ⚫ update spatial sound camera position (based on first)");
+        ui.label("⚫ update skin bbox on each animation");
+        ui.label("⚫ update spatial sound camera position (based on first)");
 
         warn_box(ui, "Its not recommended to remove or stop this.");
     }
