@@ -93,10 +93,10 @@ impl<'a> Serialize for MaterialsMapSerializer<'a>
     where S: serde::Serializer
     {
         let mut map = serializer.serialize_map(Some(self.materials.len()))?;
-        for (id, item) in self.materials
+        for (_, item) in self.materials
         {
             let guard = item.read().map_err(serde::ser::Error::custom)?;
-            map.serialize_entry(id, &**guard)?;
+            map.serialize_entry(item.read().unwrap().uuid(), &**guard)?;
         }
         map.end()
     }

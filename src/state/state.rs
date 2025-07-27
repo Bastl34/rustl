@@ -102,6 +102,7 @@ pub struct InputOutput
     pub audio_device: AudioDeviceItem,
 }
 
+#[derive(Default)]
 pub struct Resources
 {
     pub textures: HashMap<String, TextureItem>,
