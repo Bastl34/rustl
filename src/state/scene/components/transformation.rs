@@ -30,6 +30,8 @@ pub struct TransformationData
     pub animation_scale: Option<Vector3<f32>>,
 
     trans: Matrix4<f32>,
+
+    #[serde(skip, default)]
     tran_inverse: Matrix4<f32>
 }
 
@@ -673,7 +675,11 @@ impl Component for Transformation
     component_impl_default!();
     component_impl_no_update!();
     component_impl_no_cleanup_node!();
-    component_impl_no_post_deserialization!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        self.calc_transform();
+    }
 
     fn instantiable() -> bool
     {

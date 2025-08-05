@@ -89,14 +89,20 @@ pub struct DeserializationContext<'a>
 #[derive(Serialize, Deserialize)]
 pub struct ComponentBase
 {
+    #[serde(skip, default)]
     pub id: u64,
     pub uuid: String,
 
     pub is_enabled: bool,
 
     pub name: String,
+
+    #[serde(skip, default)]
     pub component_name: String,
+
+    #[serde(skip, default)]
     pub icon: String,
+
     pub info: Option<String>,
 
     pub extras: Extras,
@@ -104,6 +110,7 @@ pub struct ComponentBase
 
     pub from_file: bool,
 
+    #[serde(skip, default)]
     pub delete_later_request: bool,
 
     #[serde(skip, default)]

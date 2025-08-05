@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::{HashMap, VecDeque}, rc::Rc, sync::{Arc, RwLock}};
+use std::{cell::RefCell, collections::{HashMap, VecDeque}, fmt, rc::Rc, sync::{Arc, RwLock}};
 
 use instant::Instant;
 use nalgebra::Vector3;
-use serde::{Deserialize, Serialize};
+use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -110,6 +110,81 @@ pub struct Resources
     pub mesh_resources: HashMap<String, MeshResourceItem>,
 }
 
+impl_arc_rwbox_map_serializer!(TexturesSerializer, String, Texture);
+impl_arc_rwbox_map_serializer!(SoundSourcesSerializer, String, SoundSource);
+impl_arc_rwbox_map_serializer!(MeshResourcesSerializer, String, MeshResource);
+
+impl Serialize for Resources
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("textures", &TexturesSerializer { map: &self.textures },)?;
+        map.serialize_entry("sound_sources", &SoundSourcesSerializer { map: &self.sound_sources },)?;
+        map.serialize_entry("mesh_resources", &MeshResourcesSerializer { map: &self.mesh_resources },)?;
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Resources
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de>
+    {
+        struct ResourcesVisitor;
+
+        impl<'de> Visitor<'de> for ResourcesVisitor
+        {
+            type Value = Resources;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
+            {
+                formatter.write_str("struct Resources")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Resources, V::Error>
+            where V: MapAccess<'de>
+            {
+                let mut resources: Resources = Resources::default();
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                       "textures" =>
+                       {
+                            let temp_map: HashMap<String, Texture> = map.next_value()?;
+                            resources.textures = temp_map.into_iter().map(|(k, v)| (k, Arc::new(RwLock::new(Box::new(v))))).collect();
+                        }
+                        "sound_sources" =>
+                        {
+                            let temp_map: HashMap<String, SoundSource> = map.next_value()?;
+                            resources.sound_sources = temp_map.into_iter().map(|(k, v)| (k, Arc::new(RwLock::new(Box::new(v))))).collect();
+                        }
+                        "mesh_resources" =>
+                        {
+                            let temp_map: HashMap<String, MeshResource> = map.next_value()?;
+                            resources.mesh_resources = temp_map.into_iter().map(|(k, v)| (k, Arc::new(RwLock::new(Box::new(v))))).collect();
+                        }
+                        _ =>
+                        {
+                            // ignore
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                Ok(resources)
+            }
+        }
+
+        deserializer.deserialize_map(ResourcesVisitor)
+    }
+}
+
 pub struct State
 {
     pub project: Project,
@@ -117,7 +192,7 @@ pub struct State
     pub rendering_adapter: RenderingAdapterFeatures,
     pub rendering: Rendering,
 
-    pub io : InputOutput,
+    pub io: InputOutput,
 
     pub resources: Resources,
 

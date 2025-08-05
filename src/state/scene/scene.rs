@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -82,25 +82,7 @@ impl Default for Scene
     }
 }
 
-struct MaterialsMapSerializer<'a>
-{
-    materials: &'a HashMap<u64, ComponentItem>,
-}
-
-impl<'a> Serialize for MaterialsMapSerializer<'a>
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer
-    {
-        let mut map = serializer.serialize_map(Some(self.materials.len()))?;
-        for (_, item) in self.materials
-        {
-            let guard = item.read().map_err(serde::ser::Error::custom)?;
-            map.serialize_entry(item.read().unwrap().uuid(), &**guard)?;
-        }
-        map.end()
-    }
-}
+impl_arc_rwbox_map_serializer!(MaterialsSerializer, u64, dyn Component);
 
 impl Serialize for Scene
 {
@@ -126,16 +108,12 @@ impl Serialize for Scene
         let lights_refs: Vec<&Light> = lights_guards.iter().map(|tracker| tracker.get_ref().as_ref()).collect();
         map.serialize_entry("lights", &lights_refs)?;
 
-        map.serialize_entry("materials", &MaterialsMapSerializer { materials: &self.materials })?;
+        map.serialize_entry("materials", &MaterialsSerializer { map: &self.materials })?;
 
-        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter()
-            .filter(|controller| controller.is_serializable())
-            .collect();
+        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter().filter(|controller| controller.is_serializable()).collect();
         map.serialize_entry("pre_controller", &pre_controller)?;
 
-        let post_controller: Vec<&SceneControllerBox> = self.post_controller.iter()
-            .filter(|controller| controller.is_serializable())
-            .collect();
+        let post_controller: Vec<&SceneControllerBox> = self.post_controller.iter().filter(|controller| controller.is_serializable()).collect();
         map.serialize_entry("post_controller", &post_controller)?;
 
         map.end()
@@ -174,33 +152,19 @@ impl<'de> Deserialize<'de> for Scene
                         "data" => scene.data = map.next_value()?,
                         "nodes" =>
                         {
-                            scene.nodes = map.next_value()
-                            .into_iter()
-                            .map(|node| Arc::new(RwLock::new(Box::new(node))))
-                            .collect()
+                            scene.nodes = map.next_value().into_iter().map(|node| Arc::new(RwLock::new(Box::new(node)))).collect()
                         }
                         "cameras" =>
                         {
-                            scene.cameras = map.next_value()
-                                .into_iter()
-                                .collect();
+                            scene.cameras = map.next_value().into_iter().collect();
                         }
                         "lights" =>
                         {
-                            scene.lights = ChangeTracker::new
-                            (
-                                map.next_value()
-                                    .into_iter()
-                                    .map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst))))
-                                    .collect()
-                            )
+                            scene.lights = ChangeTracker::new(map.next_value().into_iter().map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst)))).collect())
                         }
                         "materials" => {
                             let material_map: HashMap<u64, Box<dyn Component>> = map.next_value()?;
-                            scene.materials = material_map
-                                .into_iter()
-                                .map(|(id, mat)| (id, Arc::new(RwLock::new(mat))))
-                                .collect();
+                            scene.materials = material_map.into_iter().map(|(id, mat)| (id, Arc::new(RwLock::new(mat)))).collect();
                         }
                         "pre_controller" =>
                         {

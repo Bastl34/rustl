@@ -10,9 +10,14 @@ use super::{component::{ComponentBase, Component}, transformation::Transformatio
 #[derive(Serialize, Deserialize)]
 pub struct JointData
 {
+    #[serde(skip, default)]
     pub root_joint: bool,
+
+    #[serde(skip, default)]
     pub local_trans: Matrix4<f32>,
     //pub full_joint_trans: Matrix4<f32>,
+
+    #[serde(skip, default)]
     pub inverse_bind_trans: Matrix4<f32>,
     //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
@@ -30,6 +35,7 @@ pub struct JointData
 pub struct Joint
 {
     base: ComponentBase,
+
     data: ChangeTracker<JointData>
 }
 

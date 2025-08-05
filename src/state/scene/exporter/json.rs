@@ -45,6 +45,7 @@ pub fn export(state: &State, path: &str) -> bool
         export.insert("exporter_version".to_string(), Value::String("1.0.0".to_string()));
 
         // resources
+        export.insert("resources".to_string(), to_value(&state.resources).unwrap());
 
         // scenes
         export.insert

@@ -220,3 +220,32 @@ where
         .map(|c| Arc::new(RwLock::new(c)))
         .collect())
 }
+
+// ******************** arc rw hashmap serialization ********************
+
+#[macro_export] macro_rules! impl_arc_rwbox_map_serializer
+{
+    ($name:ident, $key:ty, $value:ty) =>
+    {
+        pub struct $name<'a>
+        {
+            pub map: &'a HashMap<$key, Arc<RwLock<Box<$value>>>>,
+        }
+
+        impl<'a> Serialize for $name<'a>
+        {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut ser_map = serializer.serialize_map(Some(self.map.len()))?;
+                for (k, v) in self.map
+                {
+                    let guard = v.read().map_err(serde::ser::Error::custom)?;
+                    ser_map.serialize_entry(k, &**guard)?;
+                }
+                ser_map.end()
+            }
+        }
+    };
+}

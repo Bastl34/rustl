@@ -91,12 +91,16 @@ pub struct Animation
     pub to: f32,
     pub duration: f32, // based on animation data (to prevent that the animation is longer as the duration)
 
+    #[serde(skip, default)]
     pub start_time: Option<u128>,
+
+    #[serde(skip, default)]
     pub pause_time: Option<u128>,
 
     pub weight: f32,
     pub speed: f32,
 
+    #[serde(skip, default)]
     pub channels: Vec<Channel>,
 
     joint_filter: Vec<JointFilter>, // only apply parts of the animation for specific nodes
@@ -109,10 +113,16 @@ pub struct Animation
     #[serde(serialize_with = "serialization_helper::serialize_component", deserialize_with = "serialization_helper::deserialize_component")]
     pub sound_component: OptionOrId<ComponentItem>,
 
+    #[serde(skip, default)]
     current_time: u128,
+
+    #[serde(skip, default)]
     current_local_time: f32,
+
+    #[serde(skip, default)]
     current_iteration: u64,
 
+    #[serde(skip, default)]
     ui_joint_include_option: bool
 }
 
