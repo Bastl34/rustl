@@ -415,6 +415,12 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
 
+    // ********** add all to root node **********
+    for scene_node in &scene_nodes
+    {
+        Node::add_node(root_node.clone(), scene_node.clone());
+    }
+
     // ********** mark components **********
     {
         let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
@@ -427,12 +433,6 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                 component.get_base_mut().from_file = true;
             }
         }
-    }
-
-    // ********** add all to root node **********
-    for scene_node in &scene_nodes
-    {
-        Node::add_node(root_node.clone(), scene_node.clone());
     }
 
     // ********** add to scene **********

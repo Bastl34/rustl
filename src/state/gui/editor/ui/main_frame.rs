@@ -5,6 +5,7 @@ use crate::helper::concurrency::thread::spawn_thread;
 use crate::state::gui::editor::helper::get_pointer_world_position;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::state::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
+use crate::state::scene::utilities::scene_utils::execute_on_scene_mut;
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
@@ -479,7 +480,20 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     if ui.button("Clear").clicked()
                     {
                         ui.close();
-                        scene.clear();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.clear(false, false);
+                        }));
+                    }
+
+                    if ui.button("Clear with Resources").clicked()
+                    {
+                        ui.close();
+
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            scene.clear(false, true);
+                        }));
                     }
                 });
             });

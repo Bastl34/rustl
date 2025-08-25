@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}};
+use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
 
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+use wgpu::hal::auxil::db;
 
 use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
@@ -402,15 +403,48 @@ impl Scene
         }
     }
 
-    pub fn clear(&mut self)
+    pub fn clear(&mut self, remove_internals: bool, delete_resources: bool)
     {
-        self.cleanup_cyclic_references(None);
+        self.cleanup_cyclic_references(None, remove_internals);
 
-        self.nodes.clear();
-        self.lights.get_mut().clear();
-        self.cameras.clear();
+        let mut nodes_to_delete = vec![];
+        for node in &self.nodes
+        {
+            let is_internal = node.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            if !is_internal || remove_internals
+            {
+                nodes_to_delete.push(node.clone());
+            }
+        }
 
-        self.materials.clear();
+        for node in nodes_to_delete
+        {
+            let node_id = node.read().unwrap().id;
+            self.delete_node_by_id(node_id, delete_resources, delete_resources, delete_resources, delete_resources);
+        }
+
+        /*
+        self.lights.get_mut().retain(|light|
+        {
+            let is_internal = light.borrow().get_ref().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            // !is_internal || !remove_internals
+            is_internal && !remove_internals
+        });
+
+        self.cameras.retain(|cam|
+        {
+            let is_internal = cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            // !is_internal || !remove_internals
+            is_internal && !remove_internals
+        });
+
+        self.materials.retain(|_id, mat|
+        {
+            let is_internal = mat.read().unwrap().get_base().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            // !is_internal || !remove_internals
+            is_internal && !remove_internals
+        });
+         */
 
         self.pre_controller.clear();
         self.post_controller.clear();
@@ -419,7 +453,7 @@ impl Scene
         self.add_defaults();
     }
 
-    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>)
+    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>, remove_internals: bool)
     {
         let mut node = None;
         if let Some(node_id) = from_node_id
@@ -475,6 +509,12 @@ impl Scene
             }
         }
 
+        // predicate to check if a node is internal and should be removed or not
+        let is_internal_predicate = Arc::new(move |node: NodeItem| -> bool
+        {
+            let is_internal = node.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            !is_internal && !remove_internals
+        });
 
         // clean up cyclic references in nodes
         {
@@ -486,12 +526,12 @@ impl Scene
                 if let Some(node) = &node
                 {
                     let node = node.read().unwrap();
-                    all_nodes = Some(Scene::list_all_child_nodes(&node.nodes));
+                    all_nodes = Some(Scene::list_all_child_nodes_with_predicate(&node.nodes, is_internal_predicate.clone()));
                 }
             }
             else
             {
-                all_nodes = Some(Scene::list_all_child_nodes(&self.nodes));
+                all_nodes = Some(Scene::list_all_child_nodes_with_predicate(&self.nodes, is_internal_predicate.clone()));
             }
 
             // clear instances and / clear parents
@@ -537,6 +577,12 @@ impl Scene
 
     pub fn add_default_material(&mut self) -> MaterialItem
     {
+        // check if default material already exists
+        if let Some(mat) = self.get_default_material()
+        {
+            return mat;
+        }
+
         let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
@@ -560,7 +606,7 @@ impl Scene
     {
         for (_, material) in &self.materials
         {
-            if material.read().unwrap().get_base().name == "default"
+            if material.read().unwrap().get_base().name == "default" && material.read().unwrap().get_base().tags.contains(ENGINE_INTERNAL_TAG)
             {
                 return Some(material.clone());
             }
@@ -799,6 +845,26 @@ impl Scene
         for node in nodes
         {
             let child_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
+
+            all_nodes.push(node.clone());
+            all_nodes.extend(child_nodes);
+        }
+
+        all_nodes
+    }
+
+    pub fn list_all_child_nodes_with_predicate(nodes: &Vec<NodeItem>, predicate: Arc<dyn Fn(NodeItem) -> bool>) -> Vec<NodeItem>
+    {
+        let mut all_nodes = vec![];
+
+        for node in nodes
+        {
+            if !predicate(node.clone())
+            {
+                continue;
+            }
+
+            let child_nodes = Scene::list_all_child_nodes_with_predicate(&node.read().unwrap().nodes, predicate.clone());
 
             all_nodes.push(node.clone());
             all_nodes.extend(child_nodes);
@@ -1053,7 +1119,7 @@ impl Scene
         }
 
         // ********** cyclic references **********
-        self.cleanup_cyclic_references(Some(id));
+        self.cleanup_cyclic_references(Some(id), true);
 
         // ********** delete directly on scene **********
         let len = self.nodes.len();

@@ -65,15 +65,18 @@ impl Editor
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {
                 // light
-                let light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                let mut light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                light.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
-                scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+                let hemi = scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+                hemi.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
                 // add camera
                 if scene.cameras.len() == 0
                 {
                     let mut cam = Camera::new("Cam".to_string());
+                    cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
                     cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
@@ -1265,7 +1268,7 @@ impl Editor
 
             if self.editor_state.asset_type == AssetType::Scene
             {
-                scene.clear();
+                scene.clear(false, true);
             }
 
             if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
@@ -1369,40 +1372,6 @@ impl Editor
 
                         root_node.write().unwrap().visible = true;
                     }
-                }
-
-                // add light
-                if scene.lights.get_ref().len() == 0
-                {
-                    let light = Light::new_point("Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                    scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
-                }
-
-                // add camera
-                if scene.cameras.len() == 0
-                {
-                    let mut cam = Camera::new("Cam".to_string());
-                    let cam_data = cam.get_data_mut().get_mut();
-                    cam_data.fovy = 45.0f32.to_radians();
-                    cam_data.eye_pos = Point3::<f32>::new(0.0, 1.0, 1.5);
-                    cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                    cam_data.clipping_near = 0.1;
-                    cam_data.clipping_far = 1000.0;
-                    scene.cameras.push(Box::new(cam));
-                }
-
-                // camera movement controller
-                if scene.cameras.len() > 0
-                {
-                    let cam = scene.cameras.get_mut(0).unwrap();
-                    if cam.controller.is_none()
-                    {
-                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
-                    }
-
-                    //let mouse_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
-                    //cam.add_controller_target_rotation(3.0, Vector2::<f32>::new(0.0015, 0.0015), mouse_sensivity);
-                    //cam.controller.as_mut().unwrap().as_any_mut().downcast_mut::<TargetRotationController>().unwrap().auto_rotate = Some(0.005);
                 }
 
                 if let Some(on_done) = &on_done
