@@ -383,7 +383,23 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                             let new_y = snap_to_grid(center.y, grid_size);
                             let new_z = snap_to_grid(center.z, grid_size);
 
-                            let delta = Vector3::<f32>::new(new_x - center.x, new_y - center.y, new_z - center.z);
+                            let mut delta = Vector3::<f32>::new(0.0, 0.0, 0.0);
+
+                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateX) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXY) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXZ)
+                            {
+                                delta.x = new_x - center.x;
+                            }
+
+                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateY) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXY) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateYZ)
+                            {
+                                delta.y = new_y - center.y;
+                            }
+
+                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateZ) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXZ) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateYZ)
+                            {
+                                delta.z = new_z - center.z;
+                            }
+
                             let delta = transform_vec_to_parent_local(instance_id.clone(), node.clone(), delta);
 
                             let edit_transformation = find_transform_component(editor_state, state);
@@ -404,7 +420,23 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                             let new_y = snap_to_grid(bottom_left.y, grid_size);
                             let new_z = snap_to_grid(bottom_left.z, grid_size);
 
-                            let delta = Vector3::<f32>::new(new_x - bottom_left.x, new_y - bottom_left.y, new_z - bottom_left.z);
+                            let mut delta = Vector3::<f32>::new(0.0, 0.0, 0.0);
+
+                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateX) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXY) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXZ)
+                            {
+                                delta.x = new_x - bottom_left.x;
+                            }
+
+                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateY) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXY) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateYZ)
+                            {
+                                delta.y = new_y - bottom_left.y;
+                            }
+
+                            if editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateZ) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateXZ) || editor_state.selected_gizmo == Some(GizmoTypeAndAxis::TranslateYZ)
+                            {
+                                delta.z = new_z - bottom_left.z;
+                            }
+
                             let delta = transform_vec_to_parent_local(instance_id.clone(), node.clone(), delta);
 
                             let edit_transformation = find_transform_component(editor_state, state);

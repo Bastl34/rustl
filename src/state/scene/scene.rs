@@ -423,28 +423,23 @@ impl Scene
             self.delete_node_by_id(node_id, delete_resources, delete_resources, delete_resources, delete_resources);
         }
 
-        /*
         self.lights.get_mut().retain(|light|
         {
             let is_internal = light.borrow().get_ref().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
-            // !is_internal || !remove_internals
             is_internal && !remove_internals
         });
 
         self.cameras.retain(|cam|
         {
             let is_internal = cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
-            // !is_internal || !remove_internals
             is_internal && !remove_internals
         });
 
         self.materials.retain(|_id, mat|
         {
             let is_internal = mat.read().unwrap().get_base().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
-            // !is_internal || !remove_internals
             is_internal && !remove_internals
         });
-         */
 
         self.pre_controller.clear();
         self.post_controller.clear();
