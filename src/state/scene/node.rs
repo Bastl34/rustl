@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 
 use std::{fmt, sync::{Arc, RwLock}};
-use bvh::aabb::Bounded;
-use bvh::bounding_hierarchy::BHShape;
 use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
@@ -63,9 +61,6 @@ pub struct Node
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
     pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
-
-    // bounding box
-    b_box_node_index: usize,
 
     delete_later_request: bool,
 }
@@ -256,8 +251,6 @@ impl Node
             instance_render_item: None,
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
-
-            b_box_node_index: 0,
 
             delete_later_request: false
         }
@@ -1836,44 +1829,5 @@ impl Node
         {
             node.read().unwrap().print(level + 1);
         }
-    }
-}
-
-// ******************** bounding box ********************
-impl Bounded<f32, 3> for Node
-{
-    fn aabb(&self) -> bvh::aabb::Aabb<f32, 3>
-    {
-        let mesh = self.get_mesh();
-
-        if mesh.is_none()
-        {
-            return bvh::aabb::Aabb::empty();
-        }
-
-        let bbox = self.get_world_bounding_info(None, true, None);
-
-        if let Some((min, max)) = bbox
-        {
-            let min = Point3::new(min.x, min.y, min.z);
-            let max = Point3::new(max.x, max.y, max.z);
-
-            return bvh::aabb::Aabb::with_bounds(min, max);
-        }
-
-        bvh::aabb::Aabb::empty()
-    }
-}
-
-impl BHShape<f32, 3> for Node
-{
-    fn set_bh_node_index(&mut self, index: usize)
-    {
-        self.b_box_node_index = index;
-    }
-
-    fn bh_node_index(&self) -> usize
-    {
-        self.b_box_node_index
     }
 }
