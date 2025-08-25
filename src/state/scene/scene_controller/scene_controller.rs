@@ -33,6 +33,8 @@ pub struct SceneControllerBase
 {
     pub is_enabled: bool,
     pub name: String,
+
+    #[serde(skip, default)]
     pub icon: String,
 }
 
