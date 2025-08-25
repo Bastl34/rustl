@@ -11,7 +11,7 @@ simple_logger = "5.0"
 log = "0.4"
 cfg-if = "1"
 wgpu = "25.0"
-bytemuck = { version = "1.23", features = [ "derive" ] }
+bytemuck = { version = "1.23.2", features = [ "derive" ] }
 instant = "0.1"
 winit = "0.30.11"
 anyhow = "1.0"
