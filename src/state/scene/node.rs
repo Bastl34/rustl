@@ -438,7 +438,7 @@ impl Node
 
     pub fn has_mesh(&self) -> bool
     {
-        self.find_component::<Mesh>().is_some()
+        self.has_component::<Mesh>()
     }
 
     pub fn get_mesh(&self) -> Option<ComponentItem>
@@ -967,7 +967,7 @@ impl Node
 
     pub fn has_morph_target_weights(&self) -> bool
     {
-        self.find_component::<MorphTarget>().is_some()
+        self.has_component::<MorphTarget>()
     }
 
     pub fn get_morph_target_weights_vec(&self) -> Option<Vec<f32>>
@@ -1099,7 +1099,7 @@ impl Node
     {
         for node in nodes
         {
-            if node.read().unwrap().name == name && node.read().unwrap().find_component::<Mesh>().is_some()
+            if node.read().unwrap().name == name && node.read().unwrap().has_component::<Mesh>()
             {
                 return Some(node.clone());
             }
@@ -1119,7 +1119,7 @@ impl Node
     {
         for node in nodes
         {
-            if ids.contains(&node.read().unwrap().id) && node.read().unwrap().find_component::<Mesh>().is_some()
+            if ids.contains(&node.read().unwrap().id) && node.read().unwrap().has_component::<Mesh>()
             {
                 return Some(node.clone());
             }
@@ -1139,7 +1139,7 @@ impl Node
     pub fn find_animation_node(node: NodeItem) -> Option<NodeItem>
     {
         let node_read = node.read().unwrap();
-        if node_read.find_component::<Animation>().is_some()
+        if node_read.has_component::<Animation>()
         {
             return Some(node.clone());
         }
@@ -1148,7 +1148,7 @@ impl Node
         for child_node in all_nodes
         {
             let child_node_read = child_node.read().unwrap();
-            if child_node_read.find_component::<Animation>().is_some()
+            if child_node_read.has_component::<Animation>()
             {
                 return Some(child_node.clone());
             }
