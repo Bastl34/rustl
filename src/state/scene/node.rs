@@ -397,6 +397,11 @@ impl Node
         find_component::<T>(&self.components)
     }
 
+    pub fn has_component<T>(&self) -> bool where T: 'static
+    {
+        find_component::<T>(&self.components).is_some()
+    }
+
     pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
     {
         find_component_by_id(&self.components, id)

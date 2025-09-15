@@ -4,6 +4,10 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
+use winit::window::Icon;
+use std::fs::File;
+use std::io::BufReader;
+use image::GenericImageView;
 
 #[cfg(target_arch="wasm32")]
 use wasm_bindgen::prelude::*;
@@ -42,6 +46,43 @@ enum AppState
     Initialized(WindowApp),
 }
 
+fn get_icon() -> Option<winit::window::Icon>
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let icon_path = "resources/designs/logo/logo.png";
+        let icon = match File::open(icon_path)
+        {
+            Ok(file) =>
+            {
+                let reader = BufReader::new(file);
+                match image::load(reader, image::ImageFormat::Png)
+                {
+                    Ok(img) =>
+                    {
+                        let rgba = img.to_rgba8();
+                        let (width, height) = img.dimensions();
+                        match Icon::from_rgba(rgba.into_raw(), width, height)
+                        {
+                            Ok(icon) => Some(icon),
+                            Err(_) => None,
+                        }
+                    }
+                    Err(_) => None,
+                }
+            }
+            Err(_) => None,
+        };
+
+        return icon;
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+}
+
 impl ApplicationHandler<CustomEvent> for AppState
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop)
@@ -57,6 +98,7 @@ impl ApplicationHandler<CustomEvent> for AppState
                 window_attrs.title = "Rustl".to_string();
                 window_attrs.inner_size = Some(winit::dpi::Size::Logical(LogicalSize::new(width, height)));
                 window_attrs.resizable = true;
+                window_attrs.window_icon = get_icon();
 
                 #[cfg(not(target_arch = "wasm32"))]
                 {

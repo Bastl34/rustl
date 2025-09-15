@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::transformation::Transformation, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -554,9 +554,10 @@ impl Editor
                     if let (Some(scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
                     {
                         let instances_amount = node.read().unwrap().instances.get_ref().len();
+                        let has_mesh = node.read().unwrap().has_component::<Mesh>();
 
                         //scene.delete_node_by_id(id)
-                        if instance_id.is_some() && instances_amount > 1
+                        if instance_id.is_some() && (instances_amount > 1 || !has_mesh)
                         {
                             let instance_id = instance_id.unwrap();
                             node.write().unwrap().delete_instance_by_id(instance_id);
