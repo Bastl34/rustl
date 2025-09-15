@@ -13,7 +13,7 @@ cfg-if = "1"
 wgpu = "25.0"
 bytemuck = { version = "1.23.2", features = [ "derive" ] }
 instant = "0.1"
-winit = "0.30.11"
+winit = "0.30.12"
 anyhow = "1.0"
 nalgebra = { version = "0.34", features = ["serde-serialize"]}
 colored = "3.0.0"
@@ -34,7 +34,7 @@ uuid = {version = "1.18", features = ["v4"] }
 
 xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 
-parry3d = "0.23"
+parry3d = "0.24"
 
 arboard = "3.6"
 
