@@ -159,59 +159,65 @@ impl Sound
 
         let sound_source = sound_source.read().unwrap();
         let audio_device = sound_source.audio_device.read().unwrap();
-        let stream_handle = audio_device.stream_handle.as_ref();
+        let stream: Option<&rodio::OutputStream> = audio_device.stream.as_ref();
 
         let mut sink = None;
         let mut sink_spatial = None;
 
-        if let Some(stream_handle) = stream_handle
+        if let Some(stream) = stream
         {
             let data = self.data.get_ref();
 
             if data.sound_type == SoundType::Stereo
             {
-                let s = rodio::Sink::try_new(stream_handle).unwrap();
-                let decoder = sound_source.decoder();
-
-                if let Some(total_duration) = decoder.total_duration()
+                let s = rodio::Sink::connect_new(stream.mixer());
+                if let Some(decoder) = sound_source.decoder()
                 {
-                    self.duration = (total_duration.as_millis() as f64 / 1000.0) as f32;
-                }
+                    if let Some(total_duration) = decoder.total_duration()
+                    {
+                        self.duration = total_duration.as_secs_f32();
+                    }
 
-                if data.looped
-                {
-                    s.append(decoder.repeat_infinite());
+                    if data.looped
+                    {
+                        s.append(decoder.repeat_infinite());
+                    }
+                    else
+                    {
+                        s.append(decoder);
+                    }
                 }
                 else
                 {
-                    s.append(decoder);
+                    println!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
-
                 s.pause();
-
                 sink = Some(s);
             }
             else
             {
-                let s = rodio::SpatialSink::try_new(stream_handle, [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]).unwrap();
-                let decoder = sound_source.decoder();
-
-                if let Some(total_duration) = decoder.total_duration()
+                let s = rodio::SpatialSink::connect_new(stream.mixer(), [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+                if let Some(decoder) = sound_source.decoder()
                 {
-                    self.duration = total_duration.as_secs_f32();
-                }
+                    if let Some(total_duration) = decoder.total_duration()
+                    {
+                        self.duration = total_duration.as_secs_f32();
+                    }
 
-                if data.looped
-                {
-                    s.append(decoder.repeat_infinite());
+                    if data.looped
+                    {
+                        s.append(decoder.repeat_infinite());
+                    }
+                    else
+                    {
+                        s.append(decoder);
+                    }
                 }
                 else
                 {
-                    s.append(decoder);
+                    println!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
-
                 s.pause();
-
                 sink_spatial = Some(s);
             }
         }
@@ -301,12 +307,24 @@ impl Sound
         if let Some(sink) = &self.sink
         {
             let pos = sink.get_pos();
+
+            if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
+            {
+                return pos.as_secs_f32() % self.duration;
+            }
+
             return pos.as_secs_f32();
         }
 
         if let Some(sink) = &self.sink_spatial
         {
             let pos = sink.get_pos();
+
+            if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
+            {
+                return pos.as_secs_f32() % self.duration;
+            }
+
             return pos.as_secs_f32();
         }
 

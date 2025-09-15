@@ -42,21 +42,18 @@ impl AsRef<[u8]> for SoundSource
 
 pub trait Decodable: Send + Sync + 'static
 {
-    type DecoderItem: rodio::Sample + Send + Sync;
-    type Decoder: rodio::Source + Send + Iterator<Item = Self::DecoderItem>;
+    type Decoder: rodio::Source<Item = f32> + Send;
 
-    fn decoder(&self) -> Self::Decoder;
+    fn decoder(&self) -> Option<Self::Decoder>;
 }
 
 impl Decodable for SoundSource
 {
-    type DecoderItem = <rodio::Decoder<Cursor<SoundSource>> as Iterator>::Item;
     type Decoder = rodio::Decoder<Cursor<SoundSource>>;
 
-    fn decoder(&self) -> Self::Decoder
+    fn decoder(&self) -> Option<Self::Decoder>
     {
-        let decoder = rodio::Decoder::new(Cursor::new(self.clone())).unwrap();
-        decoder
+        rodio::Decoder::try_from(Cursor::new(self.clone())).ok()
     }
 }
 
