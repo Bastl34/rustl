@@ -32,17 +32,19 @@ pub fn create_asset_tree(editor_state: &mut EditorState, _state: &mut State, ui:
     });
 }
 
-pub fn create_asset_list(editor_state: &mut EditorState, _state: &mut State, ui: &mut Ui)
+pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let items = match editor_state.asset_type
     {
-        AssetType::Scene => Some(&editor_state.scenes),
-        AssetType::Object => Some(&editor_state.objects),
+        AssetType::Scene => Some(&editor_state.assets_scenes),
+        AssetType::Object => Some(&editor_state.assets_objects),
         _ => None
     };
 
     if items.is_none() { return; }
     let items = items.unwrap();
+
+    let mut reload_assets = false;
 
     ui.vertical(|ui|
     {
@@ -58,6 +60,14 @@ pub fn create_asset_list(editor_state: &mut EditorState, _state: &mut State, ui:
             {
                 ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
             }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                if ui.button("⟳").clicked()
+                {
+                    reload_assets = true;
+                }
+            });
         });
 
         ui.separator();
@@ -199,4 +209,10 @@ pub fn create_asset_list(editor_state: &mut EditorState, _state: &mut State, ui:
             });
         });
     });
+
+    if reload_assets
+    {
+        editor_state.load_all_asset_entries(state, ui.ctx());
+    }
+
 }

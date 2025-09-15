@@ -14,9 +14,6 @@ use super::{editor_state::{AssetType, EditMode, EditorState, PickType, Selection
 use crate::state::gui::editor::ui::main_frame;
 use crate::state::scene::exporter::json;
 
-const OBJECTS_DIR: &str = "objects/";
-const SCENES_DIR: &str = "scenes/";
-
 pub const MAX_NAME_LENGTH: usize = 24;
 
 pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
@@ -38,8 +35,7 @@ impl Editor
 
     pub fn init(&mut self, state: &mut State, egui: &EGui)
     {
-        self.editor_state.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui);
-        self.editor_state.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui);
+        self.editor_state.load_all_asset_entries(state, &egui.ctx);
 
         self.create_main_entities(state);
         self.create_util_objects(state);
