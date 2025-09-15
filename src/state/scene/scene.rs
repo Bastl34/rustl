@@ -1123,6 +1123,7 @@ impl Scene
             if node.read().unwrap().id == id
             {
                 node.write().unwrap().clear_instances();
+                node.write().unwrap().components.clear();
             }
 
             node.read().unwrap().id != id

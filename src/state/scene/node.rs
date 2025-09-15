@@ -265,6 +265,8 @@ impl Node
             let mut node = child_node.write().unwrap();
             node.clear_instances();
 
+            node.components.clear();
+
             // remove cyclic reference to parent
             node.parent = OptionOrId::None;
         }
