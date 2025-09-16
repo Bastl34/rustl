@@ -15,7 +15,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
 
     // do not pick internal predicate
     let inner_predicate = predicate.clone();
-    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, _check_instance_id: Option<u64>| -> bool
+    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, check_instance_id: Option<u64>| -> bool
     {
         if node_arc.read().unwrap().tags.contains(ENGINE_INTERNAL_TAG) || node_arc.read().unwrap().tags.contains(EDITOR_INTERNAL_TAG)
         {
@@ -24,7 +24,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
 
         if let Some(inner_predicate) = &inner_predicate
         {
-            if !inner_predicate(node_arc.clone(), None)
+            if !inner_predicate(node_arc.clone(), check_instance_id)
             {
                 return false;
             }
