@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::{State, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use self::math::approx_zero;
 
@@ -244,7 +244,7 @@ impl Editor
 
     pub fn create_instance(&mut self, state: &mut State)
     {
-        if let (Some(_scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
+        if let (Some(_scene), Some(node), _instance_id) = self.editor_state.get_selected_node(state)
         {
             if node.read().unwrap().has_component::<Mesh>()
             {
@@ -266,7 +266,7 @@ impl Editor
 
                     for camera in &scene.unwrap().cameras
                     {
-                        if camera.enabled && camera.is_point_in_viewport(&pos)
+                        if camera.enabled && camera.is_point_in_viewport(&pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                         {
                             is_in_viewport = true;
                             break;
@@ -845,7 +845,7 @@ impl Editor
         let mut cam_inverse = Matrix4::<f32>::identity();
         for camera in &scene.unwrap().cameras
         {
-            if camera.enabled && camera.is_point_in_viewport(&start_pos)
+            if camera.enabled && camera.is_point_in_viewport(&start_pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
             {
                 let cam_data = camera.get_data();
                 cam_inverse = cam_data.view_inverse.clone();
@@ -1201,7 +1201,7 @@ impl Editor
             for camera in &scene.cameras
             {
                 // check if click is insight
-                if camera.is_point_in_viewport(&pos_new)
+                if camera.is_point_in_viewport(&pos_new) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                 {
                     bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center));
 

@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::editor_state::EditorState;
 
@@ -128,7 +128,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
         for camera in &scene.cameras
         {
             // check if click is insight
-            if camera.is_point_in_viewport(&pos)
+            if camera.is_point_in_viewport(&pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
             {
                 let ray = camera.get_ray_from_viewport_coordinates(&pos);
                 let hit = scene.pick_node(node.clone(), &ray, false, false, ignore_visible, ignore_pickable, None);
@@ -163,7 +163,7 @@ pub fn apply_fly_camera_move_state(scene: &mut Scene, state: bool)
 {
     for camera in &mut scene.cameras
     {
-        if !camera.enabled
+        if !camera.enabled || !camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
         {
             continue;
         }
