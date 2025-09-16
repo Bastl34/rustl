@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::{to_value, Map, Serializer, Value};
 
+use crate::console_log;
 use crate::state::scene::scene::Scene;
 use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
 use crate::helper::file::write_string_to_tile;
@@ -33,7 +34,7 @@ fn to_pretty_json_with_indent(value: &Value, indent: &[u8]) -> String
 
 pub fn export(state: &State, path: &str) -> bool
 {
-    println!("exporting {} to json", path);
+    console_log!("exporting {} to json", path);
 
     let mut export = Value::Object(Map::new());
 

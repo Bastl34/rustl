@@ -21,6 +21,7 @@ base64 = "0.22"
 strum = "0.27"
 strum_macros = "0.27"
 rfd = "0.15"
+chrono = "0.4"
 
 serde = "1.0"
 serde_json = "1.0"
@@ -59,20 +60,22 @@ gltf = { git = "https://github.com/gltf-rs/gltf", features = [
 image = { version = "0.25", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
-#egui = "0.31"
-#egui-wgpu = "0.31"
-#egui_plot = "0.31"
-egui = { git = "https://github.com/emilk/egui", branch = "main"  }
-egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
-egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+egui = "0.32"
+egui-wgpu = "0.32"
+egui_plot = "0.33"
+egui_extras = "0.32"
+#egui = { git = "https://github.com/emilk/egui", branch = "main"  }
+#egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
+#egui_extras = { git = "https://github.com/emilk/egui", branch = "main" }
+#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
 
-[patch.crates-io]
-egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
-egui = { git = "https://github.com/emilk/egui", branch = "main" }
+#[patch.crates-io]
+#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+#egui = { git = "https://github.com/emilk/egui", branch = "main" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-#egui-winit = "0.31"
-egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
+egui-winit = "0.32"
+#egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
 pollster = "0.4.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -90,10 +93,10 @@ web-sys = { version = "0.3", features = [
 ]}
 wasm_thread = { version = "0.3", features = ["es_modules"]}
 
-egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
-#egui-winit = { version = "0.31", default-features = false, features = [
+#egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
+egui-winit = { version = "0.32", default-features = false, features = [
   "links",
-] }
+]}
 
 [build-dependencies]
 fs_extra = "1.3"

@@ -4,7 +4,7 @@ use nalgebra::Matrix4;
 use wgpu::{BindGroup, util::DeviceExt};
 use colored::Colorize;
 
-use crate::{state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{console_error, render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
@@ -32,7 +32,7 @@ impl SkeletonUniform
             if i + 1 > MAX_JOINTS
             {
                 let error = "MAX_JOINTS reached - try to increase MAX_JOINTS or reduce joints in skeleton".to_string();
-                println!("{}", error.red());
+                console_error!("{}", error.red());
                 break;
             }
 

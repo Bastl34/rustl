@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_error, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -261,13 +261,13 @@ impl CharacterController
 
         if node.is_none()
         {
-            println!("auto setup failed - node not found");
+            console_error!("auto setup failed - node not found");
             return Some("auto setup failed - node not found".to_string());
         }
 
         if cam.is_none()
         {
-            println!("auto setup failed - camera not found");
+            console_error!("auto setup failed - camera not found");
             return Some("auto setup failed - camera not found".to_string());
         }
 
@@ -770,7 +770,7 @@ impl SceneController for CharacterController
             else
             {
                 self.node = OptionOrId::None;
-                println!("CharacterController: Node with id {} not found", self.node.id().unwrap());
+                console_error!("CharacterController: Node with id {} not found", self.node.id().unwrap());
             }
         }
 

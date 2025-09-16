@@ -8,7 +8,7 @@ use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 use wgpu::hal::auxil::db;
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_log, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -336,7 +336,7 @@ impl Scene
 
     pub fn print(&self)
     {
-        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len());
+        console_log!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len());
 
         //nodes
         for node in &self.nodes
@@ -1107,7 +1107,7 @@ impl Scene
 
                 if usage == 0
                 {
-                    dbg!("deleting texture", &texture.read().unwrap().name, texture_id);
+                    console_log!("deleting texture {} {}", &texture.read().unwrap().name, texture_id);
                     texture.write().unwrap().delete_later();
                 }
             }
@@ -1350,24 +1350,6 @@ impl Scene
             }
 
             return res;
-
-            /*
-            let first = hits_bbox.first().unwrap();
-            let node = first.0;
-            let instance = first.1;
-            let dist = first.2;
-
-            //let dir = first.3 * (ray.dir.normalize() * dist).to_homogeneous();
-            //let pos = ray.origin + dir.xyz();
-
-            let pos = ray.origin + (ray.dir * dist);
-
-            dbg!(" intersection 1");
-            dbg!(node.read().unwrap().name.clone());
-
-            //return Some((dist, pos, None, node.clone(), instance, None));
-            return
-             */
         }
 
         // combine bbox hits and nodes without bbox picking

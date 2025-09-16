@@ -5,7 +5,7 @@ use std::{env, sync::{Arc, RwLock}};
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Vector3};
 
-use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -82,7 +82,6 @@ pub enum PickType
 pub enum BottomPanel
 {
     Assets,
-    Debug,
     Console,
     None
 }
@@ -139,6 +138,7 @@ pub struct EditorState
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
+    pub log_type: LogType,
 
     pub settings: SettingsPanel,
 
@@ -178,6 +178,9 @@ pub struct EditorState
     pub reuse_materials_by_name: bool,
     pub assets_objects: Vec<Asset>,
     pub assets_scenes: Vec<Asset>,
+
+    pub log_filter: String,
+    pub log_auto_scroll: bool,
 }
 
 impl EditorState
@@ -212,6 +215,7 @@ impl EditorState
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
+            log_type: LogType::All,
 
             settings: SettingsPanel::General,
 
@@ -251,6 +255,9 @@ impl EditorState
             reuse_materials_by_name: false,
             assets_objects: vec![],
             assets_scenes: vec![],
+
+            log_filter: "".to_string(),
+            log_auto_scroll: true,
         }
     }
 

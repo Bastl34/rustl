@@ -2,7 +2,9 @@
 use std::mem::swap;
 
 use crate::helper::concurrency::thread::spawn_thread;
+use crate::helper::console_log;
 use crate::state::gui::editor::helper::get_pointer_world_position;
+use crate::state::gui::editor::ui::console::create_console_section;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::state::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::execute_on_scene_mut;
@@ -62,8 +64,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         {
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::None, "⏷");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Assets, "📦 Assets");
-            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
-            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, "📝 Console");
+            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, format!("📝 Console ({})", console_log::get_amount()));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
@@ -84,6 +85,10 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         if editor_state.bottom == BottomPanel::Assets
         {
             create_asset_section(editor_state, state, ui);
+        }
+        else if editor_state.bottom == BottomPanel::Console
+        {
+            create_console_section(editor_state, state, ui);
         }
     });
 

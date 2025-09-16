@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
 use self::math::approx_zero;
 
@@ -47,7 +47,7 @@ impl Editor
 
         if scene_id.is_none()
         {
-            println!("No main scene found");
+            console_error!("No main scene found");
             return;
         }
         let scene_id = scene_id.unwrap();
@@ -556,7 +556,6 @@ impl Editor
                         let instances_amount = node.read().unwrap().instances.get_ref().len();
                         let has_mesh = node.read().unwrap().has_component::<Mesh>();
 
-                        //scene.delete_node_by_id(id)
                         if instance_id.is_some() && (instances_amount > 1 || !has_mesh)
                         {
                             let instance_id = instance_id.unwrap();
@@ -1251,7 +1250,7 @@ impl Editor
     {
         if self.editor_state.loading.read().unwrap().clone()
         {
-            println!("loading already in progress");
+            console_warning!("loading already in progress");
             return;
         }
 
@@ -1311,15 +1310,15 @@ impl Editor
         let editor_state = self.editor_state.loading.clone();
         spawn_thread(move ||
         {
-            dbg!("loading ...");
+            console_log!("loading ...");
             *editor_state.write().unwrap() = true;
 
             let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
-                dbg!("loading failed");
-                dbg!(loaded.err());
+                console_error!("loading failed");
+                console_error!(loaded.err());
                 *editor_state.write().unwrap() = false;
                 return;
             }
@@ -1382,7 +1381,7 @@ impl Editor
 
             *editor_state.write().unwrap() = false;
 
-            dbg!("loading DONE");
+            console_success!("loading DONE");
         });
     }
 }

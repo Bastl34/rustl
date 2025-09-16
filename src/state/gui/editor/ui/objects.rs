@@ -619,7 +619,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
 
                             let color_u8 = Color32::from_rgb((data.color.x * 255.0) as u8, (data.color.y * 255.0) as u8,(data.color.z * 255.0) as u8);
-                            label_with_background(ui, tag, color_u8);
+                            label_with_background(ui, tag, color_u8, None);
 
                             ui.add_enabled_ui(!data.locked, |ui|
                             {

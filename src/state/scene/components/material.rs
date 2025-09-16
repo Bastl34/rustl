@@ -9,7 +9,7 @@ use strum_macros::{Display, EnumIter, FromRepr, EnumString};
 use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::math::approx_equal;
 use crate::helper::option_or_id::OptionOrId;
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, console_error, console_log};
 use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
 use crate::state::scene::exporter::serialization_helper;
@@ -406,42 +406,42 @@ impl Material
     {
         let data = self.data.get_ref();
 
-        println!("ambient_color: {:?}", data.ambient_color);
-        println!("base_color: {:?}", data.base_color);
-        println!("specular_color: {:?}", data.specular_color);
+        console_log!("ambient_color: {:?}", data.ambient_color);
+        console_log!("base_color: {:?}", data.base_color);
+        console_log!("specular_color: {:?}", data.specular_color);
 
-        println!("texture_base: {:?}", data.texture_base.is_some());
-        println!("texture_specular: {:?}", data.texture_specular.is_some());
-        println!("texture_normal: {:?}", data.texture_normal.is_some());
-        println!("texture_alpha: {:?}", data.texture_alpha.is_some());
-        println!("texture_roughness: {:?}", data.texture_roughness.is_some());
-        println!("texture_ambient_occlusion: {:?}", data.texture_ambient_occlusion.is_some());
-        println!("texture_reflectivity: {:?}", data.texture_reflectivity.is_some());
-        println!("texture_shininess: {:?}", data.texture_shininess.is_some());
-        println!("texture_environment: {:?}", data.texture_environment.is_some());
+        console_log!("texture_base: {:?}", data.texture_base.is_some());
+        console_log!("texture_specular: {:?}", data.texture_specular.is_some());
+        console_log!("texture_normal: {:?}", data.texture_normal.is_some());
+        console_log!("texture_alpha: {:?}", data.texture_alpha.is_some());
+        console_log!("texture_roughness: {:?}", data.texture_roughness.is_some());
+        console_log!("texture_ambient_occlusion: {:?}", data.texture_ambient_occlusion.is_some());
+        console_log!("texture_reflectivity: {:?}", data.texture_reflectivity.is_some());
+        console_log!("texture_shininess: {:?}", data.texture_shininess.is_some());
+        console_log!("texture_environment: {:?}", data.texture_environment.is_some());
 
-        println!("texture_custom0: {:?}", data.texture_custom0.is_some());
-        println!("texture_custom1: {:?}", data.texture_custom1.is_some());
-        println!("texture_custom2: {:?}", data.texture_custom2.is_some());
-        println!("texture_custom3: {:?}", data.texture_custom3.is_some());
+        console_log!("texture_custom0: {:?}", data.texture_custom0.is_some());
+        console_log!("texture_custom1: {:?}", data.texture_custom1.is_some());
+        console_log!("texture_custom2: {:?}", data.texture_custom2.is_some());
+        console_log!("texture_custom3: {:?}", data.texture_custom3.is_some());
 
-        println!("alpha: {:?}", data.alpha);
-        println!("shininess: {:?}", data.shininess);
-        println!("reflectivity: {:?}", data.reflectivity);
-        println!("refraction_index: {:?}", data.refraction_index);
+        console_log!("alpha: {:?}", data.alpha);
+        console_log!("shininess: {:?}", data.shininess);
+        console_log!("reflectivity: {:?}", data.reflectivity);
+        console_log!("refraction_index: {:?}", data.refraction_index);
 
-        println!("normal_map_strength: {:?}", data.normal_map_strength);
+        console_log!("normal_map_strength: {:?}", data.normal_map_strength);
 
-        println!("cast_shadow: {:?}", data.cast_shadow);
-        println!("receive_shadow: {:?}", data.receive_shadow);
-        println!("shadow_softness: {:?}", data.shadow_softness);
+        console_log!("cast_shadow: {:?}", data.cast_shadow);
+        console_log!("receive_shadow: {:?}", data.receive_shadow);
+        console_log!("shadow_softness: {:?}", data.shadow_softness);
 
-        println!("roughness: {:?}", data.roughness);
+        console_log!("roughness: {:?}", data.roughness);
 
-        println!("smooth_shading: {:?}", data.smooth_shading);
+        console_log!("smooth_shading: {:?}", data.smooth_shading);
 
-        println!("reflection_only: {:?}", data.reflection_only);
-        println!("backface_culling: {:?}", data.backface_culling);
+        console_log!("reflection_only: {:?}", data.reflection_only);
+        console_log!("backface_culling: {:?}", data.backface_culling);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -971,7 +971,7 @@ impl Component for Material
                     else
                     {
                         texture.item = OptionOrId::None;
-                        println!("Material: Texture with id {} not found", texture.item.id().unwrap());
+                        console_error!("Material: Texture with id {} not found", texture.item.id().unwrap());
                     }
                 }
             }

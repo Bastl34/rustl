@@ -20,7 +20,7 @@ use crate::input::input_point::PointState;
 use crate::input::keyboard::Modifier;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
-use crate::rendering;
+use crate::{console_error, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
 use crate::state::gui::editor::editor::Editor;
@@ -477,7 +477,7 @@ impl MainInterface
                     .or_else(|_e| self.context.window.set_cursor_grab(CursorGrabMode::Locked))
                     .unwrap_or_else(|e|
                     {
-                        dbg!("Failed to grab position: {:?}", e);
+                        console_error!("Failed to grab position: {:?}", e);
                     });
                 }
             }
@@ -689,7 +689,7 @@ impl MainInterface
 
             self.context.window.set_cursor_position(center).unwrap_or_else(|e|
             {
-                dbg!("Failed to set mouse position: {:?}", e);
+                console_error!("Failed to set mouse position: {:?}", e);
             });
         }
     }

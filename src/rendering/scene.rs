@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -230,7 +230,7 @@ impl Scene
             {
                 if enabled && env_tex.read().unwrap().get_data_tracker().changed()
                 {
-                    dbg!("update all materials");
+                    console_log!("update all materials");
                     let env_texture_id = env_tex.read().unwrap().id;
 
                     for (_, material) in &mut scene.materials
@@ -261,7 +261,7 @@ impl Scene
 
             if material_changed || material.get_base().render_item.is_none()
             {
-                dbg!("material render item recreate");
+                console_log!("material render item recreate");
                 let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, default_env_map.clone(), None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
             }
@@ -277,7 +277,7 @@ impl Scene
 
                 material.get_base_mut().render_item = render_item;
 
-                dbg!("material render item update");
+                console_log!("material render item update");
             }
         }
     }
@@ -298,7 +298,7 @@ impl Scene
             let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
             render_item.to_buffer(wgpu, lights);
 
-            //dbg!(" ============ lights updated");
+            //console_log!(" ============ lights updated");
         }
 
         // ********** light: check each **********
@@ -313,7 +313,7 @@ impl Scene
                     let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
                     render_item.update_buffer(wgpu, light, i);
 
-                    //dbg!(" ============ ONE light updated");
+                    //console_log!(" ============ ONE light updated");
                 }
             }
         }
@@ -571,7 +571,7 @@ impl Scene
                         let instances = node.instances.get_ref();
                         instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
 
-                        // println!(" ============ instances updated {}", &node.name);
+                        // console_log!(" ============ instances updated {}", &node.name);
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -623,7 +623,7 @@ impl Scene
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
                             render_item.update_buffer(wgpu, &instance, i);
 
-                            // println!(" ============ ONE instance updated {}", &node.name);
+                            // console_log!(" ============ ONE instance updated {}", &node.name);
                         }
                     }
                 }
@@ -725,7 +725,7 @@ impl Scene
 
         if scene_changed
         {
-            dbg!("scene data changed -> recreate materials/lights/pipelines");
+            console_log!("scene data changed -> recreate materials/lights/pipelines");
 
             // update scene buffer
             self.update_buffer(wgpu, scene);
@@ -817,7 +817,7 @@ impl Scene
 
     pub fn resize(&mut self, wgpu: &mut WGpu, _scene: &mut Box<crate::state::scene::scene::Scene>)
     {
-        dbg!("resize");
+        console_log!("resize");
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
     }
@@ -870,7 +870,7 @@ impl Scene
 
         if scene.get_default_material().is_none()
         {
-            dbg!("default material not found -> please do not delete it");
+            console_warning!("default material not found -> please do not delete it");
             return 0;
         }
 

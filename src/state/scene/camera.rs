@@ -6,7 +6,7 @@ use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, 
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
 
@@ -724,40 +724,40 @@ impl Camera
     {
         let data = self.data.get_ref();
 
-        println!("name: {:?}", self.name);
+        console_log!("name: {:?}", self.name);
 
-        println!("id: {:?}", self.id);
-        println!("name: {:?}", self.name);
-        println!("enabled: {:?}", self.enabled);
+        console_log!("id: {:?}", self.id);
+        console_log!("name: {:?}", self.name);
+        console_log!("enabled: {:?}", self.enabled);
 
-        println!("viewport x: {:?}", data.viewport_x);
-        println!("viewport y: {:?}", data.viewport_y);
-        println!("viewport width: {:?}", data.viewport_width);
-        println!("viewport height: {:?}", data.viewport_height);
+        console_log!("viewport x: {:?}", data.viewport_x);
+        console_log!("viewport y: {:?}", data.viewport_y);
+        console_log!("viewport width: {:?}", data.viewport_width);
+        console_log!("viewport height: {:?}", data.viewport_height);
 
-        println!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
+        console_log!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
 
-        println!("resolution width: {:?}", data.resolution_width);
-        println!("resolution height: {:?}", data.resolution_height);
+        console_log!("resolution width: {:?}", data.resolution_width);
+        console_log!("resolution height: {:?}", data.resolution_height);
 
-        println!("fov: {:?}", data.fovy);
+        console_log!("fov: {:?}", data.fovy);
 
-        println!("eye_pos: {:?}", data.eye_pos);
+        console_log!("eye_pos: {:?}", data.eye_pos);
 
-        println!("up: {:?}", data.up);
-        println!("dir: {:?}", data.dir);
+        console_log!("up: {:?}", data.up);
+        console_log!("dir: {:?}", data.dir);
 
-        println!("clipping_near: {:?}", data.clipping_near);
-        println!("clipping_far: {:?}", data.clipping_far);
+        console_log!("clipping_near: {:?}", data.clipping_near);
+        console_log!("clipping_far: {:?}", data.clipping_far);
 
-        println!("projection: {:?}", data.projection);
-        println!("view: {:?}", data.view);
+        console_log!("projection: {:?}", data.projection);
+        console_log!("view: {:?}", data.view);
     }
 
     pub fn print_short(&self)
     {
         let data = self.data.get_ref();
 
-        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
+        console_log!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
     }
 }

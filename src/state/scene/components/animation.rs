@@ -8,7 +8,7 @@ use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 use serde::{Deserialize, Serialize};
 
-use crate::component_downcast;
+use crate::{component_downcast, console_error, console_warning};
 use crate::helper::option_or_id::OptionOrId;
 use crate::state::state::InputOutput;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
@@ -462,7 +462,7 @@ impl Component for Animation
             else
             {
                 self.in_place_joint_node = OptionOrId::None;
-                println!("Animation: Node with id {} not found", self.in_place_joint_node.id().unwrap());
+                console_error!("Animation: Node with id {} not found", self.in_place_joint_node.id().unwrap());
             }
         }
 
@@ -478,13 +478,13 @@ impl Component for Animation
             else
             {
                 self.sound_component = OptionOrId::None;
-                println!("Animation: sound_component with id {} not found", self.sound_component.id().unwrap());
+                console_error!("Animation: sound_component with id {} not found", self.sound_component.id().unwrap());
             }
         }
         else
         {
             self.sound_component = OptionOrId::None;
-            println!("Animation: no sound_component found");
+            console_error!("Animation: no sound_component found");
         }
 
         // joint filter
@@ -501,7 +501,7 @@ impl Component for Animation
                 else
                 {
                     joint_filter.node = OptionOrId::None;
-                    println!("Animation: JointFilter node with id {} not found", joint_filter.node.id().unwrap());
+                    console_error!("Animation: JointFilter node with id {} not found", joint_filter.node.id().unwrap());
                 }
             }
         }
@@ -520,7 +520,7 @@ impl Component for Animation
                 else
                 {
                     channel.target = OptionOrId::None;
-                    println!("Animation: Channel target with id {} not found", channel.target.id().unwrap());
+                    console_error!("Animation: Channel target with id {} not found", channel.target.id().unwrap());
                 }
             }
         }
@@ -754,7 +754,7 @@ impl Component for Animation
             if channel.target.is_none()
             {
                 // NOT SUPPORTED
-                dbg!("empty target is not supported");
+                console_warning!("empty animation target is not supported");
                 continue;
             }
             let target = channel.target.as_ref().unwrap();
@@ -813,7 +813,7 @@ impl Component for Animation
             if joint.is_none() && transformation.is_none()
             {
                 // NOT SUPPORTED
-                dbg!("not supported for now");
+                console_warning!("empty joint and transform is not supported for now");
                 continue;
             }
 

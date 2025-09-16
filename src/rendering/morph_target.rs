@@ -1,7 +1,7 @@
 use image::EncodableLayout;
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry, util::DeviceExt};
 
-use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, resources::mesh_resource::MeshResourceData}};
+use crate::{console_warning, render_item_impl_default, state::{helper::render_item::RenderItem, resources::mesh_resource::MeshResourceData}};
 
 use super::wgpu::WGpu;
 
@@ -85,7 +85,7 @@ impl MorphTarget
 
         if targets > max_tex_array_size
         {
-            println!("WARNING: can not use more then {} morph targets", max_tex_array_size);
+            console_warning!("can not use more then {} morph targets", max_tex_array_size);
         }
 
         let texture_name = format!("{} Morph Texture Array", name);

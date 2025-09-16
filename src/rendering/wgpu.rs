@@ -3,7 +3,7 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
+use crate::{console_error, console_log, helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -39,7 +39,7 @@ impl WGpu
 
         if let Err(surface_error) = &surface
         {
-            dbg!(surface_error);
+            console_error!(surface_error);
             panic!("Failed to create surface");
         }
 
@@ -53,15 +53,15 @@ impl WGpu
         .await
         .unwrap();
 
-        println!(" ********** info **********");
+        console_log!(" ********** info **********");
         let adapter_info = adapter.get_info();
-        dbg!(adapter.get_info());
+        console_log!(adapter.get_info());
 
-        println!(" ********** features possible **********");
-        dbg!(adapter.features());
+        console_log!(" ********** features possible **********");
+        console_log!(adapter.features());
 
-        println!(" ********** limits possible **********");
-        dbg!(adapter.limits());
+        console_log!(" ********** limits possible **********");
+        console_log!(adapter.limits());
 
         let (device, queue) = adapter.request_device
         (
@@ -86,11 +86,11 @@ impl WGpu
         .await
         .unwrap();
 
-        println!(" ********** features used **********");
-        dbg!(device.features());
+        console_log!(" ********** features used **********");
+        console_log!(device.features());
 
-        println!(" ********** limits used **********");
-        dbg!(device.limits());
+        console_log!(" ********** limits used **********");
+        console_log!(device.limits());
 
         let surface_caps = surface.get_capabilities(&adapter);
 
@@ -245,11 +245,11 @@ impl WGpu
                 break;
             }
 
-            dbg!(output.err());
+            console_error!(output.err());
 
             // wait on error and retry
             sleep_millis(100);
-            println!("retry get surface texture");
+            console_log!("retry get surface texture");
         }
         let output = output.unwrap();
 

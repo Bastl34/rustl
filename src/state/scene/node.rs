@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_warning, console_log, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -956,7 +956,7 @@ impl Node
             }
             else
             {
-                dbg!("Node {} has an empty skin joint with id which is not supported!", &self.name);
+                console_warning!("Node {} has an empty skin joint with id which is not supported!", &self.name);
             }
 
             joints.push(transform);
@@ -1404,7 +1404,7 @@ impl Node
             {
                 if channel.target.is_none()
                 {
-                    println!("warning: target not set for channel ");
+                    console_warning!("target not set for channel ");
                     continue;
                 }
                 let target = channel.target.as_ref().unwrap();
@@ -1419,7 +1419,7 @@ impl Node
                 else
                 {
                     all_animations_retarteted = false;
-                    println!("warning: not target found for {}", target_name);
+                    console_warning!("not target found for {}", target_name);
                 }
             }
         }
@@ -1623,7 +1623,7 @@ impl Node
 
         if current_mesh.is_none() || merge_mesh.is_none()
         {
-            println!("can not merge node -> can not merge empty mesh");
+            console_warning!("can not merge node -> can not merge empty mesh");
             return false;
         }
 
@@ -1715,7 +1715,7 @@ impl Node
         }
         else
         {
-            dbg!("merge_instances: Node has no parent node to create default instance");
+            console_warning!("merge_instances: Node has no parent node to create default instance");
         }
 
         true
@@ -1830,7 +1830,7 @@ impl Node
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);
-        println!("{} - (NODE) id={} name={} visible={} components={}, instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.instances.get_ref().len());
+        console_log!("{} - (NODE) id={} name={} visible={} components={}, instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.instances.get_ref().len());
 
         for node in &self.nodes
         {

@@ -8,7 +8,7 @@ use nalgebra::{Isometry3, Matrix4, Point2, Point3, Vector3};
 use parry3d::{bounding_volume::Aabb, shape::TriMesh};
 use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::{point2_as_array, point3_as_array, vec3_as_array}, math::calculate_normal}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::tags::Tags}}};
+use crate::{console_error, helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::{point2_as_array, point3_as_array, vec3_as_array}, math::calculate_normal}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::tags::Tags}}};
 
 pub type MeshResourceItem = Arc<RwLock<Box<MeshResource>>>;
 
@@ -102,7 +102,7 @@ impl MeshResourceData
             Ok(mesh) => self.mesh = mesh,
             Err(e) =>
             {
-                println!("{}", (format!("error loading mesh: {}", e)).red());
+                console_error!("{}", (format!("error loading mesh: {}", e)).red());
                 self.mesh = TriMesh::new(vec![], vec![]).unwrap();
             }
         }
@@ -190,7 +190,7 @@ impl MeshResource
             Ok(tri_mesh) => tri_mesh,
             Err(e) =>
             {
-                println!("{}", (format!("error loading mesh: {}", e)).red());
+                console_error!("{}", (format!("error loading mesh: {}", e)).red());
                 TriMesh::new(vec![], vec![]).unwrap()
             }
         };
@@ -493,7 +493,7 @@ impl MeshResource
             Ok(mesh) => mesh,
             Err(e) =>
             {
-                println!("{}", (format!("error loading mesh: {}", e)).red());
+                console_error!("{}", (format!("error loading mesh: {}", e)).red());
                 TriMesh::new(vec![], vec![]).unwrap()
             }
         };
@@ -600,7 +600,7 @@ impl MeshResource
                 Ok(mesh) => mesh,
                 Err(e) =>
                 {
-                    println!("{}", (format!("error loading mesh: {}", e)).red());
+                    console_error!("{}", (format!("error loading mesh: {}", e)).red());
                     TriMesh::new(vec![], vec![]).unwrap()
                 }
             };

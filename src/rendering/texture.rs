@@ -443,7 +443,7 @@ impl Texture
     /*
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene_texture: &crate::state::scene::texture::Texture)
     {
-        dbg!("update texture");
+        console_log!("update texture");
 
         let device = wgpu.device();
         let queue = wgpu.queue_mut();

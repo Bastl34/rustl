@@ -5,7 +5,7 @@ use std::{sync::{Arc, RwLock}};
 use egui::RichText;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{math::approx_zero, option_or_id::OptionOrId}, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, helper::{math::approx_zero, option_or_id::OptionOrId}, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
@@ -173,13 +173,13 @@ impl Component for Delay
             else
             {
                 self.target = OptionOrId::None;
-                println!("Delay: target with id {} not found", self.target.id().unwrap());
+                console_error!("Delay: target with id {} not found", self.target.id().unwrap());
             }
         }
         else
         {
             self.target = OptionOrId::None;
-            println!("Delay: no target found");
+            console_error!("Delay: no target found");
         }
     }
 

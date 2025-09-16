@@ -2,7 +2,7 @@
 
 use std::{path::Path, sync::{Arc, Mutex, RwLock}};
 
-use crate::{component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
+use crate::{component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
 use crate::state::scene::loader::gltf;
 
 pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
@@ -11,7 +11,7 @@ pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_
 
     if extension.is_none()
     {
-        println!("can not load {}", path);
+        console_error!("can not load {}", path);
         return Ok(vec![]);
     }
     let extension = extension.unwrap();

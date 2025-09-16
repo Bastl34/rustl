@@ -8,10 +8,9 @@
 
 use std::{mem, cell::RefCell};
 
-use colored::Colorize;
 use nalgebra::{Vector3, Point3};
 
-use crate::{state::{helper::render_item::RenderItem, scene::light::{Light, LightItem, LightType}}, render_item_impl_default, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}};
+use crate::{console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}, render_item_impl_default, state::{helper::render_item::RenderItem, scene::light::{Light, LightItem, LightType}}};
 
 use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
 
@@ -148,8 +147,7 @@ impl LightBuffer
         {
             if i + 1 > self.max_lights
             {
-                let warning = format!("only {} lights are supported", self.max_lights);
-                println!("{}", warning.bright_yellow());
+                console_warning!("only {} lights are supported", self.max_lights);
                 break;
             }
 
@@ -170,8 +168,7 @@ impl LightBuffer
     {
         if index + 1 > self.max_lights
         {
-            let warning = format!("only {} lights are supported", self.max_lights);
-            println!("{}", warning.bright_yellow());
+            console_warning!("only {} lights are supported", self.max_lights);
             return;
         }
 

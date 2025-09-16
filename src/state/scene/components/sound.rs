@@ -8,7 +8,7 @@ use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 use crate::state::resources::sound_source::Decodable;
 use crate::state::scene::exporter::serialization_helper;
 
@@ -189,7 +189,7 @@ impl Sound
                 }
                 else
                 {
-                    println!("Sound: Unable to create decoder for sound source {}", sound_source.name);
+                    console_error!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
                 s.pause();
                 sink = Some(s);
@@ -215,7 +215,7 @@ impl Sound
                 }
                 else
                 {
-                    println!("Sound: Unable to create decoder for sound source {}", sound_source.name);
+                    console_error!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
                 s.pause();
                 sink_spatial = Some(s);
@@ -339,8 +339,8 @@ impl Sound
             let res = sink.try_seek(pos);
             if res.is_err()
             {
-                println!("can not seek, because its not supported for this file");
-                println!("{:?}", res);
+                console_warning!("can not seek, because its not supported for this file");
+                console_warning!("{:?}", res);
             }
         }
 
@@ -350,8 +350,8 @@ impl Sound
             let res = sink.try_seek(pos);
             if res.is_err()
             {
-                println!("can not seek, because its not supported for this file");
-                println!("{:?}", res);
+                console_warning!("can not seek, because its not supported for this file");
+                console_warning!("{:?}", res);
             }
         }
     }
@@ -474,13 +474,13 @@ impl Component for Sound
             else
             {
                 self.sound_source = OptionOrId::None;
-                println!("Sound: SoundSource with id {} not found", self.sound_source.id().unwrap());
+                console_error!("Sound: SoundSource with id {} not found", self.sound_source.id().unwrap());
             }
         }
         else
         {
             self.sound_source = OptionOrId::None;
-            println!("Sound: no SoundSource found");
+            console_error!("Sound: no SoundSource found");
         }
     }
 

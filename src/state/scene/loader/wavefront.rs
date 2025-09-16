@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::load_string, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, utilities::resource_utils::load_texture_or_reuse}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
+use crate::{console_error, console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::load_string, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, utilities::resource_utils::load_texture_or_reuse}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, node::Node, scene::Scene, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -63,7 +63,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 
         if mesh.texcoord_indices.len() > 0 && mesh.indices.len() != mesh.texcoord_indices.len()
         {
-            println!("Error can not load {}, because of indices mismatch", m.name.as_str());
+            console_error!("Error can not load {}, because of indices mismatch", m.name.as_str());
             continue;
         }
 
@@ -220,7 +220,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                         // base texture
                         if mat.diffuse_texture.is_some()
                         {
-                            println!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
+                            console_log!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
                             let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                             let tex_path = get_texture_path(&diffuse_texture, path);
                             let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
@@ -241,7 +241,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                         // normal texture
                         if mat.normal_texture.is_some()
                         {
-                            println!("loading normal texture {}", mat.normal_texture.clone().unwrap());
+                            console_log!("loading normal texture {}", mat.normal_texture.clone().unwrap());
                             let normal_texture = mat.normal_texture.clone().unwrap();
                             let tex_path = get_texture_path(&normal_texture, path);
                             let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
@@ -262,7 +262,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                         // ambient texture
                         if mat.ambient_texture.is_some()
                         {
-                            println!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
+                            console_log!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
                             let ambient_texture = mat.ambient_texture.clone().unwrap();
                             let tex_path = get_texture_path(&ambient_texture, path);
                             let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
@@ -283,7 +283,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                         // specular texture
                         if mat.specular_texture.is_some()
                         {
-                            println!("loading specular texture {}", mat.specular_texture.clone().unwrap());
+                            console_log!("loading specular texture {}", mat.specular_texture.clone().unwrap());
                             let specular_texture = mat.specular_texture.clone().unwrap();
                             let tex_path: String = get_texture_path(&specular_texture, path);
                             let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
@@ -304,7 +304,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                         // dissolve texture
                         if mat.dissolve_texture.is_some()
                         {
-                            println!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
+                            console_log!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
                             let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                             let tex_path = get_texture_path(&dissolve_texture, path);
                             let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
@@ -325,7 +325,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
                         // shininess_texture
                         if mat.shininess_texture.is_some()
                         {
-                            println!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
+                            console_log!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
                             let shininess_texture = mat.shininess_texture.clone().unwrap();
                             let tex_path = get_texture_path(&shininess_texture, path);
                             let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
@@ -453,7 +453,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
             }
             else
             {
-                dbg!("can not find parent node by id");
+                console_error!("can not find parent node by id");
             }
         }
         else

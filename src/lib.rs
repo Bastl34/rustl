@@ -145,6 +145,7 @@ mod state
                 pub(crate) mod sound;
                 pub(crate) mod mesh;
                 pub(crate) mod assets;
+                pub(crate) mod console;
             }
         }
     }
@@ -205,6 +206,7 @@ mod helper
     pub(crate) mod stopwatch;
     pub(crate) mod asset_path_descriptor;
     pub(crate) mod option_or_id;
+    pub(crate) mod console_log;
 }
 
 mod resources

@@ -68,10 +68,15 @@ pub fn separator_colored(ui: &mut Ui, color: Color32, height: f32)
     painter.rect_filled(rect, 0.0, color);
 }
 
-pub fn label_with_background(ui: &mut Ui, text: &str, bg_color: Color32)
+pub fn label_with_background(ui: &mut Ui, text: &str, bg_color: Color32, text_color: Option<Color32>)
 {
     Frame::new().fill(bg_color).corner_radius(2.0).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui|
     {
+        if let Some(color) = text_color
+        {
+            ui.label(RichText::new(text).strong().color(color));
+            return;
+        }
         ui.label(RichText::new(text).strong().color(Color32::WHITE));
     });
 }

@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::Point3;
 use rodio::{OutputStream, OutputStreamBuilder};
 
-use crate::helper::change_tracker::ChangeTracker;
+use crate::{console_error, helper::change_tracker::ChangeTracker};
 
 pub type AudioDeviceItem = Arc<RwLock<Box<AudioDevice>>>;
 
@@ -42,7 +42,7 @@ impl Default for AudioDevice
         }
         else
         {
-            dbg!("audio device not found");
+            console_error!("audio device not found");
             Self
             {
                 stream: None,

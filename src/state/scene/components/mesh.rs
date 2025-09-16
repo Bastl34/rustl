@@ -5,7 +5,7 @@ use nalgebra::{Isometry3, Matrix4, Point3, Point4, Vector3};
 use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, resources::mesh_resource::MeshResourceItem, scene::node::NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, console_error, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, resources::mesh_resource::MeshResourceItem, scene::node::NodeItem}};
 use crate::state::scene::exporter::serialization_helper;
 
 
@@ -137,7 +137,7 @@ impl Mesh
         }
         else
         {
-            dbg!("can not find mesh resource");
+            console_error!("can not find mesh resource");
 
             let data = self.data.get_mut();
             data.b_box_skin = None;

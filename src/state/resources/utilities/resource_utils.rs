@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file}, resources::resources::load_binary, state::resources::texture::{Texture, TextureItem}};
+use crate::{console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file}, resources::resources::load_binary, state::resources::texture::{Texture, TextureItem}};
 
 
 pub fn load_texture_or_reuse(main_queue: ExecutionQueueItem, max_tex_res: u32, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
@@ -29,7 +29,7 @@ pub fn load_texture_byte_or_reuse(main_queue: ExecutionQueueItem, max_tex_res: u
         {
             if state.resources.textures.contains_key(&hash_clone)
             {
-                println!("reusing texture {}", name_clone);
+                console_log!("reusing texture {}", name_clone);
 
                 *res_texture_clone.write().unwrap() = Some(state.resources.textures.get_mut(&hash_clone).unwrap().clone());
             }
@@ -81,7 +81,7 @@ pub fn insert_texture_or_reuse(main_queue: ExecutionQueueItem, texture: Texture,
         {
             if state.resources.textures.contains_key(&hash_clone)
             {
-                println!("reusing texture {}", name_clone);
+                console_log!("reusing texture {}", name_clone);
 
                 *res_texture_clone.write().unwrap() = Some(state.resources.textures.get_mut(&hash_clone).unwrap().clone());
             }

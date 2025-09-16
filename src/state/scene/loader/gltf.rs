@@ -7,14 +7,14 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
 
 pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
-    println!("load gltf file {}", path);
+    console_log!("load gltf file {}", path);
 
     let gltf_content = load_binary(path)?;
 
@@ -33,7 +33,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     }
 
     // ********** textures **********
-    println!("loading textures...");
+    console_log!("loading textures...");
     let mut loaded_textures = vec![];
 
     for gltf_texture in gltf.textures()
@@ -65,7 +65,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     let mut clear_textures: Vec<TextureItem> = vec![];
 
     // ********** materials **********
-    println!("loading materials...");
+    console_log!("loading materials...");
     let resource_name = get_stem(path);
     let mut loaded_materials: HashMap<usize, MaterialItem> = HashMap::new();
     for gltf_material in gltf.materials()
@@ -108,7 +108,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     }
 
     // ********** scene items **********
-    println!("loading scene items...");
+    console_log!("loading scene items...");
 
     // create_root_node
     let root_node = Node::new(resource_name.as_str());
@@ -117,7 +117,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     root_node.write().unwrap().root_node = true;
     root_node.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(path.to_string()));
 
-    println!("reading nodes...");
+    console_log!("reading nodes...");
     for gltf_scene in gltf.scenes()
     {
         for node in gltf_scene.nodes()
@@ -134,20 +134,20 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     }
 
     // ********** map skeletons **********
-    println!("loading skeletons...");
+    console_log!("loading skeletons...");
     let nodes = vec![root_node.clone()];
     load_skeletons(&nodes, gltf.skins(), &buffers);
 
     // ********** animations **********
-    println!("loading animations...");
+    console_log!("loading animations...");
     read_animations(root_node.clone(), gltf.animations(), &buffers);
 
     // ********** map animatables **********
-    println!("mapping animatables...");
+    console_log!("mapping animatables...");
     map_animatables(&nodes);
 
     // ********** calculate skin bounding boxes **********
-    println!("calc bbox skin...");
+    console_log!("calc bbox skin...");
     calc_bbox_skin(&nodes);
 
     // ********** mark components **********
@@ -165,7 +165,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     }
 
     // ********** add to scene **********
-    println!("adding nodes to scene...");
+    console_log!("adding nodes to scene...");
     if hide_root_node
     {
         root_node.write().unwrap().visible = false;
@@ -220,12 +220,12 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
         }
     }
 
-    println!("cleanup unused textures: {}", clear_textures.len());
+    console_log!("cleanup unused textures: {}", clear_textures.len());
     execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
     {
         for (_, clear_texture) in &cleanup_map
         {
-            println!(" - texture: {} ({})", clear_texture.read().unwrap().name, clear_texture.read().unwrap().id);
+            console_log!(" - texture: {} ({})", clear_texture.read().unwrap().name, clear_texture.read().unwrap().id);
             state.delete_texture_by_id(clear_texture.read().unwrap().id);
         }
     }));
@@ -269,7 +269,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
                 gltf::khr_lights_punctual::Kind::Directional =>
                 {
                     let name = light.name().unwrap_or("Directional").to_string();
-                    println!("load light {}", name.as_str());
+                    console_log!("load light {}", name.as_str());
                     let name = Arc::new(name);
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
@@ -281,7 +281,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
                 gltf::khr_lights_punctual::Kind::Point =>
                 {
                     let name = light.name().unwrap_or("Point").to_string();
-                    println!("load light {}", name.as_str());
+                    console_log!("load light {}", name.as_str());
                     let name = Arc::new(name);
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
@@ -293,7 +293,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
                 gltf::khr_lights_punctual::Kind::Spot { inner_cone_angle: _, outer_cone_angle } =>
                 {
                     let name = light.name().unwrap_or("Point").to_string();
-                    println!("load light {}", name.as_str());
+                    console_log!("load light {}", name.as_str());
                     let name = Arc::new(name);
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
@@ -314,7 +314,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             let name = camera.name().unwrap_or("Unnamed Camera").to_string();
             let name = Arc::new(name);
 
-            println!("load camera {}", name.as_str());
+            console_log!("load camera {}", name.as_str());
 
             //https://github.com/flomonster/easy-gltf/blob/master/src/scene/camera.rs
             let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
@@ -561,7 +561,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             }
             else
             {
-                println!("can not load joints and weights, because length does not match");
+                console_warning!("can not load joints and weights, because length does not match");
             }
 
             // morph targets
@@ -689,7 +689,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
                 read_extras(&mut scene_node.extras, node.extras().as_ref());
             }
 
-            println!("{} - {} ({}) (mesh)", " ".repeat(level * 2), mesh_name.as_str(), node_index);
+            console_log!("{} - {} ({}) (mesh)", " ".repeat(level * 2), mesh_name.as_str(), node_index);
             Node::add_node(parent_node.clone(), node_arc.clone());
 
             // only if there is one primitive -> use it as parent for next childs
@@ -708,7 +708,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
         //if node.children().len() > 0
         {
             let name = node.name().unwrap_or("transform node");
-            println!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
+            console_log!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
 
             let scene_node = Node::new(name);
             //scene_node.write().unwrap().joint_id = Some(node.index() as u32);
@@ -773,7 +773,7 @@ pub fn read_extras(obj_extras: &mut Extras, gltf_extras: Option<&Box<serde_json:
                     }
                     else
                     {
-                        println!("extras/JSON type not supported {} {:?}", key, value);
+                        console_warning!("extras/JSON type not supported {} {:?}", key, value);
                     }
                 }
             }
@@ -940,7 +940,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
     for skin in skins.clone()
     {
         let skin_index = skin.index();
-        println!("loading skin: {} ({})", skin.name().unwrap_or("unknown skin"), skin_index);
+        console_log!("loading skin: {} ({})", skin.name().unwrap_or("unknown skin"), skin_index);
 
         // ********** load skeleton **********
         let joints = skin.joints();
