@@ -1497,7 +1497,7 @@ impl Node
         !is_not_empty
     }
 
-    pub fn create_default_instance(&mut self, self_node_item: NodeItem) -> u64
+    pub fn create_default_instance(&mut self, self_node_item: NodeItem) -> Arc<RwLock<InstanceItem>>
     {
         let mut instance = Instance::new
         (
@@ -1506,17 +1506,17 @@ impl Node
         );
 
         instance.is_default = true;
+        let instance_arc = self.add_instance(Box::new(instance));
 
-        let instance_id = instance.id;
-
-        self.add_instance(Box::new(instance));
-
-        instance_id
+        instance_arc
     }
 
-    pub fn add_instance(&mut self, instance: InstanceItem)
+    pub fn add_instance(&mut self, instance: InstanceItem) -> Arc<RwLock<InstanceItem>>
     {
-        self.instances.get_mut().push(Arc::new(RwLock::new(instance)));
+        let instance = Arc::new(RwLock::new(instance));
+        self.instances.get_mut().push(instance.clone());
+
+        instance
     }
 
     pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult

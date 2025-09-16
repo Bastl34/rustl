@@ -144,7 +144,7 @@ impl Mesh
         }
     }
 
-    pub fn get_combined_bbox(&self) -> Aabb
+    pub fn get_skin_and_mesh_bbox(&self) -> Aabb
     {
         if let Some(mesh_resource) = self.mesh_resource.as_ref()
         {
@@ -166,9 +166,27 @@ impl Mesh
         Aabb::new_invalid()
     }
 
+    pub fn get_height(&self) -> f32
+    {
+        let b_box = self.get_skin_and_mesh_bbox();
+        (b_box.maxs.y - b_box.mins.y).abs()
+    }
+
+    pub fn get_width(&self) -> f32
+    {
+        let b_box = self.get_skin_and_mesh_bbox();
+        (b_box.maxs.x - b_box.mins.x).abs()
+    }
+
+    pub fn get_depth(&self) -> f32
+    {
+        let b_box = self.get_skin_and_mesh_bbox();
+        (b_box.maxs.z - b_box.mins.z).abs()
+    }
+
     pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
     {
-        let b_box = self.get_combined_bbox();
+        let b_box = self.get_skin_and_mesh_bbox();
 
         b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
     }

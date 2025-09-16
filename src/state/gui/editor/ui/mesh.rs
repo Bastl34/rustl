@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use egui::{RichText, Ui};
 
@@ -12,8 +12,16 @@ pub fn build_mesh_resources_list(editor_state: &mut EditorState, mesh_resources:
     {
         for (_mesh_hash, mesh) in mesh_resources
         {
-            let mesh = mesh.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", mesh.id, cut_string_to_length(&mesh.name, MAX_NAME_LENGTH));
+            let mesh: std::sync::RwLockReadGuard<'_, Box<crate::state::resources::mesh_resource::MeshResource>> = mesh.read().unwrap();
+            let mut mesh_resource_name = mesh.name.clone();
+            if let Some(mesh_source) = mesh.source.as_ref()
+            {
+                let path = Path::new(&mesh_source.origin_path);
+                let filename = path.file_name().unwrap();
+                mesh_resource_name += format!(" ({})", filename.to_string_lossy()).as_str();
+            }
+
+            let headline_name = format!("⚫ {}: {}", mesh.id, cut_string_to_length(&mesh_resource_name, MAX_NAME_LENGTH));
 
             let is_internal = mesh.tags.contains(ENGINE_INTERNAL_TAG) || mesh.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);

@@ -4,7 +4,7 @@ use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
-use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
+use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::State}};
 
@@ -225,10 +225,7 @@ impl Editor
         {
             if self.editor_state.selected_type == SelectionType::Object
             {
-                if let (Some(_scene), Some(node), _) = self.editor_state.get_selected_node(state)
-                {
-                    node.write().unwrap().create_default_instance(node.clone());
-                }
+                self.create_instance(state);
             }
         }
 
@@ -241,6 +238,67 @@ impl Editor
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
                 json::export(state, (("data/".to_string()) + &self.editor_state.project_name).as_str());
+            }
+        }
+    }
+
+    pub fn create_instance(&mut self, state: &mut State)
+    {
+        if let (Some(_scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
+        {
+            if node.read().unwrap().has_component::<Mesh>()
+            {
+                let new_instance = node.write().unwrap().create_default_instance(node.clone());
+
+                let mut pos = state.io.input_manager.mouse.point.pos;
+
+                if let Some(touch_id) = state.io.input_manager.touch.tapped_any()
+                {
+                    pos = state.io.input_manager.touch.get_touch_by_id(touch_id).unwrap().pos;
+                }
+
+                if let Some(pos) = pos
+                {
+                    let mut is_in_viewport = false;
+
+                    // get camera transform
+                    let (scene, _, _) = self.editor_state.get_selected_node(state);
+
+                    for camera in &scene.unwrap().cameras
+                    {
+                        if camera.enabled && camera.is_point_in_viewport(&pos)
+                        {
+                            is_in_viewport = true;
+                            break;
+                        }
+                    }
+
+                    if is_in_viewport
+                    {
+                        let pick_res = pick(state, pos, true, false, false, None);
+
+                        if let Some(pick_res) = pick_res
+                        {
+                            let point = pick_res.1.point;
+
+                            let mesh = node.read().unwrap().find_component::<Mesh>().unwrap();
+                            component_downcast!(mesh, Mesh);
+                            let height = mesh.get_height();
+
+                            let point_vec = Vector4::new(point.x, point.y, point.z, 1.0);
+                            let mut local_pos = node.read().unwrap().transform_vec_global_to_local(&point_vec);
+                            local_pos.y += height / 2.0;
+
+                            let mut transform = Transformation::identity("Transform");
+                            transform.set_translation(Vector3::new(local_pos.x, local_pos.y, local_pos.z));
+                            new_instance.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+                        }
+                    }
+                }
+            }
+            else
+            {
+                console_warning!("Only objects with a Mesh component can be instanced");
             }
         }
     }
