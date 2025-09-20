@@ -102,7 +102,10 @@ pub struct MaterialUniform
 
     pub unlit: u32,
 
-    pub _padding1: [u32; 2],
+    pub ibl_diffuse_intensity: f32,
+
+    //pub _padding1: [u32; 2],
+    pub _padding1: u32,
 
     pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
@@ -194,11 +197,13 @@ impl MaterialUniform
             roughness: material_data.roughness,
             receive_shadow: material_data.receive_shadow as u32,
             unlit: material_data.unlit_shading as u32,
+            ibl_diffuse_intensity: material_data.ibl_diffuse_intensity,
 
             texture_transforms,
             textures_used: textures_used,
 
-            _padding1: [0, 0],
+            //_padding1: [0, 0],
+            _padding1: 0,
             _padding2: [0, 0, 0],
         }
     }

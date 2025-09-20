@@ -32,7 +32,8 @@ struct LightUniform
 struct SceneUniform
 {
     gamma: f32,
-    exposure: f32
+    exposure: f32,
+    ibl_diffuse_intensity: f32,
 };
 
 struct SkeletonUniform
@@ -340,7 +341,10 @@ struct MaterialUniform
 
     unlit_shading: u32,
 
-    _padding1: vec2<u32>,
+    ibl_diffuse_intensity: f32,
+
+    //_padding1: vec2<u32>,
+    _padding1: u32,
 
     texture_transforms: array<TextureTransform, TEXTURE_AMOUNT>,
     textures_used: u32
@@ -668,7 +672,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             color.z *= ambient_occlusion.x;
         }
 
-        // reflection with env map
+        // reflection with env map (specular IBL)
         if (has_environment_sampler_texture() && material.reflectivity > 0.001)
         {
             var reflectivity = material.reflectivity;
@@ -700,24 +704,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             color.z += reflection_color.z * reflectivity;
         }
 
-        /*
-        // IBL
-        if (has_environment_sampler_texture())
+        // Diffuse IBL (Irradiance)
+        let ibl_diffuse_intensity = material.ibl_diffuse_intensity * scene.ibl_diffuse_intensity;
+        if (has_environment_sampler_texture() && ibl_diffuse_intensity > 0.001)
         {
             let sphere_coords = sphericalCoords(normal);
-
             let environment_map_levels = textureNumLevels(tex_environment) - 1u;
-            //let mipmap_level = roughness * f32(environment_map_levels);
-            //let mipmap_level = 0.0;
-            let mipmap_level = f32(environment_map_levels) - 2.0;
 
+            // use big mipmap level for diffuse IBL
+            let mipmap_level = f32(environment_map_levels) - 2.0;
             let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
             let ibl_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
-            color.x += ibl_color.x;
-            color.y += ibl_color.y;
-            color.z += ibl_color.z;
+
+            color += ibl_color.rgb * object_color.rgb * ibl_diffuse_intensity;
         }
-        */
     }
 
     // ambient color

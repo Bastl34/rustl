@@ -8,7 +8,7 @@ use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 use wgpu::hal::auxil::db;
 
-use crate::{component_downcast, component_downcast_mut, console_log, helper::{change_tracker::ChangeTracker, math::{self, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_log, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -50,6 +50,7 @@ pub struct SceneData
     pub environment_texture: Option<TextureState>,
     pub gamma: Option<f32>,
     pub exposure: Option<f32>,
+    pub ibl_diffuse_intensity: Option<f32>,
 }
 
 pub struct Scene
@@ -212,6 +213,7 @@ impl Scene
                 environment_texture: None,
                 gamma: None,
                 exposure: None,
+                ibl_diffuse_intensity: None,
             }),
 
             nodes: vec![],
@@ -1472,6 +1474,7 @@ impl Scene
         let mut max_lights = self.get_data().max_lights;
         let mut gamma = if let Some(gamma_val) = self.get_data().gamma { gamma_val } else { 0.0 };
         let mut exposure = if let Some(exposure_val) = self.get_data().exposure { exposure_val } else { 0.0 };
+        let mut ibl_diffuse_intensity = if let Some(ibl_diffuse_intensity_val) = self.get_data().ibl_diffuse_intensity { ibl_diffuse_intensity_val } else { 1.0 };
 
         ui.horizontal(|ui|
         {
@@ -1521,6 +1524,25 @@ impl Scene
                 else
                 {
                     data.exposure = Some(exposure);
+                }
+            }
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("IBL Diffuse Intensity:");
+
+            if ui.add(egui::DragValue::new(&mut ibl_diffuse_intensity).range(0.0..=10.0).speed(0.1)).changed()
+            {
+                let data = self.get_data_mut().get_mut();
+
+                if approx_equal(ibl_diffuse_intensity, 1.0)
+                {
+                    data.ibl_diffuse_intensity = None;
+                }
+                else
+                {
+                    data.ibl_diffuse_intensity = Some(ibl_diffuse_intensity);
                 }
             }
         });

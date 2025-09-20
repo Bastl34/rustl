@@ -29,6 +29,7 @@ pub struct SceneUniform
 {
     pub gamma: f32,
     pub exposure: f32,
+    pub ibl_diffuse_intensity: f32,
 }
 
 impl SceneUniform
@@ -37,11 +38,13 @@ impl SceneUniform
     {
         let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
         let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
+        let ibl_diffuse_intensity = if let Some(ibl_diffuse_intensity) = scene_data.ibl_diffuse_intensity { ibl_diffuse_intensity } else { 1.0 };
 
         Self
         {
             gamma: gamma,
             exposure: exposure,
+            ibl_diffuse_intensity: ibl_diffuse_intensity,
         }
     }
 }
