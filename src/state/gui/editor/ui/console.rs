@@ -1,6 +1,6 @@
 use egui::{Color32, Ui};
 
-use crate::{helper::console_log::{self, LogType}, state::{gui::{editor::editor_state::EditorState, helper::generic_items::label_with_background}, state::State}};
+use crate::{helper::console_log::{self, LogType}, state::{gui::{editor::editor_state::EditorState, helper::generic_items::{button_with_background, label_with_background}}, state::State}};
 use egui_extras::{Column, TableBuilder};
 
 pub fn create_console_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
@@ -23,11 +23,11 @@ pub fn create_console_tree(editor_state: &mut EditorState, _state: &mut State, u
 
         ui.vertical(|ui|
         {
-            ui.selectable_value(&mut editor_state.log_type, LogType::All, "☰ All");
-            ui.selectable_value(&mut editor_state.log_type, LogType::Log, "🗊 Logs");
-            ui.selectable_value(&mut editor_state.log_type, LogType::Error, "❌ Errors");
-            ui.selectable_value(&mut editor_state.log_type, LogType::Warning, "⚠ Warnings");
-            ui.selectable_value(&mut editor_state.log_type, LogType::Success, "✅ Success");
+            ui.selectable_value(&mut editor_state.log_type, LogType::All, format!("☰ All ({})", console_log::get_amount()));
+            ui.selectable_value(&mut editor_state.log_type, LogType::Log, format!("🗊 Logs ({})", console_log::get_log_amount()));
+            ui.selectable_value(&mut editor_state.log_type, LogType::Error, format!("❌ Errors ({})", console_log::get_error_amount()));
+            ui.selectable_value(&mut editor_state.log_type, LogType::Warning, format!("⚠ Warnings ({})", console_log::get_warnings_amount()));
+            ui.selectable_value(&mut editor_state.log_type, LogType::Success, format!("✅ Success ({})", console_log::get_success_amount()));
         });
     });
 }
@@ -78,14 +78,30 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
 
             ui.separator();
 
-            label_with_background(ui, format!("Total: {}", amount_all).as_str(), Color32::WHITE, Some(Color32::BLACK));
+            if button_with_background(ui, format!("Total: {}", amount_all).as_str(), Color32::WHITE, Some(Color32::BLACK)).clicked()
+            {
+                editor_state.log_type = LogType::All;
+            }
 
             ui.separator();
 
-            label_with_background(ui, format!("Errors: {}", error_amount).as_str(), Color32::RED, Some(Color32::WHITE));
-            label_with_background(ui, format!("Warnings: {}", warning_amount).as_str(), Color32::YELLOW, Some(Color32::BLACK));
-            label_with_background(ui, format!("Success: {}", success_amount).as_str(), Color32::GREEN, Some(Color32::BLACK));
-            label_with_background(ui, format!("Log: {}", logs_amount).as_str(), Color32::WHITE, Some(Color32::BLACK));
+
+            if button_with_background(ui, format!("Errors: {}", error_amount).as_str(), Color32::RED, Some(Color32::WHITE)).clicked()
+            {
+                editor_state.log_type = LogType::Error;
+            }
+            if button_with_background(ui, format!("Warnings: {}", warning_amount).as_str(), Color32::YELLOW, Some(Color32::BLACK)).clicked()
+            {
+                editor_state.log_type = LogType::Warning;
+            }
+            if button_with_background(ui, format!("Success: {}", success_amount).as_str(), Color32::GREEN, Some(Color32::BLACK)).clicked()
+            {
+                editor_state.log_type = LogType::Success;
+            }
+            if button_with_background(ui, format!("Log: {}", logs_amount).as_str(), Color32::WHITE, Some(Color32::BLACK)).clicked()
+            {
+                editor_state.log_type = LogType::Log;
+            }
         });
 
         ui.separator();

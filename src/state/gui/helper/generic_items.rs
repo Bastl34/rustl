@@ -80,3 +80,16 @@ pub fn label_with_background(ui: &mut Ui, text: &str, bg_color: Color32, text_co
         ui.label(RichText::new(text).strong().color(Color32::WHITE));
     });
 }
+
+pub fn button_with_background(ui: &mut Ui, text: &str, bg_color: Color32, text_color: Option<Color32>) -> egui::Response
+{
+    let rich_text = if let Some(color) = text_color
+    {
+        RichText::new(text).strong().color(color)
+    }
+    else
+    {
+        RichText::new(text).strong().color(Color32::WHITE)
+    };
+    ui.add(egui::Button::new(rich_text).fill(bg_color))
+}

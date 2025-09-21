@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::fs;
+use std::{env, fs};
 
 use cfg_if::cfg_if;
 
@@ -32,7 +32,7 @@ pub async fn load_string_async(file_name: &str) -> anyhow::Result<String>
         }
         else
         {
-            let path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(file_name);
+            let path = get_path(&file_name);
             let txt = std::fs::read_to_string(path)?;
         }
     }
@@ -51,7 +51,7 @@ pub fn load_string(file_name: &str) -> anyhow::Result<String>
         }
         else
         {
-            let path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(file_name);
+            let path = get_path(&file_name);
             let txt = std::fs::read_to_string(path)?;
         }
     }
@@ -70,7 +70,7 @@ pub async fn load_binary_async(file_name: &str) -> anyhow::Result<Vec<u8>>
         }
         else
         {
-            let path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(file_name);
+            let path = get_path(&file_name);
             let data = std::fs::read(path)?;
         }
     }
@@ -89,7 +89,7 @@ pub fn load_binary(file_name: &str) -> anyhow::Result<Vec<u8>>
         }
         else
         {
-            let path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(file_name);
+            let path = get_path(&file_name);
             let data = std::fs::read(path)?;
         }
     }
@@ -107,9 +107,10 @@ pub fn read_files_recursive(path: &str) -> Vec<String>
         }
     }
 
-    let full_path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(path);
+    let full_path_str = get_path(&path);
+    let full_path = std::path::Path::new(full_path_str.as_str());
 
-    let paths = fs::read_dir(full_path.clone());
+    let paths = fs::read_dir(full_path);
 
     if paths.is_err()
     {
@@ -177,8 +178,42 @@ pub fn exists(path: &str) -> bool
         }
         else
         {
-            let path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(path);
+            let full_path_str = get_path(&path);
+            let path = std::path::Path::new(full_path_str.as_str());
             path.exists()
+        }
+    }
+}
+
+
+pub fn get_path(path: &str) -> String
+{
+    cfg_if!
+    {
+        if #[cfg(target_arch = "wasm32")]
+        {
+            path
+        }
+        else
+        {
+            // absolute path
+            if std::path::Path::new(path).is_absolute()
+            {
+                return path.to_string();
+            }
+
+            // resource path
+            let resource_path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(path);
+            if resource_path.exists()
+            {
+                return resource_path.to_string_lossy().to_string();
+            }
+            else
+            {
+                // local path
+                let local_path = env::current_dir().unwrap().join(path);
+                return local_path.to_string_lossy().to_string();
+            }
         }
     }
 }

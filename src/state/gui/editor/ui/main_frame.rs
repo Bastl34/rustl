@@ -64,7 +64,17 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         {
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::None, "⏷");
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::Assets, "📦 Assets");
-            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, format!("📝 Console ({})", console_log::get_amount()));
+
+            let console_log_amount = console_log::get_amount();
+            let console_errors = console_log::get_error_amount();
+            if console_errors > 0
+            {
+                ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)).on_hover_text(format!("there are {} errors in the console log", console_errors));
+            }
+            else
+            {
+                ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, format!("📝 Console ({})", console_log_amount));
+            }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {

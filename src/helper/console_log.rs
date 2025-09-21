@@ -206,6 +206,27 @@ pub fn get_amount() -> usize
     CONSOLE.lock().unwrap().logs.len()
 }
 
+pub fn get_log_amount() -> usize
+{
+    CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Log).count()
+}
+
+pub fn get_error_amount() -> usize
+{
+    CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Error).count()
+}
+
+pub fn get_warnings_amount() -> usize
+{
+    CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Warning).count()
+}
+
+pub fn get_success_amount() -> usize
+{
+    CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Success).count()
+}
+
+
 pub fn log(msg: &str, log_type: LogType)
 {
     let mut logs = CONSOLE.lock().unwrap();
