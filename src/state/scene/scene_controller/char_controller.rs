@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_success, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_success, helper::{math::{approx_equal, approx_equal_with_decimal_places, approx_zero, approx_zero_vec3, interpolate, interpolate_angle, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -157,14 +157,19 @@ pub struct CharacterController
     pub rotation_speed: f32,
 
     pub rotation_follow: bool,
+    pub rotation_follow_angle_speed: f32,
     pub direction: Vector3<f32>,
+
+    #[serde(skip, default)]
+    current_target_rotation: f32, // this is just for the automatic camera rotation (rotation_follow)
 
     pub fall_velocity: f32,
     pub fall_stop_height: f32,
     pub body_offset: f32,
     pub rotation_offset: f32,
 
-    pub current_y_velocity: f32,
+    #[serde(skip, default)]
+    current_y_velocity: f32,
 
     pub gravity: f32,
     pub jump_force: f32,
@@ -216,8 +221,10 @@ impl CharacterController
 
             rotation_speed: ROTATION_SPEED,
 
-            rotation_follow: false,
+            rotation_follow: true,
+            rotation_follow_angle_speed: 0.075,
             direction: CHARACTER_DIRECTION,
+            current_target_rotation: 0.0,
 
             fall_velocity: FALL_VELOCITY,
             fall_stop_height: FALL_STOP_HEIGHT,
@@ -986,7 +993,6 @@ impl SceneController for CharacterController
             self.current_y_velocity = self.jump_force;
             has_change = true;
             self.jumps += 1;
-            console_debug!("jump #{}/{}", self.jumps, self.max_jumps);
         }
         // ********** crouch **********
         else if (io.input_manager.keyboard.is_holding(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
@@ -1212,7 +1218,7 @@ impl SceneController for CharacterController
         }
 
         // ********** camera angle for follow mode **********
-        if !approx_zero_vec3(&rotation) && self.rotation_follow
+        if !approx_zero(movement.z) && !approx_zero(rotation.y) && self.rotation_follow || !approx_zero(self.current_target_rotation)
         {
             if let Some(cam) = scene.get_active_camera_mut()
             {
@@ -1221,10 +1227,26 @@ impl SceneController for CharacterController
                     if let Some(controller) = controller.as_any_mut().downcast_mut::<TargetRotationController>()
                     {
                         let (yaw, _) = yaw_pitch_from_direction(self.direction);
-                        controller.data.get_mut().alpha = yaw + PI;
+                        self.current_target_rotation = yaw + PI;
+                        let current = controller.data.get_ref().alpha;
+                        let speed = self.rotation_follow_angle_speed * frame_scale;
+
+                        let new_alpha = interpolate_angle(current, self.current_target_rotation, speed.min(1.0));
+                        controller.data.get_mut().alpha = new_alpha;
+
+                        let new_diff = shortest_angle_dist(controller.data.get_mut().alpha, self.current_target_rotation);
+                        if new_diff.abs() < 0.05
+                        {
+                            controller.data.get_mut().alpha = self.current_target_rotation;
+                            self.current_target_rotation = 0.0;
+                        }
                     }
                 }
             }
+        }
+        else
+        {
+            self.current_target_rotation = 0.0;
         }
 
         // ********** rotation for first person mode **********
@@ -1395,6 +1417,12 @@ impl SceneController for CharacterController
         ui.horizontal(|ui|
         {
             ui.checkbox(&mut self.rotation_follow, "Rotation Follow");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Rotation Follow Angle speed: ");
+            ui.add(egui::Slider::new(&mut self.rotation_follow_angle_speed, 0.0..=1.0).fixed_decimals(0));
         });
     }
 }

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::f32::consts::PI;
+
 use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
 use parry3d::query::Ray;
 
@@ -61,9 +63,29 @@ pub fn is_almost_integer(value: f32) -> bool
     (value - value.round()).abs() < tolerance
 }
 
+pub fn shortest_angle_dist(a: f32, b: f32) -> f32
+{
+    let mut diff = (b - a) % (2.0 * PI);
+    if diff < -PI
+    {
+        diff += 2.0 * PI;
+    }
+    else if diff > PI
+    {
+        diff -= 2.0 * PI;
+    }
+    diff
+}
+
 pub fn interpolate(a: f32, b: f32, f: f32) -> f32
 {
     return a + f * (b - a);
+}
+
+pub fn interpolate_angle(a: f32, b: f32, t: f32) -> f32
+{
+    let delta = shortest_angle_dist(a, b);
+    a + delta * t
 }
 
 pub fn interpolate_vec3(a: &Vector3<f32>, b: &Vector3<f32>, f: f32) -> Vector3<f32>
