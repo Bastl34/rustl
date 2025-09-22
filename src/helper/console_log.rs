@@ -13,7 +13,8 @@ pub enum LogType
     Log,
     Warning,
     Success,
-    Error
+    Error,
+    Debug
 }
 
 #[derive(Clone)]
@@ -196,6 +197,35 @@ macro_rules! console_warning
     };
 }
 
+#[macro_export]
+macro_rules! console_debug
+{
+    ($fmt:expr, $($arg:tt)*) =>
+    {
+        $crate::log_base!
+        (
+            $crate::helper::console_log::LogType::Debug,
+            $fmt, $($arg)*
+        );
+    };
+    ($($arg:expr),+) =>
+    {
+        $crate::log_base!
+        (
+            $crate::helper::console_log::LogType::Debug,
+            $($arg)+
+        );
+    };
+    ($arg:expr) =>
+    {
+        $crate::log_base!
+        (
+            $crate::helper::console_log::LogType::Debug,
+            $arg
+        );
+    };
+}
+
 pub fn get_mutex() -> &'static LazyLock<Mutex<Logs>>
 {
     &CONSOLE
@@ -226,6 +256,10 @@ pub fn get_success_amount() -> usize
     CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Success).count()
 }
 
+pub fn get_debug_amount() -> usize
+{
+    CONSOLE.lock().unwrap().logs.iter().filter(|log| log.log_type == LogType::Debug).count()
+}
 
 pub fn log(msg: &str, log_type: LogType)
 {
@@ -252,5 +286,6 @@ pub fn log(msg: &str, log_type: LogType)
         LogType::Error => println!("{}", msg.red()),
         LogType::Success => println!("{}", msg.green()),
         LogType::Warning => println!("{}", msg.yellow()),
+        LogType::Debug => println!("{}", msg.bright_blue()),
     }
 }

@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_error, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_success, helper::{math::{approx_zero, approx_zero_vec3, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -170,6 +170,9 @@ pub struct CharacterController
     pub jump_force: f32,
     pub max_fall_speed: f32,
 
+    pub jumps: u32,
+    pub max_jumps: u32,
+
     pub fly_mode: bool,
 
     pub physics: bool, // very simple at the moment
@@ -225,6 +228,9 @@ impl CharacterController
             gravity: EARTH_GRAVITY,
             jump_force: JUMP_FORCE,
             max_fall_speed: MAX_FALL_SPEED,
+
+            jumps: 0,
+            max_jumps: 2,
 
             fly_mode: false,
 
@@ -973,12 +979,14 @@ impl SceneController for CharacterController
         }
 
         // ********** jump **********
-        if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && self.grounded
+        if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && ((self.grounded && !is_jumping) || (self.jumps > 0 && self.jumps < self.max_jumps))
         {
             let animation_speed = self.gravity / EARTH_GRAVITY;
             self.start_animation(CharAnimationType::Jump, 0, AnimationMixing::Fade, animation_speed, false, false, true);
             self.current_y_velocity = self.jump_force;
             has_change = true;
+            self.jumps += 1;
+            console_debug!("jump #{}/{}", self.jumps, self.max_jumps);
         }
         // ********** crouch **********
         else if (io.input_manager.keyboard.is_holding(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
@@ -1104,6 +1112,7 @@ impl SceneController for CharacterController
                         self.current_y_velocity = 0.0;
                         self.falling = false;
                         self.grounded = true;
+                        self.jumps = 0;
                     }
                     // standard fall down movement
                     else
@@ -1137,6 +1146,7 @@ impl SceneController for CharacterController
                             self.current_y_velocity = 0.0;
                             self.falling = false;
                             self.grounded = true;
+                            self.jumps = 0;
                         }
                         else if ground_distance > self.body_offset // if the avatar is not on the ground with some offset
                         {
@@ -1350,6 +1360,12 @@ impl SceneController for CharacterController
         {
             ui.label("Max Fall Speed: ");
             ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=100.0).fixed_decimals(1));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Max Jumps: ");
+            ui.add(egui::Slider::new(&mut self.max_jumps, 1..=10).fixed_decimals(0));
         });
 
         ui.separator();

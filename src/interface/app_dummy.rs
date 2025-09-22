@@ -365,7 +365,7 @@ impl App for AppDummy
 
             //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-            let avatar_nodes = scene_utils::load_object("resourcesLoasdcal/objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+            let avatar_nodes = scene_utils::load_object("resourcesLocal/objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
 
             if avatar_nodes.is_err()
             {

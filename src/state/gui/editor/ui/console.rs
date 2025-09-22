@@ -28,6 +28,7 @@ pub fn create_console_tree(editor_state: &mut EditorState, _state: &mut State, u
             ui.selectable_value(&mut editor_state.log_type, LogType::Error, format!("❌ Errors ({})", console_log::get_error_amount()));
             ui.selectable_value(&mut editor_state.log_type, LogType::Warning, format!("⚠ Warnings ({})", console_log::get_warnings_amount()));
             ui.selectable_value(&mut editor_state.log_type, LogType::Success, format!("✅ Success ({})", console_log::get_success_amount()));
+            ui.selectable_value(&mut editor_state.log_type, LogType::Debug, format!("🐞 Debug ({})", console_log::get_debug_amount()));
         });
     });
 }
@@ -38,6 +39,7 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
     let mut warning_amount = 0;
     let mut success_amount = 0;
     let mut logs_amount = 0;
+    let mut debug_amount = 0;
     let mut amount_all = 0;
 
     let filtered_logs =
@@ -52,6 +54,7 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
             if log.log_type == LogType::Warning { warning_amount += 1; }
             if log.log_type == LogType::Success { success_amount += 1; }
             if log.log_type == LogType::Log { logs_amount += 1; }
+            if log.log_type == LogType::Debug { debug_amount += 1; }
             amount_all += 1;
 
             let filter = editor_state.log_filter.to_lowercase();
@@ -85,7 +88,6 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
 
             ui.separator();
 
-
             if button_with_background(ui, format!("Errors: {}", error_amount).as_str(), Color32::RED, Some(Color32::WHITE)).clicked()
             {
                 editor_state.log_type = LogType::Error;
@@ -101,6 +103,10 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
             if button_with_background(ui, format!("Log: {}", logs_amount).as_str(), Color32::WHITE, Some(Color32::BLACK)).clicked()
             {
                 editor_state.log_type = LogType::Log;
+            }
+            if button_with_background(ui, format!("Debug: {}", debug_amount).as_str(), Color32::BLUE, Some(Color32::LIGHT_BLUE)).clicked()
+            {
+                editor_state.log_type = LogType::Debug;
             }
         });
 
@@ -145,6 +151,7 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
                         LogType::Warning => egui::Color32::YELLOW,
                         LogType::Success => egui::Color32::GREEN,
                         LogType::Log => egui::Color32::WHITE,
+                        LogType::Debug => egui::Color32::LIGHT_BLUE,
                         _ => egui::Color32::GRAY,
                     };
 
@@ -160,6 +167,7 @@ pub fn create_console_list(editor_state: &mut EditorState, _state: &mut State, u
                             LogType::Error => "Error",
                             LogType::Success => "Success",
                             LogType::Warning => "Warning",
+                            LogType::Debug => "Debug",
                             _ => "?",
                         };
                         ui.colored_label(color, type_str);
