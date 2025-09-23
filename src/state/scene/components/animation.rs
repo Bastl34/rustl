@@ -759,6 +759,8 @@ impl Component for Animation
             }
             let target = channel.target.as_ref().unwrap();
 
+            let has_include_filter = self.joint_filter.iter().any(|joint_filter| joint_filter.include);
+
             for joint_filter in &self.joint_filter
             {
                 let node = joint_filter.node.as_ref();
@@ -787,7 +789,8 @@ impl Component for Animation
                 }
             }
 
-            let mut skip_joint = false;
+            let mut skip_joint = if has_include_filter { true } else { false };
+
             if joint_excluded_found
             {
                 skip_joint = true;
@@ -876,13 +879,6 @@ impl Component for Animation
                 }
 
                 apply_transformation_to_target(&mut target_map, target_component_id, &transform);
-
-                // skip joint flag
-                if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
-                {
-                    let target_item = target_map.get_mut(&target_component_id).unwrap();
-                    target_item.skip_joint = skip_joint;
-                }
             }
             // ********** some items per channel **********
             else
@@ -1153,6 +1149,12 @@ impl Component for Animation
                         }
                     }
                 }
+            }
+
+            // skip joint flag
+            if let Some(target) = target_map.get_mut(&target_component_id)
+            {
+                target.skip_joint = skip_joint;
             }
         }
 
