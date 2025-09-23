@@ -159,14 +159,14 @@ impl Sound
 
         let sound_source = sound_source.read().unwrap();
         let audio_device = sound_source.audio_device.read().unwrap();
-        let stream: Option<&rodio::OutputStream> = audio_device.stream.as_ref();
 
         let mut sink = None;
         let mut sink_spatial = None;
 
-        if let Some(stream) = stream
+        let data = self.data.get_ref();
+        if let Some(stream_arc) = audio_device.get_stream()
         {
-            let data = self.data.get_ref();
+            let stream = stream_arc.lock().unwrap();
 
             if data.sound_type == SoundType::Stereo
             {
