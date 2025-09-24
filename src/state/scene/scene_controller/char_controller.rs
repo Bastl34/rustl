@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_success, helper::{math::{approx_equal, approx_equal_with_decimal_places, approx_zero, approx_zero_vec3, interpolate, interpolate_angle, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::ComponentItem, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_success, helper::{math::{approx_equal, approx_equal_with_decimal_places, approx_zero, approx_zero_vec3, interpolate, interpolate_angle, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::{self, AnimationBlending}, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -653,6 +653,40 @@ impl CharacterController
         false
     }
 
+    fn get_all_animations(&self) -> Vec<ComponentItem>
+    {
+        let mut animation_items = vec!
+        [
+            self.animations.idle.clone(),
+            self.animations.walk.clone(),
+            self.animations.run.clone(),
+            self.animations.strafe_left_walk.clone(),
+            self.animations.strafe_right_walk.clone(),
+            self.animations.strafe_left_run.clone(),
+            self.animations.strafe_right_run.clone(),
+            self.animations.jump.clone(),
+            self.animations.crouch.clone(),
+            self.animations.roll.clone(),
+            self.animations.fall_idle.clone(),
+            self.animations.fall_landing.clone(),
+        ];
+
+        for action in &self.animations.actions
+        {
+            animation_items.push(Some(action.clone()));
+        }
+
+        let mut animations = vec![];
+        for animation in animation_items
+        {
+            if let Some(animation) = animation
+            {
+                animations.push(animation.clone());
+            }
+        }
+        animations
+    }
+
     fn start_animation(&mut self, animation: CharAnimationType, index: usize, mix_type: AnimationMixing, animation_speed: f32, looped: bool, reverse: bool, reset_time: bool)
     {
         if self.node.is_none()
@@ -733,6 +767,30 @@ impl SceneController for CharacterController
 
     fn cleanup(&mut self)
     {
+        // disable animation blending to prevent automatic animation restart
+        let mut animation_blending_ids = vec![];
+        if let Some(animation_blending) = &self.animations.blending
+        {
+            component_downcast_mut!(animation_blending, AnimationBlending);
+            animation_blending.to = None;
+            animation_blending.from = None;
+            animation_blending_ids.push(animation_blending.get_base().id);
+        }
+
+        // remove all animation blending components
+        if let Some(animation_node) = self.animation_node.as_ref()
+        {
+            animation_node.write().unwrap().remove_components_by_ids(&animation_blending_ids);
+        }
+
+        // stop all animations
+        for animation in self.get_all_animations()
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.stop();
+            console_debug!("stop animation {}", animation.get_base().name);
+        }
+
         self.node = OptionOrId::None;
         self.animation_node = None;
 
@@ -796,6 +854,8 @@ impl SceneController for CharacterController
         {
             return false;
         }
+
+        console_debug!("update");
 
         let node = self.node.clone().unwrap();
 

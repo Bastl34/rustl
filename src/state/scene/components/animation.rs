@@ -8,7 +8,7 @@ use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, console_error, console_warning};
+use crate::{component_downcast, console_debug, console_error, console_warning};
 use crate::helper::option_or_id::OptionOrId;
 use crate::state::state::InputOutput;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
