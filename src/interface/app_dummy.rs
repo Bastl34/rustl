@@ -377,7 +377,9 @@ impl App for AppDummy
 
             // //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(),);
             //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
-            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
+            //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
+            //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot stand.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle aim.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
 
 
             //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);

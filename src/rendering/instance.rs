@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::mem;
 use std::sync::{Arc, RwLock};
 
-use colored::Colorize;
 use nalgebra::Matrix4;
 use wgpu::util::DeviceExt;
 

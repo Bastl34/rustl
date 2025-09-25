@@ -6,7 +6,7 @@ use nalgebra::{Point3, Rotation3, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_success, helper::{math::{approx_equal, approx_equal_with_decimal_places, approx_zero, approx_zero_vec3, interpolate, interpolate_angle, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::{self, AnimationBlending}, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_error, helper::{math::{approx_zero, approx_zero_vec3, interpolate_angle, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
 
 use super::scene_controller::SceneController;
 
@@ -788,7 +788,6 @@ impl SceneController for CharacterController
         {
             component_downcast_mut!(animation, Animation);
             animation.stop();
-            console_debug!("stop animation {}", animation.get_base().name);
         }
 
         self.node = OptionOrId::None;
@@ -854,8 +853,6 @@ impl SceneController for CharacterController
         {
             return false;
         }
-
-        console_debug!("update");
 
         let node = self.node.clone().unwrap();
 
