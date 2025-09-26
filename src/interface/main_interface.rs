@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{vec, cmp};
 
 use gilrs::Gilrs;

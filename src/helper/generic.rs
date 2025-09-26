@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use web_time::SystemTime;
+use web_time::UNIX_EPOCH;
 
-use bytemuck::cast_slice;
 use nalgebra::Point2;
 use nalgebra::Point3;
 use nalgebra::Vector3;

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use std::{cell::RefCell, collections::{HashMap, VecDeque}, fmt, rc::Rc, sync::{Arc, RwLock}};
+use web_time::Instant;
 
-use instant::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 

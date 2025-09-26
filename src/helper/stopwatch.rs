@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::time::{Instant, Duration};
+use web_time::{Instant, Duration};
 
 pub struct StopWatch
 {
