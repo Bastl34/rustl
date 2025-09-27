@@ -201,6 +201,14 @@ pub struct CharacterController
     transformation: Option<ComponentItem>
 }
 
+impl Drop for CharacterController
+{
+    fn drop(&mut self)
+    {
+        self.cleanup();
+    }
+}
+
 impl CharacterController
 {
     pub fn default() -> Self

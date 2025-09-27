@@ -277,10 +277,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         if let Some(delete_controller) = delete_controller
         {
-            if let Some(controller) = scene.pre_controller.get_mut(delete_controller)
-            {
-                controller.cleanup();
-            }
             scene.pre_controller.remove(delete_controller);
         }
 
@@ -353,10 +349,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         if let Some(delete_controller) = delete_controller
         {
-            if let Some(controller) = scene.post_controller.get_mut(delete_controller)
-            {
-                controller.cleanup();
-            }
             scene.post_controller.remove(delete_controller);
         }
 
