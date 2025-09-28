@@ -345,11 +345,9 @@ impl Animation
                 {
                     component_downcast_mut!(transformation, Transformation);
 
-                    /*
                     transformation.get_data_mut().get_mut().animation_position = None;
                     transformation.get_data_mut().get_mut().animation_rotation_quat = None;
                     transformation.get_data_mut().get_mut().animation_scale = None;
-                    */
 
                     transformation.get_data_mut().get_mut().animation_update_frame = None;
                     transformation.get_data_mut().get_mut().animation_weight = 0.0;
