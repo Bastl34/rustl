@@ -150,6 +150,10 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     console_log!("calc bbox skin...");
     calc_bbox_skin(&nodes);
 
+    // ********** calculate local transform **********
+    console_log!("calc local transform...");
+    calc_local_transform(&nodes);
+
     // ********** mark components **********
     {
         let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
@@ -1032,10 +1036,9 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
     }
 }
 
-fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
+fn calc_local_transform(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
 {
     let all_nodes = Scene::list_all_child_nodes(scene_nodes);
-    let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
 
     // ********** update local transform for joint nodes **********
     for node in &all_nodes
@@ -1056,6 +1059,11 @@ fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
             }
         }
     }
+}
+
+fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
+{
+    let all_nodes_with_mesh = Scene::list_all_child_nodes_with_mesh(scene_nodes);
 
     // ********** calculate skin bounding boxes **********
     for mesh_node in &all_nodes_with_mesh

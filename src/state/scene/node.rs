@@ -436,6 +436,34 @@ impl Node
         }
     }
 
+    pub fn move_component_up(&mut self, component: ComponentItem)
+    {
+        let index = self.components.iter().position(|c| Arc::ptr_eq(c, &component));
+
+        if let Some(index) = index
+        {
+            if index > 0
+            {
+                self.components.swap(index, index - 1);
+                self.force_instances_update();
+            }
+        }
+    }
+
+    pub fn move_component_down(&mut self, component: ComponentItem)
+    {
+        let index = self.components.iter().position(|c| Arc::ptr_eq(c, &component));
+
+        if let Some(index) = index
+        {
+            if index < self.components.len() - 1
+            {
+                self.components.swap(index, index + 1);
+                self.force_instances_update();
+            }
+        }
+    }
+
     pub fn has_mesh(&self) -> bool
     {
         self.has_component::<Mesh>()

@@ -6,6 +6,8 @@ use crate::{component_downcast, helper::{concurrency::{execution_queue::Executio
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
+const MAX_COMPONENT_NAME_LENGTH: usize = 14;
+
 pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
     for node_arc in nodes
@@ -994,6 +996,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     {
         let mut delete_component_id = None;
         let mut duplicate_component: Option<ComponentItem> = None;
+        let mut move_up_component: Option<ComponentItem> = None;
+        let mut move_down_component: Option<ComponentItem> = None;
 
         let all_components;
         let all_components_clone;
@@ -1002,6 +1006,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             all_components = node_read.components.clone();
             all_components_clone = node_read.components.clone();
         }
+
+        let components_amount = all_components.len();
 
         for (component_i, component) in all_components.iter().enumerate()
         {
@@ -1014,7 +1020,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let uuid;
             let name;
             let component_title;
-            let component_name;
+            let component_tooltip;
             let is_material;
             let is_sound;
             let from_file;
@@ -1022,8 +1028,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
-                component_title = format!("{} {}", base.icon, base.name);
-                component_name = base.component_name.clone();
+                component_title = format!("{} {}", base.icon, cut_string_to_length(&base.name, MAX_COMPONENT_NAME_LENGTH));
+                component_tooltip = format!("{}: {}", base.component_name, &base.name);
                 name = base.name.clone();
                 component_id = component.id();
                 uuid = component.uuid().clone();
@@ -1040,7 +1046,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
             {
-                ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
+                ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_tooltip);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                 {
                     if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
@@ -1068,6 +1074,22 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     {
                         component.write().unwrap().set_enabled(enabled);
                     }
+
+                    ui.add_enabled_ui(component_i < components_amount - 1, |ui|
+                    {
+                        if ui.button(RichText::new("⬇").color(Color32::WHITE)).clicked()
+                        {
+                            move_down_component = Some(component.clone());
+                        }
+                    });
+
+                    ui.add_enabled_ui(component_i > 0, |ui|
+                    {
+                        if ui.button(RichText::new("⬆").color(Color32::WHITE)).clicked()
+                        {
+                            move_up_component = Some(component.clone());
+                        }
+                    });
 
                     if duplicatable
                     {
@@ -1145,6 +1167,16 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         {
             node.write().unwrap().add_component(duplicate_component);
         }
+
+        if let Some(move_up_component) = move_up_component
+        {
+            node.write().unwrap().move_component_up(move_up_component);
+        }
+
+        if let Some(move_down_component) = move_down_component
+        {
+            node.write().unwrap().move_component_down(move_down_component);
+        }
     }
 
     if let Some(instance_id) = instance_id
@@ -1152,6 +1184,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         let mut delete_component_id = None;
         let mut duplicate_component: Option<ComponentItem> = None;
         let mut sound_component_id = None;
+        let mut move_up_component: Option<ComponentItem> = None;
+        let mut move_down_component: Option<ComponentItem> = None;
 
         let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
         let instance = node_read.find_instance_by_id(instance_id);
@@ -1161,7 +1195,9 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let instance = instance.read().unwrap();
 
-                for component in &instance.components
+                let components_amount = instance.components.len();
+
+                for (component_i, component) in instance.components.iter().enumerate()
                 {
                     if !match_component_filter(&editor_state.component_filter, component.clone())
                     {
@@ -1170,16 +1206,16 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                     let component_id;
                     let name;
-                    let component_name;
                     let component_title;
+                    let component_tooltip;
                     let is_sound;
                     let from_file;
                     let duplicatable;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
-                        component_name = format!("{} {}", base.icon, base.name);
-                        component_title = base.component_name.clone();
+                        component_title = format!("{} {}", base.icon, cut_string_to_length(&base.name, MAX_COMPONENT_NAME_LENGTH));
+                        component_tooltip = format!("{}: {}", base.component_name, &base.name);
                         name = base.name.clone();
                         component_id = component.id();
                         from_file = base.from_file;
@@ -1192,7 +1228,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                     generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
                     {
-                        ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
+                        ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_tooltip);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                         {
                             if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
@@ -1220,6 +1256,22 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                             {
                                 component.write().unwrap().set_enabled(enabled);
                             }
+
+                            ui.add_enabled_ui(component_i < components_amount - 1, |ui|
+                            {
+                                if ui.button(RichText::new("⬇").color(Color32::WHITE)).clicked()
+                                {
+                                    move_down_component = Some(component.clone());
+                                }
+                            });
+
+                            ui.add_enabled_ui(component_i > 0, |ui|
+                            {
+                                if ui.button(RichText::new("⬆").color(Color32::WHITE)).clicked()
+                                {
+                                    move_up_component = Some(component.clone());
+                                }
+                            });
 
                             if duplicatable
                             {
@@ -1269,6 +1321,18 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let mut instance = instance.write().unwrap();
                 instance.add_component(duplicate_component);
+            }
+
+            if let Some(move_up_component) = move_up_component
+            {
+                let mut instance = instance.write().unwrap();
+                instance.move_component_up(move_up_component);
+            }
+
+            if let Some(move_down_component) = move_down_component
+            {
+                let mut instance = instance.write().unwrap();
+                instance.move_component_down(move_down_component);
             }
 
             if let Some(sound_component_id) = sound_component_id

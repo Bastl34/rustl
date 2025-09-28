@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use egui::{Color32, RichText};
 use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
 use serde::{Deserialize, Serialize};
+use strum_macros::{Display, EnumIter, FromRepr};
 
 use crate::{component_downcast, console_error, console_warning};
 use crate::helper::option_or_id::OptionOrId;
@@ -23,6 +24,13 @@ pub enum Interpolation
     Linear,
     Step,
     CubicSpline
+}
+
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
+pub enum LayerType
+{
+    Additive,
+    Override
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -86,6 +94,7 @@ pub struct Animation
     pub reverse: bool,
 
     pub easing: Easing,
+    pub layer_type: LayerType,
 
     pub from: f32,
     pub to: f32,
@@ -138,6 +147,7 @@ impl Animation
             reverse: false,
 
             easing: Easing::None,
+            layer_type: LayerType::Additive,
 
             from: 0.0,
             to: 0.0,
@@ -335,9 +345,11 @@ impl Animation
                 {
                     component_downcast_mut!(transformation, Transformation);
 
+                    /*
                     transformation.get_data_mut().get_mut().animation_position = None;
                     transformation.get_data_mut().get_mut().animation_rotation_quat = None;
                     transformation.get_data_mut().get_mut().animation_scale = None;
+                    */
 
                     transformation.get_data_mut().get_mut().animation_update_frame = None;
                     transformation.get_data_mut().get_mut().animation_weight = 0.0;
@@ -599,6 +611,7 @@ impl Component for Animation
             in_place_axis: self.in_place_axis,
 
             easing: self.easing,
+            layer_type: self.layer_type.clone(),
 
             from: self.from,
             to: self.to,
@@ -692,7 +705,7 @@ impl Component for Animation
 
         let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
 
-        // ********** reset joints (if needed) **********
+        // ********** reset joints and transforms (if needed) **********
         for channel in &self.channels
         {
             if channel.target.is_none()
@@ -713,7 +726,7 @@ impl Component for Animation
 
                 let data = joint.get_data_mut().get_mut();
 
-                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame || self.layer_type == LayerType::Override
                 {
                     joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
 
@@ -731,7 +744,7 @@ impl Component for Animation
 
                 let data = transformation.get_data_mut().get_mut();
 
-                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame || self.layer_type == LayerType::Override
                 {
                     transformation.get_data_mut().get_mut().animation_position = None;
                     transformation.get_data_mut().get_mut().animation_rotation_quat = None;
@@ -1247,8 +1260,29 @@ impl Component for Animation
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
     {
+
+        let mut joint_targets = 0;
+        let mut transformation_targets = 0;
+
+        for channel in &self.channels
+        {
+            if let Some(target) = channel.target.as_ref()
+            {
+                let target = target.write().unwrap();
+
+                if target.has_component::<Joint>()
+                {
+                    joint_targets += 1;
+                }
+                else if target.has_component::<Transformation>()
+                {
+                    transformation_targets += 1;
+                }
+            }
+        }
+        
         ui.label(format!("Duration: {}", self.to));
-        ui.label(format!("Channels: {}", self.channels.len()));
+        ui.label(format!("Channels: {} (Joints: {}, Transform {})", self.channels.len(), joint_targets, transformation_targets));
 
         let mut is_running = self.running();
         let mut is_stopped = !is_running;
@@ -1293,6 +1327,32 @@ impl Component for Animation
         // ********** settings **********
         ui.checkbox(&mut self.looped, "Loop");
         ui.checkbox(&mut self.reverse, "Reverse");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Layer Type: ");
+
+            let layer_types = vec!["Additive", "Override"];
+            let current_layer_type = layer_types[self.layer_type as usize];
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("layer_type_id")).selected_text(current_layer_type).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.set_min_width(30.0);
+
+                let mut current_layer_type_id = self.layer_type as usize;
+
+                let mut changed = false;
+                for (layer_type_id, layer_type) in layer_types.iter().enumerate()
+                {
+                    changed = ui.selectable_value(&mut current_layer_type_id, layer_type_id, *layer_type).changed() || changed;
+                }
+
+                if changed
+                {
+                    self.layer_type = LayerType::from_repr(current_layer_type_id).unwrap()
+                }
+            });
+        });
 
         ui.horizontal(|ui|
         {
