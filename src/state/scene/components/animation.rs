@@ -9,7 +9,7 @@ use nalgebra::{Vector3, Vector4, Quaternion, UnitQuaternion};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, FromRepr};
 
-use crate::state::scene::components::joint::JointTransformData;
+use crate::state::scene::components::joint::{JointLayeredTransformData, JointTransformationData};
 use crate::{component_downcast, console_error, console_warning};
 use crate::helper::option_or_id::OptionOrId;
 use crate::state::state::InputOutput;
@@ -32,7 +32,8 @@ pub enum AnimationLayerType
 {
     Blend, // Blend with last applied animation/s (or bind pose transform)
     Override, // Override last applied animation/s
-    Relative // Relative to last applied animation/s - no blending
+    Additive, // Additive to last applied animation/s - no blending
+    PoseAdditive // Additive in Pose-Space (after Blend/Override)
 }
 
 impl AnimationLayerType
@@ -43,7 +44,8 @@ impl AnimationLayerType
         [
             "Blend".to_string(),
             "Override".to_string(),
-            "Relative".to_string()
+            "Additive".to_string(),
+            "PoseAdditive".to_string()
         ]
     }
 }
@@ -1215,12 +1217,15 @@ impl Component for Animation
 
                 component_data.animation_transforms.push
                 (
-                    JointTransformData
+                    JointLayeredTransformData
                     {
                         layer_type: self.layer_type,
-                        translation: target_item.position,
-                        rotation_quat: target_item.rotation_quat,
-                        scale: target_item.scale,
+                        transformation: JointTransformationData
+                        {
+                            translation: target_item.position,
+                            rotation_quat: target_item.rotation_quat,
+                            scale: target_item.scale,
+                        },
                         weight: self.weight,
                     }
                 );
