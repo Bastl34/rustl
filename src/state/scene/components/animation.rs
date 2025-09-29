@@ -5,11 +5,12 @@ use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
 
 use egui::{Color32, RichText};
-use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
+use nalgebra::{Vector3, Vector4, Quaternion, UnitQuaternion};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, FromRepr};
 
-use crate::{component_downcast, console_debug, console_error, console_warning};
+use crate::state::scene::components::joint::JointTransformData;
+use crate::{component_downcast, console_error, console_warning};
 use crate::helper::option_or_id::OptionOrId;
 use crate::state::state::InputOutput;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
@@ -27,10 +28,24 @@ pub enum Interpolation
 }
 
 #[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
-pub enum LayerType
+pub enum AnimationLayerType
 {
-    Additive,
-    Override
+    Blend, // Blend with last applied animation/s (or bind pose transform)
+    Override, // Override last applied animation/s
+    Relative // Relative to last applied animation/s - no blending
+}
+
+impl AnimationLayerType
+{
+    pub fn string_vec() -> Vec<String>
+    {
+        vec!
+        [
+            "Blend".to_string(),
+            "Override".to_string(),
+            "Relative".to_string()
+        ]
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -94,7 +109,7 @@ pub struct Animation
     pub reverse: bool,
 
     pub easing: Easing,
-    pub layer_type: LayerType,
+    pub layer_type: AnimationLayerType,
 
     pub from: f32,
     pub to: f32,
@@ -147,7 +162,7 @@ impl Default for Animation
             reverse: false,
 
             easing: Easing::None,
-            layer_type: LayerType::Additive,
+            layer_type: AnimationLayerType::Blend,
 
             from: 0.0,
             to: 0.0,
@@ -377,10 +392,8 @@ impl Animation
                 {
                     component_downcast_mut!(joint, Joint);
 
-                    joint.get_data_mut().get_mut().animation_trans = None;
-
                     joint.get_data_mut().get_mut().animation_update_frame = None;
-                    joint.get_data_mut().get_mut().animation_weight = 0.0;
+                    joint.get_data_mut().get_mut().animation_transforms.clear();
                 }
 
                 if let Some(transformation) = target.find_component::<Transformation>()
@@ -467,33 +480,6 @@ fn apply_transformation_to_target(target_map: &mut HashMap<u64, TargetMapItem>, 
     }
 }
 
-fn get_animation_transform(transform: &TargetMapItem) -> Matrix4<f32>
-{
-    let mut trans = Matrix4::<f32>::identity();
-
-    // translation
-    if let Some(animation_position) = &transform.position
-    {
-        trans = trans * nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
-    }
-
-    // rotation
-    if let Some(data_rotation_quat) = &transform.rotation_quat
-    {
-        let rotation: Rotation3<f32> = (*data_rotation_quat).into();
-        let rotation = rotation.to_homogeneous();
-
-        trans = trans * rotation;
-    }
-
-    // scale
-    if let Some(animation_scale) = &transform.scale
-    {
-        trans = trans * Matrix4::new_nonuniform_scaling(&animation_scale);
-    }
-
-    trans
-}
 
 #[typetag::serde]
 impl Component for Animation
@@ -766,12 +752,12 @@ impl Component for Animation
 
                 let data = joint.get_data_mut().get_mut();
 
-                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame || self.layer_type == LayerType::Override
+                // no override check is needed here -> this is done in joint
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
                 {
-                    joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
-
                     joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
-                    joint.get_data_mut().get_mut().animation_weight = 0.0;
+
+                    joint.get_data_mut().get_mut().animation_transforms.clear();
                 }
 
                 target_map.insert(joint.id(), TargetMapItem{ component: joint_clone, position: None, rotation_quat: None, scale: None, skip_joint: false });
@@ -784,7 +770,7 @@ impl Component for Animation
 
                 let data = transformation.get_data_mut().get_mut();
 
-                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame || self.layer_type == LayerType::Override
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame || self.layer_type == AnimationLayerType::Override
                 {
                     transformation.get_data_mut().get_mut().animation_position = None;
                     transformation.get_data_mut().get_mut().animation_rotation_quat = None;
@@ -1227,22 +1213,17 @@ impl Component for Animation
 
                 let component_data = joint.get_data_mut().get_mut();
 
-                let animation_trans = component_data.animation_trans.as_mut().unwrap();
-                let transform = get_animation_transform(&target_item);
-
-                // apply if its the first one
-                if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
-                {
-                    *animation_trans = transform * self.weight;
-                }
-                // add if its not the first one
-                else if !approx_zero(self.weight)
-                {
-                    // animation blending - blend this animation with the prev one
-                    *animation_trans = *animation_trans + (transform * self.weight);
-                }
-
-                component_data.animation_weight += self.weight;
+                component_data.animation_transforms.push
+                (
+                    JointTransformData
+                    {
+                        layer_type: self.layer_type,
+                        translation: target_item.position,
+                        rotation_quat: target_item.rotation_quat,
+                        scale: target_item.scale,
+                        weight: self.weight,
+                    }
+                );
             }
             // transformation
             else if let Some(transformation) = target_component.as_any_mut().downcast_mut::<Transformation>()
@@ -1320,7 +1301,7 @@ impl Component for Animation
                 }
             }
         }
-        
+
         ui.label(format!("Duration: {}", self.to));
         ui.label(format!("Channels: {} (Joints: {}, Transform {})", self.channels.len(), joint_targets, transformation_targets));
 
@@ -1372,8 +1353,8 @@ impl Component for Animation
         {
             ui.label("Layer Type: ");
 
-            let layer_types = vec!["Additive", "Override"];
-            let current_layer_type = layer_types[self.layer_type as usize];
+            let layer_types = AnimationLayerType::string_vec();
+            let current_layer_type = layer_types[self.layer_type as usize].clone();
             egui::ComboBox::from_id_salt(ui.make_persistent_id("layer_type_id")).selected_text(current_layer_type).show_ui(ui, |ui|
             {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -1384,12 +1365,12 @@ impl Component for Animation
                 let mut changed = false;
                 for (layer_type_id, layer_type) in layer_types.iter().enumerate()
                 {
-                    changed = ui.selectable_value(&mut current_layer_type_id, layer_type_id, *layer_type).changed() || changed;
+                    changed = ui.selectable_value(&mut current_layer_type_id, layer_type_id, layer_type.clone()).changed() || changed;
                 }
 
                 if changed
                 {
-                    self.layer_type = LayerType::from_repr(current_layer_type_id).unwrap()
+                    self.layer_type = AnimationLayerType::from_repr(current_layer_type_id).unwrap()
                 }
             });
         });

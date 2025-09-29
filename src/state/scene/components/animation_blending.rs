@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::math::approx_zero, state::{scene::node::NodeItem, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::math::approx_zero, state::{scene::{components::animation::AnimationLayerType, node::NodeItem}, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
@@ -140,7 +140,7 @@ impl Component for AnimationBlending
             {
                 component_downcast_mut!(animation, Animation);
 
-                if animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
+                if animation.layer_type == AnimationLayerType::Blend && animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
                 {
                     animation.weight = (animation.weight - weight_delta).max(0.0);
 
@@ -195,7 +195,7 @@ impl Component for AnimationBlending
             for animation in all_animations
             {
                 component_downcast_mut!(animation, Animation);
-                if animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
+                if animation.layer_type == AnimationLayerType::Blend && animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
                 {
                     animation.weight = (animation.weight - weight_delta).max(0.0);
 
@@ -240,6 +240,12 @@ impl Component for AnimationBlending
             for animation in animation_components
             {
                 component_downcast!(animation, Animation);
+
+                if animation.layer_type != AnimationLayerType::Blend
+                {
+                    continue;
+                }
+
                 animations.push((animation.get_base().id, animation.get_base().name.clone()));
 
                 if from == animation.get_base().id

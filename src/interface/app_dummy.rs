@@ -3,7 +3,7 @@ use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 use egui::epaint::EllipseShape;
 use nalgebra::{Point3, Vector2, Vector3};
 
-use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::Animation, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::{Animation, AnimationLayerType}, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -444,11 +444,9 @@ impl App for AppDummy
 
                 // add camera controller and run auto setup
 
-                /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
-                */
 
 
                 // set pos for fall test
@@ -476,15 +474,31 @@ impl App for AppDummy
                         let armature = armature.unwrap();
                         let mut armature = armature.write().unwrap();
 
+                        // look left
+                        {
+                            let mut animation = Animation::new_joint_transform("look left", spine.clone().unwrap(), None, Some(Vector3::new(0.0, PI / 2.0, 0.0)), None);
+                            animation.layer_type = AnimationLayerType::Relative;
+                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                        }
+
+                        // look right
+                        {
+                            let mut animation = Animation::new_joint_transform("look right", spine.clone().unwrap(), None, Some(Vector3::new(0.0, -PI / 2.0, 0.0)), None);
+                            animation.layer_type = AnimationLayerType::Relative;
+                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                        }
+
                         // look up
                         {
-                            let animation = Animation::new_joint_transform("look up", spine.clone().unwrap(), None, Some(Vector3::new(-PI / 2.0, 0.0, 0.0)), None);
+                            let mut animation = Animation::new_joint_transform("look up", spine.clone().unwrap(), None, Some(Vector3::new(-PI / 2.0, 0.0, 0.0)), None);
+                            animation.layer_type = AnimationLayerType::Relative;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
 
                         // look down
                         {
-                            let animation = Animation::new_joint_transform("look down", spine.clone().unwrap(), None, Some(Vector3::new(PI / 2.0, 0.0, 0.0)), None);
+                            let mut animation = Animation::new_joint_transform("look down", spine.clone().unwrap(), None, Some(Vector3::new(PI / 2.0, 0.0, 0.0)), None);
+                            animation.layer_type = AnimationLayerType::Relative;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
                     }
