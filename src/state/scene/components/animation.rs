@@ -9,7 +9,7 @@ use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3}
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, FromRepr};
 
-use crate::{component_downcast, console_error, console_warning};
+use crate::{component_downcast, console_debug, console_error, console_warning};
 use crate::helper::option_or_id::OptionOrId;
 use crate::state::state::InputOutput;
 use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
@@ -135,13 +135,13 @@ pub struct Animation
     ui_joint_include_option: bool
 }
 
-impl Animation
+impl Default for Animation
 {
-    pub fn new(name: &str) -> Animation
+    fn default() -> Self
     {
         Animation
         {
-            base: ComponentBase::new(name.to_string(), "Animation".to_string(), "🎞".to_string()),
+            base: ComponentBase::new("Animation".to_string(), "Animation".to_string(), "🎞".to_string()),
 
             looped: true,
             reverse: false,
@@ -173,6 +173,48 @@ impl Animation
 
             ui_joint_include_option: true
         }
+    }
+}
+
+impl Animation
+{
+    pub fn new(name: &str) -> Animation
+    {
+        let mut animation = Animation::default();
+        animation.get_base_mut().name = name.to_string();
+
+        animation
+    }
+
+    pub fn new_joint_transform(name: &str, joint_target: NodeItem, transform: Option<Vector3<f32>>, rotation: Option<Vector3<f32>>, scale: Option<Vector3<f32>>) -> Animation
+    {
+        let mut animation = Animation::default();
+        animation.get_base_mut().name = name.to_string();
+
+        let mut channel = Channel::new(joint_target);
+
+        if let Some(transform) = transform
+        {
+            channel.transform_translation.push(transform);
+        }
+
+        if let Some(rotation) = rotation
+        {
+            let rotation_quat = UnitQuaternion::from_euler_angles(rotation.x, rotation.y, rotation.z);
+            let rotation_quat = Vector4::<f32>::new(rotation_quat.coords.x, rotation_quat.coords.y, rotation_quat.coords.z, rotation_quat.coords.w);
+            channel.transform_rotation.push(rotation_quat);
+        }
+
+        if let Some(scale) = scale
+        {
+            channel.transform_scale.push(scale);
+        }
+
+        channel.timestamps.push(0.0);
+
+        animation.channels.push(channel);
+
+        animation
     }
 
     pub fn running(&self) -> bool

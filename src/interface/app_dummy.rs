@@ -1,9 +1,9 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::epaint::EllipseShape;
 use nalgebra::{Point3, Vector2, Vector3};
 
-use crate::{component_downcast_mut, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::Animation, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::Animation, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -373,7 +373,7 @@ impl App for AppDummy
                 return;
             }
 
-            //let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
+            let avatar_root = avatar_nodes.as_ref().unwrap()[0].clone();
 
             // //let _ = scene_utils::load_and_retarget_animation("objects/temp/Animation Only - Happy Idle.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(),);
             //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
@@ -462,6 +462,33 @@ impl App for AppDummy
                     transform.set_rotation(Vector3::<f32>::new(0.0, -2.618, 0.0));
                 }
                     */
+
+                // add look up joint animation
+                if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
+                {
+                    let avatar_root = avatar_root.read().unwrap();
+
+                    let spine = avatar_root.find_child_node_by_name("mixamorig:Spine1");
+                    let armature = avatar_root.find_child_node_by_name("Armature");
+
+                    if spine.is_some() && armature.is_some()
+                    {
+                        let armature = armature.unwrap();
+                        let mut armature = armature.write().unwrap();
+
+                        // look up
+                        {
+                            let animation = Animation::new_joint_transform("look up", spine.clone().unwrap(), None, Some(Vector3::new(-PI / 2.0, 0.0, 0.0)), None);
+                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                        }
+
+                        // look down
+                        {
+                            let animation = Animation::new_joint_transform("look down", spine.clone().unwrap(), None, Some(Vector3::new(PI / 2.0, 0.0, 0.0)), None);
+                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                        }
+                    }
+                }
             }));
 
             /*
