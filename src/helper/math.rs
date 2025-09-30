@@ -122,12 +122,6 @@ pub fn interpolate_vec(a: &Vec<f32>, b: &Vec<f32>, f: f32) -> Vec<f32>
     vec
 }
 
-pub fn interpolate_matrices(a: &Matrix4<f32>, b: &Matrix4<f32>, t: f32) -> Matrix4<f32>
-{
-    // Simple linear interpolation
-    a * (1.0 - t) + b * t
-}
-
 //https://github.com/dakom/awsm-renderer/blob/1c7df6b66a3507e11721d549d85c3cfeae146a1f/crate/src/animation/clip.rs#L151
 pub fn cubic_spline_interpolate_vec3
 (

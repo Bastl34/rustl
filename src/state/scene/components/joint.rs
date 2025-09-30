@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
-use nalgebra::{Matrix4, Quaternion, Rotation3, Vector3, Vector4};
+use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_debug, helper::{change_tracker::ChangeTracker, math::{approx_zero, interpolate_matrices}}, state::{scene::{components::animation::AnimationLayerType, node::NodeItem}, state::InputOutput}};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::{change_tracker::ChangeTracker, math::approx_zero}, state::{scene::{components::{animation::AnimationLayerType, transformation::TransformationData}, node::NodeItem}, state::InputOutput}};
 
 use super::{component::{ComponentBase, Component}, transformation::Transformation};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct JointTransformationData
 {
     pub translation: Option<Vector3<f32>>,
@@ -24,6 +24,30 @@ impl JointTransformationData
             translation: None,
             rotation_quat: None,
             scale: None,
+        }
+    }
+
+    pub fn from_transformation_data(local_trans_data: &TransformationData) -> Self
+    {
+        let rotation_quat = if let Some(quat_vec4) = local_trans_data.rotation_quat
+        {
+            UnitQuaternion::new_normalize(Quaternion::new(quat_vec4.w, quat_vec4.x, quat_vec4.y, quat_vec4.z))
+        }
+        else
+        {
+            UnitQuaternion::from_euler_angles
+            (
+                local_trans_data.rotation.x,
+                local_trans_data.rotation.y,
+                local_trans_data.rotation.z
+            )
+        };
+
+        JointTransformationData
+        {
+            translation: Some(local_trans_data.position),
+            rotation_quat: Some(rotation_quat),
+            scale: Some(local_trans_data.scale),
         }
     }
 
@@ -110,11 +134,15 @@ pub struct JointData
     pub root_joint: bool,
 
     #[serde(skip, default)]
-    pub local_trans: Matrix4<f32>,
+    pub local_trans: JointTransformationData,
+
+    #[serde(skip, default)]
+    pub local_trans_mat: Matrix4<f32>,
     //pub full_joint_trans: Matrix4<f32>,
 
     #[serde(skip, default)]
     pub inverse_bind_trans: Matrix4<f32>,
+
     //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
 
     #[serde(skip, default)]
@@ -147,7 +175,8 @@ impl Joint
         {
             root_joint: false,
             //full_joint_trans: Matrix4::<f32>::identity(),
-            local_trans: Matrix4::<f32>::identity(),
+            local_trans: JointTransformationData::identity(),
+            local_trans_mat: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
             //inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
 
@@ -235,20 +264,23 @@ impl Joint
             }
         }
 
-        // Build matrix from blended transformation
-        let mut trans = blended_transformation.to_matrix();
-
         // Blend with local transform if total_weight < 1.0
-        if total_weight < 1.0 && total_weight > 0.0
+        let final_transformation = if total_weight < 1.0 && total_weight > 0.0
         {
             let t = total_weight.clamp(0.0, 1.0);
-            trans = interpolate_matrices(&joint_data.local_trans, &trans, t);
-            console_debug!(total_weight);
+            joint_data.local_trans.blend_with(&blended_transformation, t)
         }
         else if total_weight == 0.0
         {
-            trans = joint_data.local_trans;
+            joint_data.local_trans.clone()
         }
+        else
+        {
+            blended_transformation
+        };
+
+        // Build matrix from final transformation
+        let mut trans = final_transformation.to_matrix();
 
         // Apply additive transforms
         for additive_transform in &additive_transforms
@@ -306,10 +338,10 @@ impl Joint
     {
         let joint_data = self.get_data();
 
-        joint_data.local_trans
+        joint_data.local_trans_mat
     }
 
-    pub fn get_changed_local_transform(&self, node: NodeItem) -> Option<Matrix4<f32>>
+    pub fn get_changed_local_transform(&self, node: NodeItem) -> Option<JointTransformationData>
     {
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();
@@ -319,17 +351,20 @@ impl Joint
             component_downcast!(transform_component, Transformation);
             if transform_component.get_data_tracker().changed()
             {
-                let local_trans = transform_component.get_transform().clone();
-                return Some(local_trans);
+                let local_trans_data = transform_component.get_data();
+                return Some(JointTransformationData::from_transformation_data(local_trans_data));
             }
         }
 
         None
     }
 
-    pub fn update_local_transform(&mut self, local_trans: Matrix4<f32>)
+    pub fn update_local_transform(&mut self, local_trans: JointTransformationData)
     {
-        self.get_data_mut().get_mut().local_trans = local_trans;
+        let local_trans_mat = local_trans.to_matrix();
+        let data = self.get_data_mut().get_mut();
+        data.local_trans = local_trans;
+        data.local_trans_mat = local_trans_mat;
     }
 
     fn get_full_transform_inverse_bind_transform(node: NodeItem) -> Matrix4<f32>
