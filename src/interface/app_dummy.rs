@@ -444,11 +444,9 @@ impl App for AppDummy
 
                 // add camera controller and run auto setup
 
-                /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
-                */
 
 
                 // set pos for fall test

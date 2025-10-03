@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::{fmt, sync::{Arc, RwLock}};
+use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
 use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_warning, console_log, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -926,13 +926,28 @@ impl Node
         self.transform_vec_global_to_local(&global_vec)
     }
 
-    fn get_joint_transform(&self, animated: bool) -> Matrix4<f32>
+    fn get_full_joint_transform(&self, transform_cache: &HashMap<u64, Matrix4::<f32>>, animated: bool) -> Matrix4<f32>
     {
         let joint_component = self.find_component::<Joint>();
 
         if let Some(joint_component) = joint_component
         {
             component_downcast!(joint_component, Joint);
+
+            let mut parent_transform = Matrix4::<f32>::identity();
+
+            if let Some(parent) = self.parent.as_ref()
+            {
+                let parent_transform_from_cache = transform_cache.get(&parent.read().unwrap().id);
+                if let Some(parent_transform_from_cache) = parent_transform_from_cache
+                {
+                    parent_transform = *parent_transform_from_cache;
+                }
+                else
+                {
+                    parent_transform = parent.read().unwrap().get_full_joint_transform(transform_cache, animated);
+                }
+            }
 
             // animated transformation or just skinned transformation
             let local_animation_transform;
@@ -943,13 +958,6 @@ impl Node
             else
             {
                 local_animation_transform = joint_component.get_local_transform();
-            }
-
-            let mut parent_transform = Matrix4::<f32>::identity();
-
-            if let Some(parent) = self.parent.as_ref()
-            {
-                parent_transform = parent.read().unwrap().get_joint_transform(animated);
             }
 
             return parent_transform * local_animation_transform;
@@ -965,6 +973,9 @@ impl Node
             return None;
         }
 
+        // store transforms in a cache -> no complete parent traversal needed for each joint
+        let mut transform_cache: HashMap<u64, Matrix4::<f32>> = HashMap::new();
+
         let mut joints = vec![];
         for joint in &self.skin
         {
@@ -972,7 +983,8 @@ impl Node
 
             if let OptionOrId::Some(joint) = joint
             {
-                transform = joint.read().unwrap().get_joint_transform(animated);
+                transform = joint.read().unwrap().get_full_joint_transform(&transform_cache, animated);
+                transform_cache.insert(joint.read().unwrap().id, transform);
 
                 // inverse bind transform
                 let joint_component = joint.read().unwrap().find_component::<Joint>();
