@@ -444,9 +444,11 @@ impl App for AppDummy
 
                 // add camera controller and run auto setup
 
+                /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
+                */
 
 
                 // set pos for fall test
@@ -477,28 +479,28 @@ impl App for AppDummy
                         // look left
                         {
                             let mut animation = Animation::new_joint_transform("look left", spine.clone().unwrap(), None, Some(Vector3::new(0.0, PI / 2.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::PoseAdditive;
+                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
 
                         // look right
                         {
                             let mut animation = Animation::new_joint_transform("look right", spine.clone().unwrap(), None, Some(Vector3::new(0.0, -PI / 2.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::PoseAdditive;
+                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
 
                         // look up
                         {
                             let mut animation = Animation::new_joint_transform("look up", spine.clone().unwrap(), None, Some(Vector3::new(-PI / 2.0, 0.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::PoseAdditive;
+                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
 
                         // look down
                         {
                             let mut animation = Animation::new_joint_transform("look down", spine.clone().unwrap(), None, Some(Vector3::new(PI / 2.0, 0.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::PoseAdditive;
+                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
                     }

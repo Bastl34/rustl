@@ -32,8 +32,9 @@ pub enum AnimationLayerType
 {
     Blend, // Blend with last applied animation/s (or bind pose transform)
     Override, // Override last applied animation/s
+    OverrideComponent, // Override last applied animation/s but just component wise (no complete override)
+    OverrideComponentAbsolute, // Override last applied animation/s but just component wise (no complete override) based on root joint with absolute value
     Additive, // Additive to last applied animation/s - no blending
-    PoseAdditive // Additive in Pose-Space (after Blend/Override)
 }
 
 impl AnimationLayerType
@@ -44,8 +45,9 @@ impl AnimationLayerType
         [
             "Blend".to_string(),
             "Override".to_string(),
-            "Additive".to_string(),
-            "PoseAdditive".to_string()
+            "OverrideComponent".to_string(),
+            "OverrideComponentAbsolute".to_string(),
+            "Additive".to_string()
         ]
     }
 }

@@ -115,6 +115,47 @@ impl JointTransformationData
             },
         }
     }
+
+    pub fn override_with(&self, other: &JointTransformationData, weight: f32) -> Self
+    {
+        JointTransformationData
+        {
+            translation:
+            {
+                if let Some(new_translation) = other.translation
+                {
+                    Some(new_translation * weight)
+                }
+                else
+                {
+                    self.translation
+                }
+            },
+            rotation_quat:
+            {
+                if let Some(new_rot) = other.rotation_quat
+                {
+                    let identity = nalgebra::Unit::new_normalize(Quaternion::identity());
+                    Some(identity.slerp(&new_rot, weight))
+                }
+                else
+                {
+                    self.rotation_quat
+                }
+            },
+            scale:
+            {
+                if let Some(new_scale) = other.scale
+                {
+                    Some(new_scale * weight)
+                }
+                else
+                {
+                    self.scale
+                }
+            },
+        }
+    }
 }
 
 
@@ -223,9 +264,8 @@ impl Joint
         let joint_data = self.get_data();
 
         let mut total_weight: f32 = 0.0;
-        let mut blended_transformation = JointTransformationData::identity();
+        let mut result_transformation = JointTransformationData::identity();
         let mut additive_transforms: Vec<JointTransformationData> = vec![];
-        let mut pose_additives: Vec<JointTransformationData> = vec![];
 
         for transform in &joint_data.animation_transforms
         {
@@ -233,18 +273,33 @@ impl Joint
             {
                 if total_weight == 0.0
                 {
-                    blended_transformation = transform.transformation.clone();
+                    result_transformation = transform.transformation.clone();
                 }
                 else
                 {
                     let blend_factor = transform.weight / (total_weight + transform.weight);
-                    blended_transformation = blended_transformation.blend_with(&transform.transformation, blend_factor);
+                    result_transformation = result_transformation.blend_with(&transform.transformation, blend_factor);
                 }
                 total_weight += transform.weight;
             }
+            else if transform.layer_type == AnimationLayerType::OverrideComponent
+            {
+                if total_weight == 0.0
+                {
+                    result_transformation = transform.transformation.clone();
+                }
+                else
+                {
+                    result_transformation = result_transformation.override_with(&transform.transformation, transform.weight);
+                }
+            }
+            else if transform.layer_type == AnimationLayerType::OverrideComponentAbsolute
+            {
+                // TODO
+            }
             else if transform.layer_type == AnimationLayerType::Override
             {
-                blended_transformation = transform.transformation.clone();
+                result_transformation = transform.transformation.clone();
                 total_weight = transform.weight;
                 additive_transforms.clear();
             }
@@ -255,20 +310,13 @@ impl Joint
                     additive_transforms.push(transform.transformation.apply_weight(transform.weight));
                 }
             }
-            else if transform.layer_type == AnimationLayerType::PoseAdditive
-            {
-                if !approx_zero(transform.weight)
-                {
-                    pose_additives.push(transform.transformation.apply_weight(transform.weight));
-                }
-            }
         }
 
         // Blend with local transform if total_weight < 1.0
         let final_transformation = if total_weight < 1.0 && total_weight > 0.0
         {
             let t = total_weight.clamp(0.0, 1.0);
-            joint_data.local_trans.blend_with(&blended_transformation, t)
+            joint_data.local_trans.blend_with(&result_transformation, t)
         }
         else if total_weight == 0.0
         {
@@ -276,7 +324,7 @@ impl Joint
         }
         else
         {
-            blended_transformation
+            result_transformation
         };
 
         // Build matrix from final transformation
@@ -287,12 +335,6 @@ impl Joint
         {
             trans = trans * additive_transform.to_matrix();
             //trans = relative_transform.to_matrix() * trans;
-        }
-
-        // Apply pose additive transforms
-        for pose_additive in &pose_additives
-        {
-            trans = pose_additive.to_matrix() * trans;
         }
 
         trans
