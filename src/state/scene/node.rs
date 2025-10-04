@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -824,7 +824,14 @@ impl Node
 
             if joint_component.get_base().is_enabled
             {
-                let joint_transform = joint_component.get_joint_transform();
+                let mut parent_transform = Matrix4::<f32>::identity();
+
+                if let Some(parent) = self.parent.as_ref()
+                {
+                    parent_transform = parent.read().unwrap().get_full_joint_transform(None, true);
+                }
+
+                let joint_transform = joint_component.get_joint_transform(&parent_transform);
 
                 return
                 (
@@ -926,7 +933,7 @@ impl Node
         self.transform_vec_global_to_local(&global_vec)
     }
 
-    fn get_full_joint_transform(&self, transform_cache: &HashMap<u64, Matrix4::<f32>>, animated: bool) -> Matrix4<f32>
+    fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u64, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
     {
         let joint_component = self.find_component::<Joint>();
 
@@ -938,12 +945,18 @@ impl Node
 
             if let Some(parent) = self.parent.as_ref()
             {
-                let parent_transform_from_cache = transform_cache.get(&parent.read().unwrap().id);
-                if let Some(parent_transform_from_cache) = parent_transform_from_cache
+                let mut from_cache = false;
+                if let Some(transform_cache) = transform_cache
                 {
-                    parent_transform = *parent_transform_from_cache;
+                    let parent_transform_from_cache = transform_cache.get(&parent.read().unwrap().id);
+                    if let Some(parent_transform_from_cache) = parent_transform_from_cache
+                    {
+                        parent_transform = *parent_transform_from_cache;
+                        from_cache = true;
+                    }
                 }
-                else
+
+                if !from_cache
                 {
                     parent_transform = parent.read().unwrap().get_full_joint_transform(transform_cache, animated);
                 }
@@ -953,7 +966,7 @@ impl Node
             let local_animation_transform;
             if animated
             {
-                local_animation_transform = joint_component.get_joint_transform();
+                local_animation_transform = joint_component.get_joint_transform(&parent_transform);
             }
             else
             {
@@ -983,7 +996,7 @@ impl Node
 
             if let OptionOrId::Some(joint) = joint
             {
-                transform = joint.read().unwrap().get_full_joint_transform(&transform_cache, animated);
+                transform = joint.read().unwrap().get_full_joint_transform(Some(&transform_cache), animated);
                 transform_cache.insert(joint.read().unwrap().id, transform);
 
                 // inverse bind transform
@@ -1431,6 +1444,15 @@ impl Node
         }
     }
 
+    pub fn start_animation(&self, name: &str)
+    {
+        if let Some(animation) = self.find_animation_by_name(name)
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.start();
+        }
+    }
+
     pub fn re_target_animations_to_child_nodes(&mut self) -> bool
     {
         let all_animations = self.get_all_animations();
@@ -1865,6 +1887,66 @@ impl Node
         }
 
         None
+    }
+
+    pub fn get_transform_between_root_joint_and_root_node(node: NodeItem) -> Matrix4<f32>
+    {
+        // get the transform between a joint_root and a root_node
+        // these transforms are normally not treated in AdditiveComponentAbsolute joint animations
+        let mut transform = Matrix4::identity();
+
+        let mut start_multiply = false;
+
+        let mut current_node = node.clone();
+
+        loop
+        {
+            let is_root_node = current_node.read().unwrap().root_node;
+
+            console_debug!(current_node.read().unwrap().name);
+
+            if is_root_node
+            {
+                break;
+            }
+
+            let mut is_joint = false;
+            if let Some(joint_component) = current_node.read().unwrap().find_component::<Joint>()
+            {
+                component_downcast!(joint_component, Joint);
+                if joint_component.get_data().root_joint
+                {
+                    start_multiply = true;
+                    is_joint = true;
+                }
+            }
+
+            if start_multiply && !is_root_node && !is_joint
+            {
+                let (node_transform, node_parent_inheritance) = current_node.read().unwrap().get_transform();
+
+                if node_parent_inheritance
+                {
+                    //transform = transform * node_transform
+                    transform = node_transform * transform;
+                }
+                else
+                {
+                    transform = node_transform;
+                }
+            }
+
+            if let Some(parent) = current_node.clone().read().unwrap().parent.as_ref()
+            {
+                current_node = parent.clone();
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        transform
     }
 
     pub fn print(&self, level: usize)

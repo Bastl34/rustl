@@ -33,7 +33,7 @@ pub enum AnimationLayerType
     Blend, // Blend with last applied animation/s (or bind pose transform)
     Override, // Override last applied animation/s
     OverrideComponent, // Override last applied animation/s but just component wise (no complete override)
-    OverrideComponentAbsolute, // Override last applied animation/s but just component wise (no complete override) based on root joint with absolute value
+    AdditiveComponentAbsolute, // Additive last applied animation/s but just component wise (no complete override) based on root joint with absolute value
     Additive, // Additive to last applied animation/s - no blending
 }
 
@@ -46,7 +46,7 @@ impl AnimationLayerType
             "Blend".to_string(),
             "Override".to_string(),
             "OverrideComponent".to_string(),
-            "OverrideComponentAbsolute".to_string(),
+            "AdditiveComponentAbsolute".to_string(),
             "Additive".to_string()
         ]
     }
@@ -222,6 +222,35 @@ impl Animation
             let rotation_quat = UnitQuaternion::from_euler_angles(rotation.x, rotation.y, rotation.z);
             let rotation_quat = Vector4::<f32>::new(rotation_quat.coords.x, rotation_quat.coords.y, rotation_quat.coords.z, rotation_quat.coords.w);
             channel.transform_rotation.push(rotation_quat);
+        }
+
+        if let Some(scale) = scale
+        {
+            channel.transform_scale.push(scale);
+        }
+
+        channel.timestamps.push(0.0);
+
+        animation.channels.push(channel);
+
+        animation
+    }
+
+    pub fn new_joint_transform_quat(name: &str, joint_target: NodeItem, transform: Option<Vector3<f32>>, rotation: Option<nalgebra::Unit<Quaternion<f32>>>, scale: Option<Vector3<f32>>) -> Animation
+    {
+        let mut animation = Animation::default();
+        animation.get_base_mut().name = name.to_string();
+
+        let mut channel = Channel::new(joint_target);
+
+        if let Some(transform) = transform
+        {
+            channel.transform_translation.push(transform);
+        }
+
+        if let Some(rotation) = rotation
+        {
+            channel.transform_rotation.push(Vector4::<f32>::new(rotation.i, rotation.j, rotation.k, rotation.w));
         }
 
         if let Some(scale) = scale

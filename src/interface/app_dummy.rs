@@ -1,7 +1,7 @@
 use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::epaint::EllipseShape;
-use nalgebra::{Point3, Vector2, Vector3};
+use nalgebra::{Matrix4, Point3, UnitQuaternion, Vector2, Vector3};
 
 use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::{Animation, AnimationLayerType}, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
@@ -379,7 +379,9 @@ impl App for AppDummy
             //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/dancing.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), Some("mixamorig:Hips"));
             //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
             //let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/shoot stand.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
-            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle aim.glb", scene_id, avatar_nodes.unwrap()[0], main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle aim.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle prone.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
+            let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle crouch.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
 
 
             //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
@@ -444,9 +446,11 @@ impl App for AppDummy
 
                 // add camera controller and run auto setup
 
+                /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
+                */
 
 
                 // set pos for fall test
@@ -471,37 +475,43 @@ impl App for AppDummy
 
                     if spine.is_some() && armature.is_some()
                     {
+                        // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                        let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                        let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+
+                        let parent_axes = parent_inv.fixed_view::<3,3>(0,0);
+                        let avatar_x = nalgebra::Unit::new_normalize(parent_axes * Vector3::x()); // Look Up/Down
+                        let avatar_y = nalgebra::Unit::new_normalize(parent_axes * Vector3::y()); // Look Left/Right
+
+                        let directions = vec!
+                        [
+                            ("look up", UnitQuaternion::from_axis_angle(&avatar_x, std::f32::consts::PI / 2.0)),
+                            ("look down", UnitQuaternion::from_axis_angle(&avatar_x, -std::f32::consts::PI / 2.0)),
+                            ("look left", UnitQuaternion::from_axis_angle(&avatar_y, std::f32::consts::PI / 2.0)),
+                            ("look right", UnitQuaternion::from_axis_angle(&avatar_y, -std::f32::consts::PI / 2.0)),
+                        ];
+
                         let armature = armature.unwrap();
                         let mut armature = armature.write().unwrap();
 
-                        // look left
+                        for (name, delta_rot) in directions
                         {
-                            let mut animation = Animation::new_joint_transform("look left", spine.clone().unwrap(), None, Some(Vector3::new(0.0, PI / 2.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
-                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
-                        }
+                            let mut animation = Animation::new_joint_transform_quat
+                            (
+                                name,
+                                spine.clone().unwrap(),
+                                None,
+                                Some(delta_rot),
+                                None,
+                            );
 
-                        // look right
-                        {
-                            let mut animation = Animation::new_joint_transform("look right", spine.clone().unwrap(), None, Some(Vector3::new(0.0, -PI / 2.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
-                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
-                        }
-
-                        // look up
-                        {
-                            let mut animation = Animation::new_joint_transform("look up", spine.clone().unwrap(), None, Some(Vector3::new(-PI / 2.0, 0.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
-                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
-                        }
-
-                        // look down
-                        {
-                            let mut animation = Animation::new_joint_transform("look down", spine.clone().unwrap(), None, Some(Vector3::new(PI / 2.0, 0.0, 0.0)), None);
-                            animation.layer_type = AnimationLayerType::OverrideComponentAbsolute;
+                            animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
                     }
+
+                    avatar_root.start_animation("aim");
+                    avatar_root.start_animation("look left");
                 }
             }));
 

@@ -1,5 +1,5 @@
 
-use std::{path::Path, ffi::OsStr, sync::{Arc, RwLock}, cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, ffi::OsStr, path::Path, sync::{Arc, RwLock}};
 
 use gltf::{Gltf, texture, animation::util::ReadOutputs, iter::{Animations, Skins}};
 
@@ -137,6 +137,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     console_log!("loading skeletons...");
     let nodes = vec![root_node.clone()];
     load_skeletons(&nodes, gltf.skins(), &buffers);
+    set_root_joints(&nodes);
 
     // ********** animations **********
     console_log!("loading animations...");
@@ -948,7 +949,8 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
 
         // ********** load skeleton **********
         let joints = skin.joints();
-        let joint_indices = joints.map(|j| j.index()).collect::<Vec<usize>>();
+
+        let joint_indices = joints.clone().map(|j| j.index()).collect::<Vec<usize>>();
 
         let inverse_bind_matrices: Vec<_> = skin
             .reader(|b| Some(&buffers[b.index()]))
@@ -987,7 +989,7 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                     {
                         if node.find_component::<Joint>().is_none()
                         {
-                            let mut joint = Joint::new("Joint");
+                            let mut joint = Joint::new(&node.name);
                             joint.get_data_mut().get_mut().inverse_bind_trans = inverse_bind_matrix.clone();
 
                             node.add_component(Arc::new(RwLock::new(Box::new(joint))));
@@ -1031,6 +1033,32 @@ fn load_skeletons(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>, skins: Skins<'_>, b
                     let mut mesh_node = mesh_node.write().unwrap();
                     mesh_node.skin = skin_nodes[i].clone().into_iter().map(OptionOrId::Some).collect();
                 }
+            }
+        }
+    }
+}
+
+fn set_root_joints(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
+{
+    let all_nodes = Scene::list_all_child_nodes(scene_nodes);
+
+    for node in &all_nodes
+    {
+        let node_read = node.read().unwrap();
+        let has_joint = node_read.has_component::<Joint>();
+
+        let mut parent_has_joint = false;
+        if let Some(parent) = node_read.parent.as_ref()
+        {
+            parent_has_joint = parent.read().unwrap().has_component::<Joint>();
+        }
+
+        if has_joint && !parent_has_joint
+        {
+            if let Some(joint) = node_read.find_component::<Joint>()
+            {
+                component_downcast_mut!(joint, Joint);
+                joint.get_data_mut().get_mut().root_joint = true;
             }
         }
     }
