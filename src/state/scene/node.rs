@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -1902,9 +1902,6 @@ impl Node
         loop
         {
             let is_root_node = current_node.read().unwrap().root_node;
-
-            console_debug!(current_node.read().unwrap().name);
-
             if is_root_node
             {
                 break;
