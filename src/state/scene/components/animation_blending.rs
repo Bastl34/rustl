@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::math::approx_zero, state::{scene::{components::animation::AnimationLayerType, node::NodeItem}, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::math::approx_zero, state::{scene::{components::animation::AnimationLayerType, node::NodeItem}, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
@@ -104,6 +104,7 @@ impl Component for AnimationBlending
 
         if self.from.is_some() && self.to.is_some() && self.to == self.from
         {
+            console_warning!("animation blending from/to missing or equal");
             return;
         }
 

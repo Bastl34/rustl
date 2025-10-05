@@ -68,6 +68,7 @@ mod state
             pub(crate) mod morph_target;
             pub(crate) mod morph_target_animation;
             pub(crate) mod animation_blending;
+            pub(crate) mod look_at;
             pub(crate) mod sound;
             pub(crate) mod delay;
         }
