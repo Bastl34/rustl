@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
+use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
 use serde::{Deserialize, Serialize};
 
 use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::{change_tracker::ChangeTracker, math::approx_zero}, state::{scene::{components::{animation::AnimationLayerType, transformation::TransformationData}, node::NodeItem}, state::InputOutput}};
@@ -79,23 +79,40 @@ impl JointTransformationData
 
     pub fn from_matrix(matrix: &Matrix4<f32>) -> Self
     {
+        // if shear is needed -> use SVG!
+
+        // translation
         let translation = Vector3::new(matrix[(0, 3)], matrix[(1, 3)], matrix[(2, 3)]);
 
-        // extract rotation + scale
-        // left 3x3 part
+        // extract 3x3 part (rotation * scale)
         let linear = matrix.fixed_view::<3, 3>(0, 0);
 
-        // Polar Decomposition: linear = rotation * scale
-        let svd = linear.svd(true, true);
-        let rotation = svd.u.unwrap() * svd.v_t.unwrap();
+        // extract scale from column lengths
         let scale = Vector3::new
         (
-            svd.singular_values[0],
-            svd.singular_values[1],
-            svd.singular_values[2],
+            linear.column(0).norm(),
+            linear.column(1).norm(),
+            linear.column(2).norm(),
         );
 
-        let rotation_quat: UnitQuaternion<f32> = UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix(&rotation));
+        // avoid division by zero (degenerate case)
+        let safe_scale = Vector3::new
+        (
+            if scale.x != 0.0 { scale.x } else { 1.0 },
+            if scale.y != 0.0 { scale.y } else { 1.0 },
+            if scale.z != 0.0 { scale.z } else { 1.0 },
+        );
+
+        // normalize to get pure rotation
+        let rotation_matrix = Matrix3::from_columns
+        (&[
+            linear.column(0) / safe_scale.x,
+            linear.column(1) / safe_scale.y,
+            linear.column(2) / safe_scale.z,
+        ]);
+
+        // convert to quaternion
+        let rotation_quat = UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(rotation_matrix));
 
         JointTransformationData
         {
@@ -187,59 +204,75 @@ impl JointTransformationData
 
     pub fn additive_absolute_with_weight(&self, delta: &JointTransformationData, full_parent_transform: &Matrix4<f32>, weight: f32) -> Self
     {
-        // get absolute matrix
-        let current_abs = full_parent_transform * self.to_matrix();
-        let current_trs = JointTransformationData::from_matrix(&current_abs);
+        let parent_trs = JointTransformationData::from_matrix(full_parent_transform);
 
-        // rotation global additiv (delta is in root space)
+        // calc absolute TRS (parent * local)
+        let self_translation = self.translation.unwrap_or(Vector3::zeros());
+        let self_rotation = self.rotation_quat.unwrap_or(UnitQuaternion::identity());
+        let self_scale = self.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+
+        let parent_rotation = parent_trs.rotation_quat.unwrap_or(UnitQuaternion::identity());
+        let parent_translation = parent_trs.translation.unwrap_or(Vector3::zeros());
+        let parent_scale = parent_trs.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+
+        // absolute TRS:
+        let abs_translation = parent_translation + parent_rotation * (parent_scale.component_mul(&self_translation));
+        let abs_rotation = parent_rotation * self_rotation;
+        let abs_scale = parent_scale.component_mul(&self_scale);
+
+        // rotation
         let blended_rotation = if let Some(delta_rot) = delta.rotation_quat
         {
-            let current_rot = current_trs.rotation_quat.unwrap_or(UnitQuaternion::identity());
             let delta_rot_weighted = UnitQuaternion::identity().slerp(&delta_rot, weight);
-            Some(delta_rot_weighted * current_rot)
+            Some(delta_rot_weighted * abs_rotation)
         }
         else
         {
-            current_trs.rotation_quat
+            Some(abs_rotation)
         };
 
         // translation
         let blended_translation = if let Some(delta_trans) = delta.translation
         {
-            let current_trans = current_trs.translation.unwrap_or(Vector3::zeros());
-            Some(current_trans + delta_trans * weight)
+            Some(abs_translation + delta_trans * weight)
         }
         else
         {
-            current_trs.translation
+            Some(abs_translation)
         };
 
         // scale
         let blended_scale = if let Some(delta_scale) = delta.scale
         {
-            let current_scale = current_trs.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
-            Some(current_scale + (delta_scale - Vector3::new(1.0, 1.0, 1.0)) * weight)
+            Some(abs_scale + (delta_scale - Vector3::new(1.0, 1.0, 1.0)) * weight)
         }
         else
         {
-            current_trs.scale
+            Some(abs_scale)
         };
 
-        // absolute matrix
-        let blended_trs = JointTransformationData
+        // back to local space
+        // (apply inverse parent to TRS)
+        let inv_parent_scale = Vector3::new
+        (
+            1.0 / parent_scale.x,
+            1.0 / parent_scale.y,
+            1.0 / parent_scale.z,
+        );
+        let inv_parent_rotation = parent_rotation.inverse();
+
+        let local_translation = inv_parent_rotation * ((blended_translation.unwrap() - parent_translation).component_mul(&inv_parent_scale));
+        let local_rotation = inv_parent_rotation * blended_rotation.unwrap();
+        let local_scale = blended_scale.unwrap().component_mul(&inv_parent_scale);
+
+        JointTransformationData
         {
-            translation: blended_translation,
-            rotation_quat: blended_rotation,
-            scale: blended_scale,
-        };
-        let final_abs = blended_trs.to_matrix();
-
-        // back to local coordinates
-        let parent_inverse = full_parent_transform.try_inverse().unwrap_or(Matrix4::identity());
-        let final_local = parent_inverse * final_abs;
-
-        JointTransformationData::from_matrix(&final_local)
+            translation: Some(local_translation),
+            rotation_quat: Some(local_rotation),
+            scale: Some(local_scale),
+        }
     }
+
 }
 
 
