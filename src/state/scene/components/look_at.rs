@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{UnitQuaternion, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, extract_translation_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::{Node, NodeItem}}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, extract_translation_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::{Node, NodeItem}}, state::InputOutput}};
 use crate::state::scene::exporter::serialization_helper;
 
 #[derive(Serialize, Deserialize)]
@@ -50,6 +50,24 @@ impl LookAt
         }
     }
 
+    pub fn new_empty(name: &str) -> LookAt
+    {
+        LookAt
+        {
+            base: ComponentBase::new(name.to_string(), "Look at".to_string(), "◎".to_string()),
+
+            target_joint_item: OptionOrId::None,
+
+            animation: None,
+
+            parent_rotation: None,
+            parent_rotation_inv: None,
+
+            target_pos: Vector3::<f32>::zeros(),
+            offset: Vector3::<f32>::zeros()
+        }
+    }
+
     pub fn setup(&mut self, node: NodeItem)
     {
         if self.target_joint_item.is_none()
@@ -83,24 +101,6 @@ impl LookAt
 
         self.animation = Some(animation_id);
     }
-
-    pub fn new_empty(name: &str) -> LookAt
-    {
-        LookAt
-        {
-            base: ComponentBase::new(name.to_string(), "Look at".to_string(), "◎".to_string()),
-
-            target_joint_item: OptionOrId::None,
-
-            animation: None,
-
-            parent_rotation: None,
-            parent_rotation_inv: None,
-
-            target_pos: Vector3::<f32>::zeros(),
-            offset: Vector3::<f32>::zeros()
-        }
-    }
 }
 
 
@@ -109,7 +109,6 @@ impl Component for LookAt
 {
     component_impl_default!();
     component_impl_no_update_instance!();
-    component_impl_no_cleanup_node!();
     component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
@@ -128,6 +127,20 @@ impl Component for LookAt
         {
             self.base.is_enabled = state;
         }
+    }
+
+    fn cleanup_node(&mut self, node: NodeItem) -> bool
+    {
+        if let Some(target_joint_item) = self.target_joint_item.as_ref()
+        {
+            if target_joint_item.read().unwrap().id == node.read().unwrap().id
+            {
+                self.target_joint_item = OptionOrId::None;
+                return true;
+            }
+        }
+
+        false
     }
 
     fn duplicate(&self) -> Option<crate::state::scene::components::component::ComponentItem>
