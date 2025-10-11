@@ -2,10 +2,10 @@
 
 use std::sync::{Arc, RwLock};
 
-use nalgebra::{Matrix4, Point3, Quaternion, UnitQuaternion, Vector3, Vector4};
+use nalgebra::{UnitQuaternion, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_debug, console_warning, helper::{math::{approx_zero_vec3, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::{Node, NodeItem}}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::{Node, NodeItem}}, state::InputOutput}};
 use crate::state::scene::exporter::serialization_helper;
 
 #[derive(Serialize, Deserialize)]
@@ -19,7 +19,11 @@ pub struct LookAt
     #[serde(skip, default)]
     pub animation: Option<u64>,
 
-    pub parent_transform_inv: Option<Matrix4::<f32>>,
+    #[serde(skip, default)]
+    pub parent_rotation: Option<UnitQuaternion<f32>>,
+
+    #[serde(skip, default)]
+    pub parent_rotation_inv: Option<UnitQuaternion<f32>>,
 
     pub target_dir: Vector3<f32>,
 
@@ -38,7 +42,8 @@ impl LookAt
 
             animation: None,
 
-            parent_transform_inv: None,
+            parent_rotation: None,
+            parent_rotation_inv: None,
 
             target_dir: target,
             offset: Vector3::<f32>::zeros()
@@ -55,7 +60,8 @@ impl LookAt
 
             animation: None,
 
-            parent_transform_inv: None,
+            parent_rotation: None,
+            parent_rotation_inv: None,
 
             target_dir: Vector3::<f32>::zeros(),
             offset: Vector3::<f32>::zeros()
@@ -95,7 +101,7 @@ impl Component for LookAt
         None
     }
 
-    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
         if !self.base.is_enabled
         {
@@ -126,13 +132,22 @@ impl Component for LookAt
             node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation))));
 
             // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+            // Extract rotation and store both rotation and its inverse once here, so we don't have to compute them every frame
             let parent_transform = Node::get_transform_between_root_joint_and_root_node(self.target_joint_item.clone().unwrap());
-            let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
-
-            self.parent_transform_inv = Some(parent_inv);
+            let parent_rotation = extract_rotation_quat_from_transform(&parent_transform);
+            self.parent_rotation = Some(parent_rotation);
+            self.parent_rotation_inv = Some(parent_rotation.inverse());
 
             self.animation = Some(animation_id);
         }
+
+        if self.parent_rotation.is_none() || self.parent_rotation_inv.is_none()
+        {
+            return;
+        }
+
+        let parent_rotation = self.parent_rotation.unwrap();
+        let parent_rotation_inv = self.parent_rotation_inv.unwrap();
 
         let node = node.read().unwrap();
 
@@ -140,7 +155,7 @@ impl Component for LookAt
         {
             if let Some(animation) = node.find_component_by_id(animation)
             {
-                let mut look_rot: Option<Quaternion<f32>> = None;
+                let look_rot;
 
                 {
                     component_downcast!(animation, Animation);
@@ -151,52 +166,30 @@ impl Component for LookAt
                         return;
                     }
 
-                    let channel = animation.channels.first().clone();
-
-                    if let Some(channel) = channel
+                    // offset
+                    let mut dir_world = self.target_dir.normalize();
+                    if !approx_zero_vec3(&self.offset)
                     {
-                        if let Some(target_node) = channel.target.as_ref()
-                        {
-                            let full_joint_transform = target_node.read().unwrap().get_full_joint_transform(None, false);
-                            let joint_pos_world = full_joint_transform.transform_point(&Point3::origin());
-
-                            // offset
-                            let mut dir_world = self.target_dir;
-                            if !approx_zero_vec3(&self.offset)
-                            {
-                                let offset_quat = UnitQuaternion::from_euler_angles
-                                (
-                                    self.offset.x,
-                                    self.offset.y,
-                                    self.offset.z,
-                                );
-                                dir_world = (offset_quat * dir_world).normalize();
-                            }
-
-                            let dir_world = (dir_world - joint_pos_world.coords).normalize();
-
-                            // convert to local space ot the joint
-                            let dir_local = match &self.parent_transform_inv
-                            {
-                                Some(inv) => (inv.transform_vector(&dir_world)).normalize(),
-                                None => dir_world,
-                            };
-
-                            let up_local = Vector3::y_axis().into_inner();
-
-                            // calc look at rotation
-                            look_rot = Some(*look_at_rotation(dir_local, up_local));
-                        }
+                        let offset_quat = UnitQuaternion::from_euler_angles
+                        (
+                            self.offset.x,
+                            self.offset.y,
+                            self.offset.z,
+                        );
+                        dir_world = (offset_quat * dir_world).normalize();
                     }
+
+                    // Calculate rotation in world space first
+                    let up_world = Vector3::y_axis().into_inner();
+                    let rot_world = look_at_rotation(dir_world, up_world);
+
+                    // Transform rotation to local space of the joint
+                    // AdditiveComponentAbsolute applies: result = delta * parent * self
+                    // We want: result = parent * delta_local * self
+                    // So: delta * parent = parent * delta_local
+                    // => delta_local = parent_inv * delta * parent (conjugation)
+                    look_rot = parent_rotation_inv * rot_world * parent_rotation;
                 }
-
-
-                if look_rot.is_none()
-                {
-                    return;
-                }
-
-                let look_rot = look_rot.unwrap();
 
                 component_downcast_mut!(animation, Animation);
                 animation.start();
@@ -220,14 +213,14 @@ impl Component for LookAt
         let mut animation;
         let mut animation_name;
 
-        let mut target;
+        let mut target_dir;
         let mut offset;
 
         {
             animation = self.animation.unwrap_or(0);
             animation_name = "".to_string();
 
-            target = self.target_dir;
+            target_dir = self.target_dir;
             offset = self.offset;
         }
 
@@ -272,13 +265,9 @@ impl Component for LookAt
         ui.horizontal(|ui|
         {
             ui.label("Target: ");
-            let changed_x = ui.add(egui::DragValue::new(&mut target.x).range(-1.0..=1.0).speed(0.1).prefix("x: ")).changed();
-            let changed_y = ui.add(egui::DragValue::new(&mut target.y).range(-1.0..=1.0).speed(0.1).prefix("y: ")).changed();
-            let changed_z = ui.add(egui::DragValue::new(&mut target.z).range(-1.0..=1.0).speed(0.1).prefix("z: ")).changed();
-
-            if changed_x { target.y = target.x; target.z = target.x; }
-            if changed_y { target.x = target.y; target.z = target.y; }
-            if changed_z { target.x = target.z; target.y = target.z; }
+            let changed_x = ui.add(egui::DragValue::new(&mut target_dir.x).range(-1.0..=1.0).speed(0.1).prefix("x: ")).changed();
+            let changed_y = ui.add(egui::DragValue::new(&mut target_dir.y).range(-1.0..=1.0).speed(0.1).prefix("y: ")).changed();
+            let changed_z = ui.add(egui::DragValue::new(&mut target_dir.z).range(-1.0..=1.0).speed(0.1).prefix("z: ")).changed();
 
             changed = changed_x || changed_y || changed_z || changed;
         });
@@ -289,10 +278,6 @@ impl Component for LookAt
             let changed_x: bool = ui.add(egui::DragValue::new(&mut offset.x).range(-1.0..=1.0).speed(0.1).prefix("x: ")).changed();
             let changed_y = ui.add(egui::DragValue::new(&mut offset.y).range(-1.0..=1.0).speed(0.1).prefix("y: ")).changed();
             let changed_z = ui.add(egui::DragValue::new(&mut offset.z).range(-1.0..=1.0).speed(0.1).prefix("z: ")).changed();
-
-            if changed_x { offset.y = offset.x; offset.z = offset.x; }
-            if changed_y { offset.x = offset.y; offset.z = offset.y; }
-            if changed_z { offset.x = offset.z; offset.y = offset.z; }
 
             changed = changed_x || changed_y || changed_z || changed;
         });
@@ -308,7 +293,7 @@ impl Component for LookAt
                 self.animation = None
             }
 
-            self.target_dir = target;
+            self.target_dir = target_dir;
             self.offset = offset;
         }
     }

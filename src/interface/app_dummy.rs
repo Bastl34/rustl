@@ -525,6 +525,7 @@ impl App for AppDummy
                     }
 
                     avatar_root.start_animation("aim");
+                    avatar_root.start_animation("idle aim");
                     //avatar_root.start_animation("look left");
                 }
             }));
