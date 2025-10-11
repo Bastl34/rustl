@@ -13,8 +13,8 @@ pub struct AnimationBlending
 {
     base: ComponentBase,
 
-    pub from: Option<u64>,
-    pub to: Option<u64>,
+    pub from: Option<u64>, // TODO: Serialize, Deserialize?
+    pub to: Option<u64>, // TODO: Serialize, Deserialize?
 
     pub speed: f32,
 
@@ -104,7 +104,7 @@ impl Component for AnimationBlending
 
         if self.from.is_some() && self.to.is_some() && self.to == self.from
         {
-            console_warning!("animation blending from/to missing or equal");
+            console_warning!("animation blending are equal");
             return;
         }
 

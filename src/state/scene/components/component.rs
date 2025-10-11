@@ -114,7 +114,9 @@ pub struct ComponentBase
     pub delete_later_request: bool,
 
     #[serde(skip, default)]
-    pub render_item: RenderItemOption
+    pub render_item: RenderItemOption,
+
+    pub export: bool
 }
 
 impl ComponentBase
@@ -140,6 +142,8 @@ impl ComponentBase
             delete_later_request: false,
 
             render_item: None,
+
+            export: true
         }
     }
 
@@ -165,6 +169,8 @@ impl ComponentBase
             delete_later_request: false,
 
             render_item: None,
+
+            export: from.export
         }
     }
 
@@ -405,6 +411,29 @@ pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u
     });
 
     components.len() != prev_len
+}
+
+pub fn find_new_components_with_position(old_list: &Vec<ComponentItem>, new_list: &Vec<ComponentItem>) -> Vec<(ComponentItem, bool)>
+{
+    let old_ids: Vec<u64> = old_list.iter()
+        .map(|c| c.read().unwrap().id())
+        .collect();
+
+    let mut result = vec![];
+
+    for (index, c) in new_list.iter().enumerate()
+    {
+        let id = c.read().unwrap().id();
+        if !old_ids.contains(&id)
+        {
+            // Determine if the component was added at the front or back
+            // Simple heuristic: if index < old_list.len() / 2 => front, else back
+            let add_to_front = index < old_list.len() / 2;
+            result.push((c.clone(), add_to_front));
+        }
+    }
+
+    result
 }
 
 // ******************** macros ********************

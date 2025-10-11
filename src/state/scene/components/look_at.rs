@@ -1,31 +1,46 @@
-use nalgebra::Vector3;
+#![allow(dead_code)]
+
+use std::sync::{Arc, RwLock};
+
+use nalgebra::{Matrix4, Point3, Quaternion, UnitQuaternion, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::NodeItem}, state::InputOutput}};
-
-
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_debug, console_warning, helper::{math::{approx_zero_vec3, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::{Node, NodeItem}}, state::InputOutput}};
+use crate::state::scene::exporter::serialization_helper;
 
 #[derive(Serialize, Deserialize)]
 pub struct LookAt
 {
     base: ComponentBase,
 
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub target_joint_item: OptionOrId<NodeItem>,
+
+    #[serde(skip, default)]
     pub animation: Option<u64>,
-    pub target: Vector3<f32>,
+
+    pub parent_transform_inv: Option<Matrix4::<f32>>,
+
+    pub target_dir: Vector3<f32>,
 
     pub offset: Vector3<f32>
 }
 
 impl LookAt
 {
-    pub fn new(name: &str, animation: Option<u64>, target: Vector3<f32>) -> LookAt
+    pub fn new(name: &str, target_item: NodeItem, target: Vector3<f32>) -> LookAt
     {
         LookAt
         {
             base: ComponentBase::new(name.to_string(), "Look at".to_string(), "◎".to_string()),
 
-            animation,
-            target,
+            target_joint_item: OptionOrId::Some(target_item),
+
+            animation: None,
+
+            parent_transform_inv: None,
+
+            target_dir: target,
             offset: Vector3::<f32>::zeros()
         }
     }
@@ -36,8 +51,13 @@ impl LookAt
         {
             base: ComponentBase::new(name.to_string(), "Look at".to_string(), "◎".to_string()),
 
+            target_joint_item: OptionOrId::None,
+
             animation: None,
-            target: Vector3::<f32>::zeros(),
+
+            parent_transform_inv: None,
+
+            target_dir: Vector3::<f32>::zeros(),
             offset: Vector3::<f32>::zeros()
         }
     }
@@ -77,7 +97,120 @@ impl Component for LookAt
 
     fn update(&mut self, node: NodeItem, _io: &mut InputOutput, time: u128, frame_scale: f32, _frame: u64)
     {
+        if !self.base.is_enabled
+        {
+            return;
+        }
 
+        if self.target_joint_item.is_none()
+        {
+            return;
+        }
+
+        // set up if needed
+        if self.animation.is_none()
+        {
+            let mut animation = Animation::new_joint_transform_quat
+            (
+                "Aim Animation",
+                self.target_joint_item.clone().unwrap(),
+                None,
+                None,
+                None,
+            );
+
+            let animation_id = animation.id();
+
+            animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
+            animation.get_base_mut().export = false; // should not be exported (becase its setup automatically)
+            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation))));
+
+            // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+            let parent_transform = Node::get_transform_between_root_joint_and_root_node(self.target_joint_item.clone().unwrap());
+            let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+
+            self.parent_transform_inv = Some(parent_inv);
+
+            self.animation = Some(animation_id);
+        }
+
+        let node = node.read().unwrap();
+
+        if let Some(animation) = self.animation
+        {
+            if let Some(animation) = node.find_component_by_id(animation)
+            {
+                let mut look_rot: Option<Quaternion<f32>> = None;
+
+                {
+                    component_downcast!(animation, Animation);
+
+                    if animation.layer_type != AnimationLayerType::AdditiveComponentAbsolute
+                    {
+                        console_warning!("look at: animation is not of layer type AdditiveComponentAbsolute - not supported");
+                        return;
+                    }
+
+                    let channel = animation.channels.first().clone();
+
+                    if let Some(channel) = channel
+                    {
+                        if let Some(target_node) = channel.target.as_ref()
+                        {
+                            let full_joint_transform = target_node.read().unwrap().get_full_joint_transform(None, false);
+                            let joint_pos_world = full_joint_transform.transform_point(&Point3::origin());
+
+                            // offset
+                            let mut dir_world = self.target_dir;
+                            if !approx_zero_vec3(&self.offset)
+                            {
+                                let offset_quat = UnitQuaternion::from_euler_angles
+                                (
+                                    self.offset.x,
+                                    self.offset.y,
+                                    self.offset.z,
+                                );
+                                dir_world = (offset_quat * dir_world).normalize();
+                            }
+
+                            let dir_world = (dir_world - joint_pos_world.coords).normalize();
+
+                            // convert to local space ot the joint
+                            let dir_local = match &self.parent_transform_inv
+                            {
+                                Some(inv) => (inv.transform_vector(&dir_world)).normalize(),
+                                None => dir_world,
+                            };
+
+                            let up_local = Vector3::y_axis().into_inner();
+
+                            // calc look at rotation
+                            look_rot = Some(*look_at_rotation(dir_local, up_local));
+                        }
+                    }
+                }
+
+
+                if look_rot.is_none()
+                {
+                    return;
+                }
+
+                let look_rot = look_rot.unwrap();
+
+                component_downcast_mut!(animation, Animation);
+                animation.start();
+
+                let channel = animation.channels.first_mut();
+
+                if let Some(channel) = channel
+                {
+                    // update
+                    channel.transform_rotation.clear();
+                    channel.transform_rotation.push(Vector4::new(look_rot.i, look_rot.j, look_rot.k, look_rot.w));
+                }
+            }
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
@@ -94,7 +227,7 @@ impl Component for LookAt
             animation = self.animation.unwrap_or(0);
             animation_name = "".to_string();
 
-            target = self.target;
+            target = self.target_dir;
             offset = self.offset;
         }
 
@@ -175,7 +308,7 @@ impl Component for LookAt
                 self.animation = None
             }
 
-            self.target = target;
+            self.target_dir = target;
             self.offset = offset;
         }
     }

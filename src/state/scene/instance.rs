@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::state::InputOutput};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{scene::components::component::find_new_components_with_position, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -266,7 +266,7 @@ impl Instance
         }
 
         // ***** copy all components *****
-        let all_components;
+        let mut all_components;
         {
             let instance = instance.read().unwrap();
             all_components = instance.components.clone();
@@ -287,14 +287,34 @@ impl Instance
             }
 
             // remove the component itself  for the component update
+            // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut instance = instance.write().unwrap();
                 instance.components = all_components.clone();
                 instance.components.remove(component_id);
             }
 
-            let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.as_ref().cloned(), instance, io, time, frame_scale, frame);
+            {
+                let mut component_write = component.write().unwrap();
+                component_write.update_instance(node.as_ref().cloned(), instance, io, time, frame_scale, frame);
+            }
+
+            // after each update, check if new components were added during the update --> add
+            {
+                let instance = instance.write().unwrap();
+                let new_components_with_position = find_new_components_with_position(&all_components, &instance.components);
+                for (component, add_to_front) in new_components_with_position
+                {
+                    if add_to_front
+                    {
+                        all_components.insert(0, component);
+                    }
+                    else
+                    {
+                        all_components.push(component);
+                    }
+                }
+            }
         }
 
         // ***** reassign components *****

@@ -3,7 +3,7 @@ use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 use egui::epaint::EllipseShape;
 use nalgebra::{Matrix4, Point3, UnitQuaternion, Vector2, Vector3};
 
-use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::animation::{Animation, AnimationLayerType}, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::{animation::{Animation, AnimationLayerType}, look_at::LookAt}, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -475,6 +475,19 @@ impl App for AppDummy
 
                     if spine.is_some() && armature.is_some()
                     {
+                        let armature = armature.unwrap();
+                        let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 0.0, -1.0));
+                        armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
+
+                        // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                        /*
+                        let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                        let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+
+                        console_debug!(parent_inv);
+                        */
+
+                        /*
                         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
                         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
                         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
@@ -508,10 +521,11 @@ impl App for AppDummy
                             animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
                             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
                         }
+                        */
                     }
 
                     avatar_root.start_animation("aim");
-                    avatar_root.start_animation("look left");
+                    //avatar_root.start_animation("look left");
                 }
             }));
 

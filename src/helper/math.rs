@@ -2,7 +2,7 @@
 
 use std::f32::consts::PI;
 
-use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
+use nalgebra::{Matrix3, Matrix4, Point3, Rotation3, Unit, UnitQuaternion, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
 
 pub fn approx_equal(a: f32, b: f32) -> bool
@@ -406,4 +406,32 @@ pub fn extract_rotation_as_euler_vec(matrix: &Matrix4<f32>) -> Vector3<f32>
         let yaw = (-rotation[(0, 1)]).atan2(rotation[(1, 1)]);
         Vector3::new(roll, pitch, yaw)
     }
+}
+
+pub fn look_at_rotation(target_dir: Vector3<f32>, up: Vector3<f32>) -> UnitQuaternion<f32>
+{
+    let z = target_dir.normalize();
+    let up_n = up.normalize();
+
+    // x = up x z, if – 0 (parallel), use a different axis
+    let mut x = up_n.cross(&z);
+    if x.norm_squared() < 1e-6
+    {
+        // up and z are ~ parallel -> us a "fallback"-axis
+        let fallback = if z.x.abs() < 0.9 { Vector3::x() } else { Vector3::y() };
+        x = fallback.cross(&z);
+    }
+    let x = x.normalize();
+    let y = z.cross(&x).normalize();
+
+    let rot_mat = Matrix3::from_columns(&[x, y, z]);
+    let rotation = Rotation3::from_matrix_unchecked(rot_mat);
+    UnitQuaternion::from_rotation_matrix(&rotation)
+}
+
+pub fn look_at_delta(forward: Vector3<f32>, target_dir: Vector3<f32>, up: Vector3<f32>) -> UnitQuaternion<f32>
+{
+    let current_rot = look_at_rotation(forward, up);
+    let target_rot  = look_at_rotation(target_dir, up);
+    target_rot * current_rot.inverse()
 }

@@ -203,6 +203,11 @@ where
     let mut seq = serializer.serialize_seq(Some(items.len()))?;
     for item in items
     {
+        if !item.read().unwrap().get_base().export
+        {
+            continue;
+        }
+
         let guard = item.read().map_err(serde::ser::Error::custom)?;
         seq.serialize_element(&*guard)?;
     }

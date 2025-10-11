@@ -778,9 +778,9 @@ impl Component for Transformation
                     let changed_z = ui.add(egui::DragValue::new(&mut rot.z).speed(0.1).prefix("z: ")).changed();
                     ui.toggle_value(&mut self.ui_lock_rotation, "🔒").on_hover_text("same rotation value for all coordinates");
 
-                    if self.ui_lock_rotation  && changed_x { rot.y = rot.x; rot.z = rot.x; }
-                    if self.ui_lock_rotation  && changed_y { rot.x = rot.y; rot.z = rot.y; }
-                    if self.ui_lock_rotation  && changed_z { rot.x = rot.z; rot.y = rot.z; }
+                    if self.ui_lock_rotation && changed_x { rot.y = rot.x; rot.z = rot.x; }
+                    if self.ui_lock_rotation && changed_y { rot.x = rot.y; rot.z = rot.y; }
+                    if self.ui_lock_rotation && changed_z { rot.x = rot.z; rot.y = rot.z; }
 
                     changed = changed_x || changed_y || changed_z || changed;
                 });
@@ -796,9 +796,9 @@ impl Component for Transformation
                         let changed_w = ui.add(egui::DragValue::new(&mut rot_quat.w).speed(0.1).prefix("w: ")).changed();
                         ui.toggle_value(&mut self.ui_lock_rotation_quat, "🔒").on_hover_text("same rotation value for all coordinates (x, y, z)");
 
-                        if self.ui_lock_rotation_quat  && changed_x { rot_quat.y = rot_quat.x; rot_quat.z = rot_quat.x; }
-                        if self.ui_lock_rotation_quat  && changed_y { rot_quat.x = rot_quat.y; rot_quat.z = rot_quat.y; }
-                        if self.ui_lock_rotation_quat  && changed_z { rot_quat.x = rot_quat.z; rot_quat.y = rot_quat.z; }
+                        if self.ui_lock_rotation_quat && changed_x { rot_quat.y = rot_quat.x; rot_quat.z = rot_quat.x; }
+                        if self.ui_lock_rotation_quat && changed_y { rot_quat.x = rot_quat.y; rot_quat.z = rot_quat.y; }
+                        if self.ui_lock_rotation_quat && changed_z { rot_quat.x = rot_quat.z; rot_quat.y = rot_quat.z; }
 
                         changed = changed_x || changed_y || changed_z || changed_w || changed;
 
@@ -818,9 +818,9 @@ impl Component for Transformation
                     let changed_z = ui.add(egui::DragValue::new(&mut scale.z).speed(0.1).prefix("z: ")).changed();
                     ui.toggle_value(&mut self.ui_lock_scale, "🔒").on_hover_text("same scaling value for all coordinates");
 
-                    if self.ui_lock_scale  && changed_x { scale.y = scale.x; scale.z = scale.x; }
-                    if self.ui_lock_scale  && changed_y { scale.x = scale.y; scale.z = scale.y; }
-                    if self.ui_lock_scale  && changed_z { scale.x = scale.z; scale.y = scale.z; }
+                    if self.ui_lock_scale && changed_x { scale.y = scale.x; scale.z = scale.x; }
+                    if self.ui_lock_scale && changed_y { scale.x = scale.y; scale.z = scale.y; }
+                    if self.ui_lock_scale && changed_z { scale.x = scale.z; scale.y = scale.z; }
 
                     changed = changed_x || changed_y || changed_z || changed;
 

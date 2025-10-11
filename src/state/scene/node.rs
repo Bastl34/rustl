@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::scene::Scene, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_new_components_with_position, scene::Scene}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -108,7 +108,8 @@ impl Serialize for Node
         let node_refs: Vec<&Node> = node_guards.iter().map(|guard| guard.as_ref()).collect();
         map.serialize_entry("nodes", &node_refs)?;
 
-        let components_guards: Vec<_> = self.components.iter().map(|arc| arc.read().unwrap()).collect();
+        let components_filtered = self.components.iter().filter(|c| c.read().unwrap().get_base().export);
+        let components_guards: Vec<_> = components_filtered.map(|arc| arc.read().unwrap()).collect();
         let components_refs: Vec<&dyn Component> = components_guards.iter().map(|guard| guard.as_ref()).collect();
         map.serialize_entry("components", &components_refs)?;
 
@@ -933,7 +934,7 @@ impl Node
         self.transform_vec_global_to_local(&global_vec)
     }
 
-    fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u64, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
+    pub fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u64, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
     {
         let joint_component = self.find_component::<Joint>();
 
@@ -1584,7 +1585,7 @@ impl Node
     pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
     {
         // ***** copy all components *****
-        let all_components;
+        let mut all_components;
         {
             let node = node.write().unwrap();
             all_components = node.components.clone();
@@ -1607,14 +1608,35 @@ impl Node
             }
 
             // remove the component itself  for the component update
+            // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut node = node.write().unwrap();
                 node.components = all_components.clone();
                 node.components.remove(component_id);
             }
 
-            let mut component_write = component.write().unwrap();
-            component_write.update(node.clone(), io, time, frame_scale, frame);
+            // component update
+            {
+                let mut component_write = component.write().unwrap();
+                component_write.update(node.clone(), io, time, frame_scale, frame);
+            }
+
+            // after each update, check if new components were added during the update --> add
+            {
+                let node = node.write().unwrap();
+                let new_components_with_position = find_new_components_with_position(&all_components, &node.components);
+                for (component, add_to_front) in new_components_with_position
+                {
+                    if add_to_front
+                    {
+                        all_components.insert(0, component);
+                    }
+                    else
+                    {
+                        all_components.push(component);
+                    }
+                }
+            }
         }
 
         // ***** reassign components *****
@@ -1675,7 +1697,6 @@ impl Node
 
         NodeUpdateResult { delete_nodes:  delete_nodes}
     }
-
 
     pub fn merge_mesh(&mut self, node: &NodeItem) -> bool
     {
