@@ -476,7 +476,8 @@ impl App for AppDummy
                     if spine.is_some() && armature.is_some()
                     {
                         let armature = armature.unwrap();
-                        let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 0.0, -1.0));
+                        // Target position in world space: 2 units in front of the avatar
+                        let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 1.5, -2.0));
                         armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
 
                         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)

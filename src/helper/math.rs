@@ -462,3 +462,13 @@ pub fn look_at_rotation(target_dir: Vector3<f32>, up: Vector3<f32>) -> UnitQuate
     UnitQuaternion::from_rotation_matrix(&rotation)
 }
 
+pub fn extract_translation_from_transform(transform: &Matrix4<f32>) -> Vector3<f32>
+{
+    Vector3::new
+    (
+        transform[(0, 3)],
+        transform[(1, 3)],
+        transform[(2, 3)]
+    )
+}
+
