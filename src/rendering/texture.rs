@@ -7,50 +7,6 @@ use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, s
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
-/*
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct TextureTransform
-{
-    pub offset: [f32; 2],
-    pub scale: [f32; 2],
-    pub rotation: f32,
-
-    pub uv_index: u32,
-
-    pub _padding: [f32; 2]
-}
-
-impl TextureTransform
-{
-    pub fn new(scene_texture: &crate::state::scene::components::material::Texture) -> Self
-    {
-        let data = scene_texture.get_data();
-
-        Self
-        {
-            offset: [data.transform.offset.x, data.transform.offset.y],
-            scale: [data.transform.scale.x, data.transform.scale.y],
-            rotation: data.transform.rotation,
-            uv_index: data.transform.uv_index,
-            _padding: [0.0, 0.0],
-        }
-    }
-
-    pub fn default() -> Self
-    {
-        Self
-        {
-            offset: [0.0, 0.0],
-            scale: [1.0, 1.0],
-            rotation: 0.0,
-            uv_index: 0,
-            _padding: [0.0, 0.0],
-        }
-    }
-}
-*/
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum TextureFormat
 {
@@ -72,7 +28,6 @@ pub struct Texture
 
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    //sampler: wgpu::Sampler
 }
 
 impl RenderItem for Texture
@@ -303,7 +258,6 @@ impl Texture
 
             texture,
             view
-            //sampler
         }
 
     }
@@ -415,47 +369,6 @@ impl Texture
         sampler
     }
 
-    /*
-    pub fn update_buffer(&mut self, wgpu: &mut WGpu, scene_texture: &crate::state::scene::texture::Texture)
-    {
-        console_log!("update texture");
-
-        let device = wgpu.device();
-        let queue = wgpu.queue_mut();
-
-        let texture_size = wgpu::Extent3d
-        {
-            width: scene_texture.width(),
-            height: scene_texture.height(),
-            depth_or_array_layers: 1,
-        };
-
-        // TODO: performance bottle neck if there was no texture data change
-
-        // upload
-        queue.write_texture
-        (
-            wgpu::TexelCopyTextureInfo
-            {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            scene_texture.rgba_data(),
-            wgpu::ImageDataLayout
-            {
-                offset: 0,
-                bytes_per_row: Some(scene_texture.channels() * scene_texture.width()),
-                rows_per_image: Some(scene_texture.height())
-            },
-            texture_size,
-        );
-
-        self.sampler = Self::create_sampler(device, scene_texture);
-    }
-     */
-
     pub fn get_texture(&self) -> &wgpu::Texture
     {
         &self.texture
@@ -465,13 +378,6 @@ impl Texture
     {
         &self.view
     }
-
-    /*
-    pub fn get_sampler(&self) -> &wgpu::Sampler
-    {
-        &self.sampler
-    }
-    */
 
     pub fn get_bind_group_layout_entries(&self, index_start: u32) -> [BindGroupLayoutEntry; 2]
     {

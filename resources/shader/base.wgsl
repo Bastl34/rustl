@@ -462,6 +462,30 @@ fn easeInQuint(x: f32) -> f32
     return x * x * x * x * x;
 }
 
+fn get_uv(in: VertexOutput, texture_index: u32) -> vec2<f32>
+{
+    let transform = material.texture_transforms[texture_index];
+    let uv_index = transform.uv_index;
+
+    // UV 0
+    let uv = in.tex_coords_0_1.xy;
+
+    if (uv_index == 1)
+    {
+        return in.tex_coords_0_1.zw;
+    }
+    else if (uv_index == 2)
+    {
+        return in.tex_coords_2_3.xy;
+    }
+    else if (uv_index == 3)
+    {
+        return in.tex_coords_2_3.zw;
+    }
+
+    return transform_uv(uv, texture_index);
+}
+
 fn transform_uv(uv: vec2<f32>, texture_index: u32) -> vec2<f32>
 {
     let transform = material.texture_transforms[texture_index];
@@ -496,13 +520,11 @@ fn transform_uv(uv: vec2<f32>, texture_index: u32) -> vec2<f32>
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    var uv = in.tex_coords_0_1.xy;
-
     // base color
     var object_color = material.base_color * in.color;
     if (has_base_texture())
     {
-        let uv = transform_uv(uv, TEXTURE_INDEX_BASE);
+        let uv = get_uv(in, TEXTURE_INDEX_BASE);
         let tex_color = textureSample(tex_base, tex_base_sampler, uv);
         object_color *= tex_color;
     }
@@ -511,7 +533,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var ambient_color = material.ambient_color;
     if (has_ambient_texture())
     {
-        let uv = transform_uv(uv, TEXTURE_INDEX_AMBIENT);
+        let uv = get_uv(in, TEXTURE_INDEX_AMBIENT);
         let tex_color = textureSample(tex_ambient, tex_ambient_sampler, uv);
         ambient_color *= tex_color;
     }
@@ -524,7 +546,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // normal mapping
     if (has_normal_texture())
     {
-        let uv = transform_uv(uv, TEXTURE_INDEX_NORMAL);
+        let uv = get_uv(in, TEXTURE_INDEX_NORMAL);
         var normal_map = textureSample(tex_normal, tex_normal_Sampler, uv).xyz;
         normal_map = normal_map * 2.0 - 1.0;
 
@@ -557,7 +579,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         var specular = material.specular_color;
         if (has_specular_texture())
         {
-            let uv = transform_uv(uv, TEXTURE_INDEX_SPECULAR);
+            let uv = get_uv(in, TEXTURE_INDEX_SPECULAR);
             let tex_color = textureSample(tex_specular, tex_specular_sampler, uv);
             specular *= tex_color;
         }
@@ -665,7 +687,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         // ambient occlusion
         if (has_ambient_occlusion_texture())
         {
-            let uv = transform_uv(uv, TEXTURE_INDEX_AMBIENT_OCCLUSION);
+            let uv = get_uv(in, TEXTURE_INDEX_AMBIENT_OCCLUSION);
             let ambient_occlusion = textureSample(tex_ambient_occlusion, tex_ambient_occlusion_sampler, uv);
             color.x *= ambient_occlusion.x;
             color.y *= ambient_occlusion.x;
@@ -678,7 +700,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             var reflectivity = material.reflectivity;
             if (has_reflectivity_texture())
             {
-                let uv = transform_uv(uv, TEXTURE_INDEX_REFLECTIVITY);
+                let uv = get_uv(in, TEXTURE_INDEX_REFLECTIVITY);
                 let reflectivity_value = textureSample(tex_reflectivity, tex_reflectivity_sampler, uv);
                 reflectivity *= reflectivity_value.x;
             }
@@ -686,7 +708,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             var roughness = material.roughness;
             if (has_roughness_texture())
             {
-                let uv = transform_uv(uv, TEXTURE_INDEX_ROUGHNESS);
+                let uv = get_uv(in, TEXTURE_INDEX_ROUGHNESS);
                 let roughness_value = textureSample(tex_roughness, tex_roughness_sampler, uv);
                 roughness *= roughness_value.x;
             }
@@ -760,7 +782,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var alpha = in.color.a * object_color.a * material.alpha;
     if (has_alpha_texture())
     {
-        let uv = transform_uv(uv, TEXTURE_INDEX_ALPHA);
+        let uv = get_uv(in, TEXTURE_INDEX_ALPHA);
         let tex_color = textureSample(tex_alpha, tex_alpha_sampler, uv);
         alpha *= tex_color.x;
     }
