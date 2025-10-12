@@ -1024,6 +1024,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let is_material;
             let is_sound;
             let from_file;
+            let export;
             let duplicatable;
             {
                 let component = component.read().unwrap();
@@ -1035,6 +1036,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 uuid = component.uuid().clone();
 
                 from_file = base.from_file;
+                export = base.export;
 
                 duplicatable = component.duplicatable();
 
@@ -1131,6 +1133,11 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     if from_file
                     {
                         ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
+                    }
+
+                    if !export
+                    {
+                        ui.label(RichText::new("💾").color(Color32::LIGHT_RED)).on_hover_text("This component will not be saved/exported");
                     }
                 });
             },
@@ -1229,6 +1236,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     let component_tooltip;
                     let is_sound;
                     let from_file;
+                    let export;
                     let duplicatable;
                     {
                         let component = component.read().unwrap();
@@ -1239,6 +1247,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         component_id = component.id();
                         uuid = component.uuid().clone();
                         from_file = base.from_file;
+                        export = base.export;
                         duplicatable = component.duplicatable();
 
                         is_sound = component.as_any().downcast_ref::<Sound>().is_some();
@@ -1317,6 +1326,11 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                             if from_file
                             {
                                 ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
+                            }
+
+                            if !export
+                            {
+                                ui.label(RichText::new("💾").color(Color32::LIGHT_RED)).on_hover_text("This component will not be saved/exported");
                             }
                         });
                     },
