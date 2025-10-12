@@ -20,7 +20,7 @@ use crate::input::input_point::PointState;
 use crate::input::keyboard::Modifier;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
-use crate::{console_error, rendering};
+use crate::{console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
 use crate::state::gui::editor::editor::Editor;
@@ -86,6 +86,7 @@ impl MainInterface
                 state,
 
                 window_title: window.title().clone(),
+                window_minimized: false,
 
                 wgpu,
                 window,
@@ -93,6 +94,7 @@ impl MainInterface
             },
 
             app: None,
+
             gilrs,
             editor_gui,
         };
@@ -164,6 +166,10 @@ impl MainInterface
             height = size.height;
         }
 
+        self.context.window_minimized = width == 0 && height == 0;
+
+        console_log!("resize {}x{} (minimized: {})", width, height, self.context.window_minimized);
+
         if width == 0 { width = 1; }
         if height == 0 { height = 1; }
 
@@ -222,6 +228,11 @@ impl MainInterface
 
     pub fn update(&mut self)
     {
+        if self.context.window_minimized && !self.app.as_ref().map_or(false, |a| a.allow_window_minimized_updates())
+        {
+            return;
+        }
+
         // ******************** update states ********************
         {
             let state = &mut *(self.context.state.borrow_mut());

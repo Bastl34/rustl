@@ -137,17 +137,17 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
 
         if let Some(gizmo_translation) = gizmo_translation
         {
-            gizmo_translation.write().unwrap().visible = editor_state.gizmo_position && node.is_some();
+            gizmo_translation.write().unwrap().visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
         }
 
         if let Some(gizmo_rotation) = gizmo_rotation
         {
-            gizmo_rotation.write().unwrap().visible = editor_state.gizmo_rotation && node.is_some();
+            gizmo_rotation.write().unwrap().visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
         }
 
         if let Some(gizmo_scale) = gizmo_scale
         {
-            gizmo_scale.write().unwrap().visible = editor_state.gizmo_scale && node.is_some();
+            gizmo_scale.write().unwrap().visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
         }
     }
 }
@@ -190,6 +190,15 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
         let (scene, node, _) = editor_state.get_selected_node(state);
 
         if scene.is_none() || node.is_none()
+        {
+            return;
+        }
+    }
+
+    // check locked
+    if let (_, Some(node), _) = editor_state.get_selected_node(state)
+    {
+        if node.read().unwrap().is_locked()
         {
             return;
         }
