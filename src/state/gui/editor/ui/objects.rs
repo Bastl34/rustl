@@ -1195,8 +1195,11 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         let mut move_up_component: Option<ComponentItem> = None;
         let mut move_down_component: Option<ComponentItem> = None;
 
-        let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
-        let instance = node_read.find_instance_by_id(instance_id);
+        let instance =
+        {
+            let node_read = node.read().unwrap();
+            node_read.find_instance_by_id(instance_id).cloned()
+        };
 
         if let Some(instance) = instance
         {
