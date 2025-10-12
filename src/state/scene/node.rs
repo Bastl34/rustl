@@ -5,7 +5,7 @@ use nalgebra::{Matrix4, Point3, Vector4};
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_new_components_with_position, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components}, scene::Scene}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -1622,21 +1622,8 @@ impl Node
             }
 
             // after each update, check if new components were added during the update --> add
-            {
-                let node = node.write().unwrap();
-                let new_components_with_position = find_new_components_with_position(&all_components, &node.components);
-                for (component, add_to_front) in new_components_with_position
-                {
-                    if add_to_front
-                    {
-                        all_components.insert(0, component);
-                    }
-                    else
-                    {
-                        all_components.push(component);
-                    }
-                }
-            }
+            let maybe_new_components = &node.read().unwrap().components;
+            find_and_add_new_components(&mut all_components, maybe_new_components);
         }
 
         // ***** reassign components *****

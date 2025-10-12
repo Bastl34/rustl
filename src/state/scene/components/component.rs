@@ -436,6 +436,23 @@ pub fn find_new_components_with_position(old_list: &Vec<ComponentItem>, new_list
     result
 }
 
+pub fn find_and_add_new_components(components_target: &mut Vec<ComponentItem>, maybe_new_components: &Vec<ComponentItem>)
+{
+    // after each update, check if new components were added during the update --> add
+    let new_components_with_position = find_new_components_with_position(&components_target, maybe_new_components);
+    for (component, add_to_front) in new_components_with_position
+    {
+        if add_to_front
+        {
+            components_target.insert(0, component);
+        }
+        else
+        {
+            components_target.push(component);
+        }
+    }
+}
+
 // ******************** macros ********************
 
 #[macro_export]

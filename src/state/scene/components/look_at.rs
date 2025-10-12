@@ -2,10 +2,11 @@
 
 use std::sync::{Arc, RwLock};
 
+use egui::{Color32, RichText};
 use nalgebra::{UnitQuaternion, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, extract_translation_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}}, node::{Node, NodeItem}}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_post_deserialization, component_impl_no_update_instance, console_debug, console_warning, helper::{math::{approx_zero_vec3, extract_rotation_quat_from_transform, extract_translation_from_transform, look_at_rotation}, option_or_id::OptionOrId}, state::{scene::{components::{animation::{Animation, AnimationLayerType}, component::{Component, ComponentBase}, joint::Joint}, node::{Node, NodeItem}, scene::Scene}, state::InputOutput}};
 use crate::state::scene::exporter::serialization_helper;
 
 #[derive(Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub struct LookAt
 
     #[serde(skip, default)]
     pub parent_rotation_inv: Option<UnitQuaternion<f32>>,
+
+    pub auto_setup: bool,
 
     pub target_pos: Vector3<f32>,
 
@@ -45,6 +48,8 @@ impl LookAt
             parent_rotation: None,
             parent_rotation_inv: None,
 
+            auto_setup: true,
+
             target_pos,
             offset: Vector3::<f32>::zeros()
         }
@@ -63,6 +68,8 @@ impl LookAt
             parent_rotation: None,
             parent_rotation_inv: None,
 
+            auto_setup: true,
+
             target_pos: Vector3::<f32>::zeros(),
             offset: Vector3::<f32>::zeros()
         }
@@ -76,10 +83,21 @@ impl LookAt
             return;
         }
 
+        // cleanup if needed
+        if let Some(animation) = self.animation
+        {
+            let node = node.read().unwrap();
+            if let Some(animation) = node.find_component_by_id(animation)
+            {
+                component_downcast_mut!(animation, Animation);
+                animation.get_base_mut().delete_later();
+            }
+        }
+
         // Create the animation
         let mut animation = Animation::new_joint_transform_quat
         (
-            "Aim Animation",
+            "Look At Animation (Auto Setup)",
             self.target_joint_item.clone().unwrap(),
             None,
             None,
@@ -161,7 +179,7 @@ impl Component for LookAt
         }
 
         // set up if needed
-        if self.animation.is_none()
+        if self.animation.is_none() && self.auto_setup
         {
             self.setup(node.clone());
         }
@@ -269,7 +287,7 @@ impl Component for LookAt
 
         let mut animations: Vec<(u64, String)> = vec![];
 
-        if let Some(node) = node
+        if let Some(node) = &node
         {
             let node = node.read().unwrap();
             let animation_components = node.find_components::<Animation>();
@@ -307,6 +325,59 @@ impl Component for LookAt
 
         ui.horizontal(|ui|
         {
+            ui.label("Target Joint: ");
+            if let Some(target_joint_item) = self.target_joint_item.as_ref().cloned()
+            {
+                let target_joint_item = target_joint_item.read().unwrap();
+                ui.label(target_joint_item.name.clone());
+
+                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
+                {
+                    self.target_joint_item = OptionOrId::None;
+                }
+            }
+            else if let Some(node) = node.clone()
+            {
+                let node_clone = node.clone();
+
+                let all_nodes =
+                {
+                    let node_read = node_clone.read().unwrap();
+                    Scene::list_all_child_nodes(&node_read.nodes)
+                };
+
+                let mut selection: usize = 0;
+                let mut changed = false;
+
+                ui.horizontal(|ui|
+                {
+                    egui::ComboBox::from_id_salt(ui.make_persistent_id("target_joint")).selected_text("").width(200.0).show_ui(ui, |ui|
+                    {
+                        changed = ui.selectable_value(&mut selection, 0, "").changed() || changed;
+
+                        for (i, child_node) in all_nodes.iter().enumerate()
+                        {
+                            let child_node = child_node.read().unwrap();
+                            if child_node.find_component::<Joint>().is_some()
+                            {
+                                changed = ui.selectable_value(&mut selection, i + 1, child_node.name.clone()).changed() || changed;
+                            }
+                        }
+                    });
+                });
+
+                if changed
+                {
+                    let add_node = &all_nodes[selection - 1];
+                    self.target_joint_item = OptionOrId::Some(add_node.clone());
+
+                    self.setup(node);
+                }
+            }
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("Target Position: ");
             let changed_x = ui.add(egui::DragValue::new(&mut target_pos.x).speed(0.1).prefix("x: ")).changed();
             let changed_y = ui.add(egui::DragValue::new(&mut target_pos.y).speed(0.1).prefix("y: ")).changed();
@@ -330,10 +401,12 @@ impl Component for LookAt
             if animation > 0
             {
                 self.animation = Some(animation);
+                self.auto_setup = true;
             }
             else
             {
-                self.animation = None
+                self.animation = None;
+                self.auto_setup = false;
             }
 
             self.target_pos = target_pos;

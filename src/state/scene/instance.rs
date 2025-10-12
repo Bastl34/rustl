@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{scene::components::component::find_new_components_with_position, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -300,21 +300,8 @@ impl Instance
             }
 
             // after each update, check if new components were added during the update --> add
-            {
-                let instance = instance.write().unwrap();
-                let new_components_with_position = find_new_components_with_position(&all_components, &instance.components);
-                for (component, add_to_front) in new_components_with_position
-                {
-                    if add_to_front
-                    {
-                        all_components.insert(0, component);
-                    }
-                    else
-                    {
-                        all_components.push(component);
-                    }
-                }
-            }
+            let maybe_new_components = &instance.read().unwrap().components;
+            find_and_add_new_components(&mut all_components, maybe_new_components);
         }
 
         // ***** reassign components *****

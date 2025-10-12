@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, console_debug, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::{find_and_add_new_components, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -1000,7 +1000,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         let mut move_down_component: Option<ComponentItem> = None;
 
         let all_components;
-        let all_components_clone;
+        let mut all_components_clone;
         {
             let node_read = node.read().unwrap();
             all_components = node_read.components.clone();
@@ -1142,13 +1142,21 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                 // filter out current component
                 {
-                    let mut node: std::sync::RwLockWriteGuard<'_, Box<crate::state::scene::node::Node>> = node.write().unwrap();
+                    let mut node = node.write().unwrap();
                     node.components = all_components_clone.clone();
                     node.components.remove(component_i);
                 }
 
-                let mut component = component.write().unwrap();
-                component.ui(ui, Some(node.clone()));
+                {
+                    let mut component = component.write().unwrap();
+                    component.ui(ui, Some(node.clone()));
+                }
+
+                // after each ui update, check if new components were added during the update --> add
+                {
+                    let maybe_new_components = &node.read().unwrap().components;
+                    find_and_add_new_components(&mut all_components_clone, maybe_new_components);
+                }
 
                 // re-add current component
                 {
@@ -1193,11 +1201,18 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         if let Some(instance) = instance
         {
             {
-                let instance = instance.read().unwrap();
+                let all_components;
+                let mut all_components_clone;
+                {
+                    let instance = instance.read().unwrap();
 
-                let components_amount = instance.components.len();
+                    all_components = instance.components.clone();
+                    all_components_clone = instance.components.clone();
+                }
 
-                for (component_i, component) in instance.components.iter().enumerate()
+                let components_amount = all_components.len();
+
+                for (component_i, component) in all_components.iter().enumerate()
                 {
                     if !match_component_filter(&editor_state.component_filter, component.clone())
                     {
@@ -1205,6 +1220,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     }
 
                     let component_id;
+                    let uuid;
                     let name;
                     let component_title;
                     let component_tooltip;
@@ -1218,6 +1234,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         component_tooltip = format!("{}: {}", base.component_name, &base.name);
                         name = base.name.clone();
                         component_id = component.id();
+                        uuid = component.uuid().clone();
                         from_file = base.from_file;
                         duplicatable = component.duplicatable();
 
@@ -1303,10 +1320,32 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     |ui|
                     {
                         ui.label(format!("Id: {}", component_id));
+                        ui.label(format!("UUID: {}", uuid));
                         ui.label(format!("Name: {}", name));
 
-                        let mut component = component.write().unwrap();
-                        component.ui(ui, None);
+                        // filter out current component
+                        {
+                            let mut instance = instance.write().unwrap();
+                            instance.components = all_components_clone.clone();
+                            instance.components.remove(component_i);
+                        }
+
+                        {
+                            let mut component = component.write().unwrap();
+                            component.ui(ui, Some(node.clone()));
+                        }
+
+                        // after each ui update, check if new components were added during the update --> add
+                        {
+                            let maybe_new_components = &node.read().unwrap().components;
+                            find_and_add_new_components(&mut all_components_clone, maybe_new_components);
+                        }
+
+                        // re-add current component
+                        {
+                            let mut node = node.write().unwrap();
+                            node.components = all_components_clone.clone();
+                        }
                     });
                 }
             }
