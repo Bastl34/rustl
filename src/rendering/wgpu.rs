@@ -80,6 +80,7 @@ impl WGpu
                     wgpu::Limits::default()
                 },
                 memory_hints: Default::default(),
+                experimental_features: Default::default(),
                 trace: wgpu::Trace::Off,
             },
         )
@@ -377,7 +378,7 @@ impl WGpu
         // read buffer
         let slice: wgpu::BufferSlice = output_buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| ());
-        self.device.poll(wgpu::PollType::Wait).unwrap();
+        self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
         // remove padding
         let padded_data = slice.get_mapped_range();

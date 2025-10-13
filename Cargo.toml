@@ -8,10 +8,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 simple_logger = "5.0.0"
-log = "0.4.0"
-cfg-if = "1.0.0"
-wgpu = "25.0.2"
-bytemuck = { version = "1.23.2", features = [ "derive" ] }
+log = "0.4.28"
+cfg-if = "1.0.3"
+wgpu = "27.0.1"
+bytemuck = { version = "1.24.0", features = [ "derive" ] }
 web-time = "1.1.0"
 winit = "0.30.12"
 anyhow = "1.0.100"
@@ -25,9 +25,9 @@ chrono = "0.4.42"
 
 serde = "1.0.228"
 serde_json = "1.0.145"
-typetag = "0.2.20"
+typetag = "0.2.21"
 
-regex = "1.11.3"
+regex = "1.12.1"
 # use lewton for ogg (symphonia-vorbis can not seek or loop properly)
 rodio = { version = "0.21.1", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
 gilrs = { version = "0.11.0", features = ["wgi"]}
@@ -36,7 +36,7 @@ uuid = {version = "1.18.1", features = ["v4"] }
 
 xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 
-parry3d = "0.24.0"
+parry3d = "0.25.0"
 
 arboard = "3.6.1"
 
@@ -60,10 +60,10 @@ gltf = { git = "https://github.com/gltf-rs/gltf", features = [
 image = { version = "0.25.8", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
-egui = "0.32.3"
-egui-wgpu = "0.32.3"
-egui_plot = "0.33.0"
-egui_extras = "0.32.3"
+egui = "0.33.0"
+egui-wgpu = "0.33.0"
+egui_plot = "0.34.0"
+egui_extras = "0.33.0"
 #egui = { git = "https://github.com/emilk/egui", branch = "main"  }
 #egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
 #egui_extras = { git = "https://github.com/emilk/egui", branch = "main" }
@@ -74,7 +74,7 @@ egui_extras = "0.32.3"
 #egui = { git = "https://github.com/emilk/egui", branch = "main" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.32.3"
+egui-winit = "0.33.0"
 #egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
 pollster = "0.4.0"
 
@@ -82,7 +82,7 @@ pollster = "0.4.0"
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.12.23"
-wgpu = { version = "25.0.2", features = ["webgl"]}
+wgpu = { version = "27.0.1", features = ["webgl"]}
 wasm-bindgen = "0.2.104"
 wasm-bindgen-futures = "0.4.54"
 web-sys = { version = "0.3.81", features = [
@@ -94,7 +94,7 @@ web-sys = { version = "0.3.81", features = [
 wasm_thread = { version = "0.3.3", features = ["es_modules"]}
 
 #egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
-egui-winit = { version = "0.32.3", default-features = false, features = [
+egui-winit = { version = "0.33.0", default-features = false, features = [
   "links",
 ]}
 

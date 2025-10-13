@@ -1106,6 +1106,7 @@ impl Scene
                     load: clear_color,
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })
         ];
 
@@ -1180,6 +1181,7 @@ impl Scene
                         load: clear_color,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
