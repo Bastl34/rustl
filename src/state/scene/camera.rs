@@ -27,6 +27,8 @@ pub const DEFAULT_FOVY: f32 = 90.0f32;
 const DEFAULT_CLIPPING_NEAR: f32 = 0.1;
 const DEFAULT_CLIPPING_FAR: f32 = 1000.0;
 
+const FRUSTUM_CULLING_EPSILON: f32 = 0.0001;
+
 /*
 pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
 (
@@ -53,6 +55,61 @@ pub enum CameraProjectionType
 {
     Perspective,
     Orthogonal
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FrustumPlanes
+{
+    pub left: Vector4<f32>,
+    pub right: Vector4<f32>,
+    pub bottom: Vector4<f32>,
+    pub top: Vector4<f32>,
+    pub near: Vector4<f32>,
+    pub far: Vector4<f32>,
+}
+
+impl Default for FrustumPlanes
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            left: Vector4::zeros(),
+            right: Vector4::zeros(),
+            bottom: Vector4::zeros(),
+            top: Vector4::zeros(),
+            near: Vector4::zeros(),
+            far: Vector4::zeros(),
+        }
+    }
+}
+
+impl FrustumPlanes
+{
+    pub fn is_sphere_visible(&self, center: &Point3<f32>, radius: f32) -> bool
+    {
+        let planes =
+        [
+            &self.left,
+            &self.right,
+            &self.bottom,
+            &self.top,
+            &self.near,
+            &self.far
+        ];
+
+        for plane in &planes
+        {
+            let distance = plane.x * center.x + plane.y * center.y + plane.z * center.z + plane.w;
+
+            if distance + FRUSTUM_CULLING_EPSILON < -radius
+            {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -89,11 +146,18 @@ pub struct CameraData
 
     pub projection_type: CameraProjectionType,
 
+    #[serde(skip)]
     pub projection: Matrix4<f32>,
+    #[serde(skip)]
     pub projection_inverse: Matrix4<f32>,
 
+    #[serde(skip)]
     pub view: Matrix4<f32>,
+    #[serde(skip)]
     pub view_inverse: Matrix4<f32>,
+
+    #[serde(skip)]
+    pub frustum_planes: FrustumPlanes,
 }
 
 
@@ -203,6 +267,8 @@ impl Camera
 
                 view: Matrix4::<f32>::identity(),
                 view_inverse: Matrix4::<f32>::identity(),
+
+                frustum_planes: FrustumPlanes::default(),
             }),
 
             tags: Tags::new(),
@@ -331,6 +397,59 @@ impl Camera
 
         data.projection_inverse = data.projection.try_inverse().unwrap();
         data.view_inverse = data.view.try_inverse().unwrap();
+
+        self.update_frustum_planes();
+    }
+
+    fn update_frustum_planes(&mut self)
+    {
+        let data = self.data.get_mut();
+        let view_projection = data.projection * data.view;
+
+        // Each plane is represented as a Vector4 (a, b, c, d) where ax + by + cz + d = 0
+
+        // Left plane: row4 + row1
+        let left = (view_projection.row(3) + view_projection.row(0)).transpose();
+
+        // Right plane: row4 - row1
+        let right = (view_projection.row(3) - view_projection.row(0)).transpose();
+
+        // Bottom plane: row4 + row2
+        let bottom = (view_projection.row(3) + view_projection.row(1)).transpose();
+
+        // Top plane: row4 - row2
+        let top = (view_projection.row(3) - view_projection.row(1)).transpose();
+
+        // Near plane: row4 + row3
+        let near = (view_projection.row(3) + view_projection.row(2)).transpose();
+
+        // Far plane: row4 - row3
+        let far = (view_projection.row(3) - view_projection.row(2)).transpose();
+
+        let normalize_plane = |plane: Vector4<f32>| -> Vector4<f32>
+        {
+            let normal = Vector3::new(plane.x, plane.y, plane.z);
+            let length = normal.norm();
+
+            if length > 1e-6
+            {
+                plane / length
+            }
+            else
+            {
+                plane
+            }
+        };
+
+        data.frustum_planes = FrustumPlanes
+        {
+            left: normalize_plane(left),
+            right: normalize_plane(right),
+            bottom: normalize_plane(bottom),
+            top: normalize_plane(top),
+            near: normalize_plane(near),
+            far: normalize_plane(far),
+        };
     }
 
     pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
@@ -409,6 +528,13 @@ impl Camera
 
         // Check if point is inside NDC space (Normalized Device Coordinates Space)
         point_clip.x.abs() <= point_clip.w && point_clip.y.abs() <= point_clip.w && point_clip.z.abs() <= point_clip.w
+    }
+
+    pub fn is_sphere_in_frustum(&self, center: &Point3<f32>, radius: f32) -> bool
+    {
+        let data = self.data.get_ref();
+        let result = data.frustum_planes.is_sphere_visible(center, radius);
+        result
     }
 
     pub fn is_point_in_viewport(&self, point: &Point2<f32>) -> bool

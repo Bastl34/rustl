@@ -55,6 +55,7 @@ pub struct Rendering
     pub msaa: ChangeTracker<u32>,
 
     pub distance_sorting: bool,
+    pub frustum_culling: bool,
     pub create_mipmaps: bool,
     pub max_texture_resolution: Option<u32>,
 }
@@ -277,6 +278,7 @@ impl State
                 msaa: ChangeTracker::new(8),
 
                 distance_sorting: true,
+                frustum_culling: true,
                 create_mipmaps: true,
                 max_texture_resolution: None
             },

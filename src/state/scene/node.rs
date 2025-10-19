@@ -2,10 +2,12 @@
 
 use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
 use nalgebra::{Matrix4, Point3, Vector4};
+use parry3d::bounding_volume::BoundingSphere;
+use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merge
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components}, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_and_add_new_components, scene::Scene}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -622,6 +624,84 @@ impl Node
             let (min, max) = bounding_info;
 
             return Some(min + (max - min) / 2.0);
+        }
+
+        None
+    }
+
+    pub fn get_bounding_sphere_for_all_instances(&self, transformations: &Vec::<Matrix4::<f32>>) -> Option<(Point3<f32>, f32)>
+    {
+        if transformations.len() != self.instances.get_ref().len()
+        {
+            console_warning!("get_bounding_sphere_for_all_instances: transformations length does not match instances length - which is not supported");
+            return None;
+        }
+
+        let meshes = self.get_meshes();
+
+        let mut bounding_sphere_mesh: Option<BoundingSphere> = None;
+
+        for mesh in &meshes
+        {
+            component_downcast!(mesh, Mesh);
+
+            let mut sphere = None;
+            if let Some(skin_sphere) = mesh.get_data().b_sphere_skin
+            {
+                sphere = Some(skin_sphere);
+            }
+            else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+            {
+                sphere = Some(mesh_resource.read().unwrap().get_data().b_sphere);
+            }
+
+            if let Some(sphere) = sphere
+            {
+                if let Some(bounding_sphere_mesh) = bounding_sphere_mesh.as_mut()
+                {
+                    bounding_sphere_mesh.merge(&sphere);
+                }
+                else
+                {
+                    bounding_sphere_mesh = Some(sphere);
+                }
+            }
+        }
+
+        let mut bounding_sphere_result: Option<BoundingSphere> = None;
+
+        if let Some(bounding_sphere_mesh) = bounding_sphere_mesh
+        {
+            for (instance_id, _) in self.instances.get_ref().iter().enumerate()
+            {
+                let transform = transformations.get(instance_id).unwrap();
+
+                let max_scale = extract_max_scale_from_transform(transform);
+
+                let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_mesh.center.x, bounding_sphere_mesh.center.y, bounding_sphere_mesh.center.z, 1.0);
+                let transformed_radius = bounding_sphere_mesh.radius * max_scale;
+
+                // merge into final sphere
+                let instance_sphere = BoundingSphere::new
+                (
+                    Point3::<f32>::new(transformed_center.x, transformed_center.y, transformed_center.z),
+                    transformed_radius
+                );
+
+                if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                {
+                    bounding_sphere_all.merge(&instance_sphere);
+                }
+                else
+                {
+                    bounding_sphere_result = Some(instance_sphere);
+                }
+            }
+        }
+
+        if let Some(bounding_sphere_result) = bounding_sphere_result
+        {
+            return Some((bounding_sphere_result.center, bounding_sphere_result.radius));
         }
 
         None

@@ -32,8 +32,8 @@ impl Default for MeshData
     {
         Self
         {
-            b_box_skin: None,
-            b_sphere_skin: None,
+            b_box_skin: None, // armature space
+            b_sphere_skin: None, // armature space
 
             b_volume_skin_multiplier: DEFAULT_SKIN_BOUNDING_VOLUME_SCALE
         }
@@ -117,7 +117,7 @@ impl Mesh
                 let pos = Point4::<f32>::new(v.x, v.y, v.z, 1.0);
                 let mut transformed_pos = Point4::<f32>::new(0.0, 0.0, 0.0, 0.0);
 
-                for i in 0..4
+                for i in 0..JOINTS_LIMIT
                 {
                     let joints = mesh_resource_data.joints[v_i];
                     let weights = mesh_resource_data.weights[v_i];
@@ -412,6 +412,11 @@ impl Component for Mesh
             {
                 ui.label(format!(" ⚫ bbox skin min: [{:.3}, {:.3}, {:.3}]", b_box_skin.mins.x, b_box_skin.mins.z, b_box_skin.mins.z));
                 ui.label(format!(" ⚫ bbox skin max: [{:.3}, {:.3}, {:.3}]", b_box_skin.maxs.x, b_box_skin.maxs.z, b_box_skin.maxs.z));
+            }
+
+            if let Some(b_sphere_skin) = self.get_data().b_sphere_skin.as_ref()
+            {
+                ui.label(format!(" ⚫ b sphere skin: [{:.3}, {:.3}, {:.3}] radius: {:.3}", b_sphere_skin.center.x, b_sphere_skin.center.y, b_sphere_skin.center.z, b_sphere_skin.radius));
             }
         }
 

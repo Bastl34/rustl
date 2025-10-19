@@ -167,6 +167,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            ui.checkbox(&mut state.rendering.frustum_culling, "Frustum Culling");
+            ui.label("ℹ").on_hover_text("improves performance by not rendering objects outside the view frustum");
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("MSAA:");
 
             let mut changed = false;

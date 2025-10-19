@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_success, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -20,7 +20,8 @@ pub struct RenderData<'a>
 
     has_transparency: bool,
     alpha_index: i64,
-    middle: Point3::<f32>
+    middle: Option<Point3::<f32>>,
+    radius: Option<f32>,
 }
 
 #[repr(C)]
@@ -71,6 +72,7 @@ pub struct Scene
 
     samples: u32,
     pub distance_sorting: bool,
+    pub frustum_culling: bool,
 
     pipelines: Vec<Pipeline>,
 
@@ -111,6 +113,7 @@ impl Scene
 
             samples,
             distance_sorting: true,
+            frustum_culling: true,
 
             pipelines: vec![],
 
@@ -932,52 +935,30 @@ impl Scene
             let node = nodes_read.get(i).unwrap();
             let meshes = meshes_read.get(i).unwrap();
 
-            let mut item_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
+            if meshes.len() == 0 || node.instances.get_ref().len() == 0
+            {
+                continue;
+            }
+
+            let mut bounding_sphere = None;
 
             // ***** get center for depth sorting (alpha blending)
-            if self.distance_sorting
+            if self.distance_sorting || self.frustum_culling
             {
-                if meshes.len() == 0 || node.instances.get_ref().len() == 0
-                {
-                    continue;
-                }
-
-                let mut mesh_middle = Point3::<f32>::new(0.0, 0.0, 0.0);
-                for mesh in meshes
-                {
-                    let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
-
-                    if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
-                    {
-                        let center = mesh_resource.read().unwrap().get_data().b_box.center();
-                        mesh_middle.x += center.x;
-                        mesh_middle.y += center.y;
-                        mesh_middle.z += center.z;
-                    }
-                }
-
-                let len_f32 = meshes.len() as f32;
-                mesh_middle.x /= len_f32;
-                mesh_middle.y /= len_f32;
-                mesh_middle.z /= len_f32;
-
                 if let Some(instance_render_item) = node.instance_render_item.as_ref()
                 {
                     let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
-
-                    for transform in &instance_buffer.transformations
-                    {
-                        let p = transform.transform_point(&mesh_middle);
-                        item_middle.x += p.x;
-                        item_middle.y += p.y;
-                        item_middle.z += p.z;
-                    }
-
-                    let len_f32 = instance_buffer.transformations.len() as f32;
-                    item_middle.x /= len_f32;
-                    item_middle.y /= len_f32;
-                    item_middle.z /= len_f32;
+                    bounding_sphere = node.get_bounding_sphere_for_all_instances(&instance_buffer.transformations);
                 }
+            }
+
+            if node.name == "Alpha_Joints.008"
+            {
+                console_success!(" --> {} sphere: {:?}", node.name, bounding_sphere);
+            }
+            else
+            {
+                //console_log!(" --> {} sphere: {:?}", node.name, bounding_sphere);
             }
 
             let has_transparency;
@@ -997,7 +978,8 @@ impl Scene
 
                 has_transparency: has_transparency,
                 alpha_index: node.settings.alpha_index,
-                middle: item_middle
+                middle: bounding_sphere.map(|(center, _)| center),
+                radius: bounding_sphere.map(|(_, radius)| radius),
             };
 
             let i = *rendering_group_map.entry(render_group_id).or_insert_with(||
@@ -1026,14 +1008,47 @@ impl Scene
             if !cam.enabled { continue; }
 
             let cam_data = cam.get_data();
+            let cam_pos = cam_data.eye_pos;
 
-            // sort
+            let mut render_groups_culled = if self.frustum_culling
+            {
+                render_groups.iter().map(|(solid_objects, transparent_objects)|
+                {
+                    let solid_culled: Vec<_> = solid_objects.iter().filter(|item|
+                    {
+                        if let (Some(center), Some(radius)) = (item.middle.as_ref(), item.radius)
+                        {
+                            cam.is_sphere_in_frustum(center, radius)
+                        }
+                        else
+                        {
+                            false
+                        }
+                    }).copied().collect();
+                    let transparent_culled: Vec<_> = transparent_objects.iter().filter(|item|
+                    {
+                        if let (Some(center), Some(radius)) = (item.middle.as_ref(), item.radius)
+                        {
+                            cam.is_sphere_in_frustum(center, radius)
+                        }
+                        else
+                        {
+                            false
+                        }
+                    }).copied().collect();
+
+                    (solid_culled, transparent_culled)
+                }).collect::<Vec<_>>()
+            }
+            else
+            {
+                render_groups.clone()
+            };
+
+
             if self.distance_sorting
             {
-                let cam_pos = cam_data.eye_pos;
-
-                // sorting based on the "previous" transparent_objects vec - its not cloned
-                for (_, transparent_objects) in &mut render_groups
+                for (_, transparent_objects) in &mut render_groups_culled
                 {
                     transparent_objects.sort_by(|a, b|
                     {
@@ -1047,9 +1062,12 @@ impl Scene
                         }
                         else
                         {
+                            let a_middle = a.middle.unwrap_or(Point3::origin());
+                            let b_middle = b.middle.unwrap_or(Point3::origin());
+
                             // we do not need the exact distance here - squared is fine
-                            let a_dist = distance_squared(&a.middle, &cam_pos);
-                            let b_dist = distance_squared(&b.middle, &cam_pos);
+                            let a_dist = distance_squared(&a_middle, &cam_pos);
+                            let b_dist = distance_squared(&b_middle, &cam_pos);
 
                             b_dist.partial_cmp(&a_dist).unwrap()
                         }
@@ -1066,7 +1084,7 @@ impl Scene
 
             // transparent objects are added to the back. so solid objects are rendered first
             let mut render_data = Vec::with_capacity(materials_read.len());
-            for (solid_objects, transparent_objects) in &mut render_groups
+            for (solid_objects, transparent_objects) in &mut render_groups_culled
             {
                 render_data.extend(solid_objects.iter().cloned());
                 render_data.extend(transparent_objects.iter().cloned());

@@ -472,3 +472,17 @@ pub fn extract_translation_from_transform(transform: &Matrix4<f32>) -> Vector3<f
     )
 }
 
+pub fn extract_max_scale_from_transform(transform: &Matrix4<f32>) -> f32
+{
+    let scale = extract_scale_from_transform(transform);
+    scale.x.max(scale.y).max(scale.z)
+}
+
+pub fn extract_scale_from_transform(transform: &Matrix4<f32>) -> Vector3<f32>
+{
+    let scale_x = transform.fixed_view::<3, 1>(0, 0).norm();
+    let scale_y = transform.fixed_view::<3, 1>(0, 1).norm();
+    let scale_z = transform.fixed_view::<3, 1>(0, 2).norm();
+
+    Vector3::new(scale_x, scale_y, scale_z)
+}
