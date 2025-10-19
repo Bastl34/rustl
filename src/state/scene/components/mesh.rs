@@ -2,7 +2,7 @@
 
 use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point3, Point4, Vector3};
-use parry3d::{bounding_volume::{Aabb, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
+use parry3d::{bounding_volume::{Aabb, BoundingSphere, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
 use serde::{Deserialize, Serialize};
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, console_error, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, resources::mesh_resource::MeshResourceItem, scene::node::NodeItem}};
@@ -12,14 +12,18 @@ use crate::state::scene::exporter::serialization_helper;
 use super::component::{Component, ComponentBase};
 
 pub const JOINTS_LIMIT: usize = 4;
-const DEFAULT_SKIN_B_BOX_SCALE: f32 = 2.0; // the skinned mesh bbox is multiplied by this factor -> because a bbox for an animated mesh can not be correctly calculated - just simply is a large factor
+const DEFAULT_SKIN_BOUNDING_VOLUME_SCALE: f32 = 2.0; // the skinned mesh bbox is multiplied by this factor -> because a bbox for an animated mesh can not be correctly calculated - just simply is a large factor
 
 #[derive(Serialize, Deserialize)]
 pub struct MeshData
 {
     #[serde(skip, default)]
     pub b_box_skin: Option<Aabb>,
-    pub b_box_skin_multiplier: f32,
+
+    #[serde(skip, default)]
+    pub b_sphere_skin: Option<BoundingSphere>,
+
+    pub b_volume_skin_multiplier: f32,
 }
 
 impl Default for MeshData
@@ -29,7 +33,9 @@ impl Default for MeshData
         Self
         {
             b_box_skin: None,
-            b_box_skin_multiplier: DEFAULT_SKIN_B_BOX_SCALE
+            b_sphere_skin: None,
+
+            b_volume_skin_multiplier: DEFAULT_SKIN_BOUNDING_VOLUME_SCALE
         }
     }
 }
@@ -39,7 +45,9 @@ impl MeshData
     pub fn clear(&mut self)
     {
         self.b_box_skin = None;
-        self.b_box_skin_multiplier = DEFAULT_SKIN_B_BOX_SCALE;
+        self.b_sphere_skin = None;
+
+        self.b_volume_skin_multiplier = DEFAULT_SKIN_BOUNDING_VOLUME_SCALE;
     }
 }
 
@@ -66,7 +74,9 @@ impl Mesh
         let mesh_data = MeshData
         {
             b_box_skin: None,
-            b_box_skin_multiplier: DEFAULT_SKIN_B_BOX_SCALE
+            b_sphere_skin: None,
+
+            b_volume_skin_multiplier: DEFAULT_SKIN_BOUNDING_VOLUME_SCALE
         };
 
         let mesh = Mesh
@@ -94,7 +104,7 @@ impl Mesh
         &mut self.data
     }
 
-    pub fn calc_bbox_skin(&mut self, joint_matrices: &Vec<Matrix4<f32>>)
+    pub fn calc_bounding_volume_skin(&mut self, joint_matrices: &Vec<Matrix4<f32>>)
     {
         if let Some(mesh_resource) = self.mesh_resource.as_ref()
         {
@@ -134,6 +144,7 @@ impl Mesh
 
             let data = self.data.get_mut();
             data.b_box_skin = Some(mesh.aabb(&trans));
+            data.b_sphere_skin = Some(mesh.bounding_sphere(&trans));
         }
         else
         {
@@ -141,6 +152,7 @@ impl Mesh
 
             let data = self.data.get_mut();
             data.b_box_skin = None;
+            data.b_sphere_skin = None;
         }
     }
 
@@ -154,7 +166,7 @@ impl Mesh
 
             if let Some(b_box_skin) = data.b_box_skin
             {
-                let s = data.b_box_skin_multiplier;
+                let s = data.b_volume_skin_multiplier;
                 let b_box_skin = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
 
                 b_box.merge(&b_box_skin);
@@ -164,6 +176,32 @@ impl Mesh
         }
 
         Aabb::new_invalid()
+    }
+
+    pub fn get_skin_and_mesh_bounding_sphere(&self) -> BoundingSphere
+    {
+        if let Some(mesh_resource) = self.mesh_resource.as_ref()
+        {
+            let data = self.get_data();
+
+            let mut b_sphere = mesh_resource.read().unwrap().get_data().b_sphere;
+
+            if let Some(b_sphere_skin) = data.b_sphere_skin
+            {
+                let s = data.b_volume_skin_multiplier;
+                let b_sphere_skin = BoundingSphere::new
+                (
+                    *b_sphere_skin.center(),
+                    b_sphere_skin.radius() * s
+                );
+
+                b_sphere.merge(&b_sphere_skin);
+            }
+
+            return b_sphere;
+        }
+
+        BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
     }
 
     pub fn get_height(&self) -> f32
@@ -393,7 +431,7 @@ impl Component for Mesh
             let mut changed = false;
             let mut b_box_skin_multiplier;
             {
-                b_box_skin_multiplier = self.get_data().b_box_skin_multiplier;
+                b_box_skin_multiplier = self.get_data().b_volume_skin_multiplier;
             }
 
             ui.horizontal(|ui|
@@ -405,7 +443,7 @@ impl Component for Mesh
             if changed
             {
                 let data = self.get_data_mut().get_mut();
-                data.b_box_skin_multiplier = b_box_skin_multiplier;
+                data.b_volume_skin_multiplier = b_box_skin_multiplier;
             }
         }
     }

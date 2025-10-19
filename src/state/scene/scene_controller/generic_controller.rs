@@ -64,7 +64,7 @@ impl SceneController for GenericController
                         let joint_matrices = node.get_joint_transform_vec(true);
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            mesh.calc_bbox_skin(&joint_matrices);
+                            mesh.calc_bounding_volume_skin(&joint_matrices);
 
                             updated = true;
                         }

@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use bytemuck::cast_slice;
 use colored::Colorize;
 use nalgebra::{Isometry3, Matrix4, Point2, Point3, Vector3};
-use parry3d::{bounding_volume::Aabb, shape::TriMesh};
+use parry3d::{bounding_volume::{Aabb, BoundingSphere}, shape::TriMesh};
 use serde::{Deserialize, Serialize};
 
 use crate::{console_error, helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::{point2_as_array, point3_as_array, vec3_as_array}, math::calculate_normal}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::tags::Tags}}};
@@ -22,6 +22,11 @@ fn default_tri_mesh() -> TriMesh
 fn default_aabb() -> Aabb
 {
     Aabb::new_invalid()
+}
+
+fn default_sphere() -> BoundingSphere
+{
+    BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,7 +70,10 @@ pub struct MeshResourceData
     pub morph_target_tangents: Vec<Vec<Vector3<f32>>>,
 
     #[serde(skip, default = "default_aabb")]
-    pub b_box: Aabb
+    pub b_box: Aabb,
+
+    #[serde(skip, default = "default_sphere")]
+    pub b_sphere: BoundingSphere
 }
 
 impl MeshResourceData
@@ -170,6 +178,7 @@ impl Default for MeshResource
                 morph_target_tangents: vec![],
 
                 b_box: Aabb::new_invalid(),
+                b_sphere: BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
             }),
 
             render_item: None,
@@ -229,6 +238,7 @@ impl MeshResource
                 morph_target_tangents: vec![],
 
                 b_box: Aabb::new_invalid(),
+                b_sphere: BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
             }),
 
             render_item: None,
@@ -237,7 +247,7 @@ impl MeshResource
         };
 
         resource.calc_hash();
-        resource.calc_bbox();
+        resource.calc_bounding_volumes();
 
         // create normals if needed
         if resource.get_data().vertices.len() > 0 && resource.get_data().normals.len() == 0 && resource.get_data().indices.len() > 0
@@ -265,7 +275,7 @@ impl MeshResource
 
         let mut resource = MeshResource::new_with_data(name, points, indices, uvs, uv_indices, vec![], vec![]);
 
-        resource.calc_bbox();
+        resource.calc_bounding_volumes();
 
         // create normals if needed
         if resource.get_data().vertices.len() > 0 && resource.get_data().normals.len() == 0 && resource.get_data().indices.len() > 0
@@ -280,7 +290,7 @@ impl MeshResource
     {
         let mut resource = MeshResource::new_with_data(name, vec![], vec![], vec![], vec![], vec![], vec![]);
 
-        resource.calc_bbox();
+        resource.calc_bounding_volumes();
 
         resource
     }
@@ -410,11 +420,12 @@ impl MeshResource
         self.hash = helper::crypto::get_hash_from_byte_vec(&bytes)
     }
 
-    fn calc_bbox(&mut self)
+    fn calc_bounding_volumes(&mut self)
     {
         let trans = Isometry3::<f32>::identity();
         let data = self.data.get_mut();
         data.b_box = data.mesh.aabb(&trans);
+        data.b_sphere = data.mesh.bounding_sphere(&trans);
     }
 
     fn apply_transform(&mut self, transform: &Matrix4<f32>)
@@ -440,7 +451,7 @@ impl MeshResource
         // clear trimesh and rebuild
         data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone()).unwrap();
 
-        self.calc_bbox();
+        self.calc_bounding_volumes();
     }
 
     pub fn merge(&mut self, mesh_data: &MeshResourceData)
@@ -500,7 +511,7 @@ impl MeshResource
 
         data.mesh = mesh;
 
-        self.calc_bbox();
+        self.calc_bounding_volumes();
     }
 
     pub fn merge_by_transformations(&mut self, transformations: &Vec::<Matrix4<f32>>)
@@ -607,7 +618,7 @@ impl MeshResource
             data.mesh = mesh;
         }
 
-        self.calc_bbox();
+        self.calc_bounding_volumes();
     }
 
     pub fn get_normal(&self, hit: Point3<f32>, face_id: u32, tran_inverse: &Matrix4<f32>, vertices: &Vec<Point3<f32>>) -> Vector3<f32>
@@ -696,5 +707,7 @@ impl MeshResource
 
         ui.label(format!(" ⚫ bbox min: [{:.3}, {:.3}, {:.3}]", data.b_box.mins.x, data.b_box.mins.z, data.b_box.mins.z));
         ui.label(format!(" ⚫ bbox max: [{:.3}, {:.3}, {:.3}]", data.b_box.maxs.x, data.b_box.maxs.z, data.b_box.maxs.z));
+
+        ui.label(format!(" ⚫ b sphere: [{:.3}, {:.3}, {:.3}] r={:.3}", data.b_sphere.center.x, data.b_sphere.center.y, data.b_sphere.center.z, data.b_sphere.radius));
     }
 }
