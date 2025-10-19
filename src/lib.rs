@@ -6,6 +6,7 @@ mod rendering
     pub(crate) mod vertex_buffer;
     pub(crate) mod instance;
     pub(crate) mod texture;
+    pub(crate) mod state;
     pub(crate) mod scene;
     pub(crate) mod camera;
     pub(crate) mod uniform;
@@ -48,6 +49,12 @@ mod state
             pub(crate) mod gltf;
         }
 
+        pub(crate) mod exporter
+        {
+            pub(crate) mod json;
+            pub(crate) mod serialization_helper;
+        }
+
         pub(crate) mod components
         {
             pub(crate) mod component;
@@ -61,6 +68,7 @@ mod state
             pub(crate) mod morph_target;
             pub(crate) mod morph_target_animation;
             pub(crate) mod animation_blending;
+            pub(crate) mod look_at;
             pub(crate) mod sound;
             pub(crate) mod delay;
         }
@@ -87,13 +95,23 @@ mod state
             pub(crate) mod tags;
         }
 
-        pub(crate) mod texture;
-        pub(crate) mod sound_source;
         pub(crate) mod camera;
         pub(crate) mod light;
         pub(crate) mod instance;
         pub(crate) mod node;
         pub(crate) mod scene;
+    }
+
+    pub(crate) mod resources
+    {
+        pub(crate) mod utilities
+        {
+            pub(crate) mod resource_utils;
+        }
+
+        pub(crate) mod texture;
+        pub(crate) mod sound_source;
+        pub(crate) mod mesh_resource;
     }
 
     pub(crate) mod gui
@@ -126,7 +144,9 @@ mod state
                 pub(crate) mod general;
                 pub(crate) mod textures;
                 pub(crate) mod sound;
+                pub(crate) mod mesh;
                 pub(crate) mod assets;
+                pub(crate) mod console;
             }
         }
     }
@@ -185,6 +205,9 @@ mod helper
     pub(crate) mod platform;
     pub(crate) mod easing;
     pub(crate) mod stopwatch;
+    pub(crate) mod asset_path_descriptor;
+    pub(crate) mod option_or_id;
+    pub(crate) mod console_log;
 }
 
 mod resources

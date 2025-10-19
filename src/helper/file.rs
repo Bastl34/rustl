@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
 use std::{path::{PathBuf, Path}, env};
+use std::fs::File;
+use std::io::prelude::*;
 
 pub fn get_current_working_dir() -> std::io::Result<PathBuf>
 {
@@ -48,4 +50,11 @@ pub fn get_extension(path: &str) -> String
 pub fn is_absolute(path: &str) -> bool
 {
     Path::new(path).is_absolute()
+}
+
+pub fn write_string_to_tile(path: &str, content: String) -> std::io::Result<()>
+{
+    let mut file = File::create(path)?;
+    file.write(content.as_bytes())?;
+    Ok(())
 }

@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
+use std::f32::consts::PI;
 
-use nalgebra::{Vector4, Vector3, Vector2, Matrix4, Point3};
+use nalgebra::{Matrix3, Matrix4, Point3, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
 
 pub fn approx_equal(a: f32, b: f32) -> bool
@@ -62,9 +63,29 @@ pub fn is_almost_integer(value: f32) -> bool
     (value - value.round()).abs() < tolerance
 }
 
+pub fn shortest_angle_dist(a: f32, b: f32) -> f32
+{
+    let mut diff = (b - a) % (2.0 * PI);
+    if diff < -PI
+    {
+        diff += 2.0 * PI;
+    }
+    else if diff > PI
+    {
+        diff -= 2.0 * PI;
+    }
+    diff
+}
+
 pub fn interpolate(a: f32, b: f32, f: f32) -> f32
 {
     return a + f * (b - a);
+}
+
+pub fn interpolate_angle(a: f32, b: f32, t: f32) -> f32
+{
+    let delta = shortest_angle_dist(a, b);
+    a + delta * t
 }
 
 pub fn interpolate_vec3(a: &Vector3<f32>, b: &Vector3<f32>, f: f32) -> Vector3<f32>
@@ -386,3 +407,68 @@ pub fn extract_rotation_as_euler_vec(matrix: &Matrix4<f32>) -> Vector3<f32>
         Vector3::new(roll, pitch, yaw)
     }
 }
+
+pub fn extract_rotation_quat_from_transform(transform: &Matrix4<f32>) -> UnitQuaternion<f32>
+{
+    let mut rot_mat = transform.fixed_view::<3, 3>(0, 0).clone_owned();
+
+    // Normalize each column to remove scaling
+    for i in 0..3
+    {
+        let col = rot_mat.column(i);
+        let normalized = col.normalize();
+        rot_mat.set_column(i, &normalized);
+    }
+
+    // Convert to quaternion
+    UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(rot_mat))
+}
+
+pub fn look_at_rotation(target_dir: Vector3<f32>, up: Vector3<f32>) -> UnitQuaternion<f32>
+{
+    // In OpenGL/glTF, -Z is forward in local space
+    // target_dir is the direction we want to look at (in world/parent space)
+    // We need to build a rotation matrix where the local -Z axis points towards target_dir
+
+    // The local -Z axis should point in the target_dir direction
+    // So the Z column of the matrix should be -target_dir
+    let forward = -target_dir.normalize();  // This will be the Z column
+    let up_n = up.normalize();
+
+    // Calculate right vector: right = up x forward
+    let mut right = up_n.cross(&forward);
+    if right.norm_squared() < 1e-6
+    {
+        // forward and up are ~ parallel -> use a "fallback"-axis
+        // Use +Z as fallback to keep the character facing in the original direction
+        let fallback = Vector3::new(0.0, 0.0, 1.0);
+        right = up_n.cross(&fallback);
+
+        // If that also fails (shouldn't happen), use X
+        if right.norm_squared() < 1e-6
+        {
+            right = Vector3::x();
+        }
+    }
+    let right = right.normalize();
+
+    // Recalculate up to ensure orthogonality: up = forward x right
+    let up_corrected = forward.cross(&right).normalize();
+
+    // Build rotation matrix with columns [right, up, forward]
+    // where forward = -target_dir (so the local -Z axis points towards target_dir)
+    let rot_mat = Matrix3::from_columns(&[right, up_corrected, forward]);
+    let rotation = Rotation3::from_matrix_unchecked(rot_mat);
+    UnitQuaternion::from_rotation_matrix(&rotation)
+}
+
+pub fn extract_translation_from_transform(transform: &Matrix4<f32>) -> Vector3<f32>
+{
+    Vector3::new
+    (
+        transform[(0, 3)],
+        transform[(1, 3)],
+        transform[(2, 3)]
+    )
+}
+

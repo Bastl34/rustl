@@ -1,12 +1,16 @@
-use crate::component_downcast_mut;
+use serde::{Deserialize, Serialize};
+
+use crate::{component_downcast_mut};
 use crate::state::scene::components::mesh::Mesh;
 use crate::state::scene::scene::Scene;
-use crate::{input::input_manager::InputManager, scene_controller_impl_default};
+use crate::state::state::InputOutput;
+use crate::scene_controller_impl_default;
 use crate::state::gui::helper::info_box::warn_box;
 
 use super::scene_controller::{SceneController, SceneControllerBase};
 
 
+#[derive(Serialize, Deserialize)]
 pub struct GenericController
 {
     base: SceneControllerBase,
@@ -23,9 +27,14 @@ impl GenericController
     }
 }
 
+#[typetag::serde]
 impl SceneController for GenericController
 {
     scene_controller_impl_default!();
+
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+    }
 
     fn cleanup(&mut self)
     {
@@ -36,7 +45,7 @@ impl SceneController for GenericController
         false
     }
 
-    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, _input_manager: &mut InputManager, _frame_scale: f32) -> bool
+    fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, _frame_scale: f32) -> bool
     {
         let mut updated = false;
 
@@ -55,7 +64,7 @@ impl SceneController for GenericController
                         let joint_matrices = node.get_joint_transform_vec(true);
                         if let Some(joint_matrices) = joint_matrices
                         {
-                            mesh.calc_bbox_skin(&joint_matrices);
+                            mesh.calc_bounding_volume_skin(&joint_matrices);
 
                             updated = true;
                         }
@@ -71,7 +80,7 @@ impl SceneController for GenericController
             {
                 let (left, right) = cam.get_left_right_ear_positions();
 
-                let mut audio_device = scene.audio_device.write().unwrap();
+                let mut audio_device = io.audio_device.write().unwrap();
                 audio_device.data.get_mut().left_ear_pos = left;
                 audio_device.data.get_mut().right_ear_pos = right;
 
@@ -85,8 +94,8 @@ impl SceneController for GenericController
     fn ui(&mut self, ui: &mut egui::Ui, _scene: &mut crate::state::scene::scene::Scene)
     {
         ui.label("Features:");
-        ui.label(" ⚫ update skin bbox on each animation");
-        ui.label(" ⚫ update spatial sound camera position (based on first)");
+        ui.label("⚫ update skin bbox on each animation");
+        ui.label("⚫ update spatial sound camera position (based on first)");
 
         warn_box(ui, "Its not recommended to remove or stop this.");
     }

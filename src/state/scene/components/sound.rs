@@ -1,25 +1,27 @@
 #![allow(dead_code)]
 
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}};
 
 use egui::RichText;
-use instant::Duration;
 use nalgebra::{distance, Point3};
 use rodio::{Sink, Source, SpatialSink};
+use serde::{Deserialize, Serialize};
+use web_time::Duration;
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::{change_tracker::ChangeTracker, math::approx_zero}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, state::scene::{node::{InstanceItemArc, NodeItem}, sound_source::SoundSourceItem}};
-use crate::state::scene::sound_source::Decodable;
+use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::state::resources::sound_source::Decodable;
+use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum SoundType
 {
     Spatial,
     Stereo
 }
 
-#[derive( Copy, Clone)]
+#[derive( Copy, Clone, Serialize, Deserialize)]
 pub struct SoundData
 {
     pub sound_type: SoundType,
@@ -32,19 +34,24 @@ pub struct SoundData
 
     pub delete_after_playback: bool
 }
-
+#[derive(Serialize, Deserialize)]
 pub struct Sound
 {
     base: ComponentBase,
 
     data: ChangeTracker<SoundData>,
 
-    pub sound_source: Option<SoundSourceItem>,
+    #[serde(serialize_with = "serialization_helper::serialize_sound_source", deserialize_with = "serialization_helper::deserialize_sound_source")]
+    pub sound_source: OptionOrId<SoundSourceItem>,
     pub duration: f32,
 
+    #[serde(skip, default)]
     audio_device: Option<AudioDeviceItem>,
 
+    #[serde(skip, default)]
     sink: Option<Sink>,
+
+    #[serde(skip, default)]
     sink_spatial: Option<SpatialSink>,
 }
 
@@ -56,7 +63,7 @@ impl Sound
         {
             base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
-            sound_source: Some(sound_source.clone()),
+            sound_source: OptionOrId::Some(sound_source.clone()),
             duration: 0.0,
 
             data: ChangeTracker::new(SoundData
@@ -88,7 +95,7 @@ impl Sound
         {
             base: ComponentBase::new(name.to_string(), "Sound".to_string(), "🔊".to_string()),
 
-            sound_source: None,
+            sound_source: OptionOrId::None,
             duration: 0.0,
 
             data: ChangeTracker::new(SoundData
@@ -147,64 +154,70 @@ impl Sound
     {
         self.reset();
 
-        self.sound_source = Some(sound_source.clone());
+        self.sound_source = OptionOrId::Some(sound_source.clone());
         self.audio_device = Some(sound_source.read().unwrap().audio_device.clone());
 
         let sound_source = sound_source.read().unwrap();
         let audio_device = sound_source.audio_device.read().unwrap();
-        let stream_handle = audio_device.stream_handle.as_ref();
 
         let mut sink = None;
         let mut sink_spatial = None;
 
-        if let Some(stream_handle) = stream_handle
+        let data = self.data.get_ref();
+        if let Some(stream_arc) = audio_device.get_stream()
         {
-            let data = self.data.get_ref();
+            let stream = stream_arc.lock().unwrap();
 
             if data.sound_type == SoundType::Stereo
             {
-                let s = rodio::Sink::try_new(stream_handle).unwrap();
-                let decoder = sound_source.decoder();
-
-                if let Some(total_duration) = decoder.total_duration()
+                let s = rodio::Sink::connect_new(stream.mixer());
+                if let Some(decoder) = sound_source.decoder()
                 {
-                    self.duration = (total_duration.as_millis() as f64 / 1000.0) as f32;
-                }
+                    if let Some(total_duration) = decoder.total_duration()
+                    {
+                        self.duration = total_duration.as_secs_f32();
+                    }
 
-                if data.looped
-                {
-                    s.append(decoder.repeat_infinite());
+                    if data.looped
+                    {
+                        s.append(decoder.repeat_infinite());
+                    }
+                    else
+                    {
+                        s.append(decoder);
+                    }
                 }
                 else
                 {
-                    s.append(decoder);
+                    console_error!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
-
                 s.pause();
-
                 sink = Some(s);
             }
             else
             {
-                let s = rodio::SpatialSink::try_new(stream_handle, [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]).unwrap();
-                let decoder = sound_source.decoder();
-
-                if let Some(total_duration) = decoder.total_duration()
+                let s = rodio::SpatialSink::connect_new(stream.mixer(), [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+                if let Some(decoder) = sound_source.decoder()
                 {
-                    self.duration = total_duration.as_secs_f32();
-                }
+                    if let Some(total_duration) = decoder.total_duration()
+                    {
+                        self.duration = total_duration.as_secs_f32();
+                    }
 
-                if data.looped
-                {
-                    s.append(decoder.repeat_infinite());
+                    if data.looped
+                    {
+                        s.append(decoder.repeat_infinite());
+                    }
+                    else
+                    {
+                        s.append(decoder);
+                    }
                 }
                 else
                 {
-                    s.append(decoder);
+                    console_error!("Sound: Unable to create decoder for sound source {}", sound_source.name);
                 }
-
                 s.pause();
-
                 sink_spatial = Some(s);
             }
         }
@@ -294,12 +307,24 @@ impl Sound
         if let Some(sink) = &self.sink
         {
             let pos = sink.get_pos();
+
+            if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
+            {
+                return pos.as_secs_f32() % self.duration;
+            }
+
             return pos.as_secs_f32();
         }
 
         if let Some(sink) = &self.sink_spatial
         {
             let pos = sink.get_pos();
+
+            if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
+            {
+                return pos.as_secs_f32() % self.duration;
+            }
+
             return pos.as_secs_f32();
         }
 
@@ -314,8 +339,8 @@ impl Sound
             let res = sink.try_seek(pos);
             if res.is_err()
             {
-                println!("can not seek, because its not supported for this file");
-                println!("{:?}", res);
+                console_warning!("can not seek, because its not supported for this file");
+                console_warning!("{:?}", res);
             }
         }
 
@@ -325,8 +350,8 @@ impl Sound
             let res = sink.try_seek(pos);
             if res.is_err()
             {
-                println!("can not seek, because its not supported for this file");
-                println!("{:?}", res);
+                console_warning!("can not seek, because its not supported for this file");
+                console_warning!("{:?}", res);
             }
         }
     }
@@ -430,10 +455,34 @@ impl Drop for Sound
     }
 }
 
+#[typetag::serde]
 impl Component for Sound
 {
     component_impl_default!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        if self.sound_source.is_ref()
+        {
+            // resolve sound source
+            let sound_source_found = context.sound_sources.iter().find(|s| s.read().unwrap().uuid == self.sound_source.id().unwrap());
+            if let Some(sound_source) = sound_source_found
+            {
+                self.set_sound_source(sound_source.clone());
+            }
+            else
+            {
+                self.sound_source = OptionOrId::None;
+                console_error!("Sound: SoundSource with id {} not found", self.sound_source.id().unwrap());
+            }
+        }
+        else
+        {
+            self.sound_source = OptionOrId::None;
+            console_error!("Sound: no SoundSource found");
+        }
+    }
 
     fn instantiable() -> bool
     {
@@ -479,7 +528,7 @@ impl Component for Sound
             sink_spatial: None,
         };
 
-        if let Some(sound_source) = &source.sound_source
+        if let Some(sound_source) = source.sound_source.as_ref()
         {
             sound.set_sound_source(sound_source.clone());
         }
@@ -487,14 +536,14 @@ impl Component for Sound
         Some(Arc::new(RwLock::new(Box::new(sound))))
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
         self._update(Some(node), None, false);
     }
 
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self._update(Some(node), Some(instance), false);
+        self._update(node, Some(instance), false);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
@@ -504,7 +553,7 @@ impl Component for Sound
             return;
         }
 
-        if let Some(sound_source) = &self.sound_source
+        if let Some(sound_source) = self.sound_source.as_ref()
         {
             sound_source.read().unwrap().ui_info(ui);
         }

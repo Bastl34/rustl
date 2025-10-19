@@ -4,18 +4,21 @@ use std::collections::HashSet;
 use std::sync::{RwLock, Arc};
 use std::any::Any;
 
-use crate::input::input_manager::InputManager;
+use serde::{Deserialize, Serialize};
+
 use crate::state::helper::render_item::RenderItemOption;
+use crate::state::resources::mesh_resource::MeshResourceItem;
 use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
+use crate::state::state::InputOutput;
 
-pub type ComponentBox = Box<dyn Component + Send + Sync>;
-pub type ComponentItem = Arc<RwLock<Box<dyn Component + Send + Sync>>>;
+pub type ComponentBox = Box<dyn Component>;
+pub type ComponentItem = Arc<RwLock<Box<dyn Component>>>;
 
-//pub trait Component: Any + Serialize + for<'de> Deserialize<'de> + Clone
-pub trait Component: Any
+#[typetag::serde(tag = "type")]
+pub trait Component: Any + Send + Sync
 {
     fn get_base(&self) -> &ComponentBase;
     fn get_base_mut(&mut self) -> &mut ComponentBase;
@@ -26,10 +29,13 @@ pub trait Component: Any
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
+    fn is_serializable(&self) -> bool { true }
+    fn run_after_deserialize(&mut self, context: &mut DeserializationContext);
+
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
-    fn update_instance(&mut self, node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64);
+    fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
+    fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
 
     fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
@@ -63,16 +69,40 @@ pub trait Component: Any
     }
 }
 
+pub struct DeserializationContext<'a>
+{
+    // resources
+    pub textures: Vec<crate::state::resources::texture::TextureItem>,
+    pub mesh_resources: Vec<MeshResourceItem>,
+    pub sound_sources: Vec<crate::state::resources::sound_source::SoundSourceItem>,
+
+    // scene
+    pub scene: &'a mut crate::state::scene::scene::Scene,
+    pub nodes: Vec<NodeItem>,
+    pub instances: Vec<InstanceItemArc>,
+    pub components: Vec<ComponentItem>,
+
+    // io
+    pub io: &'a mut InputOutput,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct ComponentBase
 {
+    #[serde(skip, default)]
     pub id: u64,
     pub uuid: String,
 
     pub is_enabled: bool,
 
     pub name: String,
+
+    #[serde(skip, default)]
     pub component_name: String,
+
+    #[serde(skip, default)]
     pub icon: String,
+
     pub info: Option<String>,
 
     pub extras: Extras,
@@ -80,9 +110,13 @@ pub struct ComponentBase
 
     pub from_file: bool,
 
+    #[serde(skip, default)]
     pub delete_later_request: bool,
 
-    pub render_item: RenderItemOption
+    #[serde(skip, default)]
+    pub render_item: RenderItemOption,
+
+    pub export: bool
 }
 
 impl ComponentBase
@@ -108,6 +142,8 @@ impl ComponentBase
             delete_later_request: false,
 
             render_item: None,
+
+            export: true
         }
     }
 
@@ -133,6 +169,8 @@ impl ComponentBase
             delete_later_request: false,
 
             render_item: None,
+
+            export: from.export
         }
     }
 
@@ -187,11 +225,11 @@ macro_rules! component_impl_no_update
 {
     () =>
     {
-        fn update(&mut self, _node: NodeItem, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update(&mut self, _node: NodeItem, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
 
-        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };
@@ -202,7 +240,7 @@ macro_rules! component_impl_no_update_instance
 {
     () =>
     {
-        fn update_instance(&mut self, _node: NodeItem, _instance: &crate::state::scene::node::InstanceItemArc, _input_manager: &mut crate::input::input_manager::InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+        fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &crate::state::scene::node::InstanceItemArc, _io: &mut crate::state::state::InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
         {
         }
     };
@@ -228,6 +266,18 @@ macro_rules! component_impl_no_cleanup_node
         fn cleanup_node(&mut self, _node: NodeItem) -> bool
         {
             false
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component_impl_no_post_deserialization
+{
+    () =>
+    {
+        fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+        {
+
         }
     };
 }
@@ -361,6 +411,46 @@ pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u
     });
 
     components.len() != prev_len
+}
+
+pub fn find_new_components_with_position(old_list: &Vec<ComponentItem>, new_list: &Vec<ComponentItem>) -> Vec<(ComponentItem, bool)>
+{
+    let old_ids: Vec<u64> = old_list.iter()
+        .map(|c| c.read().unwrap().id())
+        .collect();
+
+    let mut result = vec![];
+
+    for (index, c) in new_list.iter().enumerate()
+    {
+        let id = c.read().unwrap().id();
+        if !old_ids.contains(&id)
+        {
+            // Determine if the component was added at the front or back
+            // Simple heuristic: if index < old_list.len() / 2 => front, else back
+            let add_to_front = index < old_list.len() / 2;
+            result.push((c.clone(), add_to_front));
+        }
+    }
+
+    result
+}
+
+pub fn find_and_add_new_components(components_target: &mut Vec<ComponentItem>, maybe_new_components: &Vec<ComponentItem>)
+{
+    // after each update, check if new components were added during the update --> add
+    let new_components_with_position = find_new_components_with_position(&components_target, maybe_new_components);
+    for (component, add_to_front) in new_components_with_position
+    {
+        if add_to_front
+        {
+            components_target.insert(0, component);
+        }
+        else
+        {
+            components_target.push(component);
+        }
+    }
 }
 
 // ******************** macros ********************

@@ -1,14 +1,20 @@
 #![allow(dead_code)]
 
-use std::sync::{RwLock, Arc};
+use std::{env, sync::{Arc, RwLock}};
 
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Vector3};
 
-use crate::{helper::{file::{get_extension, get_stem}, math::approx_equal}, rendering::egui::EGui, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
+
+const OBJECTS_DIR: &str = "objects/";
+const SCENES_DIR: &str = "scenes/";
+
+const LOCAL_OBJECTS_DIR: &str = "resourcesLocal/objects/";
+const LOCAL_SCENES_DIR: &str = "resourcesLocal/scenes/";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
@@ -43,7 +49,9 @@ pub enum SettingsPanel
     Light,
     Scene,
     Object,
-    General
+    General,
+    Resources,
+    MeshResource
 }
 
 #[derive(PartialEq, Eq)]
@@ -56,6 +64,7 @@ pub enum SelectionType
     Texture,
     Sound,
     SoundSource,
+    MeshResource,
     None
 }
 
@@ -65,6 +74,7 @@ pub enum PickType
     Camera,
     Parent,
     AnimationCopy,
+    Texture,
     None
 }
 
@@ -72,7 +82,6 @@ pub enum PickType
 pub enum BottomPanel
 {
     Assets,
-    Debug,
     Console,
     None
 }
@@ -116,6 +125,7 @@ pub struct EditorState
     pub gizmo_rotation: bool,
     pub gizmo_scale: bool,
 
+    pub pick_id: String,
     pub pick_mode: PickType,
 
     pub grid_size: f32,
@@ -128,12 +138,13 @@ pub struct EditorState
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
+    pub log_type: LogType,
 
     pub settings: SettingsPanel,
 
     pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
-    pub show_internal_nodes: bool,
+    pub show_internal_entries: bool,
 
     pub component_filter: String,
 
@@ -165,8 +176,11 @@ pub struct EditorState
 
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
-    pub objects: Vec<Asset>,
-    pub scenes: Vec<Asset>,
+    pub assets_objects: Vec<Asset>,
+    pub assets_scenes: Vec<Asset>,
+
+    pub log_filter: String,
+    pub log_auto_scroll: bool,
 }
 
 impl EditorState
@@ -188,6 +202,7 @@ impl EditorState
             gizmo_rotation: false,
             gizmo_scale: false,
 
+            pick_id: "".to_string(),
             pick_mode: PickType::None,
 
             grid_size: DEFAULT_GRID_SIZE,
@@ -200,12 +215,13 @@ impl EditorState
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
+            log_type: LogType::All,
 
             settings: SettingsPanel::General,
 
             hierarchy_expand_all: true,
             hierarchy_filter: String::new(),
-            show_internal_nodes: false,
+            show_internal_entries: false,
 
             component_filter: String::new(),
 
@@ -237,8 +253,11 @@ impl EditorState
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: false,
-            objects: vec![],
-            scenes: vec![],
+            assets_objects: vec![],
+            assets_scenes: vec![],
+
+            log_filter: "".to_string(),
+            log_auto_scroll: true,
         }
     }
 
@@ -259,7 +278,7 @@ impl EditorState
     pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
     {
         // no scene selected
-        if self.selected_scene_id == None || self.selected_object.is_empty()
+        if self.selected_scene_id == None && self.selected_object.is_empty()
         {
             return (None, None);
         }
@@ -528,7 +547,7 @@ impl EditorState
         self.try_mode = try_out;
         self.visible = !try_out;
         state.rendering.fullscreen.set(try_out);
-        state.input_manager.mouse.visible.set(!try_out);
+        state.io.input_manager.mouse.visible.set(!try_out);
 
         if try_out
         {
@@ -536,7 +555,24 @@ impl EditorState
         }
     }
 
-    pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui: &EGui)
+    pub fn load_all_asset_entries(&mut self, state: &mut State, egui_context: &egui::Context)
+    {
+        // project
+        self.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui_context, false);
+        self.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui_context, false);
+
+        // local
+        let local_objects_dir = env::current_dir().unwrap().join(LOCAL_OBJECTS_DIR);
+        let local_objects_dir = local_objects_dir.to_string_lossy().to_string();
+
+        let local_scenes_dir = env::current_dir().unwrap().join(LOCAL_SCENES_DIR);
+        let local_scenes_dir = local_scenes_dir.to_string_lossy().to_string();
+
+        self.load_asset_entries(local_objects_dir.as_str(), state, AssetType::Object, egui_context, true);
+        self.load_asset_entries(local_scenes_dir.as_str(), state, AssetType::Scene, egui_context, true);
+    }
+
+    pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui_context: &egui::Context, append: bool)
     {
         let files = read_files_recursive(path);
 
@@ -570,7 +606,7 @@ impl EditorState
 
                 let image = egui::ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize],image.as_bytes());
 
-                let handle = egui.ctx.load_texture(thumb_path.clone(), image, Default::default());
+                let handle = egui_context.load_texture(thumb_path.clone(), image, Default::default());
 
                 thumb = Some(thumb_path);
                 egui_preview = Some(handle);
@@ -589,11 +625,25 @@ impl EditorState
 
         if asset_type == AssetType::Scene
         {
-            self.scenes = assets;
+            if append
+            {
+                self.assets_scenes.extend(assets);
+            }
+            else
+            {
+                self.assets_scenes = assets;
+            }
         }
         else if asset_type == AssetType::Object
         {
-            self.objects = assets;
+            if append
+            {
+                self.assets_objects.extend(assets);
+            }
+            else
+            {
+                self.assets_objects = assets;
+            }
         }
     }
 }

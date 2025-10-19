@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{gui::helper::generic_items::{self, collapse_with_title, label_with_background}, scene::{components::{animation::Animation, component::ComponentItem, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::State}};
+use crate::{component_downcast, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title, label_with_background}}, scene::{components::{animation::Animation, component::{find_and_add_new_components, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
+
+const MAX_COMPONENT_NAME_LENGTH: usize = 14;
 
 pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
 {
@@ -22,8 +24,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         let name = node.name.clone();
         let node_id = node.id;
 
-        let is_internal_node = node.has_tag("internal");
-        let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_nodes);
+        let is_internal_node = node.has_tag(ENGINE_INTERNAL_TAG) || node.has_tag(EDITOR_INTERNAL_TAG);
+        let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_entries);
 
         let filter = editor_state.hierarchy_filter.to_lowercase();
 
@@ -56,23 +58,23 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let mut headline_name: String;
                 if node.find_component::<Animation>().is_some()
                 {
-                    headline_name = format!("🎞 {}: {}", node_id, name.clone());
+                    headline_name = format!("🎞 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.find_component::<Joint>().is_some()
                 {
-                    headline_name = format!("🕱 {}: {}", node_id, name.clone());
+                    headline_name = format!("🕱 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.is_empty()
                 {
-                    headline_name = format!("👻 {}: {}", node_id, name.clone());
+                    headline_name = format!("👻 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.get_mesh().is_some()
                 {
-                    headline_name = format!("◼ {}: {}", node_id, name.clone());
+                    headline_name = format!("◼ {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else
                 {
-                    headline_name = format!("◻ {}: {}", node_id, name.clone());
+                    headline_name = format!("◻ {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
 
                 if locked
@@ -109,7 +111,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             if let Some(camera_id) = camera_id
                             {
                                 let camera = scene.get_camera_by_id_mut(camera_id).unwrap();
-                                camera.node = Some(node.clone());
+                                camera.set_node(node.clone());
                             }
                         }
                         editor_state.pick_mode = PickType::None;
@@ -321,17 +323,17 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.delete_node_by_id(node_id, false, false);
+                            scene.delete_node_by_id(node_id, false, false, false, false);
                         }));
                     }
 
-                    if ui.button(RichText::new("🗑 Delete + materials/textures").color(Color32::LIGHT_RED)).clicked()
+                    if ui.button(RichText::new("🗑 Delete + Clear Resources").color(Color32::LIGHT_RED)).clicked()
                     {
                         ui.close();
 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.delete_node_by_id(node_id, true, true);
+                            scene.delete_node_by_id(node_id, true, true, true, true);
                         }));
                     }
                 });
@@ -526,8 +528,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 component_downcast!(mesh, Mesh);
 
                 direct_meshes_amout += 1;
-                direct_vertices_amout += mesh.get_data().vertices.len();
-                direct_faces_amout += mesh.get_data().indices.len();
+
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    direct_vertices_amout += mesh_resource.read().unwrap().get_data().vertices.len();
+                    direct_faces_amout += mesh_resource.read().unwrap().get_data().indices.len();
+                }
             }
         }
 
@@ -548,8 +554,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 component_downcast!(mesh, Mesh);
 
                 all_meshes_amout += 1;
-                all_vertices_amout += mesh.get_data().vertices.len();
-                all_faces_amout += mesh.get_data().indices.len();
+
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    all_vertices_amout += mesh_resource.read().unwrap().get_data().vertices.len();
+                    all_faces_amout += mesh_resource.read().unwrap().get_data().indices.len();
+                }
             }
         }
     }
@@ -565,7 +575,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             ui.label(format!("Name: {}", node.name));
             ui.label(format!("Id: {}", node.id));
             ui.label(format!("UUID: {}", node.uuid));
-            ui.label(format!("Source: {:?}", node.source));
+            if let Some(source) = &node.source
+            {
+                ui.label(format!("Source: {:?}", source.get_full_descriptor()));
+            }
 
             if let Some(bounding_box_info) = bounding_box_info
             {
@@ -608,7 +621,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
 
                             let color_u8 = Color32::from_rgb((data.color.x * 255.0) as u8, (data.color.y * 255.0) as u8,(data.color.z * 255.0) as u8);
-                            label_with_background(ui, tag, color_u8);
+                            label_with_background(ui, tag, color_u8, None);
 
                             ui.add_enabled_ui(!data.locked, |ui|
                             {
@@ -652,24 +665,27 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     });
 
     // Skeleton
-    if let Some(skin_node) = node.read().unwrap().skin.first()
+    if let Some(skin_node_or_id) = node.read().unwrap().skin.first()
     {
-        collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", None, |ui|
+        if let Some(skin_node_arc) = skin_node_or_id.as_ref()
         {
-            ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
-            ui.horizontal(|ui|
+            collapse_with_title(ui, "object_skeleton", true, "🕱 Skeleton", None, |ui|
             {
-                ui.label("Link to Skeleton: ");
-                if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
+                ui.label(format!("Joints: {}", node.read().unwrap().skin.len()));
+                ui.horizontal(|ui|
                 {
-                    editor_state.de_select_current_item(state);
+                    ui.label("Link to Skeleton: ");
+                    if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to skeleton").clicked()
+                    {
+                        editor_state.de_select_current_item(state);
 
-                    editor_state.selected_object = format!("objects_{}", skin_node.read().unwrap().id);
-                    editor_state.selected_scene_id = Some(scene_id);
-                    editor_state.selected_type = SelectionType::Object;
-                }
+                        editor_state.selected_object = format!("objects_{}", skin_node_arc.read().unwrap().id);
+                        editor_state.selected_scene_id = Some(scene_id);
+                        editor_state.selected_type = SelectionType::Object;
+                    }
+                });
             });
-        });
+        }
     }
 
     // statistics
@@ -765,9 +781,9 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         // parenting
         ui.horizontal(|ui|
         {
-            let parent: Option<std::sync::Arc<std::sync::RwLock<Box<crate::state::scene::node::Node>>>> = node.read().unwrap().parent.clone();
+            let parent = node.read().unwrap().parent.clone();
             let mut parent_name = "".to_string();
-            if let Some(parent) = parent
+            if let Some(parent) = parent.as_ref()
             {
                 parent_name = parent.read().unwrap().name.clone();
             }
@@ -816,7 +832,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                     {
                         let parent = node.read().unwrap().parent.clone();
 
-                        if let Some(parent) = parent
+                        if let Some(parent) = parent.as_ref()
                         {
                             let parent = parent.read().unwrap();
                             editor_state.selected_object = format!("objects_{}", parent.id);
@@ -828,12 +844,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             if ui.button(RichText::new("Dispose Node").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                scene.delete_node_by_id(node_id, false, false);
+                scene.delete_node_by_id(node_id, false, false, false, false);
             }
-            if ui.button(RichText::new("Dispose Node + materials/textures").heading().strong().color(ui.visuals().error_fg_color)).clicked()
+            if ui.button(RichText::new("Dispose Node + Clear Resources").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
                 let scene = state.find_scene_by_id_mut(scene_id).unwrap();
-                scene.delete_node_by_id(node_id, true, true);
+                scene.delete_node_by_id(node_id, true, true, true, true);
             }
         });
     });
@@ -980,14 +996,18 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
     {
         let mut delete_component_id = None;
         let mut duplicate_component: Option<ComponentItem> = None;
+        let mut move_up_component: Option<ComponentItem> = None;
+        let mut move_down_component: Option<ComponentItem> = None;
 
         let all_components;
-        let all_components_clone;
+        let mut all_components_clone;
         {
             let node_read = node.read().unwrap();
             all_components = node_read.components.clone();
             all_components_clone = node_read.components.clone();
         }
+
+        let components_amount = all_components.len();
 
         for (component_i, component) in all_components.iter().enumerate()
         {
@@ -1000,21 +1020,23 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             let uuid;
             let name;
             let component_title;
-            let component_name;
+            let component_tooltip;
             let is_material;
             let is_sound;
             let from_file;
+            let export;
             let duplicatable;
             {
                 let component = component.read().unwrap();
                 let base = component.get_base();
-                component_title = format!("{} {}", base.icon, base.name);
-                component_name = base.component_name.clone();
+                component_title = format!("{} {}", base.icon, cut_string_to_length(&base.name, MAX_COMPONENT_NAME_LENGTH));
+                component_tooltip = format!("{}: {}", base.component_name, &base.name);
                 name = base.name.clone();
                 component_id = component.id();
                 uuid = component.uuid().clone();
 
                 from_file = base.from_file;
+                export = base.export;
 
                 duplicatable = component.duplicatable();
 
@@ -1026,7 +1048,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
             generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
             {
-                ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
+                ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_tooltip);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                 {
                     if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
@@ -1054,6 +1076,22 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     {
                         component.write().unwrap().set_enabled(enabled);
                     }
+
+                    ui.add_enabled_ui(component_i < components_amount - 1, |ui|
+                    {
+                        if ui.button(RichText::new("⬇").color(Color32::WHITE)).clicked()
+                        {
+                            move_down_component = Some(component.clone());
+                        }
+                    });
+
+                    ui.add_enabled_ui(component_i > 0, |ui|
+                    {
+                        if ui.button(RichText::new("⬆").color(Color32::WHITE)).clicked()
+                        {
+                            move_up_component = Some(component.clone());
+                        }
+                    });
 
                     if duplicatable
                     {
@@ -1096,6 +1134,11 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     {
                         ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
                     }
+
+                    if !export
+                    {
+                        ui.label(RichText::new("💾").color(Color32::LIGHT_RED)).on_hover_text("This component will not be saved/exported");
+                    }
                 });
             },
             |ui|
@@ -1106,13 +1149,21 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                 // filter out current component
                 {
-                    let mut node: std::sync::RwLockWriteGuard<'_, Box<crate::state::scene::node::Node>> = node.write().unwrap();
+                    let mut node = node.write().unwrap();
                     node.components = all_components_clone.clone();
                     node.components.remove(component_i);
                 }
 
-                let mut component = component.write().unwrap();
-                component.ui(ui, Some(node.clone()));
+                {
+                    let mut component = component.write().unwrap();
+                    component.ui(ui, Some(node.clone()));
+                }
+
+                // after each ui update, check if new components were added during the update --> add
+                {
+                    let maybe_new_components = &node.read().unwrap().components;
+                    find_and_add_new_components(&mut all_components_clone, maybe_new_components);
+                }
 
                 // re-add current component
                 {
@@ -1131,6 +1182,16 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         {
             node.write().unwrap().add_component(duplicate_component);
         }
+
+        if let Some(move_up_component) = move_up_component
+        {
+            node.write().unwrap().move_component_up(move_up_component);
+        }
+
+        if let Some(move_down_component) = move_down_component
+        {
+            node.write().unwrap().move_component_down(move_down_component);
+        }
     }
 
     if let Some(instance_id) = instance_id
@@ -1138,16 +1199,30 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         let mut delete_component_id = None;
         let mut duplicate_component: Option<ComponentItem> = None;
         let mut sound_component_id = None;
+        let mut move_up_component: Option<ComponentItem> = None;
+        let mut move_down_component: Option<ComponentItem> = None;
 
-        let node_read: std::sync::RwLockReadGuard<'_, Box<crate::state::scene::node::Node>> = node.read().unwrap();
-        let instance = node_read.find_instance_by_id(instance_id);
+        let instance =
+        {
+            let node_read = node.read().unwrap();
+            node_read.find_instance_by_id(instance_id).cloned()
+        };
 
         if let Some(instance) = instance
         {
             {
-                let instance = instance.read().unwrap();
+                let all_components;
+                let mut all_components_clone;
+                {
+                    let instance = instance.read().unwrap();
 
-                for component in &instance.components
+                    all_components = instance.components.clone();
+                    all_components_clone = instance.components.clone();
+                }
+
+                let components_amount = all_components.len();
+
+                for (component_i, component) in all_components.iter().enumerate()
                 {
                     if !match_component_filter(&editor_state.component_filter, component.clone())
                     {
@@ -1155,20 +1230,24 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                     }
 
                     let component_id;
+                    let uuid;
                     let name;
-                    let component_name;
                     let component_title;
+                    let component_tooltip;
                     let is_sound;
                     let from_file;
+                    let export;
                     let duplicatable;
                     {
                         let component = component.read().unwrap();
                         let base = component.get_base();
-                        component_name = format!("{} {}", base.icon, base.name);
-                        component_title = base.component_name.clone();
+                        component_title = format!("{} {}", base.icon, cut_string_to_length(&base.name, MAX_COMPONENT_NAME_LENGTH));
+                        component_tooltip = format!("{}: {}", base.component_name, &base.name);
                         name = base.name.clone();
                         component_id = component.id();
+                        uuid = component.uuid().clone();
                         from_file = base.from_file;
+                        export = base.export;
                         duplicatable = component.duplicatable();
 
                         is_sound = component.as_any().downcast_ref::<Sound>().is_some();
@@ -1178,7 +1257,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                     generic_items::collapse(ui, component_id.to_string(), true, bg_color, |ui|
                     {
-                        ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_name);
+                        ui.label(RichText::new(component_title).heading().strong()).on_hover_text(component_tooltip);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                         {
                             if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
@@ -1207,6 +1286,22 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                                 component.write().unwrap().set_enabled(enabled);
                             }
 
+                            ui.add_enabled_ui(component_i < components_amount - 1, |ui|
+                            {
+                                if ui.button(RichText::new("⬇").color(Color32::WHITE)).clicked()
+                                {
+                                    move_down_component = Some(component.clone());
+                                }
+                            });
+
+                            ui.add_enabled_ui(component_i > 0, |ui|
+                            {
+                                if ui.button(RichText::new("⬆").color(Color32::WHITE)).clicked()
+                                {
+                                    move_up_component = Some(component.clone());
+                                }
+                            });
+
                             if duplicatable
                             {
                                 if ui.button(RichText::new("🗐").color(Color32::WHITE)).on_hover_text("duplicate").clicked()
@@ -1232,15 +1327,42 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                             {
                                 ui.label(RichText::new("⚠").color(Color32::LIGHT_RED)).on_hover_text("This component was loaded from a resource. Adjustments can not be saved.");
                             }
+
+                            if !export
+                            {
+                                ui.label(RichText::new("💾").color(Color32::LIGHT_RED)).on_hover_text("This component will not be saved/exported");
+                            }
                         });
                     },
                     |ui|
                     {
                         ui.label(format!("Id: {}", component_id));
+                        ui.label(format!("UUID: {}", uuid));
                         ui.label(format!("Name: {}", name));
 
-                        let mut component = component.write().unwrap();
-                        component.ui(ui, None);
+                        // filter out current component
+                        {
+                            let mut instance = instance.write().unwrap();
+                            instance.components = all_components_clone.clone();
+                            instance.components.remove(component_i);
+                        }
+
+                        {
+                            let mut component = component.write().unwrap();
+                            component.ui(ui, Some(node.clone()));
+                        }
+
+                        // after each ui update, check if new components were added during the update --> add
+                        {
+                            let maybe_new_components = &node.read().unwrap().components;
+                            find_and_add_new_components(&mut all_components_clone, maybe_new_components);
+                        }
+
+                        // re-add current component
+                        {
+                            let mut node = node.write().unwrap();
+                            node.components = all_components_clone.clone();
+                        }
                     });
                 }
             }
@@ -1255,6 +1377,18 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
             {
                 let mut instance = instance.write().unwrap();
                 instance.add_component(duplicate_component);
+            }
+
+            if let Some(move_up_component) = move_up_component
+            {
+                let mut instance = instance.write().unwrap();
+                instance.move_component_up(move_up_component);
+            }
+
+            if let Some(move_down_component) = move_down_component
+            {
+                let mut instance = instance.write().unwrap();
+                instance.move_component_down(move_down_component);
             }
 
             if let Some(sound_component_id) = sound_component_id

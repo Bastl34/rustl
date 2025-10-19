@@ -4,8 +4,9 @@ use std::{f32::consts::PI, sync::Arc};
 
 use nalgebra::{Vector2, Vector3, Point3};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::{input_manager::InputManager, mouse::MouseButton}, state::scene::{camera::CameraData, node::NodeItem, scene::Scene}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::mouse::MouseButton, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::InputOutput}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -14,6 +15,7 @@ const ANGLE_OFFSET: f32 = 0.01;
 const DEFAULT_AUTO_ROTATE_TIMEOUT: u64 = 2000;
 const DEFAULT_ZOOM_SPEED: f32 = 0.05;
 
+#[derive(Serialize, Deserialize)]
 pub struct TargetRotationControllerData
 {
     pub offset: Vector3::<f32>,
@@ -23,6 +25,7 @@ pub struct TargetRotationControllerData
     pub beta: f32, // x-achis
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TargetRotationController
 {
     base: CameraControllerBase,
@@ -37,7 +40,8 @@ pub struct TargetRotationController
     pub auto_rotate: Option<f32>,
     pub auto_rotate_timeout: u64,
 
-    pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>,
+    #[serde(skip, default)]
+    pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>, // TODO -> find a better way to handle this
 
     pub collision_check: bool,
     pub collision_check_offset: f32,
@@ -155,19 +159,24 @@ impl TargetRotationController
 
 }
 
+#[typetag::serde]
 impl CameraController for TargetRotationController
 {
     camera_controller_impl_default!();
 
-    fn update(&mut self, node: Option<NodeItem>, scene: &mut Scene, input_manager: &mut InputManager, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
+    fn run_after_deserialize(&mut self, _context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+    }
+
+    fn update(&mut self, node: Option<NodeItem>, scene: &mut Scene, io: &mut InputOutput, cam_data: &mut ChangeTracker<CameraData>, frame_scale: f32) -> bool
     {
         let mut change = false;
 
-        let mut velocity = input_manager.mouse.point.velocity.clone();
+        let mut velocity = io.input_manager.mouse.point.velocity.clone();
 
-        if !*input_manager.mouse.visible.get_ref()
+        if !*io.input_manager.mouse.visible.get_ref()
         {
-            velocity = input_manager.mouse.raw_velocity.velocity;
+            velocity = io.input_manager.mouse.raw_velocity.velocity;
         }
 
         let mut update_needed = false;
@@ -177,7 +186,7 @@ impl CameraController for TargetRotationController
         }
 
         // offset
-        if input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(&velocity)
+        if io.input_manager.mouse.is_holding(MouseButton::Right) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;
@@ -198,7 +207,7 @@ impl CameraController for TargetRotationController
         }
 
         // rotation
-        if (input_manager.mouse.is_holding(MouseButton::Left) || !*input_manager.mouse.visible.get_ref()) && !approx_zero_vec2(&velocity)
+        if (io.input_manager.mouse.is_holding(MouseButton::Left) || !*io.input_manager.mouse.visible.get_ref()) && !approx_zero_vec2(&velocity)
         {
             let delta_x = velocity.x * self.mouse_sensitivity.x;
             let delta_y = velocity.y * self.mouse_sensitivity.y;
@@ -223,7 +232,7 @@ impl CameraController for TargetRotationController
         }
 
         // auto rotate
-        if !input_manager.mouse.is_any_button_holding() && self.last_manual_move + self.auto_rotate_timeout < get_millis()
+        if !io.input_manager.mouse.is_any_button_holding() && self.last_manual_move + self.auto_rotate_timeout < get_millis()
         {
             if let Some(auto_rotate) = self.auto_rotate
             {
@@ -235,10 +244,10 @@ impl CameraController for TargetRotationController
         }
 
         // distance
-        if !math::approx_zero(input_manager.mouse.wheel_delta_y)
+        if !math::approx_zero(io.input_manager.mouse.wheel_delta_y)
         {
             let data = self.data.get_mut();
-            data.radius += self.mouse_wheel_sensitivity * -input_manager.mouse.wheel_delta_y;
+            data.radius += self.mouse_wheel_sensitivity * -io.input_manager.mouse.wheel_delta_y;
 
             if data.radius <= 0.0 { data.radius = 0.0; }
 

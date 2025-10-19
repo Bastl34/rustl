@@ -1,204 +1,87 @@
 #![allow(dead_code)]
 
-use std::{sync::{RwLock, Arc}, path::Path};
+use std::{path::Path, sync::{Arc, Mutex, RwLock}};
 
-use crate::{component_downcast_mut, helper::{self, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{self, get_extension, get_stem}}, output::audio_device::AudioDevice, resources::resources::{self, load_binary}, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene, sound_source::SoundSource, texture::{Texture, TextureItem}}, state::State}};
+use crate::{component_downcast_mut, console_error, console_success, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
 {
     let extension = Path::new(path).extension();
 
+    console_success!(path);
+
     if extension.is_none()
     {
-        println!("can not load {}", path);
+        console_error!("can not load {}", path);
         return Ok(vec![]);
     }
     let extension = extension.unwrap();
 
     if extension == "obj"
     {
-        return wavefront::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return wavefront::load(path, scene_id, parent_node_id, main_queue, hide_root_node, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
     else if extension == "gltf" || extension == "glb"
     {
-        return gltf::load(path, scene_id, parent_node_id, main_queue, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
+        return gltf::load(path, scene_id, parent_node_id, main_queue, hide_root_node, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
     }
 
     Ok(vec![])
 }
 
-pub fn load_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
-{
-    let image_bytes = resources::load_binary(path)?;
-    let name = file::get_stem(path);
-
-    Ok(load_texture_byte_or_reuse(scene_id, main_queue, max_tex_res, &image_bytes, name.as_str(), extension))
-}
-
-pub fn load_texture_byte_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, max_tex_res: u32, image_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> TextureItem
-{
-    let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
-    let hash_clone = hash.clone();
-    let name_clone = name.to_string();
-
-    let res_texture: Arc<RwLock<Option<TextureItem>>> = Arc::new(RwLock::new(None));
-    let res_texture_clone = res_texture.clone();
-
-    let scene_id_clone = scene_id.clone();
-
-    let res;
-    {
-        let mut main_queue = main_queue.write().unwrap();
-
-        // ***** check for reuse *****
-        res = main_queue.add(Box::new(move |state|
-        {
-            if let Some(scene) = state.find_scene_by_id_mut(scene_id_clone)
-            {
-                if scene.textures.contains_key(&hash_clone)
-                {
-                    println!("reusing texture {}", name_clone);
-
-                    *res_texture_clone.write().unwrap() = Some(scene.textures.get_mut(&hash_clone).unwrap().clone());
-                }
-            }
-        }))
-    }
-    res.join();
-
-    if let Some(texture) = res_texture.read().unwrap().as_ref()
-    {
-        return texture.clone();
-    }
-
-    // ***** if not found -> load *****
-    let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
-    let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-    // ***** add to scene textures *****
-    let scene_id_clone = scene_id.clone();
-    let arc_clone = arc.clone();
-    let hash_clone = hash.clone();
-
-    let res;
-    {
-        let mut main_queue = main_queue.write().unwrap();
-        res = main_queue.add(Box::new(move |state|
-        {
-            if let Some(scene) = state.find_scene_by_id_mut(scene_id_clone)
-            {
-                scene.textures.insert(hash_clone.clone(), arc_clone.clone());
-            }
-        }));
-    }
-    res.join();
-
-    arc
-}
-
-pub fn insert_texture_or_reuse(scene_id: u64, main_queue: ExecutionQueueItem, texture: Texture, name: &str) -> TextureItem
-{
-    let hash = texture.hash.clone();
-    let hash_clone = hash.clone();
-    let name_clone = name.to_string();
-
-    let res_texture: Arc<RwLock<Option<TextureItem>>> = Arc::new(RwLock::new(None));
-    let res_texture_clone = res_texture.clone();
-
-    // ***** check for reuse *****
-    let res;
-    {
-        let mut main_queue = main_queue.write().unwrap();
-        res = main_queue.add(Box::new(move |state|
-        {
-            if let Some(scene) = state.find_scene_by_id_mut(scene_id)
-            {
-                if scene.textures.contains_key(&hash_clone)
-                {
-                    println!("reusing texture {}", name_clone);
-
-                    *res_texture_clone.write().unwrap() = Some(scene.textures.get_mut(&hash_clone).unwrap().clone());
-                }
-            }
-        }));
-    }
-    res.join();
-
-    //if let Some(texture) = res_texture.read().unwrap().as_ref()
-    if let Some(texture) = res_texture.read().unwrap().as_ref()
-    {
-        return texture.clone();
-    }
-
-    // ***** if not found -> "load" *****
-    let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-    // ***** add to scene textures *****
-    let scene_id_clone = scene_id.clone();
-    let arc_clone = arc.clone();
-    let hash_clone = hash.clone();
-
-    let res;
-    {
-        let mut main_queue = main_queue.write().unwrap();
-        res = main_queue.add(Box::new(move |state|
-        {
-            if let Some(scene) = state.find_scene_by_id_mut(scene_id_clone)
-            {
-                scene.textures.insert(hash_clone.clone(), arc_clone.clone());
-            }
-        }));
-    }
-    res.join();
-
-    arc
-
-}
-
-pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: TextureType, scene_id: u64, material_id: Option<u64>, mipmapping: bool, max_tex_res: u32)
+pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u64>, material_id: Option<u64>, mipmapping: bool, max_tex_res: u32)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
 
     let bytes = load_binary(path).unwrap();
 
+    let texture_path = path.to_string();
+
     let mut main_queue = main_queue.write().unwrap();
     main_queue.add(Box::new(move |state|
     {
-        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        let tex = state.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
         {
-            // material specific texture
-            if let Some(material_id) = material_id
-            {
-                if let Some(material) = scene.get_material_by_id(material_id)
-                {
-                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
-                    tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
+            tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
 
-                    component_downcast_mut!(material, Material);
-                    material.set_texture(tex, texture_type);
-                }
+            if tex.read().unwrap().source.is_none()
+            {
+                tex.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(texture_path.clone()));
             }
-            // scene specific texture
-            else
-            {
-                if texture_type == TextureType::Environment
-                {
-                    let tex = scene.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
-                    tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
+        }
 
+        if let Some(scene_id) = scene_id
+        {
+            if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+            {
+                if texture_type == Some(TextureType::Environment)
+                {
                     let scene_data = scene.get_data_mut();
                     let scene_data = scene_data.get_mut();
                     scene_data.environment_texture = Some(TextureState::new(tex.clone()));
-
+                }
+            }
+        }
+        else if let Some(material_id) = material_id
+        {
+            if let Some(texture_type) = texture_type
+            {
+                for scene in &mut state.scenes
+                {
+                    if let Some(material) = scene.get_material_by_id(material_id)
+                    {
+                        component_downcast_mut!(material, Material);
+                        material.set_texture(tex.clone(), texture_type);
+                    }
                 }
             }
         }
     }));
 }
 
-pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, scene_id: u64, sound_component_id: Option<u64>)
+pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, sound_component_id: Option<u64>)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
@@ -208,29 +91,24 @@ pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, scene_id: u64, sou
     let mut main_queue = main_queue.write().unwrap();
     main_queue.add(Box::new(move |state|
     {
-        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        let sound_source = state.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+
+        for scene in &mut state.scenes
         {
             // sound component specific file
             if let Some(sound_component_id) = sound_component_id
             {
                 if let Some(sound_component) = scene.get_sound_by_id(sound_component_id)
                 {
-                    let sound_source = scene.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
-
                     component_downcast_mut!(sound_component, Sound);
-                    sound_component.set_sound_source(sound_source);
+                    sound_component.set_sound_source(sound_source.clone());
                 }
-            }
-            // load sound source without specific sound component
-            else
-            {
-                scene.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
             }
         }
     }));
 }
 
-pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType,  main_queue: ExecutionQueueItem, scene_id: u64, audio_device: Arc<RwLock<Box<AudioDevice>>>)
+pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType,  main_queue: ExecutionQueueItem)
 {
     let path: String = path.to_string();
     let node_name = node_name.to_string();
@@ -243,36 +121,34 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
         extension = String::from(path.extension().unwrap().to_string_lossy());
     }
 
-    let audio_device = audio_device.clone();
     spawn_thread(move ||
     {
-        let audio_device = audio_device.clone();
         let path = path.clone();
         let node_name = node_name.clone();
         let filename = filename.clone();
         let extension = extension.clone();
+        let name = get_stem(&path);
 
-        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+        execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
         {
             let sound_source_bytes = load_binary(path.as_str());
             if let Ok(sound_source_bytes) = sound_source_bytes
             {
-                let sound_source = Arc::new(RwLock::new(Box::new(SoundSource::new(filename.as_str(), audio_device.clone(), &sound_source_bytes, Some(extension.clone())))));
-                let sound_source_clone = sound_source.clone();
+                let sound_source = state.load_sound_source_byte_or_reuse(&sound_source_bytes, name.as_str(), Some(extension.clone()));
 
-                let hash = sound_source.read().unwrap().hash.clone();
-                scene.sound_sources.insert(hash, sound_source);
-
-                let node = scene.find_node_by_name(node_name.as_str());
-
-                if let Some(node) = node
+                for scene in &mut state.scenes
                 {
-                    let mut node = node.write().unwrap();
+                    let node = scene.find_node_by_name(node_name.as_str());
 
-                    let mut sound = Sound::new(filename.as_str(), sound_source_clone, spund_type, true);
-                    sound.start();
+                    if let Some(node) = node
+                    {
+                        let mut node = node.write().unwrap();
 
-                    node.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                        let mut sound = Sound::new(filename.as_str(), sound_source.clone(), spund_type, true);
+                        sound.start();
+
+                        node.add_component(Arc::new(RwLock::new(Box::new(sound))));
+                    }
                 }
             }
         }));
@@ -281,7 +157,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
 
 pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
 {
-    let animations = load_object(path, scene_id, None, main_queue.clone(), false, true, false, 0);
+    let animations = load_object(path, scene_id, None, main_queue.clone(), false, false, true, false, 0);
 
     if let Err(animations) = animations
     {
@@ -313,7 +189,7 @@ pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, m
                 for animation in new_animations
                 {
                     component_downcast_mut!(animation, Animation);
-                    animation.in_place_joint_node = Some(in_place_joint_node.clone());
+                    animation.in_place_joint_node = OptionOrId::Some(in_place_joint_node.clone());
                 }
             }
         }
@@ -394,4 +270,40 @@ pub fn execute_on_state_mut(main_queue: ExecutionQueueItem, func: Box<dyn Fn(&mu
     {
         func(state);
     }));
+}
+
+/*
+pub fn execute_on_state_mut_and_wait(main_queue: ExecutionQueueItem, func: Box<dyn Fn(&mut State) + Send + Sync>)
+{
+    let res;
+    {
+        let mut main_queue = main_queue.write().unwrap();
+        res = main_queue.add(Box::new(move |state|
+        {
+            func(state);
+        }));
+    }
+    res.join();
+}
+*/
+
+//pub fn execute_on_state_mut_and_wait_fn_once(main_queue: ExecutionQueueItem, func: Box<dyn FnOnce(&mut State) + Send + Sync>)
+pub fn execute_on_state_mut_and_wait(main_queue: ExecutionQueueItem, func: Box<dyn FnOnce(&mut State) + Send + Sync>)
+{
+    let res;
+    {
+        let func = Arc::new(Mutex::new(Some(func)));
+
+        let func_clone = func.clone();
+        let mut main_queue = main_queue.write().unwrap();
+        res = main_queue.add(Box::new(move |state|
+        {
+            let opt = func_clone.lock().unwrap().take();
+            if let Some(func) = opt
+            {
+                func(state);
+            }
+        }));
+    }
+    res.join();
 }

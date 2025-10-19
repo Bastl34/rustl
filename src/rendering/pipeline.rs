@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use wgpu::{ShaderModule, Device, BindGroupLayout};
 
-use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
+use crate::{console_log, render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance, skeleton::MAX_JOINTS, morph_target::MAX_MORPH_TARGETS};
 
@@ -176,7 +176,7 @@ impl Pipeline
 
     pub fn re_create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
-        dbg!("recreating pipeline");
+        console_log!("recreating pipeline");
 
         self.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
     }

@@ -9,6 +9,7 @@ pub struct Context
     pub state: StateItem,
 
     pub window_title: String,
+    pub window_minimized: bool,
 
     pub wgpu: WGpu,
     pub window: Arc<Window>,

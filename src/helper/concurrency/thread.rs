@@ -1,8 +1,9 @@
-use instant::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread as thread;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
+
+use web_time::Duration;
 
 pub use thread::JoinHandle as ThreadResult;
 

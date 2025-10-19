@@ -7,35 +7,40 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-simple_logger = "5.0"
-log = "0.4"
-cfg-if = "1"
-wgpu = "25.0"
-bytemuck = { version = "1.23", features = [ "derive" ] }
-instant = "0.1"
-winit = "0.30.11"
-anyhow = "1.0"
-nalgebra = "0.33"
-sha256 = "1.6.0"
+simple_logger = "5.0.0"
+log = "0.4.28"
+cfg-if = "1.0.3"
+wgpu = "27.0.1"
+bytemuck = { version = "1.24.0", features = [ "derive" ] }
+web-time = "1.1.0"
+winit = "0.30.12"
+anyhow = "1.0.100"
+nalgebra = { version = "0.34.1", features = ["serde-serialize"]}
 colored = "3.0.0"
-base64 = "0.22"
-strum = "0.27"
-strum_macros = "0.27"
-rfd = "0.15"
-serde = "1.0"
-serde_json = "1.0"
-regex = "1.11"
-rodio = "0.20"
-gilrs = { version = "0.11", features = ["wgi"]}
-take_mut = "0.2"
-uuid = {version = "1.17", features = ["v4"] }
+base64 = "0.22.1"
+strum = "0.27.2"
+strum_macros = "0.27.2"
+rfd = "0.15.4"
+chrono = "0.4.42"
 
-parry3d = "0.21"
-bvh = "0.11.0"
+serde = "1.0.228"
+serde_json = "1.0.145"
+typetag = "0.2.21"
 
-arboard = "3.5.0"
+regex = "1.12.1"
+# use lewton for ogg (symphonia-vorbis can not seek or loop properly)
+rodio = { version = "0.21.1", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
+gilrs = { version = "0.11.0", features = ["wgi"]}
+take_mut = "0.2.2"
+uuid = {version = "1.18.1", features = ["v4"] }
 
-tobj = { version = "4.0", features = ["async"]}
+xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
+
+parry3d = "0.25.0"
+
+arboard = "3.6.1"
+
+tobj = { version = "4.0.3", features = ["async"]}
 
 #gltf = { version = "1.4", features = [
 gltf = { git = "https://github.com/gltf-rs/gltf", features = [
@@ -47,50 +52,53 @@ gltf = { git = "https://github.com/gltf-rs/gltf", features = [
   "KHR_materials_unlit",
   "KHR_texture_transform",
   "KHR_materials_emissive_strength",
+  "KHR_materials_pbrSpecularGlossiness",
   "EXT_texture_webp"
 ]}
 
 # jpeg decoder that image includes uses rayon to speed up the decoding with threads. WASM doesn't support threads currently so we need to disable this so that our code won't crash when we try to load a jpeg on the web.
-image = { version = "0.25", default-features = false, features = [ "png", "jpeg", "webp"] }
+image = { version = "0.25.8", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
-#egui = "0.31"
-#egui-wgpu = "0.31"
-#egui_plot = "0.31"
-egui = { git = "https://github.com/emilk/egui", branch = "main"  }
-egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
-egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+egui = "0.33.0"
+egui-wgpu = "0.33.0"
+egui_plot = "0.34.0"
+egui_extras = "0.33.0"
+#egui = { git = "https://github.com/emilk/egui", branch = "main"  }
+#egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
+#egui_extras = { git = "https://github.com/emilk/egui", branch = "main" }
+#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
 
-[patch.crates-io]
-egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
-egui = { git = "https://github.com/emilk/egui", branch = "main" }
+#[patch.crates-io]
+#egui_plot = { git = "https://github.com/emilk/egui_plot", branch = "main" }
+#egui = { git = "https://github.com/emilk/egui", branch = "main" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-#egui-winit = "0.31"
-egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
+egui-winit = "0.33.0"
+#egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
 pollster = "0.4.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
-reqwest = "0.12"
-wgpu = { version = "25.0.0", features = ["webgl"]}
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [
+reqwest = "0.12.23"
+wgpu = { version = "27.0.1", features = ["webgl"]}
+wasm-bindgen = "0.2.104"
+wasm-bindgen-futures = "0.4.54"
+web-sys = { version = "0.3.81", features = [
     "Document",
     "Window",
     "Element",
     "Location",
 ]}
-wasm_thread = { version = "0.3", features = ["es_modules"]}
+wasm_thread = { version = "0.3.3", features = ["es_modules"]}
 
-egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
-#egui-winit = { version = "0.31", default-features = false, features = [
+#egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
+egui-winit = { version = "0.33.0", default-features = false, features = [
   "links",
-] }
+]}
 
 [build-dependencies]
-fs_extra = "1.3"
-glob = "0.3"
-anyhow = "1.0"
+fs_extra = "1.3.0"
+glob = "0.3.3"
+anyhow = "1.0.100"

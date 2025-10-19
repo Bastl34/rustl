@@ -7,6 +7,11 @@ pub trait App
     fn resize(&mut self, context: &mut Context);
     fn exit(&mut self, context: &mut Context);
 
+    fn allow_window_minimized_updates(&self) -> bool
+    {
+        false
+    }
+
     fn request_exit(&mut self, context: &mut Context) -> bool
     {
         let _ = context;

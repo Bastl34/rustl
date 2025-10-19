@@ -90,11 +90,9 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
 
 pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    let mut textures = 0;
     let mut materials = 0;
     for scene in &state.scenes
     {
-        textures += scene.textures.len();
         materials += scene.materials.len();
     }
 
@@ -108,8 +106,10 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     ui.label(format!(" ⚫ update time: {:.3} ms", state.stats.engine_update_time));
     ui.label(format!(" ⚫ render time: {:.3} ms", state.stats.engine_render_time));
     ui.label(format!(" ⚫ draw calls: {}", state.stats.draw_calls));
-    ui.label(format!(" ⚫ textures: {}", textures));
+    ui.label(format!(" ⚫ textures: {}", state.resources.textures.len()));
+    ui.label(format!(" ⚫ sounds: {}", state.resources.sound_sources.len()));
     ui.label(format!(" ⚫ materials: {}", materials));
+    ui.label(format!(" ⚫ meshes: {}", state.resources.mesh_resources.len()));
 
     ui.label(RichText::new("✏ Editor").strong());
     ui.label(format!(" ⚫ update time: {:.3} ms", state.stats.egui_update_time));

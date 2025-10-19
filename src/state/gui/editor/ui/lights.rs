@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use egui::{Ui, RichText};
 
-use crate::{helper::change_tracker::ChangeTracker, state::{scene::light::{LightItem, Light}, state::State, gui::helper::generic_items::collapse_with_title}};
+use crate::{helper::{change_tracker::ChangeTracker, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::collapse_with_title}, scene::light::{Light, LightItem}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -16,13 +16,16 @@ pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<V
             let light = light.borrow();
             let light = light.get_ref();
 
+            let is_internal = light.tags.contains(ENGINE_INTERNAL_TAG) || light.tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
+
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && light.name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && light.name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }
 
-            let headline_name = format!("⚫ {}: {}", light.id, light.name);
+            let headline_name = format!("⚫ {}: {}", light.id, cut_string_to_length(&light.name, MAX_NAME_LENGTH));
 
             let id = format!("light_{}", light.id);
 

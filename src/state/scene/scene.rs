@@ -1,15 +1,15 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::{HashMap, HashSet}, mem::swap, sync::{Arc, RwLock}};
+use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
 
-use anyhow::Ok;
 use nalgebra::Vector3;
 use nalgebra::Point3;
 use parry3d::query::Ray;
+use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, helper::{self, change_tracker::ChangeTracker, math::{self, approx_zero}}, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources, state::{helper::render_item::RenderItemOption, scene::components::{component::Component, sound::Sound}}};
+use crate::{component_downcast, component_downcast_mut, console_log, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, manager::id_manager, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
@@ -42,12 +42,14 @@ impl ScenePickRes
 }
 
 
+#[derive(Serialize, Deserialize)]
 pub struct SceneData
 {
     pub max_lights: u32,
     pub environment_texture: Option<TextureState>,
     pub gamma: Option<f32>,
-    pub exposure: Option<f32>
+    pub exposure: Option<f32>,
+    pub ibl_diffuse_intensity: Option<f32>,
 }
 
 pub struct Scene
@@ -61,14 +63,10 @@ pub struct Scene
 
     data: ChangeTracker<SceneData>,
 
-    pub audio_device: AudioDeviceItem,
-
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
-    pub textures: HashMap<String, TextureItem>,
     pub materials: HashMap<u64, MaterialItem>,
-    pub sound_sources: HashMap<String, SoundSourceItem>,
 
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
     pub post_controller: Vec<SceneControllerBox>, // after scene updates
@@ -77,9 +75,127 @@ pub struct Scene
     pub lights_render_item: RenderItemOption,
 }
 
+impl Default for Scene
+{
+    fn default() -> Self
+    {
+        Scene::new("default")
+    }
+}
+
+impl_arc_rwbox_map_serializer!(MaterialsSerializer, u64, dyn Component);
+
+impl Serialize for Scene
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("uuid", &self.uuid)?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("visible", &self.visible)?;
+        map.serialize_entry("main", &self.main)?;
+        map.serialize_entry("data", &self.data)?;
+
+        let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
+        let node_refs: Vec<&Node> = node_guards.iter().map(|guard| guard.as_ref()).collect();
+        map.serialize_entry("nodes", &node_refs)?;
+
+        let camera_refs: Vec<&Camera> = self.cameras.iter().map(|cam| cam.as_ref()).collect();
+        map.serialize_entry("cameras", &camera_refs)?;
+
+        let lights_guards: Vec<_> = self.lights.get_ref().iter().map(|cell| cell.borrow()).collect();
+        let lights_refs: Vec<&Light> = lights_guards.iter().map(|tracker| tracker.get_ref().as_ref()).collect();
+        map.serialize_entry("lights", &lights_refs)?;
+
+        map.serialize_entry("materials", &MaterialsSerializer { map: &self.materials })?;
+
+        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter().filter(|controller| controller.is_serializable()).collect();
+        map.serialize_entry("pre_controller", &pre_controller)?;
+
+        let post_controller: Vec<&SceneControllerBox> = self.post_controller.iter().filter(|controller| controller.is_serializable()).collect();
+        map.serialize_entry("post_controller", &post_controller)?;
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Scene
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de>
+    {
+        struct SceneVisitor;
+
+        impl<'de> Visitor<'de> for SceneVisitor
+        {
+            type Value = Scene;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result
+            {
+                formatter.write_str("struct Scene")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Scene, V::Error>
+            where V: MapAccess<'de>
+            {
+                let mut scene = Scene::default();
+
+                while let Some(key) = map.next_key::<String>()?
+                {
+                    match key.as_str()
+                    {
+                        "uuid" => scene.uuid = map.next_value()?,
+                        "name" => scene.name = map.next_value()?,
+                        "visible" => scene.visible = map.next_value()?,
+                        "main" => scene.main = map.next_value()?,
+                        "data" => scene.data = map.next_value()?,
+                        "nodes" =>
+                        {
+                            scene.nodes = map.next_value().into_iter().map(|node| Arc::new(RwLock::new(Box::new(node)))).collect()
+                        }
+                        "cameras" =>
+                        {
+                            scene.cameras = map.next_value().into_iter().collect();
+                        }
+                        "lights" =>
+                        {
+                            scene.lights = ChangeTracker::new(map.next_value().into_iter().map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst)))).collect())
+                        }
+                        "materials" => {
+                            let material_map: HashMap<u64, Box<dyn Component>> = map.next_value()?;
+                            scene.materials = material_map.into_iter().map(|(id, mat)| (id, Arc::new(RwLock::new(mat)))).collect();
+                        }
+                        "pre_controller" =>
+                        {
+                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
+                            scene.pre_controller = controllers;
+                        }
+                        "post_controller" =>
+                        {
+                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
+                            scene.post_controller = controllers;
+                        }
+                        _ =>
+                        {
+                            // ignore
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                Ok(scene)
+            }
+        }
+
+        deserializer.deserialize_map(SceneVisitor)
+    }
+}
+
 impl Scene
 {
-    pub fn new(name: &str, audio_device: AudioDeviceItem) -> Scene
+    pub fn new(name: &str) -> Scene
     {
         Self
         {
@@ -96,16 +212,13 @@ impl Scene
                 environment_texture: None,
                 gamma: None,
                 exposure: None,
+                ibl_diffuse_intensity: None,
             }),
-
-            audio_device,
 
             nodes: vec![],
             cameras: vec![],
             lights: ChangeTracker::new(vec![]),
-            textures: HashMap::new(),
             materials: HashMap::new(),
-            sound_sources: HashMap::new(),
 
             pre_controller: vec![],
             post_controller: vec![],
@@ -125,13 +238,19 @@ impl Scene
         &mut self.data
     }
 
-    pub fn get_node_amount_recursive(&self) -> usize
+    pub fn get_node_amount_recursive(&self, include_internals: bool) -> usize
     {
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+
+        if !include_internals
+        {
+            return all_nodes.iter().filter(|node| !node.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)).count();
+        }
+
         all_nodes.len()
     }
 
-    pub fn update(&mut self, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
         // check moved nodes (if a node has a parent -> remove it from scene nodes)
         // this can happen when a node parent was set via set_parent
@@ -159,7 +278,7 @@ impl Scene
         {
             if controller_item.get_base().is_enabled
             {
-                controller_item.update(self, input_manager, frame_scale);
+                controller_item.update(self, io, frame_scale);
             }
         }
 
@@ -169,7 +288,7 @@ impl Scene
         let mut delete_nodes = vec![];
         for node in &self.nodes
         {
-            let mut update_result = Node::update(node.clone(), input_manager, time, frame_scale, frame);
+            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame);
 
             if update_result.delete_nodes.len() > 0
             {
@@ -182,7 +301,7 @@ impl Scene
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
         {
-            cam.update(self, input_manager, frame_scale);
+            cam.update(self, io, frame_scale);
         }
 
         swap(&mut cameras, &mut self.cameras);
@@ -194,7 +313,7 @@ impl Scene
         {
             if controller_item.get_base().is_enabled
             {
-                controller_item.update(self, input_manager, frame_scale);
+                controller_item.update(self, io, frame_scale);
             }
         }
 
@@ -203,7 +322,7 @@ impl Scene
         // delete requested "delete_later" nodes
         for node_id in delete_nodes
         {
-            self.delete_node_by_id(node_id, false, false);
+            self.delete_node_by_id(node_id, false, false, false, false);
         }
     }
 
@@ -218,7 +337,7 @@ impl Scene
 
     pub fn print(&self)
     {
-        println!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={} textures={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len(), self.textures.len());
+        console_log!(" - (SCENE) id={} name={} nodes={} cameras={} lights={} materials={}", self.id, self.name, self.nodes.len(), self.cameras.len(), self.lights.get_ref().len(), self.materials.len());
 
         //nodes
         for node in &self.nodes
@@ -268,75 +387,6 @@ impl Scene
         self.nodes.clear();
     }
 
-    pub async fn load_texture_or_reuse_async(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
-    {
-        let image_bytes = resources::load_binary_async(path).await?;
-
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
-    }
-
-    pub fn load_texture_or_reuse(&mut self, path: &str, extension: Option<String>, max_tex_res: u32) -> anyhow::Result<TextureItem>
-    {
-        let image_bytes = resources::load_binary(path)?;
-
-        Ok(self.load_texture_byte_or_reuse(&image_bytes, path, extension, max_tex_res))
-    }
-
-    pub fn load_texture_byte_or_reuse(&mut self, image_bytes: &Vec<u8>, name: &str, extension: Option<String>, max_tex_res: u32) -> TextureItem
-    {
-        let hash = helper::crypto::get_hash_from_byte_vec(&image_bytes);
-
-        if self.textures.contains_key(&hash)
-        {
-            println!("reusing texture {}", name);
-            return self.textures.get_mut(&hash).unwrap().clone();
-        }
-
-        let texture = Texture::new(name, &image_bytes, extension, max_tex_res);
-
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-        self.textures.insert(hash, arc.clone());
-
-        arc
-    }
-
-    pub fn load_sound_source_byte_or_reuse(&mut self, sound_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> SoundSourceItem
-    {
-        let hash = helper::crypto::get_hash_from_byte_vec(&sound_bytes);
-
-        if self.sound_sources.contains_key(&hash)
-        {
-            println!("reusing sound source {}", name);
-            return self.sound_sources.get_mut(&hash).unwrap().clone();
-        }
-
-        let texture = SoundSource::new(name, self.audio_device.clone(), &sound_bytes, extension);
-
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-        self.sound_sources.insert(hash, arc.clone());
-
-        arc
-    }
-
-    pub fn insert_texture_or_reuse(&mut self, texture: Texture, name: &str) -> TextureItem
-    {
-        let hash = texture.hash.clone();
-
-        if self.textures.contains_key(&hash)
-        {
-            println!("reusing texture {}", name);
-            return self.textures.get_mut(&hash).unwrap().clone();
-        }
-
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
-
-        self.textures.insert(hash, arc.clone());
-
-        arc
-    }
-
     fn clear_empty_nodes_recursive(nodes: &mut Vec<NodeItem>)
     {
         nodes.retain(|node|
@@ -354,31 +404,52 @@ impl Scene
         }
     }
 
-    pub fn clear(&mut self)
+    pub fn clear(&mut self, remove_internals: bool, delete_resources: bool)
     {
-        self.cleanup_cyclic_references(None);
+        self.cleanup_cyclic_references(None, remove_internals);
 
-        self.nodes.clear();
-        self.lights.get_mut().clear();
-        self.cameras.clear();
+        let mut nodes_to_delete = vec![];
+        for node in &self.nodes
+        {
+            let is_internal = node.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            if !is_internal || remove_internals
+            {
+                nodes_to_delete.push(node.clone());
+            }
+        }
 
-        self.materials.clear();
-        self.textures.clear();
+        for node in nodes_to_delete
+        {
+            let node_id = node.read().unwrap().id;
+            self.delete_node_by_id(node_id, delete_resources, delete_resources, delete_resources, delete_resources);
+        }
+
+        self.lights.get_mut().retain(|light|
+        {
+            let is_internal = light.borrow().get_ref().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            is_internal && !remove_internals
+        });
+
+        self.cameras.retain(|cam|
+        {
+            let is_internal = cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            is_internal && !remove_internals
+        });
+
+        self.materials.retain(|_id, mat|
+        {
+            let is_internal = mat.read().unwrap().get_base().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            is_internal && !remove_internals
+        });
 
         self.pre_controller.clear();
         self.post_controller.clear();
 
         // re-add defaults
         self.add_defaults();
-
-        if let Some(env_texture) = &self.get_data().environment_texture
-        {
-            let hash = env_texture.item.read().unwrap().hash.clone();
-            self.textures.insert(hash, env_texture.item.clone());
-        }
     }
 
-    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>)
+    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>, remove_internals: bool)
     {
         let mut node = None;
         if let Some(node_id) = from_node_id
@@ -389,18 +460,19 @@ impl Scene
         // check camera targets and remove
         for camera in &mut self.cameras
         {
-            if let Some(cam_node) = camera.node.clone()
+            if let Some(cam_node) = camera.node.as_ref().cloned()
+
             {
                 if from_node_id.is_none()
                 {
-                    camera.node = None;
+                    camera.remove_node();
                 }
 
                 if let Some(node_id) = from_node_id
                 {
                     if cam_node.read().unwrap().id == node_id
                     {
-                        camera.node = None;
+                        camera.remove_node();
                     }
                 }
             }
@@ -433,6 +505,12 @@ impl Scene
             }
         }
 
+        // predicate to check if a node is internal and should be removed or not
+        let is_internal_predicate = Arc::new(move |node: NodeItem| -> bool
+        {
+            let is_internal = node.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX);
+            !is_internal && !remove_internals
+        });
 
         // clean up cyclic references in nodes
         {
@@ -444,12 +522,12 @@ impl Scene
                 if let Some(node) = &node
                 {
                     let node = node.read().unwrap();
-                    all_nodes = Some(Scene::list_all_child_nodes(&node.nodes));
+                    all_nodes = Some(Scene::list_all_child_nodes_with_predicate(&node.nodes, is_internal_predicate.clone()));
                 }
             }
             else
             {
-                all_nodes = Some(Scene::list_all_child_nodes(&self.nodes));
+                all_nodes = Some(Scene::list_all_child_nodes_with_predicate(&self.nodes, is_internal_predicate.clone()));
             }
 
             // clear instances and / clear parents
@@ -493,19 +571,38 @@ impl Scene
         self.materials.insert(id, material.clone());
     }
 
-    pub fn add_default_material(&mut self)
+    pub fn add_default_material(&mut self) -> MaterialItem
     {
+        // check if default material already exists
+        if let Some(mat) = self.get_default_material()
+        {
+            return mat;
+        }
+
         let material = Material::new("default");
 
         let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        material_arc.write().unwrap().get_base_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
         self.add_material(&material_arc);
+
+        material_arc
+    }
+
+    pub fn add_empty_material(&mut self, name: &str) -> MaterialItem
+    {
+        let material = Material::new(name);
+
+        let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        self.add_material(&material_arc);
+
+        material_arc
     }
 
     pub fn get_default_material(&self) -> Option<MaterialItem>
     {
         for (_, material) in &self.materials
         {
-            if material.read().unwrap().get_base().name == "default"
+            if material.read().unwrap().get_base().name == "default" && material.read().unwrap().get_base().tags.contains(ENGINE_INTERNAL_TAG)
             {
                 return Some(material.clone());
             }
@@ -580,118 +677,6 @@ impl Scene
         }
 
         false
-    }
-
-    pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
-    {
-        for texture_arc in self.textures.values()
-        {
-            let texture =  texture_arc.read().unwrap();
-            if texture.id == id
-            {
-                return Some(texture_arc.clone());
-            }
-        }
-
-        None
-    }
-
-    pub fn delete_texture_by_id(&mut self, id: u64) -> bool
-    {
-        // remove texture from all materials
-        for material in &mut self.materials
-        {
-            let material = material.1;
-            component_downcast_mut!(material, Material);
-            material.remove_texture_by_id(id);
-        }
-
-        let len = self.textures.len();
-        self.textures.retain(|_key, texture|
-        {
-            let texture = texture.read().unwrap();
-            texture.id != id
-        });
-
-        self.textures.len() != len
-    }
-
-    pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
-    {
-        for sound_arc in self.sound_sources.values()
-        {
-            let sound =  sound_arc.read().unwrap();
-            if sound.id == id
-            {
-                return Some(sound_arc.clone());
-            }
-        }
-
-        None
-    }
-
-    pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
-    {
-        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
-
-        // remove sound component from all nodes
-        for node in all_nodes
-        {
-            let mut node = node.write().unwrap();
-
-            node.components.retain(|component|
-            {
-                let component = component.read().unwrap();
-
-                if let Some(sound) = component.as_any().downcast_ref::<Sound>()
-                {
-                    if let Some(sound_source) = &sound.sound_source
-                    {
-                        let sound_source = sound_source.read().unwrap();
-                        if sound_source.id == id
-                        {
-                            return false;
-                        }
-                    }
-                }
-
-                true
-            });
-
-            for instance in node.instances.get_mut()
-            {
-                let mut instance = instance.write().unwrap();
-
-                instance.components.retain(|component|
-                {
-                    let component = component.read().unwrap();
-
-                    if let Some(sound) = component.as_any().downcast_ref::<Sound>()
-                    {
-                        if let Some(sound_source) = &sound.sound_source
-                        {
-                            let sound_source = sound_source.read().unwrap();
-                            if sound_source.id == id
-                            {
-                                return false;
-                            }
-                        }
-                    }
-
-                    true
-                });
-            }
-        }
-
-        // remove sound source
-        let len = self.sound_sources.len();
-        self.sound_sources.retain(|_key, sound|
-        {
-            let sound = sound.read().unwrap();
-            sound.id != id
-        });
-
-        self.sound_sources.len() != len
     }
 
     pub fn get_sound_by_id(&self, id: u64) -> Option<ComponentItem>
@@ -864,6 +849,26 @@ impl Scene
         all_nodes
     }
 
+    pub fn list_all_child_nodes_with_predicate(nodes: &Vec<NodeItem>, predicate: Arc<dyn Fn(NodeItem) -> bool>) -> Vec<NodeItem>
+    {
+        let mut all_nodes = vec![];
+
+        for node in nodes
+        {
+            if !predicate(node.clone())
+            {
+                continue;
+            }
+
+            let child_nodes = Scene::list_all_child_nodes_with_predicate(&node.read().unwrap().nodes, predicate.clone());
+
+            all_nodes.push(node.clone());
+            all_nodes.extend(child_nodes);
+        }
+
+        all_nodes
+    }
+
     pub fn list_all_child_nodes_with_mesh(nodes: &Vec<NodeItem>) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];
@@ -902,7 +907,7 @@ impl Scene
         Node::find_mesh_node_by_ids(&self.nodes, ids)
     }
 
-    pub fn delete_node_by_id(&mut self, id: u64, delete_materials: bool, delete_textures: bool) -> bool
+    pub fn delete_node_by_id(&mut self, id: u64, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
     {
         if self.find_node_by_id(id).is_none()
         {
@@ -912,6 +917,92 @@ impl Scene
         if delete_textures && !delete_materials
         {
             println!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
+        }
+
+        // ********** delete mesh resource **********
+        if delete_mesh_resource
+        {
+            let mut mesh_resources_to_delete: HashMap<u64, MeshResourceItem> = HashMap::new();
+
+            let mut all_nodes_to_delete;
+            {
+                let delete_node = self.find_node_by_id(id);
+                let delete_node_arc = delete_node.unwrap();
+                let delete_node = delete_node_arc.read().unwrap();
+
+                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
+                all_nodes_to_delete.push(delete_node_arc.clone());
+            }
+
+            for node in all_nodes_to_delete
+            {
+                let node = node.read().unwrap();
+
+                for mesh in node.find_components::<Mesh>()
+                {
+                    component_downcast_mut!(mesh, Mesh);
+                    if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                    {
+                        mesh_resources_to_delete.insert(mesh_resource.read().unwrap().id, mesh_resource.clone());
+                    }
+
+                    mesh.mesh_resource = OptionOrId::None;
+                }
+            }
+
+            // delete mesh resources if not in use anymore
+            for (_, mesh_resource) in mesh_resources_to_delete
+            {
+                // used in mesh_resources_to_delete and state.mesh_resources
+                if Arc::strong_count(&mesh_resource) == 2
+                {
+                    let mut mesh_resource = mesh_resource.write().unwrap();
+                    mesh_resource.delete_later();
+                }
+            }
+        }
+
+        // ********** delete sound sources **********
+        if delete_sound_sources
+        {
+            let mut sound_sources_to_delete: HashMap<u64, SoundSourceItem> = HashMap::new();
+
+            let mut all_nodes_to_delete;
+            {
+                let delete_node = self.find_node_by_id(id);
+                let delete_node_arc = delete_node.unwrap();
+                let delete_node = delete_node_arc.read().unwrap();
+
+                all_nodes_to_delete = Scene::list_all_child_nodes(&delete_node.nodes);
+                all_nodes_to_delete.push(delete_node_arc.clone());
+            }
+
+            for node in all_nodes_to_delete
+            {
+                let node = node.read().unwrap();
+
+                for sound in node.find_components::<Sound>()
+                {
+                    component_downcast_mut!(sound, Sound);
+                    if let Some(sound_source) = sound.sound_source.as_ref()
+                    {
+                        sound_sources_to_delete.insert(sound_source.read().unwrap().id, sound_source.clone());
+                    }
+
+                    sound.sound_source = OptionOrId::None;
+                }
+            }
+
+            // delete sound sources if not in use anymore
+            for (_, sound_source) in sound_sources_to_delete
+            {
+                // used in mesh_resources_to_delete and state.mesh_resources
+                if Arc::strong_count(&sound_source) == 2
+                {
+                    let mut sound_source = sound_source.write().unwrap();
+                    sound_source.delete_later();
+                }
+            }
         }
 
         // ********** delete materials **********
@@ -987,7 +1078,7 @@ impl Scene
             }
 
             // find all affecting
-            let mut textures_to_delete: HashSet<u64> = HashSet::new();
+            let mut textures_to_delete: HashMap<u64, TextureItem> = HashMap::new();
 
             // find all textures from materials and delete them from materials
             for (_material_id, material) in &materials_to_delete
@@ -996,15 +1087,14 @@ impl Scene
                 let textures = material.get_all_textures();
                 for texture in &textures
                 {
-                    let texture_id = texture.read().unwrap().id;
-                    textures_to_delete.insert(texture_id);
+                    textures_to_delete.insert(texture.read().unwrap().id, texture.clone());
                 }
 
                 material.remove_all_textures();
             }
 
             // delete textures if not in use anymore
-            for texture_id in textures_to_delete
+            for (texture_id, texture) in textures_to_delete
             {
                 let mut usage = 0;
                 for (_material_id, material) in &self.materials
@@ -1018,13 +1108,14 @@ impl Scene
 
                 if usage == 0
                 {
-                    self.delete_texture_by_id(texture_id);
+                    console_log!("deleting texture {} {}", &texture.read().unwrap().name, texture_id);
+                    texture.write().unwrap().delete_later();
                 }
             }
         }
 
         // ********** cyclic references **********
-        self.cleanup_cyclic_references(Some(id));
+        self.cleanup_cyclic_references(Some(id), true);
 
         // ********** delete directly on scene **********
         let len = self.nodes.len();
@@ -1033,6 +1124,7 @@ impl Scene
             if node.read().unwrap().id == id
             {
                 node.write().unwrap().clear_instances();
+                node.write().unwrap().components.clear();
             }
 
             node.read().unwrap().id != id
@@ -1057,7 +1149,7 @@ impl Scene
         false
     }
 
-    pub fn delete_node_by_name(&mut self, name: &str, delete_materials: bool, delete_textures: bool) -> bool
+    pub fn delete_node_by_name(&mut self, name: &str, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
     {
         let mut node_id = None;
 
@@ -1072,7 +1164,7 @@ impl Scene
 
         if let Some(node_id) = node_id
         {
-            return self.delete_node_by_id(node_id, delete_materials, delete_textures);
+            return self.delete_node_by_id(node_id, delete_mesh_resource, delete_sound_sources, delete_materials, delete_textures);
         }
 
         false
@@ -1259,24 +1351,6 @@ impl Scene
             }
 
             return res;
-
-            /*
-            let first = hits_bbox.first().unwrap();
-            let node = first.0;
-            let instance = first.1;
-            let dist = first.2;
-
-            //let dir = first.3 * (ray.dir.normalize() * dist).to_homogeneous();
-            //let pos = ray.origin + dir.xyz();
-
-            let pos = ray.origin + (ray.dir * dist);
-
-            dbg!(" intersection 1");
-            dbg!(node.read().unwrap().name.clone());
-
-            //return Some((dist, pos, None, node.clone(), instance, None));
-            return
-             */
         }
 
         // combine bbox hits and nodes without bbox picking
@@ -1399,6 +1473,7 @@ impl Scene
         let mut max_lights = self.get_data().max_lights;
         let mut gamma = if let Some(gamma_val) = self.get_data().gamma { gamma_val } else { 0.0 };
         let mut exposure = if let Some(exposure_val) = self.get_data().exposure { exposure_val } else { 0.0 };
+        let mut ibl_diffuse_intensity = if let Some(ibl_diffuse_intensity_val) = self.get_data().ibl_diffuse_intensity { ibl_diffuse_intensity_val } else { 1.0 };
 
         ui.horizontal(|ui|
         {
@@ -1448,6 +1523,25 @@ impl Scene
                 else
                 {
                     data.exposure = Some(exposure);
+                }
+            }
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("IBL Diffuse Intensity:");
+
+            if ui.add(egui::DragValue::new(&mut ibl_diffuse_intensity).range(0.0..=10.0).speed(0.1)).changed()
+            {
+                let data = self.get_data_mut().get_mut();
+
+                if approx_equal(ibl_diffuse_intensity, 1.0)
+                {
+                    data.ibl_diffuse_intensity = None;
+                }
+                else
+                {
+                    data.ibl_diffuse_intensity = Some(ibl_diffuse_intensity);
                 }
             }
         });

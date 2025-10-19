@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{vec, cmp};
 
 use gilrs::Gilrs;
@@ -20,6 +20,7 @@ use crate::input::input_point::PointState;
 use crate::input::keyboard::Modifier;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
+use crate::{console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
 use crate::state::gui::editor::editor::Editor;
@@ -61,7 +62,7 @@ impl MainInterface
 
             wgpu = WGpu::new(window.clone(), state).await;
 
-            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.adapter.max_msaa_samples));
+            state.rendering.msaa.set(cmp::min(state.rendering.msaa.get_ref().clone(), state.rendering_adapter.max_msaa_samples));
             samlpes = *(state.rendering.msaa.get_ref());
 
             wgpu.create_msaa_texture(samlpes);
@@ -85,6 +86,7 @@ impl MainInterface
                 state,
 
                 window_title: window.title().clone(),
+                window_minimized: false,
 
                 wgpu,
                 window,
@@ -92,6 +94,7 @@ impl MainInterface
             },
 
             app: None,
+
             gilrs,
             editor_gui,
         };
@@ -163,6 +166,10 @@ impl MainInterface
             height = size.height;
         }
 
+        self.context.window_minimized = width == 0 && height == 0;
+
+        console_log!("resize {}x{} (minimized: {})", width, height, self.context.window_minimized);
+
         if width == 0 { width = 1; }
         if height == 0 { height = 1; }
 
@@ -189,7 +196,7 @@ impl MainInterface
             }
 
             // reset input states
-            state.input_manager.reset();
+            state.io.input_manager.reset();
         }
 
         if let Some(app) = &mut self.app
@@ -203,7 +210,7 @@ impl MainInterface
         //init scene
         let state = &mut *(self.context.state.borrow_mut());
 
-        let mut scene = crate::state::scene::scene::Scene::new("main scene", state.audio_device.clone());
+        let mut scene = crate::state::scene::scene::Scene::new("main scene");
         scene.add_defaults();
         scene.main = true;
 
@@ -221,6 +228,11 @@ impl MainInterface
 
     pub fn update(&mut self)
     {
+        if self.context.window_minimized && !self.app.as_ref().map_or(false, |a| a.allow_window_minimized_updates())
+        {
+            return;
+        }
+
         // ******************** update states ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
@@ -336,7 +348,7 @@ impl MainInterface
             ExecutionQueue::run_all(main_queue, state);
         }
 
-        // ******************** update scene ********************
+        // ******************** update scene and rendering ********************
         if !self.context.state.borrow().pause
         {
             let engine_update_time = Instant::now();
@@ -352,6 +364,8 @@ impl MainInterface
             }
 
             state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+
+            rendering::state::update(&mut self.context.wgpu, state);
 
             // move out scenes from state to prevent using multiple mut borrows
             let mut scenes = vec![];
@@ -453,13 +467,13 @@ impl MainInterface
         // ******************** update inputs ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            state.input_manager.update();
+            state.io.input_manager.update();
         }
 
         // ******************** mouse visibility ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            let (visible, changed) = state.input_manager.mouse.visible.consume_borrow();
+            let (visible, changed) = state.io.input_manager.mouse.visible.consume_borrow();
             if changed
             {
                 self.context.window.set_cursor_visible(*visible);
@@ -474,7 +488,7 @@ impl MainInterface
                     .or_else(|_e| self.context.window.set_cursor_grab(CursorGrabMode::Locked))
                     .unwrap_or_else(|e|
                     {
-                        dbg!("Failed to grab position: {:?}", e);
+                        console_error!("Failed to grab position: {:?}", e);
                     });
                 }
             }
@@ -483,7 +497,7 @@ impl MainInterface
         // ******************** reset global change tracker ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-            state.audio_device.write().unwrap().data.consume_change();
+            state.io.audio_device.write().unwrap().data.consume_change();
         }
 
         // ******************** frame time ********************
@@ -541,11 +555,11 @@ impl MainInterface
 
                     if event.state == ElementState::Pressed
                     {
-                        global_state.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_key(key, true, global_state.stats.frame);
                     }
                     else
                     {
-                        global_state.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_key(key, false, global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::ModifiersChanged(modifiers_state) =>
@@ -553,31 +567,31 @@ impl MainInterface
                     // TODO: Check if windows/linux is able to catch left/right difference
                     if is_mac()
                     {
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.lalt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.ralt_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.lcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.rcontrol_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.lsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.rsuper_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.lshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.rshift_state() == ModifiersKeyState::Pressed, global_state.stats.frame);
                     }
                     else
                     {
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightAlt, modifiers_state.state().alt_key(), global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightCtrl, modifiers_state.state().control_key(), global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftLogo, modifiers_state.state().super_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightLogo, modifiers_state.state().super_key(), global_state.stats.frame);
 
-                        global_state.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
-                        global_state.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::LeftShift, modifiers_state.state().shift_key(), global_state.stats.frame);
+                        global_state.io.input_manager.keyboard.set_modifier(Modifier::RightShift, modifiers_state.state().shift_key(), global_state.stats.frame);
                     }
                 },
                 winit::event::WindowEvent::MouseInput { device_id: _, state, button, .. } =>
@@ -591,7 +605,7 @@ impl MainInterface
 
                     let button = winit_map_mouse_button(button);
 
-                    global_state.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
+                    global_state.io.input_manager.mouse.set_button(button, pressed, global_state.stats.frame);
                 },
                 winit::event::WindowEvent::MouseWheel { device_id: _, delta, phase: _, ..} =>
                 {
@@ -599,13 +613,13 @@ impl MainInterface
                     {
                         winit::event::MouseScrollDelta::LineDelta(x, y) =>
                         {
-                            global_state.input_manager.mouse.set_wheel_delta_x(*x);
-                            global_state.input_manager.mouse.set_wheel_delta_y(*y);
+                            global_state.io.input_manager.mouse.set_wheel_delta_x(*x);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(*y);
                         },
                         winit::event::MouseScrollDelta::PixelDelta(delta) =>
                         {
-                            global_state.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
-                            global_state.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.x as f32);
+                            global_state.io.input_manager.mouse.set_wheel_delta_y(delta.y as f32);
                         },
                     }
                 },
@@ -616,7 +630,7 @@ impl MainInterface
                     // invert pos (because x=0, y=0 is bottom left and "normal" window is top left)
                     pos.y = global_state.height as f32 - pos.y;
 
-                    global_state.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                    global_state.io.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
                 },
                 winit::event::WindowEvent::Touch(touch) =>
                 {
@@ -639,12 +653,12 @@ impl MainInterface
                         winit::event::TouchPhase::Cancelled => PointState::Up,
                     };
 
-                    global_state.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
+                    global_state.io.input_manager.touch.set(touch.id, pos, state, global_state.stats.frame, force);
                 },
                 winit::event::WindowEvent::Focused(focus) =>
                 {
                     global_state.in_focus = *focus;
-                    global_state.input_manager.reset();
+                    global_state.io.input_manager.reset();
                 },
                 winit::event::WindowEvent::DroppedFile(path) =>
                 {
@@ -668,7 +682,7 @@ impl MainInterface
             winit::event::DeviceEvent::MouseMotion { delta } =>
             {
                 let velocity = Vector2::<f32>::new(delta.0 as f32, -delta.1 as f32);
-                global_state.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
+                global_state.io.input_manager.mouse.set_raw_velocity(velocity, global_state.stats.frame);
             },
             _ => {}
         }
@@ -679,14 +693,14 @@ impl MainInterface
         let global_state = &mut *(self.context.state.borrow_mut());
 
         // center mouse (needed on windows)
-        if !*global_state.input_manager.mouse.visible.get_ref() && !is_mac()
+        if !*global_state.io.input_manager.mouse.visible.get_ref() && !is_mac()
         {
             let window_size = self.context.window.inner_size();
             let center = PhysicalPosition::new(window_size.width as f64 / 2.0, window_size.height as f64 / 2.0);
 
             self.context.window.set_cursor_position(center).unwrap_or_else(|e|
             {
-                dbg!("Failed to set mouse position: {:?}", e);
+                console_error!("Failed to set mouse position: {:?}", e);
             });
         }
     }

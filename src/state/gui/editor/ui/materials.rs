@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast_mut, helper::concurrency::thread::spawn_thread, state::{gui::{editor::ui::dialogs::load_texture_dialog, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::State}};
+use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -13,10 +13,10 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
         for (material_id, material) in materials
         {
             let material = material.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", material_id, material.get_base().name);
+            let headline_name = format!("⚫ {}: {}", material_id, cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
 
-            let is_internal = material.get_base().tags.contains("internal");
-            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_nodes);
+            let is_internal = material.get_base().tags.contains(ENGINE_INTERNAL_TAG) || material.get_base().tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
 
             let filter = editor_state.hierarchy_filter.to_lowercase();
             if !show_from_tags || !filter.is_empty() && material.get_base().name.to_lowercase().find(filter.as_str()).is_none()
@@ -86,7 +86,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             material.ui(ui, None);
         });
 
-        collapse_with_title(ui, "material_usage", true, "👆 Material used by Objects", None, |ui|
+        collapse_with_title(ui, "material_usage", true, "👆 Used by Objects", None, |ui|
         {
             let mut used = false;
             //Scene::list_all_child_nodes(nodes)
@@ -128,52 +128,60 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
             {
                 if material.has_texture(texture_type)
                 {
-                    let texture = material.get_texture_by_type(texture_type);
-                    let texture = texture.unwrap();
-                    let mut enabled = texture.enabled;
-                    let texture = texture.get();
-                    let mut texture = texture.write().unwrap();
-                    let texture_id = texture.id;
-
-                    let title = format!("🖼 {}", texture_type.to_string());
-                    let id = format!("texture_{}", texture_type.to_string());
-
                     let mut remove_texture = false;
                     let mut changed = false;
 
-                    generic_items::collapse(ui, id, true, None, |ui|
+                    let texture = material.get_texture_by_type(texture_type);
+                    let texture_state = texture.unwrap();
+
+                    let mut enabled = texture_state.enabled;
+
+                    if let Some(texture) = texture_state.get()
                     {
-                        ui.label(RichText::new(title).heading().strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                        let mut texture = texture.write().unwrap();
+                        let texture_id = texture.id;
+
+                        let title = format!("🖼 {}", texture_type.to_string());
+                        let id = format!("texture_{}", texture_type.to_string());
+
+                        generic_items::collapse(ui, id, true, None, |ui|
                         {
-                            if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("delete").clicked()
+                            ui.label(RichText::new(title).heading().strong());
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                             {
-                                remove_texture = true;
-                            }
+                                if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("delete").clicked()
+                                {
+                                    remove_texture = true;
+                                }
 
-                            // enabled toggle
-                            let toggle_color = if enabled { Color32::GREEN } else { Color32::RED };
-                            let toggle_text = RichText::new("⏺").color(toggle_color);
+                                // enabled toggle
+                                let toggle_color = if enabled { Color32::GREEN } else { Color32::RED };
+                                let toggle_text = RichText::new("⏺").color(toggle_color);
 
-                            if ui.toggle_value(&mut enabled, toggle_text).on_hover_text("enable/disable").clicked()
-                            {
-                                changed = true;
-                            }
+                                if ui.toggle_value(&mut enabled, toggle_text).on_hover_text("enable/disable").clicked()
+                                {
+                                    changed = true;
+                                }
 
-                            // link to the texture setting
-                            if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to texture").clicked()
-                            {
-                                editor_state.selected_object = format!("texture_{}", texture_id);
-                                editor_state.selected_scene_id = Some(scene_id);
-                                editor_state.selected_type = SelectionType::Texture;
-                                editor_state.settings = SettingsPanel::Texture;
-                            }
+                                // link to the texture setting
+                                if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to texture").clicked()
+                                {
+                                    editor_state.selected_object = format!("texture_{}", texture_id);
+                                    editor_state.selected_scene_id = Some(scene_id);
+                                    editor_state.selected_type = SelectionType::Texture;
+                                    editor_state.settings = SettingsPanel::Texture;
+                                }
+                            });
+                        },
+                        |ui|
+                        {
+                            texture.ui_info(ui);
+                            drop(texture); // drop texture object - otherwise write is still open
+
+                            ui.separator();
+                            material.ui_texture_state(ui, texture_type);
                         });
-                    },
-                    |ui|
-                    {
-                        texture.ui_info(ui);
-                    });
+                    }
 
                     if changed
                     {
@@ -188,9 +196,9 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                 else
                 {
                     let title = format!("🖼 {}", texture_type.to_string());
-                    let id = format!("texture_{}", texture_type.to_string());
+                    let id: String = format!("texture_{}_{}", material_id, texture_type.to_string());
 
-                    generic_items::collapse(ui, id, true, None, |ui|
+                    generic_items::collapse(ui, id.clone(), true, None, |ui|
                     {
                         ui.label(RichText::new(title).heading().strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
@@ -203,20 +211,38 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                                 let mut enabled = false;
                                 ui.toggle_value(&mut enabled, toggle_text)
                             });
+
+                            let mut toggle_value = if editor_state.pick_mode == PickType::Texture && editor_state.pick_id == id { true } else { false };
+                            if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick texture").changed()
+                            {
+                                if toggle_value
+                                {
+                                    editor_state.pick_id = id.clone();
+                                    editor_state.pick_mode = PickType::Texture;
+                                }
+                                else
+                                {
+                                    editor_state.pick_id = "".to_string();
+                                    editor_state.pick_mode = PickType::None;
+                                }
+                            }
                         });
                     },
                     |ui|
                     {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
                         {
-                            if ui.button(RichText::new("Load Texture").heading().strong()).clicked()
+                            ui.horizontal(|ui|
                             {
-                                let main_queue = main_queue.clone();
-                                spawn_thread(move ||
+                                if ui.button(RichText::new("Load new texture").heading().strong()).clicked()
                                 {
-                                    load_texture_dialog(main_queue.clone(), texture_type, scene_id, Some(material_id), mipmapping, max_tex_res);
-                                });
-                            }
+                                    let main_queue = main_queue.clone();
+                                    spawn_thread(move ||
+                                    {
+                                        load_texture_dialog(main_queue.clone(), Some(texture_type), None, Some(material_id), mipmapping, max_tex_res);
+                                    });
+                                }
+                            });
                         });
                     });
                 }

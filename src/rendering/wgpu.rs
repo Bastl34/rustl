@@ -3,7 +3,7 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
+use crate::{console_error, console_log, helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -39,7 +39,7 @@ impl WGpu
 
         if let Err(surface_error) = &surface
         {
-            dbg!(surface_error);
+            console_error!(surface_error);
             panic!("Failed to create surface");
         }
 
@@ -53,15 +53,15 @@ impl WGpu
         .await
         .unwrap();
 
-        println!(" ********** info **********");
+        console_log!(" ********** info **********");
         let adapter_info = adapter.get_info();
-        dbg!(adapter.get_info());
+        console_log!(adapter.get_info());
 
-        println!(" ********** features possible **********");
-        dbg!(adapter.features());
+        console_log!(" ********** features possible **********");
+        console_log!(adapter.features());
 
-        println!(" ********** limits possible **********");
-        dbg!(adapter.limits());
+        console_log!(" ********** limits possible **********");
+        console_log!(adapter.limits());
 
         let (device, queue) = adapter.request_device
         (
@@ -80,17 +80,18 @@ impl WGpu
                     wgpu::Limits::default()
                 },
                 memory_hints: Default::default(),
+                experimental_features: Default::default(),
                 trace: wgpu::Trace::Off,
             },
         )
         .await
         .unwrap();
 
-        println!(" ********** features used **********");
-        dbg!(device.features());
+        console_log!(" ********** features used **********");
+        console_log!(device.features());
 
-        println!(" ********** limits used **********");
-        dbg!(device.limits());
+        console_log!(" ********** limits used **********");
+        console_log!(device.limits());
 
         let surface_caps = surface.get_capabilities(&adapter);
 
@@ -117,33 +118,33 @@ impl WGpu
         // msaa
         let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
 
-        if texture_features.flags.sample_count_supported(2) { state.adapter.max_msaa_samples = 2; }
-        if texture_features.flags.sample_count_supported(4) { state.adapter.max_msaa_samples = 4; }
-        if texture_features.flags.sample_count_supported(8) { state.adapter.max_msaa_samples = 8; }
-        if texture_features.flags.sample_count_supported(16) { state.adapter.max_msaa_samples = 16; }
+        if texture_features.flags.sample_count_supported(2) { state.rendering_adapter.max_msaa_samples = 2; }
+        if texture_features.flags.sample_count_supported(4) { state.rendering_adapter.max_msaa_samples = 4; }
+        if texture_features.flags.sample_count_supported(8) { state.rendering_adapter.max_msaa_samples = 8; }
+        if texture_features.flags.sample_count_supported(16) { state.rendering_adapter.max_msaa_samples = 16; }
 
         let msaa_samples = *state.rendering.msaa.get_ref();
 
-        state.adapter.max_texture_resolution = device.limits().max_texture_dimension_2d;
-        state.adapter.max_supported_texture_resolution = device.limits().max_texture_dimension_2d;
+        state.rendering_adapter.max_texture_resolution = device.limits().max_texture_dimension_2d;
+        state.rendering_adapter.max_supported_texture_resolution = device.limits().max_texture_dimension_2d;
 
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
-        state.adapter.storage_buffer_array_support = supports_storage_resources;
+        state.rendering_adapter.storage_buffer_array_support = supports_storage_resources;
 
         // apply adapter infos
-        state.adapter.name = adapter_info.name.clone();
-        state.adapter.driver = adapter_info.driver.clone();
-        state.adapter.driver_info = adapter_info.driver_info.clone();
+        state.rendering_adapter.name = adapter_info.name.clone();
+        state.rendering_adapter.driver = adapter_info.driver.clone();
+        state.rendering_adapter.driver_info = adapter_info.driver_info.clone();
 
         match adapter_info.backend
         {
-            wgpu::Backend::Noop => state.adapter.backend = "Noop".to_string(),
-            wgpu::Backend::Vulkan => state.adapter.backend = "Vulkan".to_string(),
-            wgpu::Backend::Metal => state.adapter.backend = "Metal".to_string(),
-            wgpu::Backend::Dx12 => state.adapter.backend = "Dx12".to_string(),
-            wgpu::Backend::Gl => state.adapter.backend = "Gl".to_string(),
-            wgpu::Backend::BrowserWebGpu => state.adapter.backend = "BrowserWebGpu".to_string(),
+            wgpu::Backend::Noop => state.rendering_adapter.backend = "Noop".to_string(),
+            wgpu::Backend::Vulkan => state.rendering_adapter.backend = "Vulkan".to_string(),
+            wgpu::Backend::Metal => state.rendering_adapter.backend = "Metal".to_string(),
+            wgpu::Backend::Dx12 => state.rendering_adapter.backend = "Dx12".to_string(),
+            wgpu::Backend::Gl => state.rendering_adapter.backend = "Gl".to_string(),
+            wgpu::Backend::BrowserWebGpu => state.rendering_adapter.backend = "BrowserWebGpu".to_string(),
         }
 
         let mut wgpu = Self
@@ -245,11 +246,11 @@ impl WGpu
                 break;
             }
 
-            dbg!(output.err());
+            console_error!(output.err());
 
             // wait on error and retry
             sleep_millis(100);
-            println!("retry get surface texture");
+            console_log!("retry get surface texture");
         }
         let output = output.unwrap();
 
@@ -377,7 +378,7 @@ impl WGpu
         // read buffer
         let slice: wgpu::BufferSlice = output_buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| ());
-        self.device.poll(wgpu::PollType::Wait).unwrap();
+        self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
         // remove padding
         let padded_data = slice.get_mapped_range();

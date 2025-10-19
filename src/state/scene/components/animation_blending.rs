@@ -1,17 +1,20 @@
 #![allow(dead_code)]
 
-use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::math::approx_zero, input::input_manager::InputManager, state::{scene::node::NodeItem, state::REFERENCE_UPDATE_FRAMES}};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_downcast, component_downcast_mut, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, console_warning, helper::math::approx_zero, state::{scene::{components::animation::AnimationLayerType, node::NodeItem}, state::{InputOutput, REFERENCE_UPDATE_FRAMES}}};
 
 use super::{animation::Animation, component::{Component, ComponentBase}};
 
 const INFO_STRING: &str = "The changes are applies on the Animation Component.\nIf there is no Animation Component: Nothing is happening.";
 
+#[derive(Serialize, Deserialize)]
 pub struct AnimationBlending
 {
     base: ComponentBase,
 
-    pub from: Option<u64>,
-    pub to: Option<u64>,
+    pub from: Option<u64>, // TODO: Serialize, Deserialize?
+    pub to: Option<u64>, // TODO: Serialize, Deserialize?
 
     pub speed: f32,
 
@@ -55,11 +58,13 @@ impl AnimationBlending
     }
 }
 
+#[typetag::serde]
 impl Component for AnimationBlending
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {
@@ -84,7 +89,7 @@ impl Component for AnimationBlending
         None
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, time: u128, frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, time: u128, frame_scale: f32, _frame: u64)
     {
         //if (self.get_data().from.is_none() && self.get_data().to.is_none()) || !self.base.is_enabled
         if !self.base.is_enabled
@@ -99,6 +104,7 @@ impl Component for AnimationBlending
 
         if self.from.is_some() && self.to.is_some() && self.to == self.from
         {
+            console_warning!("animation blending are equal");
             return;
         }
 
@@ -135,7 +141,7 @@ impl Component for AnimationBlending
             {
                 component_downcast_mut!(animation, Animation);
 
-                if animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
+                if animation.layer_type == AnimationLayerType::Blend && animation.running() && (self.to.is_none() || self.to.unwrap() != animation.get_base().id)
                 {
                     animation.weight = (animation.weight - weight_delta).max(0.0);
 
@@ -190,7 +196,7 @@ impl Component for AnimationBlending
             for animation in all_animations
             {
                 component_downcast_mut!(animation, Animation);
-                if animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
+                if animation.layer_type == AnimationLayerType::Blend && animation.running() && (self.from.is_none() || self.from.unwrap() != animation.get_base().id)
                 {
                     animation.weight = (animation.weight - weight_delta).max(0.0);
 
@@ -235,6 +241,12 @@ impl Component for AnimationBlending
             for animation in animation_components
             {
                 component_downcast!(animation, Animation);
+
+                if animation.layer_type != AnimationLayerType::Blend
+                {
+                    continue;
+                }
+
                 animations.push((animation.get_base().id, animation.get_base().name.clone()));
 
                 if from == animation.get_base().id

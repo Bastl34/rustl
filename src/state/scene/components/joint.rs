@@ -1,29 +1,326 @@
 #![allow(dead_code)]
 
-use nalgebra::Matrix4;
+use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
+use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, state::scene::node::NodeItem};
+use crate::{component_downcast, component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::{change_tracker::ChangeTracker, math::approx_zero}, state::{scene::{components::{animation::AnimationLayerType, transformation::TransformationData}, node::NodeItem}, state::InputOutput}};
 
 use super::{component::{ComponentBase, Component}, transformation::Transformation};
 
-
-pub struct JointData
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct JointTransformationData
 {
-    pub root_joint: bool,
-    pub local_trans: Matrix4<f32>,
-    //pub full_joint_trans: Matrix4<f32>,
-    pub inverse_bind_trans: Matrix4<f32>,
-    //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
-
-    pub animation_weight: f32,
-    pub animation_update_frame: Option<u64>,
-
-    pub animation_trans: Option<Matrix4<f32>>
+    pub translation: Option<Vector3<f32>>,
+    pub rotation_quat: Option<nalgebra::Unit<Quaternion<f32>>>,
+    pub scale: Option<Vector3<f32>>,
 }
 
+impl JointTransformationData
+{
+    pub fn identity() -> Self
+    {
+        JointTransformationData
+        {
+            translation: None,
+            rotation_quat: None,
+            scale: None,
+        }
+    }
+
+    pub fn from_transformation_data(local_trans_data: &TransformationData) -> Self
+    {
+        let rotation_quat = if let Some(quat_vec4) = local_trans_data.rotation_quat
+        {
+            UnitQuaternion::new_normalize(Quaternion::new(quat_vec4.w, quat_vec4.x, quat_vec4.y, quat_vec4.z))
+        }
+        else
+        {
+            UnitQuaternion::from_euler_angles
+            (
+                local_trans_data.rotation.x,
+                local_trans_data.rotation.y,
+                local_trans_data.rotation.z
+            )
+        };
+
+        JointTransformationData
+        {
+            translation: Some(local_trans_data.position),
+            rotation_quat: Some(rotation_quat),
+            scale: Some(local_trans_data.scale),
+        }
+    }
+
+    pub fn to_matrix(&self) -> Matrix4<f32>
+    {
+        let mut trans = Matrix4::<f32>::identity();
+
+        // Apply translation
+        if let Some(translation) = &self.translation
+        {
+            trans = trans * nalgebra::Isometry3::translation(translation.x, translation.y, translation.z).to_homogeneous();
+        }
+
+        // Apply rotation
+        if let Some(rotation) = &self.rotation_quat
+        {
+            let rotation: Rotation3<f32> = (*rotation).into();
+            trans = trans * rotation.to_homogeneous();
+        }
+
+        // Apply scale
+        if let Some(scale) = &self.scale
+        {
+            trans = trans * Matrix4::new_nonuniform_scaling(scale);
+        }
+
+        trans
+    }
+
+    pub fn from_matrix(matrix: &Matrix4<f32>) -> Self
+    {
+        // if shear is needed -> use SVG!
+
+        // translation
+        let translation = Vector3::new(matrix[(0, 3)], matrix[(1, 3)], matrix[(2, 3)]);
+
+        // extract 3x3 part (rotation * scale)
+        let linear = matrix.fixed_view::<3, 3>(0, 0);
+
+        // extract scale from column lengths
+        let scale = Vector3::new
+        (
+            linear.column(0).norm(),
+            linear.column(1).norm(),
+            linear.column(2).norm(),
+        );
+
+        // avoid division by zero (degenerate case)
+        let safe_scale = Vector3::new
+        (
+            if scale.x != 0.0 { scale.x } else { 1.0 },
+            if scale.y != 0.0 { scale.y } else { 1.0 },
+            if scale.z != 0.0 { scale.z } else { 1.0 },
+        );
+
+        // normalize to get pure rotation
+        let rotation_matrix = Matrix3::from_columns
+        (&[
+            linear.column(0) / safe_scale.x,
+            linear.column(1) / safe_scale.y,
+            linear.column(2) / safe_scale.z,
+        ]);
+
+        // convert to quaternion
+        let rotation_quat = UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(rotation_matrix));
+
+        JointTransformationData
+        {
+            translation: Some(translation),
+            rotation_quat: Some(rotation_quat),
+            scale: Some(scale),
+        }
+    }
+
+    pub fn apply_weight(&self, weight: f32) -> Self
+    {
+        JointTransformationData
+        {
+            translation: self.translation.map(|t| t * weight),
+            rotation_quat: self.rotation_quat.map(|r|
+            {
+                let identity = nalgebra::Unit::new_normalize(Quaternion::identity());
+                identity.slerp(&r, weight)
+            }),
+            scale: self.scale.map(|s| Vector3::new(1.0, 1.0, 1.0).lerp(&s, weight)),
+        }
+    }
+
+    pub fn blend_with(&self, other: &JointTransformationData, weight: f32) -> Self
+    {
+        JointTransformationData
+        {
+            translation:
+            {
+                let self_trans = self.translation.unwrap_or(Vector3::zeros());
+                let other_trans = other.translation.unwrap_or(Vector3::zeros());
+                Some(self_trans.lerp(&other_trans, weight))
+            },
+            rotation_quat:
+            {
+                let self_rot = self.rotation_quat.unwrap_or(nalgebra::Unit::new_normalize(Quaternion::identity()));
+                let other_rot = other.rotation_quat.unwrap_or(nalgebra::Unit::new_normalize(Quaternion::identity()));
+                Some(self_rot.slerp(&other_rot, weight))
+            },
+            scale:
+            {
+                let self_scale = self.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+                let other_scale = other.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+                Some(self_scale.lerp(&other_scale, weight))
+            },
+        }
+    }
+
+    pub fn override_with_weight(&self, other: &JointTransformationData, weight: f32) -> Self
+    {
+        JointTransformationData
+        {
+            translation:
+            {
+                if let Some(new_translation) = other.translation
+                {
+                    Some(new_translation * weight)
+                }
+                else
+                {
+                    self.translation
+                }
+            },
+            rotation_quat:
+            {
+                if let Some(new_rot) = other.rotation_quat
+                {
+                    let identity = nalgebra::Unit::new_normalize(Quaternion::identity());
+                    Some(identity.slerp(&new_rot, weight))
+                }
+                else
+                {
+                    self.rotation_quat
+                }
+            },
+            scale:
+            {
+                if let Some(new_scale) = other.scale
+                {
+                    Some(new_scale * weight)
+                }
+                else
+                {
+                    self.scale
+                }
+            },
+        }
+    }
+
+    pub fn additive_absolute_with_weight(&self, delta: &JointTransformationData, full_parent_transform: &Matrix4<f32>, weight: f32) -> Self
+    {
+        let parent_trs = JointTransformationData::from_matrix(full_parent_transform);
+
+        // calc absolute TRS (parent * local)
+        let self_translation = self.translation.unwrap_or(Vector3::zeros());
+        let self_rotation = self.rotation_quat.unwrap_or(UnitQuaternion::identity());
+        let self_scale = self.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+
+        let parent_rotation = parent_trs.rotation_quat.unwrap_or(UnitQuaternion::identity());
+        let parent_translation = parent_trs.translation.unwrap_or(Vector3::zeros());
+        let parent_scale = parent_trs.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+
+        // absolute TRS:
+        let abs_translation = parent_translation + parent_rotation * (parent_scale.component_mul(&self_translation));
+        let abs_rotation = parent_rotation * self_rotation;
+        let abs_scale = parent_scale.component_mul(&self_scale);
+
+        // rotation
+        let blended_rotation = if let Some(delta_rot) = delta.rotation_quat
+        {
+            let delta_rot_weighted = UnitQuaternion::identity().slerp(&delta_rot, weight);
+            Some(delta_rot_weighted * abs_rotation)
+        }
+        else
+        {
+            Some(abs_rotation)
+        };
+
+        // translation
+        let blended_translation = if let Some(delta_trans) = delta.translation
+        {
+            Some(abs_translation + delta_trans * weight)
+        }
+        else
+        {
+            Some(abs_translation)
+        };
+
+        // scale
+        let blended_scale = if let Some(delta_scale) = delta.scale
+        {
+            Some(abs_scale + (delta_scale - Vector3::new(1.0, 1.0, 1.0)) * weight)
+        }
+        else
+        {
+            Some(abs_scale)
+        };
+
+        // back to local space
+        // (apply inverse parent to TRS)
+        let inv_parent_scale = Vector3::new
+        (
+            1.0 / parent_scale.x,
+            1.0 / parent_scale.y,
+            1.0 / parent_scale.z,
+        );
+        let inv_parent_rotation = parent_rotation.inverse();
+
+        let local_translation = inv_parent_rotation * ((blended_translation.unwrap() - parent_translation).component_mul(&inv_parent_scale));
+        let local_rotation = inv_parent_rotation * blended_rotation.unwrap();
+        let local_scale = blended_scale.unwrap().component_mul(&inv_parent_scale);
+
+        JointTransformationData
+        {
+            translation: Some(local_translation),
+            rotation_quat: Some(local_rotation),
+            scale: Some(local_scale),
+        }
+    }
+
+}
+
+
+#[derive(Serialize, Deserialize)]
+pub struct JointLayeredTransformData
+{
+    pub layer_type: AnimationLayerType,
+    pub transformation: JointTransformationData,
+
+    pub weight: f32
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct JointData
+{
+    #[serde(skip, default)]
+    pub root_joint: bool,
+
+    #[serde(skip, default)]
+    pub local_trans: JointTransformationData,
+
+    #[serde(skip, default)]
+    pub local_trans_mat: Matrix4<f32>,
+    //pub full_joint_trans: Matrix4<f32>,
+
+    #[serde(skip, default)]
+    pub inverse_bind_trans: Matrix4<f32>,
+
+    //pub inverse_bind_trans_calculated: Matrix4<f32>, // DEBUG?
+
+    #[serde(skip, default)]
+    pub animation_transforms: Vec<JointLayeredTransformData>,
+
+    //#[serde(skip, default)]
+    //pub animation_weight: f32,
+
+    #[serde(skip, default)]
+    pub animation_update_frame: Option<u64>,
+
+    //#[serde(skip, default)]
+    //pub animation_trans: Option<Matrix4<f32>>
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Joint
 {
     base: ComponentBase,
+
     data: ChangeTracker<JointData>
 }
 
@@ -36,14 +333,17 @@ impl Joint
         {
             root_joint: false,
             //full_joint_trans: Matrix4::<f32>::identity(),
-            local_trans: Matrix4::<f32>::identity(),
+            local_trans: JointTransformationData::identity(),
+            local_trans_mat: Matrix4::<f32>::identity(),
             inverse_bind_trans: Matrix4::<f32>::identity(),
             //inverse_bind_trans_calculated: Matrix4::<f32>::identity(),
 
-            animation_weight: 0.0,
+            //animation_weight: 0.0,
             animation_update_frame: None,
 
-            animation_trans: None
+            //animation_trans: None
+
+            animation_transforms: vec![]
         };
 
         let joint = Joint
@@ -76,46 +376,102 @@ impl Joint
         //self.get_data().inverse_bind_trans_calculated
     }
 
-    pub fn get_joint_transform(&self) -> Matrix4<f32>
+    pub fn get_joint_transform(&self, full_parent_joint_transform: &Matrix4<f32>) -> Matrix4<f32>
     {
         let joint_data = self.get_data();
 
-        if let Some(animation_trans) = self.get_animation_transform()
+        let mut total_weight: f32 = 0.0;
+        let mut result_transformation = JointTransformationData::identity();
+        let mut additive_transforms: Vec<JointTransformationData> = vec![];
+
+        for transform in &joint_data.animation_transforms
         {
-            if joint_data.animation_weight < 1.0
+            if transform.layer_type == AnimationLayerType::Blend
             {
-                let animation_weight = joint_data.animation_weight.clamp(0.0, 1.0);
-                joint_data.local_trans * (1.0 - animation_weight) + animation_trans * animation_weight
+                if total_weight == 0.0
+                {
+                    result_transformation = transform.transformation.clone();
+                }
+                else
+                {
+                    let blend_factor = transform.weight / (total_weight + transform.weight);
+                    result_transformation = result_transformation.blend_with(&transform.transformation, blend_factor);
+                }
+                total_weight += transform.weight;
             }
-            else if joint_data.animation_weight > 1.0
+            else if transform.layer_type == AnimationLayerType::OverrideComponent
             {
-                animation_trans * (1.0 / joint_data.animation_weight)
+                if total_weight == 0.0
+                {
+                    result_transformation = transform.transformation.clone();
+                }
+                else
+                {
+                    result_transformation = result_transformation.override_with_weight(&transform.transformation, transform.weight);
+                }
             }
-            else
+            else if transform.layer_type == AnimationLayerType::AdditiveComponentAbsolute
             {
-                //joint_data.local_trans * animation_trans // sometimes this is correct (For some models)
-                animation_trans
+                if total_weight == 0.0
+                {
+                    result_transformation = transform.transformation.clone();
+                }
+                else
+                {
+                    result_transformation = result_transformation.additive_absolute_with_weight(&transform.transformation, &full_parent_joint_transform, transform.weight);
+                }
             }
+            else if transform.layer_type == AnimationLayerType::Override
+            {
+                result_transformation = transform.transformation.clone();
+                total_weight = transform.weight;
+                additive_transforms.clear();
+            }
+            else if transform.layer_type == AnimationLayerType::Additive
+            {
+                if !approx_zero(transform.weight)
+                {
+                    additive_transforms.push(transform.transformation.apply_weight(transform.weight));
+                }
+            }
+        }
+
+        // Blend with local transform if total_weight < 1.0
+        let final_transformation = if total_weight < 1.0 && total_weight > 0.0
+        {
+            let t = total_weight.clamp(0.0, 1.0);
+            joint_data.local_trans.blend_with(&result_transformation, t)
+        }
+        else if total_weight == 0.0
+        {
+            joint_data.local_trans.clone()
         }
         else
         {
-            joint_data.local_trans
-        }
-    }
+            result_transformation
+        };
 
-    pub fn get_animation_transform(&self) -> Option<Matrix4<f32>>
-    {
-        self.get_data().animation_trans
+        // Build matrix from final transformation
+        let mut trans = final_transformation.to_matrix();
+
+        // Apply additive transforms
+        for additive_transform in &additive_transforms
+        {
+            trans = trans * additive_transform.to_matrix();
+            //trans = relative_transform.to_matrix() * trans;
+        }
+
+        trans
     }
 
     pub fn get_local_transform(&self) -> Matrix4<f32>
     {
         let joint_data = self.get_data();
 
-        joint_data.local_trans
+        joint_data.local_trans_mat
     }
 
-    pub fn get_changed_local_transform(&self, node: NodeItem) -> Option<Matrix4<f32>>
+    pub fn get_changed_local_transform(&self, node: NodeItem) -> Option<JointTransformationData>
     {
         let node = node.read().unwrap();
         let transform_component = node.find_component::<Transformation>();
@@ -125,17 +481,20 @@ impl Joint
             component_downcast!(transform_component, Transformation);
             if transform_component.get_data_tracker().changed()
             {
-                let local_trans = transform_component.get_transform().clone();
-                return Some(local_trans);
+                let local_trans_data = transform_component.get_data();
+                return Some(JointTransformationData::from_transformation_data(local_trans_data));
             }
         }
 
         None
     }
 
-    pub fn update_local_transform(&mut self, local_trans: Matrix4<f32>)
+    pub fn update_local_transform(&mut self, local_trans: JointTransformationData)
     {
-        self.get_data_mut().get_mut().local_trans = local_trans;
+        let local_trans_mat = local_trans.to_matrix();
+        let data = self.get_data_mut().get_mut();
+        data.local_trans = local_trans;
+        data.local_trans_mat = local_trans_mat;
     }
 
     fn get_full_transform_inverse_bind_transform(node: NodeItem) -> Matrix4<f32>
@@ -149,30 +508,32 @@ impl Joint
 
             let local_trans = transform_component.get_transform().clone();
 
-            let mut inverse_bindpose_matrix = local_trans.try_inverse().unwrap();
+            let mut inverse_bind_pose_matrix = local_trans.try_inverse().unwrap();
 
-            if let Some(parent) = &node.parent
+            if let Some(parent) = node.parent.as_ref()
             {
                 //if parent.read().unwrap().find_component::<Joint>().is_some()
                 if !parent.read().unwrap().root_node
                 {
-                    let parent_inverse_bindpose_matrix = Self::get_full_transform_inverse_bind_transform(parent.clone());
-                    inverse_bindpose_matrix = parent_inverse_bindpose_matrix * inverse_bindpose_matrix;
+                    let parent_inverse_bind_pose_matrix = Self::get_full_transform_inverse_bind_transform(parent.clone());
+                    inverse_bind_pose_matrix = parent_inverse_bind_pose_matrix * inverse_bind_pose_matrix;
                 }
             }
 
-            return inverse_bindpose_matrix;
+            return inverse_bind_pose_matrix;
         }
 
         Matrix4::identity()
     }
 }
 
+#[typetag::serde]
 impl Component for Joint
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {
@@ -200,7 +561,7 @@ impl Component for Joint
         None
     }
 
-    fn update(&mut self, node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
         let local_trans = self.get_changed_local_transform(node.clone());
 
@@ -223,6 +584,6 @@ impl Component for Joint
         ui.label(format!("Inverse Bind Trans:\n{:?}", self.get_data().inverse_bind_trans));
         ui.label(format!("Bind Trans:\n{:?}", bind_transform));
         //ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));
-        ui.label(format!("Animation Transf:\n{:?}", self.get_data().animation_trans));
+        //ui.label(format!("Animation Transf:\n{:?}", self.get_joint_transform()));
     }
 }

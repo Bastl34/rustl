@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}};
+use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, resources::mesh_resource::MeshResourceData}};
 
 use super::wgpu::WGpu;
 use nalgebra::{Point2, Vector3};
@@ -71,7 +71,7 @@ impl RenderItem for VertexBuffer
 
 impl VertexBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshData) -> VertexBuffer
+    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshResourceData) -> VertexBuffer
     {
         let device = wgpu.device();
 

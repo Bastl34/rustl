@@ -33,12 +33,14 @@ impl EGui
         let theme = Some(winit::window::Theme::Dark);
         let ui_state = egui_winit::State::new(ctx.clone(), viewport_id, &window, Some(native_pixels_per_point), theme, Some(max_texture_side));
 
-        let dithering = true;
-
         Self
         {
             ctx: ctx,
-            renderer: Renderer::new(&device, surface_cfg.format, None, 1, dithering),
+            renderer: Renderer::new(&device, surface_cfg.format, egui_wgpu::RendererOptions
+            {
+                dithering: true,
+                ..Default::default()
+            }),
             ui_state: ui_state,
             screen_descriptor: ScreenDescriptor
             {
@@ -108,7 +110,8 @@ impl EGui
                         {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
-                        }
+                        },
+                        depth_slice: None,
                     })
                 ],
                 depth_stencil_attachment: None,

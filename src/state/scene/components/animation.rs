@@ -5,15 +5,21 @@ use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
 
 use egui::{Color32, RichText};
-use nalgebra::{Matrix4, Vector3, Vector4, Quaternion, UnitQuaternion, Rotation3};
+use nalgebra::{Vector3, Vector4, Quaternion, UnitQuaternion};
+use serde::{Deserialize, Serialize};
+use strum_macros::{Display, EnumIter, FromRepr};
 
-use crate::component_downcast;
-use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, input::input_manager::InputManager, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
+use crate::state::scene::components::joint::{JointLayeredTransformData, JointTransformationData};
+use crate::{component_downcast, console_error, console_warning};
+use crate::helper::option_or_id::OptionOrId;
+use crate::state::state::InputOutput;
+use crate::{component_downcast_mut, component_impl_default, component_impl_no_update_instance, helper::{easing::Easing, easing::easing, easing::get_easing_as_string_vec, math::{approx_zero, cubic_spline_interpolate_vec, cubic_spline_interpolate_vec3, cubic_spline_interpolate_vec4, interpolate_vec, interpolate_vec3}}, state::scene::{components::joint::Joint, node::NodeItem, scene::Scene}};
+use crate::state::scene::exporter::serialization_helper;
 
 use super::sound::Sound;
 use super::{component::{ComponentBase, Component, ComponentItem}, transformation::Transformation, morph_target::MorphTarget};
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Interpolation
 {
     Linear,
@@ -21,7 +27,32 @@ pub enum Interpolation
     CubicSpline
 }
 
-#[derive(Clone)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
+pub enum AnimationLayerType
+{
+    Blend, // Blend with last applied animation/s (or bind pose transform)
+    Override, // Override last applied animation/s
+    OverrideComponent, // Override last applied animation/s but just component wise (no complete override)
+    AdditiveComponentAbsolute, // Additive last applied animation/s but just component wise (no complete override) based on root joint with absolute value
+    Additive, // Additive to last applied animation/s - no blending
+}
+
+impl AnimationLayerType
+{
+    pub fn string_vec() -> Vec<String>
+    {
+        vec!
+        [
+            "Blend".to_string(),
+            "Override".to_string(),
+            "OverrideComponent".to_string(),
+            "AdditiveComponentAbsolute".to_string(),
+            "Additive".to_string()
+        ]
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Channel
 {
     pub interpolation: Interpolation,
@@ -32,7 +63,8 @@ pub struct Channel
     pub transform_scale: Vec<Vector3<f32>>,
     pub transform_morph: Vec<Vec<f32>>,
 
-    pub target: NodeItem
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub target: OptionOrId<NodeItem>
 }
 
 impl Channel
@@ -49,7 +81,7 @@ impl Channel
             transform_scale: vec![],
             transform_morph: vec![],
 
-            target
+            target: OptionOrId::Some(target)
         }
     }
 }
@@ -64,6 +96,15 @@ struct TargetMapItem
     pub skip_joint: bool
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct JointFilter
+{
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+    pub include: bool,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Animation
 {
     base: ComponentBase,
@@ -72,45 +113,60 @@ pub struct Animation
     pub reverse: bool,
 
     pub easing: Easing,
+    pub layer_type: AnimationLayerType,
 
     pub from: f32,
     pub to: f32,
     pub duration: f32, // based on animation data (to prevent that the animation is longer as the duration)
 
+    #[serde(skip, default)]
     pub start_time: Option<u128>,
+
+    #[serde(skip, default)]
     pub pause_time: Option<u128>,
 
     pub weight: f32,
     pub speed: f32,
 
+    #[serde(skip, default)]
     pub channels: Vec<Channel>,
 
-    pub joint_filter: Vec<(NodeItem, bool)>, // only apply parts of the animation for specific nodes
-    pub in_place_joint_node: Option<NodeItem>, // apply the animation in place (only for the hips)
+    joint_filter: Vec<JointFilter>, // only apply parts of the animation for specific nodes
+
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub in_place_joint_node: OptionOrId<NodeItem>, // apply the animation in place (only for the hips)
 
     pub in_place_axis: Vector3<bool>,
 
-    pub sound_component: Option<ComponentItem>,
+    #[serde(serialize_with = "serialization_helper::serialize_component", deserialize_with = "serialization_helper::deserialize_component")]
+    pub sound_component: OptionOrId<ComponentItem>,
 
+    #[serde(skip, default)]
     current_time: u128,
+
+    #[serde(skip, default)]
     current_local_time: f32,
+
+    #[serde(skip, default)]
     current_iteration: u64,
 
+    #[serde(skip, default)]
     ui_joint_include_option: bool
 }
 
-impl Animation
+impl Default for Animation
 {
-    pub fn new(name: &str) -> Animation
+    fn default() -> Self
     {
         Animation
         {
-            base: ComponentBase::new(name.to_string(), "Animation".to_string(), "🎞".to_string()),
+            base: ComponentBase::new("Animation".to_string(), "Animation".to_string(), "🎞".to_string()),
 
             looped: true,
             reverse: false,
 
             easing: Easing::None,
+            layer_type: AnimationLayerType::Blend,
 
             from: 0.0,
             to: 0.0,
@@ -125,10 +181,10 @@ impl Animation
             channels: vec![],
 
             joint_filter: vec![],
-            in_place_joint_node: None,
+            in_place_joint_node: OptionOrId::None,
             in_place_axis: Vector3::new(true, true, true),
 
-            sound_component: None,
+            sound_component: OptionOrId::None,
 
             current_time: 0,
             current_local_time: 0.0,
@@ -136,6 +192,77 @@ impl Animation
 
             ui_joint_include_option: true
         }
+    }
+}
+
+impl Animation
+{
+    pub fn new(name: &str) -> Animation
+    {
+        let mut animation = Animation::default();
+        animation.get_base_mut().name = name.to_string();
+
+        animation
+    }
+
+    pub fn new_joint_transform(name: &str, joint_target: NodeItem, transform: Option<Vector3<f32>>, rotation: Option<Vector3<f32>>, scale: Option<Vector3<f32>>) -> Animation
+    {
+        let mut animation = Animation::default();
+        animation.get_base_mut().name = name.to_string();
+
+        let mut channel = Channel::new(joint_target);
+
+        if let Some(transform) = transform
+        {
+            channel.transform_translation.push(transform);
+        }
+
+        if let Some(rotation) = rotation
+        {
+            let rotation_quat = UnitQuaternion::from_euler_angles(rotation.x, rotation.y, rotation.z);
+            let rotation_quat = Vector4::<f32>::new(rotation_quat.coords.x, rotation_quat.coords.y, rotation_quat.coords.z, rotation_quat.coords.w);
+            channel.transform_rotation.push(rotation_quat);
+        }
+
+        if let Some(scale) = scale
+        {
+            channel.transform_scale.push(scale);
+        }
+
+        channel.timestamps.push(0.0);
+
+        animation.channels.push(channel);
+
+        animation
+    }
+
+    pub fn new_joint_transform_quat(name: &str, joint_target: NodeItem, transform: Option<Vector3<f32>>, rotation: Option<nalgebra::Unit<Quaternion<f32>>>, scale: Option<Vector3<f32>>) -> Animation
+    {
+        let mut animation = Animation::default();
+        animation.get_base_mut().name = name.to_string();
+
+        let mut channel = Channel::new(joint_target);
+
+        if let Some(transform) = transform
+        {
+            channel.transform_translation.push(transform);
+        }
+
+        if let Some(rotation) = rotation
+        {
+            channel.transform_rotation.push(Vector4::<f32>::new(rotation.i, rotation.j, rotation.k, rotation.w));
+        }
+
+        if let Some(scale) = scale
+        {
+            channel.transform_scale.push(scale);
+        }
+
+        channel.timestamps.push(0.0);
+
+        animation.channels.push(channel);
+
+        animation
     }
 
     pub fn running(&self) -> bool
@@ -174,7 +301,7 @@ impl Animation
         self.pause_time = None;
         self.current_iteration = 0;
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.start();
@@ -188,7 +315,7 @@ impl Animation
         self.start_time = Some(time);
         self.pause_time = None;
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.start();
@@ -205,7 +332,7 @@ impl Animation
         self.start_time = None;
         self.reset();
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.stop();
@@ -219,7 +346,7 @@ impl Animation
             return;
         }
 
-        if let Some(sound) = &self.sound_component
+        if let Some(sound) = self.sound_component.as_ref()
         {
             component_downcast_mut!(sound, Sound);
             sound.stop();
@@ -240,7 +367,7 @@ impl Animation
             self.pause_time = Some(self.current_time);
             self.start_time = None;
 
-            if let Some(sound) = &self.sound_component
+            if let Some(sound) = self.sound_component.as_ref()
             {
                 component_downcast_mut!(sound, Sound);
                 sound.pause();
@@ -290,29 +417,30 @@ impl Animation
     {
         for channel in &self.channels
         {
-            let target = channel.target.write().unwrap();
-
-            if let Some(joint) = target.find_component::<Joint>()
+            if let Some(target) = channel.target.as_ref()
             {
-                component_downcast_mut!(joint, Joint);
+                let target = target.write().unwrap();
 
-                joint.get_data_mut().get_mut().animation_trans = None;
+                if let Some(joint) = target.find_component::<Joint>()
+                {
+                    component_downcast_mut!(joint, Joint);
 
-                joint.get_data_mut().get_mut().animation_update_frame = None;
-                joint.get_data_mut().get_mut().animation_weight = 0.0;
-            }
+                    joint.get_data_mut().get_mut().animation_update_frame = None;
+                    joint.get_data_mut().get_mut().animation_transforms.clear();
+                }
 
-            if let Some(transformation) = target.find_component::<Transformation>()
-            {
-                component_downcast_mut!(transformation, Transformation);
+                if let Some(transformation) = target.find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
 
-                transformation.get_data_mut().get_mut().animation_position = None;
-                transformation.get_data_mut().get_mut().animation_rotation_quat = None;
-                transformation.get_data_mut().get_mut().animation_scale = None;
+                    transformation.get_data_mut().get_mut().animation_position = None;
+                    transformation.get_data_mut().get_mut().animation_rotation_quat = None;
+                    transformation.get_data_mut().get_mut().animation_scale = None;
 
-                transformation.get_data_mut().get_mut().animation_update_frame = None;
-                transformation.get_data_mut().get_mut().animation_weight = 0.0;
-                transformation.calc_transform();
+                    transformation.get_data_mut().get_mut().animation_update_frame = None;
+                    transformation.get_data_mut().get_mut().animation_weight = 0.0;
+                    transformation.calc_transform();
+                }
             }
         }
 
@@ -385,38 +513,89 @@ fn apply_transformation_to_target(target_map: &mut HashMap<u64, TargetMapItem>, 
     }
 }
 
-fn get_animation_transform(transform: &TargetMapItem) -> Matrix4<f32>
-{
-    let mut trans = Matrix4::<f32>::identity();
 
-    // translation
-    if let Some(animation_position) = &transform.position
-    {
-        trans = trans * nalgebra::Isometry3::translation(animation_position.x, animation_position.y, animation_position.z).to_homogeneous();
-    }
-
-    // rotation
-    if let Some(data_rotation_quat) = &transform.rotation_quat
-    {
-        let rotation: Rotation3<f32> = (*data_rotation_quat).into();
-        let rotation = rotation.to_homogeneous();
-
-        trans = trans * rotation;
-    }
-
-    // scale
-    if let Some(animation_scale) = &transform.scale
-    {
-        trans = trans * Matrix4::new_nonuniform_scaling(&animation_scale);
-    }
-
-    trans
-}
-
+#[typetag::serde]
 impl Component for Animation
 {
     component_impl_default!();
     component_impl_no_update_instance!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        // node
+        if self.in_place_joint_node.is_ref()
+        {
+            let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == self.in_place_joint_node.id().unwrap());
+            if let Some(node) = node_found
+            {
+                self.in_place_joint_node = OptionOrId::Some(node.clone());
+            }
+            else
+            {
+                self.in_place_joint_node = OptionOrId::None;
+                console_error!("Animation: Node with id {} not found", self.in_place_joint_node.id().unwrap());
+            }
+        }
+
+        // sound
+        if self.sound_component.is_ref()
+        {
+            // resolve component
+            let component = context.components.iter().find(|c| c.read().unwrap().get_base().uuid == self.sound_component.id().unwrap());
+            if let Some(component) = component
+            {
+                self.sound_component = OptionOrId::Some(component.clone());
+            }
+            else
+            {
+                self.sound_component = OptionOrId::None;
+                console_error!("Animation: sound_component with id {} not found", self.sound_component.id().unwrap());
+            }
+        }
+        else
+        {
+            self.sound_component = OptionOrId::None;
+            console_error!("Animation: no sound_component found");
+        }
+
+        // joint filter
+        for joint_filter in &mut self.joint_filter
+        {
+            if joint_filter.node.is_ref()
+            {
+                // resolve node
+                let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == joint_filter.node.id().unwrap());
+                if let Some(node) = node_found
+                {
+                    joint_filter.node = OptionOrId::Some(node.clone());
+                }
+                else
+                {
+                    joint_filter.node = OptionOrId::None;
+                    console_error!("Animation: JointFilter node with id {} not found", joint_filter.node.id().unwrap());
+                }
+            }
+        }
+
+        // channels
+        for channel in &mut self.channels
+        {
+            if channel.target.is_ref()
+            {
+                // resolve node
+                let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == channel.target.id().unwrap());
+                if let Some(node) = node_found
+                {
+                    channel.target = OptionOrId::Some(node.clone());
+                }
+                else
+                {
+                    channel.target = OptionOrId::None;
+                    console_error!("Animation: Channel target with id {} not found", channel.target.id().unwrap());
+                }
+            }
+        }
+    }
 
     fn instantiable() -> bool
     {
@@ -439,15 +618,19 @@ impl Component for Animation
     fn cleanup_node(&mut self, node: NodeItem) -> bool
     {
         // joints
-        self.joint_filter.retain(|(joint, _)|
+        self.joint_filter.retain(|joint|
         {
-            joint.read().unwrap().id != node.read().unwrap().id
+            if joint.node.is_none()
+            {
+                return true;
+            }
+            joint.node.as_ref().unwrap().read().unwrap().id != node.read().unwrap().id
         });
 
         // in place
         if self.in_place_joint_node.is_some() && self.in_place_joint_node.clone().unwrap().read().unwrap().id == node.read().unwrap().id
         {
-            self.in_place_joint_node = None;
+            self.in_place_joint_node = OptionOrId::None;
         }
 
         // channels
@@ -455,7 +638,11 @@ impl Component for Animation
 
         self.channels.retain(|channel|
         {
-            channel.target.read().unwrap().id != node.read().unwrap().id
+            if let Some(target) = channel.target.as_ref()
+            {
+                return target.read().unwrap().id != node.read().unwrap().id
+            }
+            true
         });
 
         channels_amount != self.channels.len()
@@ -483,6 +670,7 @@ impl Component for Animation
             in_place_axis: self.in_place_axis,
 
             easing: self.easing,
+            layer_type: self.layer_type.clone(),
 
             from: self.from,
             to: self.to,
@@ -510,7 +698,7 @@ impl Component for Animation
         Some(Arc::new(RwLock::new(Box::new(animation))))
     }
 
-    fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, frame: u64)
+    fn update(&mut self, _node: NodeItem, _io: &mut InputOutput, time: u128, _frame_scale: f32, frame: u64)
     {
         self.current_time = time;
 
@@ -576,10 +764,16 @@ impl Component for Animation
 
         let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
 
-        // ********** reset joints (if needed) **********
+        // ********** reset joints and transforms (if needed) **********
         for channel in &self.channels
         {
-            let target = channel.target.write().unwrap();
+            if channel.target.is_none()
+            {
+                continue;
+            }
+            let target = channel.target.as_ref().unwrap();
+            let target = target.write().unwrap();
+
             let joint = target.find_component::<Joint>();
             let transformation = target.find_component::<Transformation>();
 
@@ -591,12 +785,12 @@ impl Component for Animation
 
                 let data = joint.get_data_mut().get_mut();
 
+                // no override check is needed here -> this is done in joint
                 if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
                 {
-                    joint.get_data_mut().get_mut().animation_trans = Some(Matrix4::<f32>::identity());
-
                     joint.get_data_mut().get_mut().animation_update_frame = Some(frame);
-                    joint.get_data_mut().get_mut().animation_weight = 0.0;
+
+                    joint.get_data_mut().get_mut().animation_transforms.clear();
                 }
 
                 target_map.insert(joint.id(), TargetMapItem{ component: joint_clone, position: None, rotation_quat: None, scale: None, skip_joint: false });
@@ -609,7 +803,7 @@ impl Component for Animation
 
                 let data = transformation.get_data_mut().get_mut();
 
-                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame
+                if data.animation_update_frame == None || data.animation_update_frame.unwrap() != frame || self.layer_type == AnimationLayerType::Override
                 {
                     transformation.get_data_mut().get_mut().animation_position = None;
                     transformation.get_data_mut().get_mut().animation_rotation_quat = None;
@@ -629,13 +823,34 @@ impl Component for Animation
             let mut joint_included_found = false;
             let mut joint_excluded_found = false;
 
-            for (joint, include) in &self.joint_filter
+            if channel.target.is_none()
             {
-                let node = joint;
+                // NOT SUPPORTED
+                console_warning!("empty animation target is not supported");
+                continue;
+            }
+            let target = channel.target.as_ref().unwrap();
 
-                if channel.target.read().unwrap().has_parent_or_is_equal(node.clone())
+            let has_include_filter = self.joint_filter.iter().any(|joint_filter| joint_filter.include);
+
+            for joint_filter in &self.joint_filter
+            {
+                let node = joint_filter.node.as_ref();
+
+                if node.is_some() && target.read().unwrap().has_parent_or_is_equal(node.unwrap().clone())
                 {
-                    if *include
+                    if joint_filter.include
+                    {
+                        joint_included_found = true;
+                    }
+                    else
+                    {
+                        joint_excluded_found = true;
+                    }
+                }
+                else if node.is_none() && target.read().unwrap().id == 0 // root node
+                {
+                    if joint_filter.include
                     {
                         joint_included_found = true;
                     }
@@ -646,7 +861,8 @@ impl Component for Animation
                 }
             }
 
-            let mut skip_joint = false;
+            let mut skip_joint = if has_include_filter { true } else { false };
+
             if joint_excluded_found
             {
                 skip_joint = true;
@@ -659,27 +875,26 @@ impl Component for Animation
 
             let joint;
             {
-                let target = channel.target.read().unwrap();
+                let target = target.read().unwrap();
                 joint = target.find_component::<Joint>();
             }
 
             let transformation;
             {
-                let target = channel.target.read().unwrap();
-
+                let target = target.read().unwrap();
                 transformation = target.find_component::<Transformation>();
             }
 
             if joint.is_none() && transformation.is_none()
             {
                 // NOT SUPPORTED
-                dbg!("not supported for now");
+                console_warning!("empty joint and transform is not supported for now");
                 continue;
             }
 
             let target_node_id;
             {
-                let target = channel.target.read().unwrap();
+                let target = target.read().unwrap();
                 target_node_id = target.id;
             }
 
@@ -717,7 +932,7 @@ impl Component for Animation
                 {
                     let weights = &channel.transform_morph[0];
 
-                    let target = channel.target.read().unwrap();
+                    let target = target.read().unwrap();
                     let morph_targets = target.find_components::<MorphTarget>();
 
                     for morph_target in morph_targets
@@ -736,13 +951,6 @@ impl Component for Animation
                 }
 
                 apply_transformation_to_target(&mut target_map, target_component_id, &transform);
-
-                // skip joint flag
-                if transform.0.is_some() || transform.1.is_some() || transform.2.is_some()
-                {
-                    let target_item = target_map.get_mut(&target_component_id).unwrap();
-                    target_item.skip_joint = skip_joint;
-                }
             }
             // ********** some items per channel **********
             else
@@ -996,7 +1204,7 @@ impl Component for Animation
                         },
                     };
 
-                    let target = channel.target.read().unwrap();
+                    let target = target.read().unwrap();
                     let morph_targets = target.find_components::<MorphTarget>();
 
                     for morph_target in morph_targets
@@ -1013,6 +1221,12 @@ impl Component for Animation
                         }
                     }
                 }
+            }
+
+            // skip joint flag
+            if let Some(target) = target_map.get_mut(&target_component_id)
+            {
+                target.skip_joint = skip_joint;
             }
         }
 
@@ -1032,22 +1246,20 @@ impl Component for Animation
 
                 let component_data = joint.get_data_mut().get_mut();
 
-                let animation_trans = component_data.animation_trans.as_mut().unwrap();
-                let transform = get_animation_transform(&target_item);
-
-                // apply if its the first one
-                if approx_zero(component_data.animation_weight) && !approx_zero(self.weight)
-                {
-                    *animation_trans = transform * self.weight;
-                }
-                // add if its not the first one
-                else if !approx_zero(self.weight)
-                {
-                    // animation blending - blend this animation with the prev one
-                    *animation_trans = *animation_trans + (transform * self.weight);
-                }
-
-                component_data.animation_weight += self.weight;
+                component_data.animation_transforms.push
+                (
+                    JointLayeredTransformData
+                    {
+                        layer_type: self.layer_type,
+                        transformation: JointTransformationData
+                        {
+                            translation: target_item.position,
+                            rotation_quat: target_item.rotation_quat,
+                            scale: target_item.scale,
+                        },
+                        weight: self.weight,
+                    }
+                );
             }
             // transformation
             else if let Some(transformation) = target_component.as_any_mut().downcast_mut::<Transformation>()
@@ -1105,8 +1317,29 @@ impl Component for Animation
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
     {
+
+        let mut joint_targets = 0;
+        let mut transformation_targets = 0;
+
+        for channel in &self.channels
+        {
+            if let Some(target) = channel.target.as_ref()
+            {
+                let target = target.write().unwrap();
+
+                if target.has_component::<Joint>()
+                {
+                    joint_targets += 1;
+                }
+                else if target.has_component::<Transformation>()
+                {
+                    transformation_targets += 1;
+                }
+            }
+        }
+
         ui.label(format!("Duration: {}", self.to));
-        ui.label(format!("Channels: {}", self.channels.len()));
+        ui.label(format!("Channels: {} (Joints: {}, Transform {})", self.channels.len(), joint_targets, transformation_targets));
 
         let mut is_running = self.running();
         let mut is_stopped = !is_running;
@@ -1151,6 +1384,32 @@ impl Component for Animation
         // ********** settings **********
         ui.checkbox(&mut self.looped, "Loop");
         ui.checkbox(&mut self.reverse, "Reverse");
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Layer Type: ");
+
+            let layer_types = AnimationLayerType::string_vec();
+            let current_layer_type = layer_types[self.layer_type as usize].clone();
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("layer_type_id")).selected_text(current_layer_type).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.set_min_width(30.0);
+
+                let mut current_layer_type_id = self.layer_type as usize;
+
+                let mut changed = false;
+                for (layer_type_id, layer_type) in layer_types.iter().enumerate()
+                {
+                    changed = ui.selectable_value(&mut current_layer_type_id, layer_type_id, layer_type.clone()).changed() || changed;
+                }
+
+                if changed
+                {
+                    self.layer_type = AnimationLayerType::from_repr(current_layer_type_id).unwrap()
+                }
+            });
+        });
 
         ui.horizontal(|ui|
         {
@@ -1221,16 +1480,15 @@ impl Component for Animation
         ui.horizontal(|ui|
         {
             ui.label("In Place Joint: ");
-            if let Some(in_place_joint_node) = self.in_place_joint_node.clone()
+            if let Some(in_place_joint_node) = self.in_place_joint_node.as_ref().cloned()
             {
                 let in_place_joint_node = in_place_joint_node.read().unwrap();
                 ui.label(in_place_joint_node.name.clone());
 
                 if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
                 {
-                    self.in_place_joint_node = None;
+                    self.in_place_joint_node = OptionOrId::None;
                 }
-
             }
             else if let Some(node) = node.clone()
             {
@@ -1260,7 +1518,7 @@ impl Component for Animation
                 if changed
                 {
                     let add_node = &all_nodes[selection - 1];
-                    self.in_place_joint_node = Some(add_node.clone());
+                    self.in_place_joint_node = OptionOrId::Some(add_node.clone());
                 }
             }
         });
@@ -1284,8 +1542,12 @@ impl Component for Animation
         let mut delete_id = None;
         for (i, item) in self.joint_filter.iter().enumerate()
         {
-            let node = item.0.clone();
-            let include = item.1;
+            if item.node.is_none()
+            {
+                continue;
+            }
+            let node = item.node.as_ref().unwrap();
+            let include = item.include;
 
             ui.horizontal(|ui|
             {
@@ -1344,24 +1606,24 @@ impl Component for Animation
             if changed
             {
                 let add_node = &all_nodes[selection - 1];
-                self.joint_filter.push((add_node.clone(), self.ui_joint_include_option));
+                self.joint_filter.push(JointFilter { node: OptionOrId::Some(add_node.clone()), include: self.ui_joint_include_option });
             }
         }
 
         ui.separator();
 
-        // ********** in place **********
+        // ********** sound **********
         ui.horizontal(|ui|
         {
             ui.label("Sound: ");
-            if let Some(sound_component) = self.sound_component.clone()
+            if let Some(sound_component) = self.sound_component.as_ref().cloned()
             {
                 let sound_component = sound_component.read().unwrap();
                 ui.label(sound_component.get_base().name.clone());
 
                 if ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).clicked()
                 {
-                    self.sound_component = None;
+                    self.sound_component = OptionOrId::None;
                 }
 
             }
@@ -1390,7 +1652,7 @@ impl Component for Animation
                 if changed
                 {
                     let souond_component = &sounds[selection - 1];
-                    self.sound_component = Some(souond_component.clone());
+                    self.sound_component = OptionOrId::Some(souond_component.clone());
                 }
             }
         });

@@ -1,7 +1,7 @@
 use image::EncodableLayout;
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry, util::DeviceExt};
 
-use crate::{state::{helper::render_item::RenderItem, scene::components::mesh::MeshData}, render_item_impl_default};
+use crate::{console_warning, render_item_impl_default, state::{helper::render_item::RenderItem, resources::mesh_resource::MeshResourceData}};
 
 use super::wgpu::WGpu;
 
@@ -65,7 +65,7 @@ impl RenderItem for MorphTarget
 
 impl MorphTarget
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshData) -> MorphTarget
+    pub fn new(wgpu: &mut WGpu, name: &str, mesh_data: &MeshResourceData) -> MorphTarget
     {
         let device = wgpu.device();
 
@@ -85,7 +85,7 @@ impl MorphTarget
 
         if targets > max_tex_array_size
         {
-            println!("WARNING: can not use more then {} morph targets", max_tex_array_size);
+            console_warning!("can not use more then {} morph targets", max_tex_array_size);
         }
 
         let texture_name = format!("{} Morph Texture Array", name);
@@ -200,7 +200,7 @@ impl MorphTarget
         }
     }
 
-    pub fn get_morph_targets(mesh_data: &MeshData) -> u32
+    pub fn get_morph_targets(mesh_data: &MeshResourceData) -> u32
     {
         let pos_amount = mesh_data.morph_target_positions.len();
         let normal_amount = mesh_data.morph_target_normals.len();
@@ -209,7 +209,7 @@ impl MorphTarget
         pos_amount.max(normal_amount).max(tangent_amount) as u32
     }
 
-    pub fn update_texture_buffer(&mut self, wgpu: &mut WGpu, mesh_data: &MeshData)
+    pub fn update_texture_buffer(&mut self, wgpu: &mut WGpu, mesh_data: &MeshResourceData)
     {
         let queue = wgpu.queue_mut();
 

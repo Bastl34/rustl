@@ -4,11 +4,10 @@ use std::cell::RefCell;
 use std::mem;
 use std::sync::{Arc, RwLock};
 
-use colored::Colorize;
 use nalgebra::Matrix4;
 use wgpu::util::DeviceExt;
 
-use crate::render_item_impl_default;
+use crate::{console_warning, render_item_impl_default};
 use crate::state::helper::render_item::RenderItem;
 use crate::state::scene::instance::InstanceItem;
 
@@ -73,7 +72,6 @@ impl Instance
                     format: wgpu::VertexFormat::Float32x4,
                 },
 
-
                 // ***** highlight *****
                 wgpu::VertexAttribute
                 {
@@ -127,7 +125,7 @@ impl InstanceBuffer
 
     pub fn to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
     {
-        //dbg!("update all instances");
+        //console_log!("update all instances");
 
         self.transformations = Vec::with_capacity(instances.len());
 
@@ -169,12 +167,11 @@ impl InstanceBuffer
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)
     {
-        //dbg!("update instance");
+        //console_log!("update instance");
 
         if index + 1 > self.count as usize
         {
-            let warning = format!("index {} out of range {} lights are supported", index, self.count);
-            println!("{}", warning.bright_yellow());
+            console_warning!("index {} out of range {} lights are supported", index, self.count);
             return;
         }
 
@@ -208,8 +205,7 @@ impl InstanceBuffer
     {
         if range.start + 1 > self.count as usize
         {
-            let warning = format!("index {} out of range {} lights are supported", range.start, self.count);
-            println!("{}", warning.bright_yellow());
+            console_warning!("index {} out of range {} lights are supported", range.start, self.count);
             return;
         }
 

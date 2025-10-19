@@ -3,13 +3,15 @@
 use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Vector3, Vector4};
+use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::change_tracker::ChangeTracker, input::input_manager::InputManager};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
-pub type InstanceItem = Box<Instance>;
+use crate::state::scene::exporter::serialization_helper;
 
+pub type InstanceItem = Box<Instance>;
 
 pub struct ComputedInstanceData
 {
@@ -18,8 +20,24 @@ pub struct ComputedInstanceData
     pub locked: bool,
 }
 
+impl Default for ComputedInstanceData
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            world_matrix: Matrix4::<f32>::identity(),
+            alpha: 1.0,
+            locked: false,
+        }
+    }
+}
+
+
+#[derive(Serialize, Deserialize)]
 pub struct InstanceData
 {
+    #[serde(skip, default)]
     pub computed: ComputedInstanceData,
 
     pub visible: bool,
@@ -29,15 +47,20 @@ pub struct InstanceData
     pub color: Vector4::<f32>
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Instance
 {
     pub id: u64,
     pub uuid: String,
+    pub is_default: bool,
 
     pub name: String,
     pub pickable: bool,
 
-    pub node: NodeItem,
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+
+    #[serde(serialize_with = "serialization_helper::serialize_component_vec", deserialize_with = "serialization_helper::deserialize_component_vec")]
     pub components: Vec<ComponentItem>,
 
     force_update: bool,
@@ -53,23 +76,50 @@ impl Instance
         {
             id: id_manager::get_next_instance_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
 
             name,
             pickable: true,
 
-            node: node,
+            node: OptionOrId::Some(node),
             components: vec![],
 
             force_update: true, // force update on creation
 
             data: ChangeTracker::new(InstanceData
             {
-                computed: ComputedInstanceData
-                {
-                    world_matrix: Matrix4::<f32>::identity(),
-                    alpha: 1.0,
-                    locked: false
-                },
+                computed: ComputedInstanceData::default(),
+
+                visible: true,
+                highlight: false,
+                collision: true,
+                locked: false,
+                color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
+            })
+        };
+
+        instance
+    }
+
+    pub fn default() -> Instance
+    {
+        let instance = Instance
+        {
+            id: id_manager::get_next_instance_id(),
+            uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
+
+            name: "default".to_string(),
+            pickable: true,
+
+            node: OptionOrId::None,
+            components: vec![],
+
+            force_update: true, // force update on creation
+
+            data: ChangeTracker::new(InstanceData
+            {
+                computed: ComputedInstanceData::default(),
 
                 visible: true,
                 highlight: false,
@@ -88,23 +138,19 @@ impl Instance
         {
             id: id_manager::get_next_instance_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            is_default: false,
 
             name,
             pickable: true,
 
-            node: node,
+            node: OptionOrId::Some(node),
             components: vec![],
 
             force_update: true, // force update on creation
 
             data: ChangeTracker::new(InstanceData
             {
-                computed: ComputedInstanceData
-                {
-                    world_matrix: Matrix4::<f32>::identity(),
-                    alpha: 1.0,
-                    locked: false
-                },
+                computed: ComputedInstanceData::default(),
 
                 visible: true,
                 highlight: false,
@@ -183,7 +229,35 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64) -> bool
+    pub fn move_component_up(&mut self, component: ComponentItem)
+    {
+        let index = self.components.iter().position(|c| Arc::ptr_eq(c, &component));
+
+        if let Some(index) = index
+        {
+            if index > 0
+            {
+                self.components.swap(index, index - 1);
+                self.force_update = true;
+            }
+        }
+    }
+
+    pub fn move_component_down(&mut self, component: ComponentItem)
+    {
+        let index = self.components.iter().position(|c| Arc::ptr_eq(c, &component));
+
+        if let Some(index) = index
+        {
+            if index < self.components.len() - 1
+            {
+                self.components.swap(index, index + 1);
+                self.force_update = true;
+            }
+        }
+    }
+
+    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> bool
     {
         let node;
         {
@@ -192,7 +266,7 @@ impl Instance
         }
 
         // ***** copy all components *****
-        let all_components;
+        let mut all_components;
         {
             let instance = instance.read().unwrap();
             all_components = instance.components.clone();
@@ -213,14 +287,21 @@ impl Instance
             }
 
             // remove the component itself  for the component update
+            // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut instance = instance.write().unwrap();
                 instance.components = all_components.clone();
                 instance.components.remove(component_id);
             }
 
-            let mut component_write = component.write().unwrap();
-            component_write.update_instance(node.clone(), instance, input_manager, time, frame_scale, frame);
+            {
+                let mut component_write = component.write().unwrap();
+                component_write.update_instance(node.as_ref().cloned(), instance, io, time, frame_scale, frame);
+            }
+
+            // after each update, check if new components were added during the update --> add
+            let maybe_new_components = &instance.read().unwrap().components;
+            find_and_add_new_components(&mut all_components, maybe_new_components);
         }
 
         // ***** reassign components *****
@@ -299,7 +380,10 @@ impl Instance
         }
 
         // ********** check node and parents **********
-        changed = Instance::find_changed_parent_data(self.node.clone()) || changed;
+        if let Some (node) = self.node.as_ref()
+        {
+            changed = Instance::find_changed_parent_data(node.clone()) || changed;
+        }
 
         changed
     }
@@ -342,7 +426,7 @@ impl Instance
             }
         }
 
-        if let Some(parent) = &node_read.parent
+        if let Some(parent) = node_read.parent.as_ref()
         {
             return Instance::find_changed_parent_data(parent.clone());
         }
@@ -354,8 +438,15 @@ impl Instance
     {
         let node_trans;
         {
-            let node = self.node.read().unwrap();
-            node_trans = node.get_full_transform();
+            if let Some(node) = self.node.as_ref()
+            {
+                let node = node.read().unwrap();
+                node_trans = node.get_full_transform();
+            }
+            else
+            {
+                node_trans = Matrix4::identity();
+            }
         }
         let transform_component = self.find_component::<Transformation>();
 
@@ -413,7 +504,11 @@ impl Instance
     {
         let instance_color_alpha = self.get_data().color.w;
 
-        let node_alpha = Node::get_full_alpha(self.node.clone());
+        let mut node_alpha = 1.0;
+        if let Some(node) = self.node.as_ref()
+        {
+            node_alpha = Node::get_full_alpha(node.clone());
+        }
 
         let alpha_components = self.find_components::<Alpha>();
 
@@ -449,8 +544,13 @@ impl Instance
             return true;
         }
 
-        let node = self.node.read().unwrap();
-        node.is_locked()
+        if let Some(node) = self.node.as_ref()
+        {
+            let node = node.read().unwrap();
+            return node.is_locked();
+        }
+
+        false
     }
 
     pub fn get_cached_world_transform(&self) -> Matrix4::<f32>

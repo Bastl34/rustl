@@ -2,25 +2,34 @@
 
 use std::{fs, io::Cursor, sync::{Arc, RwLock}};
 
-use crate::{helper::{self}, output::audio_device::AudioDeviceItem};
+use serde::{Deserialize, Serialize};
 
-use super::manager::id_manager;
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor}, output::audio_device::AudioDeviceItem, state::scene::{manager::id_manager, utilities::tags::Tags}};
 
 pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SoundSource
 {
+    #[serde(skip, default)]
     pub id: u64,
+
     pub uuid: String,
+    pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
     pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a sound already loaded (in dynamic textires - this may does not get updates)
+    pub tags: Tags,
 
+    #[serde(skip, default)]
     pub bytes: Arc<Vec<u8>>,
 
+    #[serde(skip, default)]
     pub audio_device: AudioDeviceItem,
+
+    #[serde(skip, default)]
+    pub delete_later_request: bool,
 }
 
 impl AsRef<[u8]> for SoundSource
@@ -33,21 +42,18 @@ impl AsRef<[u8]> for SoundSource
 
 pub trait Decodable: Send + Sync + 'static
 {
-    type DecoderItem: rodio::Sample + Send + Sync;
-    type Decoder: rodio::Source + Send + Iterator<Item = Self::DecoderItem>;
+    type Decoder: rodio::Source<Item = f32> + Send;
 
-    fn decoder(&self) -> Self::Decoder;
+    fn decoder(&self) -> Option<Self::Decoder>;
 }
 
 impl Decodable for SoundSource
 {
-    type DecoderItem = <rodio::Decoder<Cursor<SoundSource>> as Iterator>::Item;
     type Decoder = rodio::Decoder<Cursor<SoundSource>>;
 
-    fn decoder(&self) -> Self::Decoder
+    fn decoder(&self) -> Option<Self::Decoder>
     {
-        let decoder = rodio::Decoder::new(Cursor::new(self.clone())).unwrap();
-        decoder
+        rodio::Decoder::try_from(Cursor::new(self.clone())).ok()
     }
 }
 
@@ -62,15 +68,24 @@ impl SoundSource
         {
             id: id_manager::get_next_sound_source_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: None,
 
             name: name.to_string(),
             extension,
             hash,
+            tags: Tags::new(),
 
             audio_device,
 
             bytes: Arc::new(bytes),
+
+            delete_later_request: false
         }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 
     pub fn save(&self, path: &str) -> bool
@@ -83,6 +98,8 @@ impl SoundSource
     {
         let sound_size = self.bytes.len() as f32 / 1024.0 / 1024.0;
         let extension = self.extension.clone().unwrap_or("unknown".to_string());
+
+        ui.label(format!("Hash: {}", self.hash));
 
         ui.label(format!("Format: {}", extension));
         ui.label(format!("Size {:.2} MB", sound_size));

@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::state::{scene::{camera_controller::fly_controller::FlyController, components::{component::ComponentItem, material::Material, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::State};
+use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::editor_state::EditorState;
 
@@ -13,17 +13,18 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     let mut hit: Option<ScenePickRes> = None;
     let mut scene_id: u64 = 0;
 
+    // do not pick internal predicate
     let inner_predicate = predicate.clone();
-    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, _check_instance_id: Option<u64>| -> bool
+    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, check_instance_id: Option<u64>| -> bool
     {
-        if node_arc.read().unwrap().tags.contains("internal")
+        if node_arc.read().unwrap().tags.contains(ENGINE_INTERNAL_TAG) || node_arc.read().unwrap().tags.contains(EDITOR_INTERNAL_TAG)
         {
             return false;
         }
 
         if let Some(inner_predicate) = &inner_predicate
         {
-            if !inner_predicate(node_arc.clone(), None)
+            if !inner_predicate(node_arc.clone(), check_instance_id)
             {
                 return false;
             }
@@ -33,32 +34,8 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
 
     let do_not_pick_internal_nodes_predicate: Option<PickPredicate> = Some(do_not_pick_internal_nodes_predicate);
 
-
     for scene in scenes
     {
-        let set_grid_picking = |scene: &Box<Scene>, state: bool|
-        {
-            // find grid
-            let grid = scene.find_mesh_node_by_name("grid");
-
-            if let Some(grid) = grid
-            {
-                let mut grid = grid.write().unwrap();
-                let grid_instance = grid.instances.get_mut().first();
-                if let Some(grid_instance) = grid_instance
-                {
-                    grid_instance.write().unwrap().pickable = state;
-                }
-            }
-        };
-
-        /*
-        if allow_grid_picking
-        {
-            set_grid_picking(scene, true);
-        }
-        */
-
         for camera in &scene.cameras
         {
             // check if click is insight
@@ -72,9 +49,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
                     let grid = scene.find_mesh_node_by_name("grid");
                     if let Some(grid) = grid
                     {
-                        set_grid_picking(scene, true);
-                        grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, ignore_pickable, predicate.clone());
-                        set_grid_picking(scene, false);
+                        grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, predicate.clone());
                     }
                 }
 
@@ -153,7 +128,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
         for camera in &scene.cameras
         {
             // check if click is insight
-            if camera.is_point_in_viewport(&pos)
+            if camera.is_point_in_viewport(&pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
             {
                 let ray = camera.get_ray_from_viewport_coordinates(&pos);
                 let hit = scene.pick_node(node.clone(), &ray, false, false, ignore_visible, ignore_pickable, None);
@@ -171,7 +146,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
 
 pub fn get_pointer_world_position(state: &State) -> Option<Point3<f32>>
 {
-    let pointer_pos = state.input_manager.get_pointer_input().pos;
+    let pointer_pos = state.io.input_manager.get_pointer_input().pos;
 
     if let Some(pointer_pos) = pointer_pos
     {
@@ -188,7 +163,7 @@ pub fn apply_fly_camera_move_state(scene: &mut Scene, state: bool)
 {
     for camera in &mut scene.cameras
     {
-        if !camera.enabled
+        if !camera.enabled || !camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
         {
             continue;
         }
@@ -303,7 +278,7 @@ pub fn get_parent_world_transform_from_selected_node(editor_state: &mut EditorSt
     {
         let node = node.read().unwrap();
 
-        if let Some(parent) = &node.parent
+        if let Some(parent) = node.parent.as_ref()
         {
             let parent = parent.read().unwrap();
             transform = parent.get_full_transform();
@@ -330,7 +305,7 @@ pub fn transform_vec_to_parent_local(instance_id: Option<u64>, selected_node: No
     {
         let node = selected_node.read().unwrap();
 
-        if let Some(parent) = &node.parent
+        if let Some(parent) = node.parent.as_ref()
         {
             let parent = parent.read().unwrap();
             vec = parent.transform_vec_global_to_local(&Vector4::<f32>::new(vec.x, vec.y, vec.z, 0.0)).xyz();
@@ -356,13 +331,48 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
     for node in all_child_nodes
     {
         let mut node = node.write().unwrap();
-        node.tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+        node.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
-        let materials = node.find_components::<Material>();
-        for material in materials
+        // materials
         {
-            let mut material = material.write().unwrap();
-            material.get_base_mut().tags.insert_with_color_locked("internal", tags::DEFAULT_RED_COLOR, true);
+            let materials = node.find_components::<Material>();
+            for material in materials
+            {
+                component_downcast_mut!(material, Material);
+                material.get_base_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+
+                // textures
+                for tex in material.get_all_textures()
+                {
+                    tex.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                }
+            }
+        }
+
+        // meshes
+        {
+            let meshes = node.find_components::<Mesh>();
+            for mesh in meshes
+            {
+                component_downcast_mut!(mesh, Mesh);
+                if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                {
+                    mesh_resource.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                }
+            }
+        }
+
+        // sound sources
+        {
+            let sounds = node.find_components::<Sound>();
+            for sound in sounds
+            {
+                component_downcast_mut!(sound, Sound);
+                if let Some(sound_source) = sound.sound_source.as_ref()
+                {
+                    sound_source.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                }
+            }
         }
     }
 }

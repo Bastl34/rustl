@@ -2,19 +2,19 @@
 
 use std::sync::{RwLock, Arc};
 
-use image::{DynamicImage, GenericImageView, Pixel, ImageFormat, imageops, GrayImage};
-use nalgebra::{Vector2, Vector4};
+use image::{imageops, DynamicImage, GenericImageView, GrayImage, ImageFormat, Pixel};
+use nalgebra::Vector4;
+use serde::{Deserialize, Serialize};
 
-use crate::{helper::{self, change_tracker::ChangeTracker}, state::helper::render_item::RenderItemOption};
-
-use super::manager::id_manager;
+use crate::{helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::{extras::Extras, tags::Tags}}}};
 
 pub type TextureItem = Arc<RwLock<Box<Texture>>>;
 
 const PREVIEW_SIZE: u32 = 256;
 const MAX_MIPMAPS: usize = 10; // max allowed mipmaps 10 (+ original texture)
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+/*
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TextureAddressMode
 {
     ClampToEdge,
@@ -23,24 +23,14 @@ pub enum TextureAddressMode
     ClampToBorder
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TextureFilterMode
 {
     Nearest,
     Linear
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub enum MipmapSamplingFilterType
-{
-    Nearest,
-    Triangle,
-    CatmullRom,
-    Gaussian,
-    Lanczos3,
-}
-
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct TextureTransform
 {
     pub offset: Vector2::<f32>,
@@ -64,23 +54,40 @@ impl TextureTransform
         }
     }
 }
+*/
 
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum MipmapSamplingFilterType
+{
+    Nearest,
+    Triangle,
+    CatmullRom,
+    Gaussian,
+    Lanczos3,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct TextureData
 {
+    #[serde(skip, default)]
     pub preview: DynamicImage,
+    #[serde(skip, default)]
     pub image: DynamicImage,
+    #[serde(skip, default)]
     pub mipmap_cache: Option<Vec<DynamicImage>>,
 
     pub width: u64,
     pub height: u64,
 
     pub mipmapping: bool,
-
-    pub transform: TextureTransform,
-
     pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
+
+    /*
+    pub transform: TextureTransform,
+
+    pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub address_mode_u: TextureAddressMode,
     pub address_mode_v: TextureAddressMode,
@@ -88,21 +95,34 @@ pub struct TextureData
     pub mag_filter: TextureFilterMode,
     pub min_filter: TextureFilterMode,
     pub mipmap_filter: TextureFilterMode,
+     */
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Texture
 {
+    #[serde(skip, default)]
     pub id: u64,
+
     pub uuid: String,
+    pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
     pub extension: Option<String>,
     pub hash: String, // this is mainly used for initial loading and to check if there is a texture already loaded (in dynamic textires - this may does not get updates)
+    pub tags: Tags,
+    pub extras: Extras,
 
     pub data: ChangeTracker<TextureData>,
 
+    #[serde(skip, default)]
     pub egui_preview: Option<egui::TextureHandle>,
-    pub render_item: RenderItemOption
+
+    #[serde(skip, default)]
+    pub render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub delete_later_request: bool,
 }
 
 impl Texture
@@ -119,34 +139,41 @@ impl Texture
             height: 0,
 
             mipmapping: false,
-
-            transform: TextureTransform::default(),
-
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            // transform: TextureTransform::default(),
+
 
             has_transparency: false,
 
+            /*
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Nearest,
             mipmap_filter: TextureFilterMode::Nearest
+             */
         };
 
         Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: None,
 
             name: "empty".to_string(),
             extension: None,
             hash: "".to_string(),
+            tags: Tags::new(),
+            extras: Extras::new(),
 
             data: ChangeTracker::new(data),
 
             egui_preview: None,
-            render_item: None
+            render_item: None,
+
+            delete_later_request: false
         }
     }
 
@@ -187,10 +214,9 @@ impl Texture
             height: image.height() as u64,
 
             mipmapping: false,
-
-            transform: TextureTransform::default(),
-
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            // transform: TextureTransform::default(),
 
             has_transparency: has_transparency,
 
@@ -198,27 +224,34 @@ impl Texture
             image: image,
             mipmap_cache: None,
 
+            /*
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Linear,
             mipmap_filter: TextureFilterMode::Linear
+            */
         };
 
         Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: None,
 
             name: name.to_string(),
             extension,
             hash,
+            tags: Tags::new(),
+            extras: Extras::new(),
 
             data: ChangeTracker::new(data),
 
             egui_preview: None,
-            render_item: None
+            render_item: None,
+
+            delete_later_request: false
         }
     }
 
@@ -259,37 +292,48 @@ impl Texture
             has_transparency: false,
 
             mipmapping: false,
-
-            transform: data.transform.clone(),
-
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
+
+            // transform: data.transform.clone(),
 
             preview: Self::create_preview(&image),
             image: image,
             mipmap_cache: None,
 
+            /*
             address_mode_u: TextureAddressMode::ClampToEdge,
             address_mode_v: TextureAddressMode::ClampToEdge,
             address_mode_w: TextureAddressMode::ClampToEdge,
             mag_filter: TextureFilterMode::Linear,
             min_filter: TextureFilterMode::Linear,
             mipmap_filter: TextureFilterMode::Linear
+            */
         };
 
         Texture
         {
             id: id_manager::get_next_texture_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+            source: texture.source.clone(),
 
             name: name.to_string(),
             extension: texture.extension.clone(),
             hash,
+            tags: texture.tags.clone(),
+            extras: texture.extras.clone(),
 
             data: ChangeTracker::new(data),
 
             egui_preview: None,
-            render_item: None
+            render_item: None,
+
+            delete_later_request: false
         }
+    }
+
+    pub fn delete_later(&mut self)
+    {
+        self.delete_later_request = true;
     }
 
     pub fn create_mipmap_cache(&mut self)
@@ -297,6 +341,21 @@ impl Texture
         let mipmaps = self.create_mipmap_levels();
 
         self.get_data_mut().get_mut().mipmap_cache = Some(mipmaps);
+    }
+
+    pub fn make_fully_opaque(&mut self)
+    {
+        let image = self.get_dynamic_image_mut();
+
+        image.as_mut_rgba8().map(|buf|
+        {
+            for px in buf.pixels_mut()
+            {
+                px[3] = 255;
+            }
+        });
+
+        self.get_data_mut().get_mut().has_transparency = false;
     }
 
     pub fn create_mipmap_levels(&self) -> Vec<DynamicImage>
@@ -556,6 +615,8 @@ impl Texture
 
         let data = self.get_data();
 
+        ui.label(format!("{}: {}", &self.id, &self.name));
+
         if let Some(preview) = &self.egui_preview
         {
             ui.image((preview.id(), preview.size_vec2()));
@@ -571,6 +632,11 @@ impl Texture
         {
             ui.label(format!("original format: {}", extension));
         }
+        if let Some(source) = &self.source
+        {
+            ui.label(format!("Source: {}", source.get_full_descriptor()));
+        }
+        ui.label(format!("hash: {}", self.hash));
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui)
@@ -579,6 +645,7 @@ impl Texture
 
         let mut mipmap_sampling_type;
 
+        /*
         let mut address_mode_u;
         let mut address_mode_v;
         let mut address_mode_w;
@@ -590,6 +657,7 @@ impl Texture
         let mut uv_scale;
         let mut uv_rotation_deg;
         let mut uv_index;
+         */
 
         {
             let data = self.data.get_ref();
@@ -598,6 +666,7 @@ impl Texture
 
             mipmap_sampling_type = data.mipmap_sampling_type;
 
+            /*
             address_mode_u = data.address_mode_u;
             address_mode_v = data.address_mode_v;
             address_mode_w = data.address_mode_w;
@@ -609,6 +678,7 @@ impl Texture
             uv_scale = data.transform.scale;
             uv_rotation_deg = data.transform.rotation.to_degrees();
             uv_index = data.transform.uv_index;
+             */
         }
 
         let mut changed = false;
@@ -639,6 +709,7 @@ impl Texture
             });
         });
 
+        /*
         ui.horizontal(|ui|
         {
             ui.label("Address Mode U:");
@@ -712,7 +783,9 @@ impl Texture
         });
 
         ui.separator();
+        */
 
+        /*
         ui.horizontal(|ui|
         {
             ui.label("UV Offset:");
@@ -730,6 +803,7 @@ impl Texture
         changed = ui.add(egui::Slider::new(&mut uv_rotation_deg, 0.0..=359.9999).suffix(" °").text("UV Rotation (in deg)")).changed() || changed;
 
         changed = ui.add(egui::Slider::new(&mut uv_index, 0..=3).text("UV Index")).changed() || changed;
+         */
 
 
         if changed
@@ -738,6 +812,7 @@ impl Texture
 
             data.mipmapping = mipmapping;
 
+            /*
             data.mipmap_sampling_type = mipmap_sampling_type;
 
             data.address_mode_u = address_mode_u;
@@ -751,6 +826,7 @@ impl Texture
             data.transform.scale = uv_scale;
             data.transform.rotation = uv_rotation_deg.to_radians();
             data.transform.uv_index = uv_index;
+            */
         }
     }
 

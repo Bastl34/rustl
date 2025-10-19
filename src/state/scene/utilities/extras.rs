@@ -2,7 +2,10 @@
 
 use std::collections::{hash_map::Iter, HashMap};
 
-#[derive(Debug, Clone)]
+use nalgebra::{Vector2, Vector3, Vector4};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExtraType
 {
     Bool(bool),
@@ -13,10 +16,14 @@ pub enum ExtraType
     UInt64(u64),
     USize(usize),
     Float32(f32),
-    Float64(f64)
+    Float64(f64),
+    Vec2(Vector2<f32>),
+    Vec3(Vector3<f32>),
+    Vec4(Vector4<f32>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(transparent)]
 pub struct Extras
 {
     pub extras: HashMap<String, ExtraType>,
@@ -94,6 +101,30 @@ impl From<f64> for ExtraType
     }
 }
 
+impl From<Vector2<f32>> for ExtraType
+{
+    fn from(value: Vector2<f32>) -> Self
+    {
+        ExtraType::Vec2(value)
+    }
+}
+
+impl From<Vector3<f32>> for ExtraType
+{
+    fn from(value: Vector3<f32>) -> Self
+    {
+        ExtraType::Vec3(value)
+    }
+}
+
+impl From<Vector4<f32>> for ExtraType
+{
+    fn from(value: Vector4<f32>) -> Self
+    {
+        ExtraType::Vec4(value)
+    }
+}
+
 impl Extras
 {
     pub fn new() -> Extras
@@ -127,6 +158,9 @@ impl Extras
                 ExtraType::USize(value) => value as &dyn std::any::Any,
                 ExtraType::Float32(value) => value as &dyn std::any::Any,
                 ExtraType::Float64(value) => value as &dyn std::any::Any,
+                ExtraType::Vec2(value) => value as &dyn std::any::Any,
+                ExtraType::Vec3(value) => value as &dyn std::any::Any,
+                ExtraType::Vec4(value) => value as &dyn std::any::Any,  
             }.downcast_ref::<T>()
         }
         else
@@ -152,6 +186,9 @@ impl Extras
                 ExtraType::USize(value) => value as &mut dyn std::any::Any,
                 ExtraType::Float32(value) => value as &mut dyn std::any::Any,
                 ExtraType::Float64(value) => value as &mut dyn std::any::Any,
+                ExtraType::Vec2(value) => value as &mut dyn std::any::Any,
+                ExtraType::Vec3(value) => value as &mut dyn std::any::Any,
+                ExtraType::Vec4(value) => value as &mut dyn std::any::Any,
             }.downcast_mut::<T>()
             {
                 Some(value)

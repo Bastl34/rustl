@@ -3,15 +3,17 @@
 use std::collections::{hash_map::Iter, HashMap};
 
 use nalgebra::Vector3;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TagData
 {
     pub color: Vector3::<f32>,
     pub locked: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(transparent)]
 pub struct Tags
 {
     pub tags: HashMap<String, TagData>,
@@ -33,6 +35,12 @@ impl Tags
     {
         let tag = tag.to_string();
         self.tags.contains_key(&tag)
+    }
+
+    pub fn contains_starts_with(&self, tag: &str) -> bool
+    {
+        let tag = tag.to_string();
+        self.tags.keys().any(|k| k.starts_with(&tag))
     }
 
     pub fn insert(&mut self, tag: &str)

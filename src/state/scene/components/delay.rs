@@ -1,35 +1,43 @@
 #![allow(dead_code)]
 
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}};
 
 use egui::RichText;
+use serde::{Deserialize, Serialize};
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, helper::math::approx_zero, input::input_manager::InputManager, state::scene::node::{InstanceItemArc, NodeItem}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, helper::{math::approx_zero, option_or_id::OptionOrId}, state::{scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::state::scene::exporter::serialization_helper;
 
 use super::component::{Component, ComponentBase, ComponentItem};
 
+#[derive(Serialize, Deserialize)]
 pub struct Delay
 {
     base: ComponentBase,
 
-    pub target_id: Option<u64>,
+    #[serde(serialize_with = "serialization_helper::serialize_component", deserialize_with = "serialization_helper::deserialize_component")]
+    pub target: OptionOrId<ComponentItem>,
+
     pub delay: f32,
     pub state: bool,
     pub repeat: bool,
 
+    #[serde(skip, default)]
     current_time: u128,
+
+    #[serde(skip, default)]
     pub start_time: Option<u128>,
 }
 
 impl Delay
 {
-    pub fn new(name: &str, target_id: u64, delay: f32) -> Delay
+    pub fn new(name: &str, target: ComponentItem, delay: f32) -> Delay
     {
         Delay
         {
             base: ComponentBase::new(name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay,
-            target_id: Some(target_id),
+            target: OptionOrId::Some(target),
             state: true,
             repeat: false,
 
@@ -44,7 +52,7 @@ impl Delay
         {
             base: ComponentBase::new(name.to_string(), "Delay".to_string(), "⏰".to_string()),
             delay: 0.0,
-            target_id: None,
+            target: OptionOrId::None,
             state: true,
             repeat: false,
 
@@ -110,7 +118,7 @@ impl Delay
         self.start_time = None;
     }
 
-    fn _update(&mut self, component: Option<ComponentItem>, _input_manager: &mut InputManager, time: u128, _frame_scale: f32, _frame: u64)
+    fn _update(&mut self, component: Option<ComponentItem>, _io: &mut InputOutput, time: u128, _frame_scale: f32, _frame: u64)
     {
         if component.is_none()
         {
@@ -146,10 +154,34 @@ impl Delay
     }
 }
 
+#[typetag::serde]
 impl Component for Delay
 {
     component_impl_default!();
     component_impl_no_cleanup_node!();
+
+    fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
+    {
+        if self.target.is_ref()
+        {
+            // resolve component
+            let component = context.components.iter().find(|c| c.read().unwrap().get_base().uuid == self.target.id().unwrap());
+            if let Some(component) = component
+            {
+                self.target = OptionOrId::Some(component.clone());
+            }
+            else
+            {
+                self.target = OptionOrId::None;
+                console_error!("Delay: target with id {} not found", self.target.id().unwrap());
+            }
+        }
+        else
+        {
+            self.target = OptionOrId::None;
+            console_error!("Delay: no target found");
+        }
+    }
 
     fn instantiable() -> bool
     {
@@ -185,7 +217,7 @@ impl Component for Delay
             base: ComponentBase::duplicate(source.get_base()),
 
             delay: self.delay,
-            target_id: self.target_id,
+            target: self.target.clone(),
             state: self.state,
             repeat: self.repeat,
 
@@ -196,43 +228,43 @@ impl Component for Delay
         Some(Arc::new(RwLock::new(Box::new(delay))))
     }
 
-    fn update(&mut self, node: NodeItem, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update(&mut self, _node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
-        if let Some(target_id) = self.target_id
-        {
-            let node = node.read().unwrap();
-            self._update(node.find_component_by_id(target_id), input_manager, time, frame_scale, frame);
-        }
+        self._update(self.target.as_ref().cloned(), io, time, frame_scale, frame);
     }
 
-    fn update_instance(&mut self, _node: NodeItem, instance: &InstanceItemArc, input_manager: &mut InputManager, time: u128, frame_scale: f32, frame: u64)
+    fn update_instance(&mut self, _node: Option<NodeItem>, _instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
-        if let Some(target_id) = self.target_id
-        {
-            let instance = instance.read().unwrap();
-            self._update(instance.find_component_by_id(target_id), input_manager, time, frame_scale, frame);
-        }
+        self._update(self.target.as_ref().cloned(), io, time, frame_scale, frame);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>)
     {
-        let mut target_id = self.target_id.unwrap_or(0);
         let mut target_name = "".to_string();
 
-        let mut components: Vec<(u64, String)> = vec![];
+        let mut target_id = if let Some(target) = self.target.as_ref()
+        {
+            target.read().unwrap().id()
+        }
+        else
+        {
+            0
+        };
+
+        let mut components: Vec<(u64, ComponentItem)> = vec![];
 
         if let Some(node) = node
         {
             let node = node.read().unwrap();
 
-            for target in &node.components
+            for component_arc in &node.components
             {
-                let target = target.read().unwrap();
-                components.push((target.get_base().id, target.get_base().name.clone()));
+                let component = component_arc.read().unwrap();
+                components.push((component.get_base().id, component_arc.clone()));
 
-                if target_id == target.get_base().id
+                if target_id == component.get_base().id
                 {
-                    target_name = target.get_base().name.clone();
+                    target_name = component.get_base().name.clone();
                 }
             }
         }
@@ -244,20 +276,22 @@ impl Component for Delay
             {
                 let mut changed = false;
 
-                for target in &components
+                for (component_id, component) in &components
                 {
-                    changed = ui.selectable_value(&mut target_id, target.0, target.1.clone()).changed() || changed;
+                    changed = ui.selectable_value(&mut target_id, *component_id, component.read().unwrap().get_base().name.clone()).changed() || changed;
                 }
 
                 if changed
                 {
                     if target_id > 0
                     {
-                        self.target_id = Some(target_id);
+                        let component = components.iter().find(|(id, _)| *id == target_id);
+
+                        self.target = OptionOrId::Some(component.unwrap().1.clone());
                     }
                     else
                     {
-                        self.target_id = None
+                        self.target = OptionOrId::None
                     }
                 }
             });
@@ -277,7 +311,7 @@ impl Component for Delay
 
         let icon_size = 20.0;
 
-        ui.add_enabled_ui(self.target_id.is_some() && !approx_zero(self.delay), |ui|
+        ui.add_enabled_ui(self.target.is_some() && !approx_zero(self.delay), |ui|
         {
             ui.horizontal(|ui|
             {

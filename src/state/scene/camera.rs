@@ -1,13 +1,16 @@
 #![allow(dead_code)]
 
-use std::{mem::swap, f32::consts::PI};
+use std::{f32::consts::PI, mem::swap};
 
 use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
+use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}}, input::input_manager::InputManager, state::helper::render_item::RenderItemOption};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
+
+use crate::state::scene::exporter::serialization_helper;
 
 const DEFAULT_CAM_POS: Point3::<f32> = Point3::<f32>::new(0.0, 0.0, 0.0);
 const DEFAULT_CAM_UP: Vector3::<f32> = Vector3::<f32>::new(0.0, 1.0, 0.0);
@@ -45,13 +48,14 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
 
 pub type CameraItem = Box<Camera>;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CameraProjectionType
 {
     Perspective,
     Orthogonal
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CameraData
 {
     pub viewport_x: f32,    // 0.0-1.0
@@ -92,6 +96,30 @@ pub struct CameraData
     pub view_inverse: Matrix4<f32>,
 }
 
+
+fn serialize_controller<S>(controller: &Option<CameraControllerBox>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+
+    if let Some(controller) = controller
+    {
+        if controller.is_serializable()
+        {
+            controller.serialize(serializer)
+        }
+        else
+        {
+            Err(serde::ser::Error::custom(format!("CameraController '{}' is not serializable", controller.get_base().name)))
+        }
+    }
+    else
+    {
+        serializer.serialize_none()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Camera
 {
     pub id: u64,
@@ -102,11 +130,27 @@ pub struct Camera
 
     pub data: ChangeTracker<CameraData>,
 
-    pub controller: Option<CameraControllerBox>,
-    pub node: Option<NodeItem>,
+    pub tags: Tags,
 
+    #[serde(serialize_with = "serialize_controller")]
+    pub controller: Option<CameraControllerBox>,
+
+    #[serde(serialize_with = "serialization_helper::serialize_node", deserialize_with = "serialization_helper::deserialize_node")]
+    pub node: OptionOrId<NodeItem>,
+
+    #[serde(skip, default)]
     pub render_item: RenderItemOption,
+
+    #[serde(skip, default)]
     pub bind_group_render_item: RenderItemOption,
+}
+
+impl Default for Camera
+{
+    fn default() -> Self
+    {
+        Camera::new("Default Camera".to_string())
+    }
 }
 
 impl Camera
@@ -161,8 +205,10 @@ impl Camera
                 view_inverse: Matrix4::<f32>::identity(),
             }),
 
+            tags: Tags::new(),
+
             controller: None,
-            node: None,
+            node: OptionOrId::None,
 
             render_item: None,
             bind_group_render_item: None
@@ -177,6 +223,16 @@ impl Camera
     pub fn get_data_tracker(&self) -> &ChangeTracker<CameraData>
     {
         &self.data
+    }
+
+    pub fn set_node(&mut self, node: NodeItem)
+    {
+        self.node = OptionOrId::Some(node);
+    }
+
+    pub fn remove_node(&mut self)
+    {
+        self.node = OptionOrId::None;
     }
 
     pub fn get_forward(&self) -> Vector3<f32>
@@ -216,7 +272,7 @@ impl Camera
         self.init_matrices();
     }
 
-    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, input_manager: &mut InputManager, frame_scale: f32) -> bool
+    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
     {
         let mut changed = false;
         let mut controller: Option<CameraControllerBox> = None;
@@ -226,10 +282,10 @@ impl Camera
         {
             if controller.get_base().is_enabled
             {
-                let node = self.node.clone();
+                let node = self.node.as_ref().cloned();
                 let data = self.get_data_mut();
 
-                let processed = controller.update(node, scene, input_manager, data, frame_scale);
+                let processed = controller.update(node, scene, io, data, frame_scale);
 
                 // re-calculate matrices on if there was a change
                 if processed
@@ -668,40 +724,40 @@ impl Camera
     {
         let data = self.data.get_ref();
 
-        println!("name: {:?}", self.name);
+        console_log!("name: {:?}", self.name);
 
-        println!("id: {:?}", self.id);
-        println!("name: {:?}", self.name);
-        println!("enabled: {:?}", self.enabled);
+        console_log!("id: {:?}", self.id);
+        console_log!("name: {:?}", self.name);
+        console_log!("enabled: {:?}", self.enabled);
 
-        println!("viewport x: {:?}", data.viewport_x);
-        println!("viewport y: {:?}", data.viewport_y);
-        println!("viewport width: {:?}", data.viewport_width);
-        println!("viewport height: {:?}", data.viewport_height);
+        console_log!("viewport x: {:?}", data.viewport_x);
+        console_log!("viewport y: {:?}", data.viewport_y);
+        console_log!("viewport width: {:?}", data.viewport_width);
+        console_log!("viewport height: {:?}", data.viewport_height);
 
-        println!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
+        console_log!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
 
-        println!("resolution width: {:?}", data.resolution_width);
-        println!("resolution height: {:?}", data.resolution_height);
+        console_log!("resolution width: {:?}", data.resolution_width);
+        console_log!("resolution height: {:?}", data.resolution_height);
 
-        println!("fov: {:?}", data.fovy);
+        console_log!("fov: {:?}", data.fovy);
 
-        println!("eye_pos: {:?}", data.eye_pos);
+        console_log!("eye_pos: {:?}", data.eye_pos);
 
-        println!("up: {:?}", data.up);
-        println!("dir: {:?}", data.dir);
+        console_log!("up: {:?}", data.up);
+        console_log!("dir: {:?}", data.dir);
 
-        println!("clipping_near: {:?}", data.clipping_near);
-        println!("clipping_far: {:?}", data.clipping_far);
+        console_log!("clipping_near: {:?}", data.clipping_near);
+        console_log!("clipping_far: {:?}", data.clipping_far);
 
-        println!("projection: {:?}", data.projection);
-        println!("view: {:?}", data.view);
+        console_log!("projection: {:?}", data.projection);
+        console_log!("view: {:?}", data.view);
     }
 
     pub fn print_short(&self)
     {
         let data = self.data.get_ref();
 
-        println!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
+        console_log!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
     }
 }

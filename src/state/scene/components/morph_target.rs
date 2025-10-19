@@ -1,16 +1,19 @@
 #![allow(dead_code)]
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, input::input_manager::InputManager, state::scene::node::NodeItem};
+use serde::{Deserialize, Serialize};
+
+use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_post_deserialization, component_impl_no_update_instance, helper::change_tracker::ChangeTracker, state::{scene::node::NodeItem, state::InputOutput}};
 
 use super::component::{ComponentBase, Component};
 
-
+#[derive(Serialize, Deserialize)]
 pub struct MorphTargetData
 {
     pub target_id: u32,
     pub weight: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MorphTarget
 {
     base: ComponentBase,
@@ -54,11 +57,13 @@ impl MorphTarget
 
 }
 
+#[typetag::serde]
 impl Component for MorphTarget
 {
     component_impl_default!();
     component_impl_no_update_instance!();
     component_impl_no_cleanup_node!();
+    component_impl_no_post_deserialization!();
 
     fn instantiable() -> bool
     {
@@ -86,7 +91,7 @@ impl Component for MorphTarget
         None
     }
 
-    fn update(&mut self, _node: NodeItem, _input_manager: &mut InputManager, _time: u128, _frame_scale: f32, _frame: u64)
+    fn update(&mut self, _node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
 
     }

@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::state::{scene::camera::CameraItem, state::State, gui::helper::generic_items::{collapse_with_title, self}};
+use crate::{helper::generic::cut_string_to_length, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title}}, scene::camera::CameraItem, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -10,12 +10,15 @@ pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraIte
     {
         for camera in cameras
         {
-            let headline_name = format!("⚫ {}: {}", camera.id, camera.name);
+            let headline_name = format!("⚫ {}: {}", camera.id, cut_string_to_length(&camera.name, MAX_NAME_LENGTH));
 
             let id = format!("camera_{}", camera.id);
 
+            let is_internal = camera.tags.contains(ENGINE_INTERNAL_TAG) || camera.tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
+
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && camera.name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }
@@ -116,7 +119,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
 
                 if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("remove target").clicked()
                 {
-                    camera.node = None;
+                    camera.remove_node();
                 }
             });
 

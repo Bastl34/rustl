@@ -3,27 +3,30 @@ use std::collections::HashMap;
 use egui::{Color32, RichText, Ui};
 use rfd::FileDialog;
 
-use crate::{helper::concurrency::thread::spawn_thread, state::{gui::helper::{generic_items::collapse_with_title, info_box::info_box}, scene::{components::sound::Sound, scene::Scene, sound_source::SoundSourceItem}, state::State}};
+use crate::{component_downcast, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::{generic_items::collapse_with_title, info_box::info_box}}, resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use crate::state::gui::editor::ui::dialogs::load_sound_dialog;
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &HashMap<std::string::String, SoundSourceItem>, ui: &mut Ui, scene_id: u64)
+pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &HashMap<std::string::String, SoundSourceItem>, ui: &mut Ui)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
         for (_sound_hash, sound) in sound_sources
         {
             let sound = sound.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", sound.id, sound.as_ref().name);
+            let headline_name = format!("⚫ {}: {}", sound.id, cut_string_to_length(&sound.name, MAX_NAME_LENGTH));
+
+            let is_internal = sound.tags.contains(ENGINE_INTERNAL_TAG) || sound.tags.contains(EDITOR_INTERNAL_TAG);
+            let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
 
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !filter.is_empty() && sound.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && sound.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }
 
-            let id = format!("soundsource_{}", sound.id);
+            let id = format!("sound-source_{}", sound.id);
 
             let heading = RichText::new(headline_name).strong();
 
@@ -34,7 +37,7 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
                 {
 
                     editor_state.selected_object = id;
-                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::SoundSource;
                     editor_state.settings = SettingsPanel::SoundSource;
                 }
@@ -50,26 +53,17 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
 
 pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    // no scene selected
-    if editor_state.selected_scene_id.is_none() { return; }
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
-
     let (sound_source_id, ..) = editor_state.get_object_ids();
-
-    let scene = state.find_scene_by_id_mut(scene_id);
-    if scene.is_none() { return; }
-
-    let scene = scene.unwrap();
 
     if sound_source_id.is_none() { return; }
     let sound_source_id = sound_source_id.unwrap();
 
-    if let Some(sound_source) = scene.get_sound_source_by_id(sound_source_id)
+    if let Some(sound_source) = state.get_sound_source_by_id(sound_source_id)
     {
         collapse_with_title(ui, "sound_source_info", true, "🔊 Sound Info", None, |ui|
         {
             {
-                let sound_source = sound_source.write().unwrap();
+                let sound_source = sound_source.read().unwrap();
                 sound_source.ui_info(ui);
             }
         });
@@ -104,40 +98,48 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
             }
         });
 
-        collapse_with_title(ui, "sound_source_usage", true, "👆 Sound used by Components", None, |ui|
+        collapse_with_title(ui, "sound_source_usage", true, "👆 Used by Components", None, |ui|
         {
             let mut used = false;
 
-            let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
-
-            for node in all_nodes
+            for scene in &state.scenes
             {
-                for component in node.read().unwrap().find_components::<Sound>()
+                let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
+
+                for node in all_nodes
                 {
-                    let component = component.read().unwrap();
-                    let component_id = component.id();
-
-                    ui.horizontal(|ui|
+                    for sound in node.read().unwrap().find_components::<Sound>()
                     {
-                        ui.label(format!(" ⚫ {}: {}", component_id, component.get_base().name));
+                        component_downcast!(sound, Sound);
 
-                        // link to the material setting
-                        if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                        if let Some(sound_source) = sound.sound_source.as_ref()
                         {
-                            editor_state.selected_object = format!("sound_{}", component_id);
-                            editor_state.selected_scene_id = Some(scene_id);
-                            editor_state.selected_type = SelectionType::Sound;
-                            editor_state.settings = SettingsPanel::Sound;
-                        }
-                    });
+                            if sound_source_id == sound_source.read().unwrap().id
+                            {
+                                ui.horizontal(|ui|
+                                {
+                                    ui.label(format!(" ⚫ {}: {}", sound.id(), sound.get_base().name));
 
-                    used = true;
+                                    // link to the sound setting
+                                    if ui.button(RichText::new("⮊").color(Color32::WHITE)).on_hover_text("go to sound").clicked()
+                                    {
+                                        editor_state.selected_object = format!("sound_{}", sound.id());
+                                        editor_state.selected_scene_id = Some(scene.id);
+                                        editor_state.selected_type = SelectionType::Sound;
+                                        editor_state.settings = SettingsPanel::Sound;
+                                    }
+                                });
+
+                                used = true;
+                            }
+                        }
+                    }
                 }
             }
 
             if !used
             {
-                info_box(ui, "This sound is not used by any component. Try removing it to save resources.");
+                info_box(ui, "This sound source is not used by any component. Try removing it to save resources.");
             }
         });
 
@@ -161,7 +163,7 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
         {
             if ui.button(RichText::new("Dispose Sound Source").heading().strong().color(ui.visuals().error_fg_color)).clicked()
             {
-                scene.delete_sound_source_by_id(sound_source_id);
+                state.delete_sound_source_by_id(sound_source_id);
             }
         });
     }
@@ -199,7 +201,7 @@ pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, 
                 let main_queue = main_queue.clone();
                 spawn_thread(move ||
                 {
-                    load_sound_dialog(main_queue.clone(), scene_id, Some(sound_id));
+                    load_sound_dialog(main_queue.clone(), Some(sound_id));
                 });
             }
         });

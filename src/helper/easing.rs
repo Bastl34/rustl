@@ -1,11 +1,12 @@
 use std::f32::consts::PI;
 
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, FromRepr};
 
 use super::math::bezier_interpolate;
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum Easing
 {
     None,
