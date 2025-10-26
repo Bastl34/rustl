@@ -1,13 +1,4 @@
-use wgpu::{BindGroupLayoutEntry, BindGroupEntry, Buffer};
-
-/*
- Bind Group layout:
-
- - Materials + Textures (node)
- - Lights, Camera, Scene Properties (Tonemapping/HDR/Gamma) (scene)
- - Skeleton (node)
- - Custom (node)
- */
+use wgpu::BindGroupLayoutEntry;
 
 pub fn uniform_bind_group_layout_entry(index: u32, vertex: bool, fragment: bool) -> BindGroupLayoutEntry
 {
@@ -26,14 +17,5 @@ pub fn uniform_bind_group_layout_entry(index: u32, vertex: bool, fragment: bool)
             min_binding_size: None,
         },
         count: None,
-    }
-}
-
-pub fn uniform_bind_group<'a>(index: u32, buffer: &'a Buffer) -> BindGroupEntry<'a>
-{
-    wgpu::BindGroupEntry
-    {
-        binding: index,
-        resource: buffer.as_entire_binding(),
     }
 }

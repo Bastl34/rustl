@@ -314,7 +314,7 @@ impl Editor
                 let scene = state.find_scene_by_id_mut(scene_id);
                 if let Some(scene) = scene
                 {
-                    self.editor_state.set_selected_object(scene, copy_node_id, None, SelectionType::Object);
+                    self.editor_state.set_selected_object(scene, copy_node_id, None, SelectionType::Object, self.editor_state.use_highlight);
                 }
             }
 
@@ -573,7 +573,7 @@ impl Editor
 
                         if right_mouse_button || left_mouse_button || tapped
                         {
-                            let selected = self.editor_state.set_selected_object(scene, node.id, instande_id, SelectionType::Object);
+                            let selected = self.editor_state.set_selected_object(scene, node.id, instande_id, SelectionType::Object, self.editor_state.use_highlight);
 
                             if selected
                             {

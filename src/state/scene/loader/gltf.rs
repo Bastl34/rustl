@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{Mesh, JOINTS_LIMIT}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -147,13 +147,13 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     console_log!("mapping animatables...");
     map_animatables(&nodes);
 
-    // ********** calculate skin bounding boxes **********
-    console_log!("calc bbox skin...");
-    calc_bbox_skin(&nodes);
-
     // ********** calculate local transform **********
     console_log!("calc local transform...");
     calc_local_transform(&nodes);
+
+    // ********** calculate skin bounding boxes **********
+    console_log!("calc bbox skin...");
+    calc_bbox_skin(&nodes);
 
     // ********** mark components **********
     {
@@ -1100,7 +1100,6 @@ fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
         if node.skin.len() > 0
         {
             let joint_transform_vec = node.get_joint_transform_vec(false);
-
             if let Some(joint_transform_vec) = joint_transform_vec
             {
                 let mesh = node.find_component::<Mesh>().unwrap();

@@ -9,16 +9,19 @@ mod rendering
     pub(crate) mod state;
     pub(crate) mod scene;
     pub(crate) mod camera;
-    pub(crate) mod uniform;
     pub(crate) mod light;
     pub(crate) mod material;
     pub(crate) mod skeleton;
     pub(crate) mod morph_target;
+    pub(crate) mod occlusion_culling;
 
     pub(crate) mod bind_groups
     {
+        pub(crate) mod uniform;
+        pub(crate) mod storage;
         pub(crate) mod light_cam_scene;
         pub(crate) mod skeleton_morph_target;
+        pub(crate) mod single_binding_group;
     }
 
     pub(crate) mod helper

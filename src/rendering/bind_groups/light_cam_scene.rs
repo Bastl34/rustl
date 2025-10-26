@@ -2,7 +2,7 @@
 
 use wgpu::{BindGroupLayout, BindGroup};
 
-use crate::{rendering::{light::LightBuffer, camera::CameraBuffer, wgpu::WGpu, uniform, scene::Scene}, state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{render_item_impl_default, rendering::{bind_groups::uniform, camera::CameraBuffer, light::LightBuffer, scene::Scene, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 pub struct LightCamSceneBindGroup
 {
@@ -44,10 +44,10 @@ impl LightCamSceneBindGroup
             layout: &bind_group_layout,
             entries:
             &[
-                uniform::uniform_bind_group(0, &cam_buffer.get_buffer()),
-                uniform::uniform_bind_group(1, &scene_buffer.get_buffer()),
-                uniform::uniform_bind_group(2, &light_buffer.get_amount_buffer()),
-                uniform::uniform_bind_group(3, &light_buffer.get_lights_buffer()),
+                wgpu::BindGroupEntry { binding: 0, resource: cam_buffer.get_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: scene_buffer.get_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: light_buffer.get_amount_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: light_buffer.get_lights_buffer().as_entire_binding() }
             ],
             label: Some(bind_group_name.as_str()),
         });

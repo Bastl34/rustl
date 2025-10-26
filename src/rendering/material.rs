@@ -2,9 +2,9 @@ use std::{mem::swap, collections::HashMap};
 
 use wgpu::{util::DeviceExt, BindGroupLayout, BindGroup};
 
-use crate::{render_item_impl_default, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
+use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
-use super::{texture::{Texture, TextureFormat}, uniform, wgpu::WGpu};
+use super::{texture::{Texture, TextureFormat}, wgpu::WGpu};
 
 //TODO: future: compile shaders for each texture combination to prevent branching/if statements
 
@@ -301,7 +301,7 @@ impl MaterialBuffer
 
         // ********* material buffer *********
         layout_group_vec.push(uniform::uniform_bind_group_layout_entry(bind_id, false, true));
-        group_vec.push(uniform::uniform_bind_group(bind_id, &self.buffer));
+        group_vec.push(wgpu::BindGroupEntry { binding: bind_id, resource: self.buffer.as_entire_binding() });
 
         bind_id += 1;
 

@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
 use nalgebra::{Matrix4, Point3, Vector4};
-use parry3d::bounding_volume::BoundingSphere;
+use parry3d::bounding_volume::{Aabb, BoundingSphere};
 use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merge
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
@@ -63,6 +63,7 @@ pub struct Node
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
     pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
+    pub occlusion_render_item: RenderItemOption,
 
     delete_later_request: bool,
 }
@@ -254,6 +255,7 @@ impl Node
             instance_render_item: None,
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
+            occlusion_render_item: None,
 
             delete_later_request: false
         }
@@ -646,7 +648,7 @@ impl Node
             component_downcast!(mesh, Mesh);
 
             let mut sphere = None;
-            if let Some(skin_sphere) = mesh.get_data().b_sphere_skin
+            if let Some(skin_sphere) = mesh.get_scaled_skin_bounding_sphere()
             {
                 sphere = Some(skin_sphere);
             }
@@ -679,6 +681,13 @@ impl Node
                 let max_scale = extract_max_scale_from_transform(transform);
 
                 let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_mesh.center.x, bounding_sphere_mesh.center.y, bounding_sphere_mesh.center.z, 1.0);
+                let transformed_center = Point3::new
+                (
+                    transformed_center.x / transformed_center.w,
+                    transformed_center.y / transformed_center.w,
+                    transformed_center.z / transformed_center.w,
+                );
+
                 let transformed_radius = bounding_sphere_mesh.radius * max_scale;
 
                 // merge into final sphere
@@ -702,6 +711,105 @@ impl Node
         if let Some(bounding_sphere_result) = bounding_sphere_result
         {
             return Some((bounding_sphere_result.center, bounding_sphere_result.radius));
+        }
+
+        None
+    }
+
+    pub fn get_bounding_box_for_all_instances_from_cached_transform(&self) -> Option<(Point3<f32>, Point3<f32>)>
+    {
+        let meshes = self.get_meshes();
+
+        let mut bounding_box_mesh: Option<Aabb> = None;
+
+        for mesh in &meshes
+        {
+            component_downcast!(mesh, Mesh);
+
+            let mut bounding_box = None;
+            if let Some(skin_box) = mesh.get_scaled_skin_bbox()
+            {
+                bounding_box = Some(skin_box);
+            }
+            else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+            {
+                bounding_box = Some(mesh_resource.read().unwrap().get_data().b_box);
+            }
+
+            if let Some(bounding_box) = bounding_box
+            {
+                if let Some(bounding_box_mesh) = bounding_box_mesh.as_mut()
+                {
+                    bounding_box_mesh.merge(&bounding_box);
+                }
+                else
+                {
+                    bounding_box_mesh = Some(bounding_box);
+                }
+            }
+        }
+
+        let mut bounding_box_result: Option<Aabb> = None;
+
+        if let Some(bounding_box_mesh) = bounding_box_mesh
+        {
+            for instance in self.instances.get_ref()
+            {
+                let instance = instance.read().unwrap();
+                let transform = instance.get_cached_world_transform();
+
+                // hole die min und max punkte aus der Aabb
+                let min = bounding_box_mesh.mins;
+                let max = bounding_box_mesh.maxs;
+
+                // berechne die 8 eckpunkte
+                let corners =
+                [
+                    Point3::new(min.x, min.y, min.z),
+                    Point3::new(min.x, min.y, max.z),
+                    Point3::new(min.x, max.y, min.z),
+                    Point3::new(min.x, max.y, max.z),
+                    Point3::new(max.x, min.y, min.z),
+                    Point3::new(max.x, min.y, max.z),
+                    Point3::new(max.x, max.y, min.z),
+                    Point3::new(max.x, max.y, max.z),
+                ];
+
+                // transformiere alle punkte
+                let mut new_min = Point3::new(f32::MAX, f32::MAX, f32::MAX);
+                let mut new_max = Point3::new(f32::MIN, f32::MIN, f32::MIN);
+
+                for corner in &corners
+                {
+                    let v = transform * Vector4::new(corner.x, corner.y, corner.z, 1.0);
+                    let p = Point3::new(v.x / v.w, v.y / v.w, v.z / v.w);
+
+                    new_min.x = new_min.x.min(p.x);
+                    new_min.y = new_min.y.min(p.y);
+                    new_min.z = new_min.z.min(p.z);
+
+                    new_max.x = new_max.x.max(p.x);
+                    new_max.y = new_max.y.max(p.y);
+                    new_max.z = new_max.z.max(p.z);
+                }
+
+                // neue transformierte box
+                let instance_box = Aabb::new(new_min, new_max);
+
+                if let Some(bounding_box_all) = bounding_box_result.as_mut()
+                {
+                    bounding_box_all.merge(&instance_box);
+                }
+                else
+                {
+                    bounding_box_result = Some(instance_box);
+                }
+            }
+        }
+
+        if let Some(bounding_box_result) = bounding_box_result
+        {
+            return Some((bounding_box_result.mins, bounding_box_result.maxs));
         }
 
         None

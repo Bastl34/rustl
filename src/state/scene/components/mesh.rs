@@ -156,77 +156,109 @@ impl Mesh
         }
     }
 
-    pub fn get_skin_and_mesh_bbox(&self) -> Aabb
+    pub fn get_scaled_skin_bbox_or_default(&self) -> Aabb
     {
+        if let Some(b_box_skin) = self.get_data().b_box_skin
+        {
+            let s = self.get_data().b_volume_skin_multiplier;
+            let b_box_skin_scaled = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
+
+            return b_box_skin_scaled;
+        }
+
         if let Some(mesh_resource) = self.mesh_resource.as_ref()
         {
-            let data = self.get_data();
+            let mesh_resource = mesh_resource.read().unwrap();
+            let data = mesh_resource.get_data();
 
-            let mut b_box = mesh_resource.read().unwrap().get_data().b_box;
-
-            if let Some(b_box_skin) = data.b_box_skin
-            {
-                let s = data.b_volume_skin_multiplier;
-                let b_box_skin = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
-
-                b_box.merge(&b_box_skin);
-            }
-
-            return b_box;
+            return data.b_box;
         }
 
         Aabb::new_invalid()
     }
 
-    pub fn get_skin_and_mesh_bounding_sphere(&self) -> BoundingSphere
+    pub fn get_scaled_skin_bbox(&self) -> Option<Aabb>
     {
-        if let Some(mesh_resource) = self.mesh_resource.as_ref()
+        let data = self.get_data();
+
+        if let Some(b_box_skin) = data.b_box_skin
         {
-            let data = self.get_data();
+            let s = data.b_volume_skin_multiplier;
+            let b_box_skin_scaled = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
 
-            let mut b_sphere = mesh_resource.read().unwrap().get_data().b_sphere;
-
-            if let Some(b_sphere_skin) = data.b_sphere_skin
-            {
-                let s = data.b_volume_skin_multiplier;
-                let b_sphere_skin = BoundingSphere::new
-                (
-                    *b_sphere_skin.center(),
-                    b_sphere_skin.radius() * s
-                );
-
-                b_sphere.merge(&b_sphere_skin);
-            }
-
-            return b_sphere;
+            return Some(b_box_skin_scaled);
         }
 
-        BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+        None
+    }
+
+    pub fn get_scaled_skin_bounding_sphere(&self) -> Option<BoundingSphere>
+    {
+        let data = self.get_data();
+
+        if let Some(b_sphere_skin) = data.b_sphere_skin
+        {
+            let s = data.b_volume_skin_multiplier;
+            let b_sphere_skin = BoundingSphere::new
+            (
+                *b_sphere_skin.center(),
+                b_sphere_skin.radius() * s
+            );
+
+            return Some(b_sphere_skin);
+        }
+
+        None
+    }
+
+    pub fn get_scaled_skin_bounding_sphere_or_default(&self) -> BoundingSphere
+    {
+        if let Some(b_sphere_skin) = self.get_scaled_skin_bounding_sphere()
+        {
+            return b_sphere_skin;
+        }
+
+        if let Some(mesh_resource) = self.mesh_resource.as_ref()
+        {
+            let mesh_resource = mesh_resource.read().unwrap();
+            let data = mesh_resource.get_data();
+
+            return data.b_sphere;
+        }
+
+        BoundingSphere::new(Point3::origin(), 0.0)
     }
 
     pub fn get_height(&self) -> f32
     {
-        let b_box = self.get_skin_and_mesh_bbox();
+        let b_box = self.get_scaled_skin_bbox_or_default();
         (b_box.maxs.y - b_box.mins.y).abs()
     }
 
     pub fn get_width(&self) -> f32
     {
-        let b_box = self.get_skin_and_mesh_bbox();
+        let b_box = self.get_scaled_skin_bbox_or_default();
         (b_box.maxs.x - b_box.mins.x).abs()
     }
 
     pub fn get_depth(&self) -> f32
     {
-        let b_box = self.get_skin_and_mesh_bbox();
+        let b_box = self.get_scaled_skin_bbox_or_default();
         (b_box.maxs.z - b_box.mins.z).abs()
     }
 
     pub fn intersect_b_box(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
     {
-        let b_box = self.get_skin_and_mesh_bbox();
+        let b_box = self.get_scaled_skin_bbox_or_default();
 
         b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
+    }
+
+    pub fn intersect_b_sphere(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
+    {
+        let b_sphere = self.get_scaled_skin_bounding_sphere_or_default();
+
+        b_sphere.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
     }
 
     pub fn intersect(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>

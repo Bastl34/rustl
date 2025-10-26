@@ -22,7 +22,7 @@ impl RenderItem for Pipeline
 
 impl Pipeline
 {
-    pub fn new(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new_std(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32) -> Pipeline
     {
         let shader;
         {
@@ -30,7 +30,11 @@ impl Pipeline
 
             // shader
             let prepared_shader = Self::prepare_shader(shader_source, max_lights);
-            shader = Pipeline::create_shader(device, name, &prepared_shader);
+            shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
+            {
+                label: Some(name),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&prepared_shader)).into(),
+            });
         }
 
         // create pipe
@@ -43,7 +47,36 @@ impl Pipeline
             pipeline: None,
         };
 
-        pipe.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
+        pipe.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
+
+        pipe
+    }
+
+    pub fn new_occlusion_culling(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
+    {
+        let shader;
+        {
+            let device = wgpu.device();
+
+            // shader
+            shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
+            {
+                label: Some(name),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)).into(),
+            });
+        }
+
+        // create pipe
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: false,
+
+            shader,
+            pipeline: None,
+        };
+
+        pipe.create_occlusion_culling(wgpu, bind_group_layouts);
 
         pipe
     }
@@ -59,7 +92,12 @@ impl Pipeline
         shader
     }
 
-    pub fn create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
+    pub fn get(&self) -> &wgpu::RenderPipeline
+    {
+        self.pipeline.as_ref().unwrap()
+    }
+
+    pub fn create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -174,24 +212,75 @@ impl Pipeline
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
+    pub fn re_create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
     {
         console_log!("recreating pipeline");
 
-        self.create(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
+        self.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
     }
 
-    pub fn create_shader(device: &Device, name: &str, shader_source: &String) -> ShaderModule
+    pub fn re_create_occlusion_culling(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
     {
-        device.create_shader_module(wgpu::ShaderModuleDescriptor
+        console_log!("recreating pipeline");
+
+        self.create_occlusion_culling(wgpu, bind_group_layouts);
+    }
+
+    pub fn create_occlusion_culling(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    {
+        let device = wgpu.device();
+
+        let layout_name = format!("{} Layout", self.name);
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
-            label: Some(name),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_source)).into(),
-        })
+            label: Some(layout_name.as_str()),
+            bind_group_layouts,
+            push_constant_ranges: &[],
+        });
+
+        // Depth-only pipeline
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some(&self.name),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState
+            {
+                module: &self.shader,
+                entry_point: Some("vs_main"),
+                buffers: &[], // no vertex buffer, corners created in the shader
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState
+            {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState
+            {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            fragment: None, // kein Fragment-Shader = depth-only
+            cache: None,
+        });
+
+        self.pipeline = Some(render_pipeline);
     }
 
-    pub fn get(&self) -> &wgpu::RenderPipeline
-    {
-        self.pipeline.as_ref().unwrap()
-    }
 }

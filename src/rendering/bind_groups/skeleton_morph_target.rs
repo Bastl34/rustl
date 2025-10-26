@@ -2,7 +2,7 @@
 
 use wgpu::{BindGroupLayout, BindGroup};
 
-use crate::{rendering::{wgpu::WGpu, uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer}, state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{render_item_impl_default, rendering::{bind_groups::uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 pub struct SkeletonMorphTargetBindGroup
 {
@@ -53,10 +53,10 @@ impl SkeletonMorphTargetBindGroup
             entries:
             &[
                 // skeleton
-                uniform::uniform_bind_group(0, &skeleton_buffer.get_buffer()),
+                wgpu::BindGroupEntry { binding: 0, resource: skeleton_buffer.get_buffer().as_entire_binding() },
 
                 // morph targets buffer
-                uniform::uniform_bind_group(1, &morph_target.get_buffer()),
+                wgpu::BindGroupEntry { binding: 1, resource: morph_target.get_buffer().as_entire_binding() },
 
                 // morph targets (texture array)
                 morph_target_tex_bind_group.clone(), // ????

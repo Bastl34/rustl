@@ -3,6 +3,7 @@ use std::mem::swap;
 
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
+use crate::rendering::instance;
 use crate::state::gui::editor::helper::get_pointer_world_position;
 use crate::state::gui::editor::ui::console::create_console_section;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
@@ -87,6 +88,22 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                 if let Some(pointer_pos) =  get_pointer_world_position(state)
                 {
                     ui.label(RichText::new(format!("x: {:.2}, y: {:.2}, z: {:.2}", pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
+                }
+
+                let (_scene, node, instance_id) = editor_state.get_selected_node(state);
+                if let Some(node) = node
+                {
+                    ui.separator();
+
+                    if let Some(instance_id) = instance_id
+                    {
+                        if let Some(instance) = node.read().unwrap().find_instance_by_id(instance_id)
+                        {
+                            ui.label(RichText::new(format!("(Instance: {})", instance.read().unwrap().name)));
+                        }
+                    }
+
+                    ui.label(RichText::new(format!("Selected: {}", node.read().unwrap().name)));
                 }
             });
         });
@@ -211,6 +228,20 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     editor_state.gizmo_rotation = false;
                     editor_state.gizmo_scale = false;
+                }
+            }
+
+            ui.separator();
+
+            if ui.toggle_value(&mut editor_state.use_highlight, RichText::new("🔦").size(icon_size)).on_hover_text("highlight objects in the editor").clicked()
+            {
+                if !editor_state.use_highlight
+                {
+                    editor_state.remove_highlight(state);
+                }
+                else
+                {
+                    editor_state.apply_highlight(state);
                 }
             }
 

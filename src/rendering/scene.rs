@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_success, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_success, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -61,6 +61,8 @@ pub enum PipelineType
     ColorNoCompare,
     ColorNoWrite,
     ColorNoWriteNoCompare,
+
+    OcclusionCulling,
 }
 
 pub struct Scene
@@ -69,6 +71,8 @@ pub struct Scene
 
     color_shader: String,
     depth_shader: String,
+
+    occlusion_culling_shader: String,
 
     samples: u32,
     pub distance_sorting: bool,
@@ -98,6 +102,7 @@ impl Scene
         // shader source
         let color_shader = resources::load_string("shader/base.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
+        let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
@@ -110,6 +115,7 @@ impl Scene
 
             color_shader,
             depth_shader,
+            occlusion_culling_shader,
 
             samples,
             distance_sorting: true,
@@ -170,6 +176,15 @@ impl Scene
 
     pub fn create_pipelines(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, re_create: bool)
     {
+        /*
+        Color Bind Group layout:
+
+        - (0) Materials + Textures (node)
+        - (1) Lights, Camera, Scene Properties (Tonemapping/HDR/Gamma) (scene)
+        - (2) Skeleton (node)
+        - (3) Custom (node)
+        */
+
         let light_cam_scene_bind_layout = LightCamSceneBindGroup::bind_layout(wgpu);
 
         // material and textures
@@ -193,17 +208,17 @@ impl Scene
         // ********** depth pass **********
         if !re_create || self.pipelines.len() < PipelineType::COUNT
         {
-            self.pipelines.push(Pipeline::new(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1));
-            self.pipelines.push(Pipeline::new(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1));
-            self.pipelines.push(Pipeline::new(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1));
-            self.pipelines.push(Pipeline::new(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1));
+            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1));
+            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1));
+            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1));
+            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1));
         }
         else
         {
-            self.pipelines.get_mut(PipelineType::Depth as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, true, true, 1);
-            self.pipelines.get_mut(PipelineType::DepthNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, true, true, 1);
-            self.pipelines.get_mut(PipelineType::DepthNoWrite as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, false, true, 1);
-            self.pipelines.get_mut(PipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, false, true, 1);
+            self.pipelines.get_mut(PipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, 1);
+            self.pipelines.get_mut(PipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, 1);
+            self.pipelines.get_mut(PipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, 1);
+            self.pipelines.get_mut(PipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, 1);
         }
 
         // ********** color pass **********
@@ -212,17 +227,44 @@ impl Scene
 
         if !re_create
         {
-            self.pipelines.push(Pipeline::new(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples));
-            self.pipelines.push(Pipeline::new(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples));
-            self.pipelines.push(Pipeline::new(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples));
-            self.pipelines.push(Pipeline::new(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples));
+            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples));
+            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples));
+            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples));
+            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples));
         }
         else
         {
-            self.pipelines.get_mut(PipelineType::Color as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, true, true, self.samples);
-            self.pipelines.get_mut(PipelineType::ColorNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, true, true, self.samples);
-            self.pipelines.get_mut(PipelineType::ColorNoWrite as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, true, false, true, self.samples);
-            self.pipelines.get_mut(PipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
+            self.pipelines.get_mut(PipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, self.samples);
+            self.pipelines.get_mut(PipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, self.samples);
+            self.pipelines.get_mut(PipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, self.samples);
+            self.pipelines.get_mut(PipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
+        }
+
+
+        // ********** bounding box pass (for occlusion query) **********
+
+        /*
+        Bounding Box Bind Group layout:
+
+        - (0) BBox Data (node)
+        - (1) Lights, Camera, Scene Properties (Tonemapping/HDR/Gamma) (scene)
+        */
+
+        let occlusion_culling_bind_layout = SingleBindingBindGroup::bind_layout(wgpu, true, false, true, true);
+
+        let bind_group_layouts =
+        [
+            &occlusion_culling_bind_layout,
+            &light_cam_scene_bind_layout,
+        ];
+
+        if !re_create
+        {
+            self.pipelines.push(Pipeline::new_occlusion_culling(wgpu, "occlusion culling", &self.occlusion_culling_shader, &bind_group_layouts));
+        }
+        else
+        {
+            self.pipelines.get_mut(PipelineType::OcclusionCulling as usize).unwrap().re_create_occlusion_culling(wgpu, &bind_group_layouts);
         }
     }
 
@@ -532,6 +574,7 @@ impl Scene
             }
 
             // ********** instances all **********
+            let mut instance_updated = false;
             let mut all_instances_changed;
             {
                 let node_arc = nodes.get_mut(node_id).unwrap();
@@ -578,6 +621,8 @@ impl Scene
                         instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
 
                         // console_log!(" ============ instances updated {}", &node.name);
+
+                        instance_updated = true;
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -630,6 +675,8 @@ impl Scene
                             render_item.update_buffer(wgpu, &instance, i);
 
                             // console_log!(" ============ ONE instance updated {}", &node.name);
+
+                            instance_updated = true;
                         }
                     }
                 }
@@ -639,6 +686,33 @@ impl Scene
                     let mut node = node.write().unwrap();
 
                     swap(&mut render_item, &mut node.instance_render_item);
+                }
+            }
+
+            // ********** occlusion culling buffer **********
+            if instance_updated
+            {
+                let bbox_for_all_instances =
+                {
+                    let node = nodes.get_mut(node_id).unwrap();
+                    let node = node.read().unwrap();
+
+                    node.get_bounding_box_for_all_instances_from_cached_transform()
+                };
+
+                let node = nodes.get_mut(node_id).unwrap();
+                let mut node = node.write().unwrap();
+
+                if let Some((min, max)) = bbox_for_all_instances
+                {
+                    let buffer = OcclusionCullingBuffer::new(wgpu, min, max);
+                    node.occlusion_render_item = Some(Box::new(buffer));
+
+                    // console_log!(" ============ OCCLUSION BUFFER updated {}", &node.name);
+                }
+                else
+                {
+                    node.occlusion_render_item = None;
                 }
             }
         }
@@ -952,15 +1026,6 @@ impl Scene
                 }
             }
 
-            if node.name == "Alpha_Joints.008"
-            {
-                console_success!(" --> {} sphere: {:?}", node.name, bounding_sphere);
-            }
-            else
-            {
-                //console_log!(" --> {} sphere: {:?}", node.name, bounding_sphere);
-            }
-
             let has_transparency;
             {
                 let mat = mat.as_any().downcast_ref::<MaterialComponent>().unwrap();
@@ -1113,8 +1178,8 @@ impl Scene
         // todo: replace with internal texture?
         let render_pass_view = view;
 
-        //let mut color_attachments: &[Option<RenderPassColorAttachment>] = &[
-        let color_attachments: &[Option<RenderPassColorAttachment>] = &[
+        let color_attachments: &[Option<RenderPassColorAttachment>] =
+        &[
             Some(wgpu::RenderPassColorAttachment
             {
                 view: render_pass_view,

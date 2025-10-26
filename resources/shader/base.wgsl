@@ -7,6 +7,7 @@ const MAX_MORPH_TARGETS: u32 = [MAX_MORPH_TARGETS]u;
 const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
 const LIGHT_TYPE_POINT: u32 = 1u;
 const LIGHT_TYPE_SPOT: u32 = 2u;
+const JOINTS_LIMIT: u32 = 4u;
 
 // ****************************** structs ******************************
 
@@ -198,7 +199,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
 
     if (skeleton.joints_amount > 0u)
     {
-        for (var i: u32 = 0u; i < 4u; i = i + 1u)
+        for (var i: u32 = 0u; i < JOINTS_LIMIT; i = i + 1u)
         {
             let joint_transform = skeleton.joint_transforms[model.joints[i]];
             world_position += joint_transform * model_pos * model.weights[i];

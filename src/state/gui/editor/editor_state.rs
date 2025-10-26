@@ -125,6 +125,8 @@ pub struct EditorState
     pub gizmo_rotation: bool,
     pub gizmo_scale: bool,
 
+    pub use_highlight: bool,
+
     pub pick_id: String,
     pub pick_mode: PickType,
 
@@ -201,6 +203,8 @@ impl EditorState
             gizmo_position: true,
             gizmo_rotation: false,
             gizmo_scale: false,
+
+            use_highlight: true,
 
             pick_id: "".to_string(),
             pick_mode: PickType::None,
@@ -346,6 +350,75 @@ impl EditorState
         state.find_scene_by_id_mut(scene_id)
     }
 
+    pub fn remove_highlight(&self, state: &mut State)
+    {
+        for scene in &mut state.scenes
+        {
+            for node in &scene.nodes
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn apply_highlight(&mut self, state: &mut State)
+    {
+        let (scene, node, instance_id) = self.get_selected_node(state);
+
+        if scene.is_none() || node.is_none()
+        {
+            return;
+        }
+
+        self.apply_highlight_for_node(&node.unwrap(), instance_id);
+    }
+
+    pub fn apply_highlight_for_node(&mut self, node: &NodeItem, instance_id: Option<u64>)
+    {
+        if let Some(instance_id) = instance_id
+        {
+            let node = node.read().unwrap();
+            if let Some(instance) = node.find_instance_by_id(instance_id)
+            {
+                let mut instance = instance.write().unwrap();
+                let instance_data = instance.get_data_mut().get_mut();
+                instance_data.highlight = true;
+            }
+        }
+        else
+        {
+            let mut all_nodes = vec![];
+            all_nodes.push(node.clone());
+            all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+            for node in all_nodes
+            {
+                let node = node.read().unwrap();
+
+                for instance in node.instances.get_ref()
+                {
+                    let mut instance = instance.write().unwrap();
+                    let instance_data = instance.get_data_mut().get_mut();
+                    instance_data.highlight = true;
+                }
+            }
+        }
+    }
+
+
     pub fn de_select_all_items(state: &mut State, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>)
     {
         for scene in &mut state.scenes
@@ -467,7 +540,7 @@ impl EditorState
         apply_fly_camera_move_state(scene, true);
     }
 
-    pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u64, instance_id: Option<u64>, selection_type: SelectionType) -> bool
+    pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u64, instance_id: Option<u64>, selection_type: SelectionType, highlight: bool) -> bool
     {
         let scene_id = scene.id;
 
@@ -500,40 +573,15 @@ impl EditorState
         // de-select first
         self.de_select_current_item_from_scene(scene);
 
-        // highlight
         if !already_selected
         {
             self.selected_object = id_string;
             self.selected_scene_id = Some(scene_id);
             self.selected_type = selection_type;
 
-            if let Some(instance_id) = instance_id
+            if highlight
             {
-                let node = node.read().unwrap();
-                if let Some(instance) = node.find_instance_by_id(instance_id)
-                {
-                    let mut instance = instance.write().unwrap();
-                    let instance_data = instance.get_data_mut().get_mut();
-                    instance_data.highlight = true;
-                }
-            }
-            else
-            {
-                let mut all_nodes = vec![];
-                all_nodes.push(node.clone());
-                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
-
-                for node in all_nodes
-                {
-                    let node = node.read().unwrap();
-
-                    for instance in node.instances.get_ref()
-                    {
-                        let mut instance = instance.write().unwrap();
-                        let instance_data = instance.get_data_mut().get_mut();
-                        instance_data.highlight = true;
-                    }
-                }
+                self.apply_highlight_for_node(&node, instance_id);
             }
 
             return true;
