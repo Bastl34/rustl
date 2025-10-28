@@ -1232,12 +1232,12 @@ impl Scene
             let node = node_arc.read().unwrap();
 
             // early "return" checks
-            if !ignore_visible && !node.visible
+            if !ignore_visible && !node.settings.visible
             {
                 continue;
             }
 
-            if !ignore_pickable && !node.pickable
+            if !ignore_pickable && !node.settings.pickable
             {
                 continue;
             }

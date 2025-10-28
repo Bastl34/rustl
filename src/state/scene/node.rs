@@ -7,7 +7,7 @@ use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merg
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_and_add_new_components, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_and_add_new_components, scene::Scene}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -19,6 +19,10 @@ const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct NodeSettings
 {
+    pub visible: bool,
+    pub locked: bool,
+    pub pickable: bool,
+
     pub render_children_first: bool,
     pub alpha_index: i64, // this can be used to influence the alpha sorting (for transparent objects rendering)
     pub render_group_id: i64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
@@ -27,6 +31,9 @@ pub struct NodeSettings
     pub depth_write: bool,
 
     pub pick_bbox_first: bool,
+
+    pub frustum_culling: bool,
+    pub occlusion_culling: bool,
 }
 
 pub struct NodeUpdateResult
@@ -42,9 +49,6 @@ pub struct Node
     pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
-    pub visible: bool,
-    pub locked: bool,
-    pub pickable: bool,
     pub root_node: bool,
 
     pub settings: NodeSettings,
@@ -77,9 +81,6 @@ impl Serialize for Node
 
         map.serialize_entry("uuid", &self.uuid)?;
         map.serialize_entry("name", &self.name)?;
-        map.serialize_entry("visible", &self.visible)?;
-        map.serialize_entry("locked", &self.locked)?;
-        map.serialize_entry("pickable", &self.pickable)?;
         map.serialize_entry("root_node", &self.root_node)?;
         map.serialize_entry("settings", &self.settings)?;
         map.serialize_entry("extras", &self.extras)?;
@@ -152,9 +153,6 @@ impl<'de> Deserialize<'de> for Node
                     {
                         "uuid" => node.uuid = map.next_value()?,
                         "name" => node.name = map.next_value()?,
-                        "visible" => node.visible = map.next_value()?,
-                        "locked" => node.locked = map.next_value()?,
-                        "pickable" => node.pickable = map.next_value()?,
                         "root_node" => node.root_node = map.next_value()?,
                         "parent" => node.parent = OptionOrId::from_id_or_none(map.next_value()?),
                         "settings" => node.settings = map.next_value()?,
@@ -223,13 +221,14 @@ impl Node
             source: None,
 
             name: "default".to_string(),
-            visible: true,
-            locked: false,
-            pickable: true,
             root_node: false,
 
             settings: NodeSettings
             {
+                visible: true,
+                locked: false,
+                pickable: true,
+
                 render_children_first: false,
                 alpha_index: 0,
                 render_group_id: 0,
@@ -238,6 +237,8 @@ impl Node
                 depth_test: true,
 
                 pick_bbox_first: true,
+                frustum_culling: true,
+                occlusion_culling: true,
             },
 
             components: vec![],
@@ -900,7 +901,7 @@ impl Node
 
     pub fn is_locked(&self) -> bool
     {
-        if self.locked
+        if self.settings.locked
         {
             return true;
         }
@@ -910,7 +911,7 @@ impl Node
         {
             {
                 let parent = parent.clone().unwrap();
-                if parent.read().unwrap().locked
+                if parent.read().unwrap().settings.locked
                 {
                     return true;
                 }
@@ -924,12 +925,12 @@ impl Node
 
     pub fn set_pickable(&mut self, pickable: bool)
     {
-        self.pickable = pickable;
+        self.settings.pickable = pickable;
         let all_childs = Scene::list_all_child_nodes(&self.nodes);
         for child_node in all_childs
         {
             let mut child_node = child_node.write().unwrap();
-            child_node.pickable = pickable;
+            child_node.settings.pickable = pickable;
 
             for instance in child_node.instances.get_ref()
             {
@@ -2145,7 +2146,7 @@ impl Node
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);
-        console_log!("{} - (NODE) id={} name={} visible={} components={}, instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.instances.get_ref().len());
+        console_log!("{} - (NODE) id={} name={} components={}, instances={}", spaces, self.id, self.name, self.components.len(), self.instances.get_ref().len());
 
         for node in &self.nodes
         {

@@ -64,19 +64,19 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
 
             if let Some(node) = scene.find_node_by_id(*pos_root)
             {
-                node.write().unwrap().visible = true;
+                node.write().unwrap().settings.visible = true;
                 node.write().unwrap().name = "gizmo_position".to_string();
             }
 
             if let Some(node) = scene.find_node_by_id(*rot_root)
             {
-                node.write().unwrap().visible = true;
+                node.write().unwrap().settings.visible = true;
                 node.write().unwrap().name = "gizmo_rotation".to_string();
             }
 
             if let Some(node) = scene.find_node_by_id(*sacle_root)
             {
-                node.write().unwrap().visible = true;
+                node.write().unwrap().settings.visible = true;
                 node.write().unwrap().name = "gizmo_scale".to_string();
             }
 
@@ -91,7 +91,7 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
                             node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Transform")))));
                         }
 
-                        node.write().unwrap().visible = false;
+                        node.write().unwrap().settings.visible = false;
                     }
 
                     // rename to just x, y, z
@@ -105,7 +105,7 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
                     node.write().unwrap().settings.render_group_id = 1;
                     node.write().unwrap().settings.depth_write = false;
                     node.write().unwrap().settings.depth_test = false;
-                    node.write().unwrap().pickable = false;
+                    node.write().unwrap().settings.pickable = false;
 
                     if let Some(material) = node.read().unwrap().find_component::<Material>()
                     {
@@ -137,17 +137,17 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
 
         if let Some(gizmo_translation) = gizmo_translation
         {
-            gizmo_translation.write().unwrap().visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
         }
 
         if let Some(gizmo_rotation) = gizmo_rotation
         {
-            gizmo_rotation.write().unwrap().visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
         }
 
         if let Some(gizmo_scale) = gizmo_scale
         {
-            gizmo_scale.write().unwrap().visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
         }
     }
 }

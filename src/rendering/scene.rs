@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_success, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{get_render_item, get_render_item_mut, RenderItem}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -77,10 +77,13 @@ pub struct Scene
     samples: u32,
     pub distance_sorting: bool,
     pub frustum_culling: bool,
+    pub occlusion_culling: bool,
 
     pipelines: Vec<Pipeline>,
 
     buffer: wgpu::Buffer,
+    occlusion_query_buffer: wgpu::Buffer,
+    occlusion_query_buffer_staging: wgpu::Buffer,
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
@@ -109,6 +112,24 @@ impl Scene
 
         let empty_skeleton_morph_group = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
 
+
+        let num_queries = wgpu::QUERY_SET_MAX_QUERIES as u64;
+        let occlusion_query_result_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("occlusion_query_result_buffer"),
+            size: num_queries * std::mem::size_of::<u64>() as u64,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::QUERY_RESOLVE,
+            mapped_at_creation: false,
+        });
+
+        let occlusion_query_result_buffer_staging = wgpu.device().create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("occlusion_query_result_buffer_staging_buffer"),
+            size: num_queries * std::mem::size_of::<u64>() as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let mut render_scene = Self
         {
             clear_color: wgpu::Color::BLACK,
@@ -120,10 +141,13 @@ impl Scene
             samples,
             distance_sorting: true,
             frustum_culling: true,
+            occlusion_culling: true,
 
             pipelines: vec![],
 
             buffer: create_empty_buffer(wgpu),
+            occlusion_query_buffer: occlusion_query_result_buffer,
+            occlusion_query_buffer_staging: occlusion_query_result_buffer_staging,
 
             depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
 
@@ -910,7 +934,7 @@ impl Scene
             if check_visibility
             {
                 let node = node.read().unwrap();
-                let visible = node.visible;
+                let visible = node.settings.visible;
 
                 if !visible
                 {
@@ -1075,7 +1099,8 @@ impl Scene
             let cam_data = cam.get_data();
             let cam_pos = cam_data.eye_pos;
 
-            let mut render_groups_culled = if self.frustum_culling
+            // ********** frustum culling **********
+            let mut render_groups_frustum_culled = if self.frustum_culling
             {
                 render_groups.iter().map(|(solid_objects, transparent_objects)|
                 {
@@ -1083,7 +1108,7 @@ impl Scene
                     {
                         if let (Some(center), Some(radius)) = (item.middle.as_ref(), item.radius)
                         {
-                            cam.is_sphere_in_frustum(center, radius)
+                            cam.is_sphere_in_frustum(center, radius) || !item.node.settings.frustum_culling
                         }
                         else
                         {
@@ -1094,7 +1119,7 @@ impl Scene
                     {
                         if let (Some(center), Some(radius)) = (item.middle.as_ref(), item.radius)
                         {
-                            cam.is_sphere_in_frustum(center, radius)
+                            cam.is_sphere_in_frustum(center, radius) || !item.node.settings.frustum_culling
                         }
                         else
                         {
@@ -1111,9 +1136,10 @@ impl Scene
             };
 
 
+            // ********** alpha / distance sorting **********
             if self.distance_sorting
             {
-                for (_, transparent_objects) in &mut render_groups_culled
+                for (_, transparent_objects) in &mut render_groups_frustum_culled
                 {
                     transparent_objects.sort_by(|a, b|
                     {
@@ -1143,13 +1169,26 @@ impl Scene
             let clear;
             if i == 0 { clear = true; } else { clear = false; }
 
+
             // get bind groups
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
 
+            // ********** occlusion culling **********
+            if self.occlusion_culling
+            {
+                for (solid_objects, _) in &mut render_groups_frustum_culled
+                {
+                    let (occlusion_draw_calls, visible_objects) = self.render_occlusion_query_pass(wgpu, encoder, &solid_objects, cam_data, &bind_group_render_item.bind_group, clear);
+                    draw_calls += occlusion_draw_calls;
+                    *solid_objects = visible_objects;
+                }
+            }
+
+            // ********** main rendering **********
             // transparent objects are added to the back. so solid objects are rendered first
             let mut render_data = Vec::with_capacity(materials_read.len());
-            for (solid_objects, transparent_objects) in &mut render_groups_culled
+            for (solid_objects, transparent_objects) in &mut render_groups_frustum_culled
             {
                 render_data.extend(solid_objects.iter().cloned());
                 render_data.extend(transparent_objects.iter().cloned());
@@ -1162,6 +1201,126 @@ impl Scene
         }
 
         draw_calls
+    }
+
+    pub fn render_occlusion_query_pass<'a>(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, nodes: &Vec<RenderData<'a>>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> (u32, Vec<RenderData<'a>>)
+    {
+        let mut draw_calls: u32 = 0;
+
+        const MAX_QUERIES: usize = wgpu::QUERY_SET_MAX_QUERIES as usize;
+
+        let depth_view = &self.depth_pass_buffer_texture.get_view();
+        let pipeline = self.pipelines[PipelineType::OcclusionCulling as usize].get();
+
+        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
+        let y = (1.0 - cam_data.viewport_y - cam_data.viewport_height) * cam_data.resolution_height as f32;
+        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
+
+        let mut visible_nodes = vec![];
+
+        for chunk in nodes.chunks(MAX_QUERIES)
+        {
+            let mut query_id = 0u32;
+            let query_set = wgpu.device().create_query_set(&wgpu::QuerySetDescriptor
+            {
+                count: chunk.len() as u32,
+                ty: wgpu::QueryType::Occlusion,
+                label: Some("occlusion_query_set"),
+            });
+
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+                {
+                    label: Some("occlusion_query_pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
+                    {
+                        view: depth_view,
+                        depth_ops: Some(wgpu::Operations
+                        {
+                            load: if clear { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: Some(&query_set),
+                    timestamp_writes: None,
+                });
+
+
+                render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
+                render_pass.set_pipeline(pipeline);
+
+                // render
+                for data in chunk
+                {
+                    let node = data.node;
+                    let meshes = data.meshes;
+
+                    if !node.settings.visible
+                    {
+                        continue;
+                    }
+
+                    if meshes.len() == 0
+                    {
+                        continue;
+                    }
+
+                    let occlusion_render_item = node.occlusion_render_item.as_ref();
+                    if occlusion_render_item.is_none()
+                    {
+                        continue;
+                    }
+
+                    let occlusion_render_item = occlusion_render_item.unwrap();
+                    let occlusion_render_item = get_render_item::<OcclusionCullingBuffer>(occlusion_render_item);
+                    let occlusion_bind_group = occlusion_render_item.bind_group.as_ref().unwrap();
+
+                    render_pass.set_bind_group(0, occlusion_bind_group, &[]);
+                    render_pass.set_bind_group(1, light_cam_bind_group, &[]);
+
+                    render_pass.begin_occlusion_query(query_id);
+                    render_pass.draw(0..36, 0..1);
+                    render_pass.end_occlusion_query();
+
+                    query_id += 1;
+                    draw_calls += 1;
+                }
+            }
+
+            // resolve buffer and copy to staging buffer
+            encoder.resolve_query_set(&query_set, 0..query_id, &self.occlusion_query_buffer, 0);
+            encoder.copy_buffer_to_buffer(&self.occlusion_query_buffer, 0, &self.occlusion_query_buffer_staging, 0,(query_id * 8) as u64);
+
+            // read staging buffer
+            {
+                let slice = self.occlusion_query_buffer_staging.slice(..);
+                slice.map_async(wgpu::MapMode::Read, |_| ());
+                if let Ok(_) = wgpu.device().poll(wgpu::PollType::wait_indefinitely())
+                {
+                    let data = slice.get_mapped_range();
+                    for (i, data_chunk) in data.chunks_exact(8).enumerate()
+                    {
+                        let samples_passed = u64::from_ne_bytes(data_chunk.try_into().unwrap());
+                        if samples_passed > 0
+                        {
+                            console_debug!("object visible: {} samples passed {}", chunk[i].node.name, samples_passed);
+                            visible_nodes.push(chunk[i].clone());
+                        }
+                    }
+                }
+                else
+                {
+                    console_warning!("failed to poll device -> use all objects as fallback");
+                    visible_nodes.extend(nodes.iter().cloned());
+                }
+            }
+            self.occlusion_query_buffer_staging.unmap();
+        }
+
+        (draw_calls, visible_nodes)
     }
 
     pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
@@ -1303,7 +1462,7 @@ impl Scene
             let meshes = data.meshes;
             let mat = data.material;
 
-            if !node.visible
+            if !node.settings.visible
             {
                 continue;
             }

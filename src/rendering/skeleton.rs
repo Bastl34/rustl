@@ -53,9 +53,7 @@ pub struct SkeletonBuffer
 {
     pub name: String,
 
-    buffer: wgpu::Buffer,
-
-    pub bind_group: Option<BindGroup>
+    buffer: wgpu::Buffer
 }
 
 impl RenderItem for SkeletonBuffer
@@ -72,8 +70,7 @@ impl SkeletonBuffer
         let mut buffer = SkeletonBuffer
         {
             name: name.to_string(),
-            buffer: empty_buffer,
-            bind_group: None
+            buffer: empty_buffer
         };
 
         buffer.to_buffer(wgpu, joint_matrices);
@@ -88,8 +85,7 @@ impl SkeletonBuffer
         let mut buffer = SkeletonBuffer
         {
             name: "empty".to_string(),
-            buffer: empty_buffer,
-            bind_group: None
+            buffer: empty_buffer
         };
 
         let joint_matrices: Vec<Matrix4<f32>> = vec![];

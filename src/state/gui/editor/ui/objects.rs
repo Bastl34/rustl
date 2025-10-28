@@ -15,10 +15,10 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         let node = node_arc.read().unwrap();
         let child_nodes = &node.nodes.clone();
 
-        let node_visible = node.visible;
+        let node_visible = node.settings.visible;
         let visible = node_visible && parent_visible;
 
-        let node_locked = node.locked;
+        let node_locked = node.settings.locked;
         let locked = node_locked || parent_locked;
 
         let name = node.name.clone();
@@ -263,7 +263,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
                         {
                             let mut node = node_arc.write().unwrap();
-                            node.visible = !node.visible;
+                            node.settings.visible = !node.settings.visible;
                         }));
                     }
 
@@ -277,7 +277,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
                         {
                             let mut node = node_arc.write().unwrap();
-                            node.locked = !node.locked;
+                            node.settings.locked = !node.settings.locked;
                         }));
                     }
 
@@ -722,11 +722,13 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut alpha_index;
         let mut render_group_id;
         let mut pick_bbox_first;
+        let mut frustum_culling;
+        let mut occlusion_culling;
         let mut name;
         {
             let node = node.read().unwrap();
-            visible = node.visible;
-            locked = node.locked;
+            visible = node.settings.visible;
+            locked = node.settings.locked;
             root_node = node.root_node;
             render_children_first = node.settings.render_children_first;
             depth_test = node.settings.depth_test;
@@ -734,6 +736,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             alpha_index = node.settings.alpha_index;
             render_group_id = node.settings.render_group_id;
             pick_bbox_first = node.settings.pick_bbox_first;
+            frustum_culling = node.settings.frustum_culling;
+            occlusion_culling = node.settings.occlusion_culling;
             name = node.name.clone();
         }
 
@@ -763,11 +767,16 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         });
         changed = ui.checkbox(&mut pick_bbox_first, "pick bbox first").changed() || changed;
 
+        ui.separator();
+
+        changed = ui.checkbox(&mut frustum_culling, "frustum culling").changed() || changed;
+        changed = ui.checkbox(&mut occlusion_culling, "occlusion culling").changed() || changed;
+
         if changed
         {
             let mut node = node.write().unwrap();
-            node.visible = visible;
-            node.locked = locked;
+            node.settings.visible = visible;
+            node.settings.locked = locked;
             node.root_node = root_node;
             node.settings.render_children_first = render_children_first;
             node.settings.alpha_index = alpha_index;
@@ -775,6 +784,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.depth_write = depth_write;
             node.settings.render_group_id = render_group_id;
             node.settings.pick_bbox_first = pick_bbox_first;
+            node.settings.frustum_culling = frustum_culling;
+            node.settings.occlusion_culling = occlusion_culling;
             node.name = name;
         }
 

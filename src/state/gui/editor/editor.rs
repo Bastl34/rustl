@@ -1424,7 +1424,7 @@ impl Editor
 
                         root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
 
-                        root_node.write().unwrap().visible = true;
+                        root_node.write().unwrap().settings.visible = true;
                     }
                 }
 

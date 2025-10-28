@@ -8,13 +8,14 @@ pub struct BoundingBoxInstance
 }
 
 use nalgebra::Point3;
-use wgpu::util::DeviceExt;
+use wgpu::{BindGroup, util::DeviceExt};
 
-use crate::{render_item_impl_default, rendering::wgpu::WGpu, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 pub struct OcclusionCullingBuffer
 {
-    pub buffer: wgpu::Buffer
+    pub buffer: wgpu::Buffer,
+    pub bind_group: Option<BindGroup>
 }
 
 impl RenderItem for OcclusionCullingBuffer
@@ -24,7 +25,7 @@ impl RenderItem for OcclusionCullingBuffer
 
 impl OcclusionCullingBuffer
 {
-    pub fn new(wgpu: &WGpu, min: Point3<f32>, max: Point3<f32>) -> Self
+    pub fn new(wgpu: &mut WGpu, min: Point3<f32>, max: Point3<f32>) -> Self
     {
         let buffer = wgpu.device().create_buffer_init(&wgpu::util::BufferInitDescriptor
         {
@@ -37,9 +38,12 @@ impl OcclusionCullingBuffer
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
+        let bind_group = SingleBindingBindGroup::new(wgpu, "occlusion culling", &buffer, true, false, true, true);
+
         Self
         {
-            buffer
+            buffer,
+            bind_group: Some(bind_group.bind_group)
         }
     }
 }

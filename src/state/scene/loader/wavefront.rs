@@ -438,7 +438,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     // ********** add to scene **********
     if hide_root_node
     {
-        root_node.write().unwrap().visible = false;
+        root_node.write().unwrap().settings.visible = false;
     }
 
     let root_node_clone = root_node.clone();

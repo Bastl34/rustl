@@ -913,7 +913,7 @@ impl SceneController for CharacterController
         // do not show charactar in first person mode
         if let Some(node) = self.node.as_ref()
         {
-            node.write().unwrap().visible = !is_first_person;
+            node.write().unwrap().settings.visible = !is_first_person;
         }
 
         // ********** forward/backward **********
