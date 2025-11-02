@@ -1139,8 +1139,25 @@ impl Scene
             // ********** alpha / distance sorting **********
             if self.distance_sorting
             {
-                for (_, transparent_objects) in &mut render_groups_frustum_culled
+                for (solid_objects, transparent_objects) in &mut render_groups_frustum_culled
                 {
+                    // sort solid objects front-to-back for occlusion culling (TODO check)
+                    if self.occlusion_culling
+                    {
+                        solid_objects.sort_by(|a, b|
+                        {
+                            let a_middle = a.middle.unwrap_or(Point3::origin());
+                            let b_middle = b.middle.unwrap_or(Point3::origin());
+
+                            let a_dist = distance_squared(&a_middle, &cam_pos);
+                            let b_dist = distance_squared(&b_middle, &cam_pos);
+
+                            // front-to-back: smaller distance first
+                            a_dist.partial_cmp(&b_dist).unwrap()
+                        });
+                    }
+
+                    // sort transparent objects back-to-front for alpha blending
                     transparent_objects.sort_by(|a, b|
                     {
                         if a.has_transparency != b.has_transparency
@@ -1160,6 +1177,7 @@ impl Scene
                             let a_dist = distance_squared(&a_middle, &cam_pos);
                             let b_dist = distance_squared(&b_middle, &cam_pos);
 
+                            // back-to-front: larger distance first
                             b_dist.partial_cmp(&a_dist).unwrap()
                         }
                     });
@@ -1174,27 +1192,42 @@ impl Scene
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
 
+            // ********** depth pre-pass **********
+            // render all objects to depth buffer first (for occlusion testing)
+            let mut render_data_before_occlusion = Vec::with_capacity(materials_read.len());
+            for (solid_objects, transparent_objects) in &render_groups_frustum_culled
+            {
+                render_data_before_occlusion.extend(solid_objects.iter().cloned());
+                render_data_before_occlusion.extend(transparent_objects.iter().cloned());
+            }
+            draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear);
+
+            // SUBMIT depth pre-pass so it's executed before occlusion queries
+            let new_encoder = wgpu.create_command_encoder();
+            let old_encoder = std::mem::replace(encoder, new_encoder);
+            wgpu.submit_commands(vec![old_encoder]);
+
             // ********** occlusion culling **********
+            // test bounding boxes against the depth buffer we just rendered
             if self.occlusion_culling
             {
+                let occlusion_clear = false; // DON'T clear - test against depth pre-pass!
                 for (solid_objects, _) in &mut render_groups_frustum_culled
                 {
-                    let (occlusion_draw_calls, visible_objects) = self.render_occlusion_query_pass(wgpu, encoder, &solid_objects, cam_data, &bind_group_render_item.bind_group, clear);
+                    let (occlusion_draw_calls, visible_objects) = self.render_occlusion_query_pass(wgpu, encoder, &solid_objects, cam_data, &bind_group_render_item.bind_group, occlusion_clear);
                     draw_calls += occlusion_draw_calls;
                     *solid_objects = visible_objects;
                 }
             }
 
-            // ********** main rendering **********
-            // transparent objects are added to the back. so solid objects are rendered first
+            // ********** color pass **********
+            // render only visible objects with color
             let mut render_data = Vec::with_capacity(materials_read.len());
             for (solid_objects, transparent_objects) in &mut render_groups_frustum_culled
             {
                 render_data.extend(solid_objects.iter().cloned());
                 render_data.extend(transparent_objects.iter().cloned());
             }
-
-            draw_calls += self.render_depth(wgpu, view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
 
             i += 1;
@@ -1203,7 +1236,7 @@ impl Scene
         draw_calls
     }
 
-    pub fn render_occlusion_query_pass<'a>(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, nodes: &Vec<RenderData<'a>>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> (u32, Vec<RenderData<'a>>)
+    pub fn render_occlusion_query_pass<'a>(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, nodes: &Vec<RenderData<'a>>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, _clear: bool) -> (u32, Vec<RenderData<'a>>)
     {
         let mut draw_calls: u32 = 0;
 
@@ -1229,6 +1262,8 @@ impl Scene
                 label: Some("occlusion_query_set"),
             });
 
+            let mut rendered_objects = vec![];
+
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
                 {
@@ -1239,8 +1274,8 @@ impl Scene
                         view: depth_view,
                         depth_ops: Some(wgpu::Operations
                         {
-                            load: if clear { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
-                            store: wgpu::StoreOp::Discard,
+                            load: wgpu::LoadOp::Load,  // Load depth from depth pre-pass
+                            store: wgpu::StoreOp::Discard,  // Don't write, so no need to store
                         }),
                         stencil_ops: None,
                     }),
@@ -1285,6 +1320,8 @@ impl Scene
                     render_pass.draw(0..36, 0..1);
                     render_pass.end_occlusion_query();
 
+                    rendered_objects.push(data);
+
                     query_id += 1;
                     draw_calls += 1;
                 }
@@ -1296,7 +1333,7 @@ impl Scene
 
             // read staging buffer
             {
-                let slice = self.occlusion_query_buffer_staging.slice(..);
+                let slice = self.occlusion_query_buffer_staging.slice(..(query_id as u64 * 8));
                 slice.map_async(wgpu::MapMode::Read, |_| ());
                 if let Ok(_) = wgpu.device().poll(wgpu::PollType::wait_indefinitely())
                 {
@@ -1306,15 +1343,19 @@ impl Scene
                         let samples_passed = u64::from_ne_bytes(data_chunk.try_into().unwrap());
                         if samples_passed > 0
                         {
-                            console_debug!("object visible: {} samples passed {}", chunk[i].node.name, samples_passed);
-                            visible_nodes.push(chunk[i].clone());
+                            console_debug!("object visible: {} samples passed {}", rendered_objects[i].node.name, samples_passed);
+                            visible_nodes.push(rendered_objects[i].clone());
+                        }
+                        else
+                        {
+                            //console_debug!("object occluded: {} samples passed {}", rendered_objects[i].node.name, samples_passed);
                         }
                     }
                 }
                 else
                 {
                     console_warning!("failed to poll device -> use all objects as fallback");
-                    visible_nodes.extend(nodes.iter().cloned());
+                    visible_nodes.extend(chunk.iter().cloned());
                 }
             }
             self.occlusion_query_buffer_staging.unmap();

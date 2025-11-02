@@ -221,7 +221,7 @@ impl Pipeline
 
     pub fn re_create_occlusion_culling(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
     {
-        console_log!("recreating pipeline");
+        console_log!("recreating occlusion culling pipeline");
 
         self.create_occlusion_culling(wgpu, bind_group_layouts);
     }
@@ -264,8 +264,8 @@ impl Pipeline
             depth_stencil: Some(wgpu::DepthStencilState
             {
                 format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
