@@ -221,6 +221,12 @@ pub struct Camera
 
     #[serde(skip, default)]
     pub bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub hzb_texture_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub hzb_downsample_bind_group_render_item: RenderItemOption,
 }
 
 impl Default for Camera
@@ -294,7 +300,9 @@ impl Camera
             node: OptionOrId::None,
 
             render_item: None,
-            bind_group_render_item: None
+            bind_group_render_item: None,
+            hzb_texture_render_item: None,
+            hzb_downsample_bind_group_render_item: None,
         }
     }
 

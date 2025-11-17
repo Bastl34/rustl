@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, single_binding_group::SingleBindingBindGroup}, compute_pipeline::ComputePipeline, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, single_binding_group::SingleBindingBindGroup}, compute_pipeline::ComputePipeline, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -99,10 +99,10 @@ pub struct Scene
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
-    hzb_texture: Texture,
+    // hzb_texture: Texture,
 
     depth_export_bind_group: DepthExportBindGroup,
-    hzb_downsample_bind_group: HZBDownsampleBindGroup,
+    // hzb_downsample_bind_group: HZBDownsampleBindGroup,
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
@@ -151,10 +151,10 @@ impl Scene
 
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
-        let hzb_texture = Texture::new_hzb_texture(wgpu);
+        // let hzb_texture = Texture::new_hzb_texture(wgpu);
 
         let depth_export_bind_group = DepthExportBindGroup::new(wgpu, "depth export", &depth_pass_buffer_texture);
-        let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
+        // let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
 
         let mut render_scene = Self
         {
@@ -180,10 +180,10 @@ impl Scene
 
             depth_buffer_texture,
             depth_pass_buffer_texture,
-            hzb_texture,
+            // hzb_texture,
 
             depth_export_bind_group,
-            hzb_downsample_bind_group,
+            // hzb_downsample_bind_group,
 
             empty_skeleton,
             empty_morph_target,
@@ -457,7 +457,7 @@ impl Scene
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
         {
-            let cam_changed = cam.get_data_mut().consume_change();
+            let mut cam_changed = cam.get_data_mut().consume_change();
 
             // create cam render item
             if cam.render_item.is_none()
@@ -467,6 +467,8 @@ impl Scene
 
                 let camera_buffer = CameraBuffer::new(wgpu, &cam);
                 cam.render_item = Some(Box::new(camera_buffer));
+
+                cam_changed = true;
             }
             else if cam_changed
             {
@@ -478,6 +480,18 @@ impl Scene
                 }
 
                 cam.render_item = render_item;
+            }
+
+            // create/recreate hzb texture
+            if cam_changed
+            {
+                let hzb_texture = Texture::new_hzb_texture(wgpu);
+                let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
+
+                cam.hzb_texture_render_item = Some(Box::new(hzb_texture));
+                cam.hzb_downsample_bind_group_render_item = Some(Box::new(hzb_downsample_bind_group));
+
+                console_debug!("created/recreated HZB texture for camera {}", cam.name);
             }
 
             // create cam/light/scene bind group
@@ -987,9 +1001,9 @@ impl Scene
     {
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
-        self.hzb_texture = Texture::new_hzb_texture(wgpu);
+        // self.hzb_texture = Texture::new_hzb_texture(wgpu);
 
-        self.depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &self.depth_pass_buffer_texture);
+        // self.depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &self.depth_pass_buffer_texture);
     }
 
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>, check_visibility: bool) -> Vec<NodeItem>
@@ -1302,26 +1316,45 @@ impl Scene
             }
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
 
+            // ********** hzb **********
+            draw_calls += self.create_hzb(wgpu, encoder, cam);
+
             i += 1;
         }
 
-        self.create_hzb(wgpu, encoder);
 
         draw_calls
     }
 
-    pub fn create_hzb(&mut self, wgpu: &mut WGpu, encoder: &mut CommandEncoder)
+    pub fn create_hzb(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera) -> u32
     {
-        let config = wgpu.surface_config();
+        let mut draw_calls: u32 = 0;
+
+        let viewport = cam.get_data().get_viewport();
+
+        // in pxels
+        /*
+        let vp_x      = (vp.x      * config.width  as f32) as u32;
+        let vp_y      = (vp.y      * config.height as f32) as u32;
+        let vp_width  = (vp.width  * config.width  as f32) as u32;
+        let vp_height = (vp.height * config.height as f32) as u32;
+        */
+        let x = viewport.x * cam.get_data().resolution_width as f32;
+        let width = viewport.width * cam.get_data().resolution_width as f32;
+
+        let height = viewport.height * cam.get_data().resolution_height as f32;
+        let y = (1.0 - viewport.y - viewport.height) * cam.get_data().resolution_height as f32;
 
         // *********** depth export pass **********
         {
+            let hzb_texture = get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
+
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: Some("Depth Export Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment
                 {
-                    view: &self.hzb_texture.get_view(),
+                    view: &hzb_texture.get_view(),
                     resolve_target: None,
                     ops: wgpu::Operations
                     {
@@ -1340,20 +1373,22 @@ impl Scene
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &self.depth_export_bind_group.bind_group, &[]);
 
+            pass.set_viewport(x, y, width, height, 0.0, 1.0);
+
             pass.draw(0..3, 0..1); // fullscreen triangle
+            draw_calls += 1;
         }
 
-
         // ************ generate HZB mipmaps **********
-
+        let hzb_downsample_bind_group = get_render_item::<HZBDownsampleBindGroup>(cam.hzb_downsample_bind_group_render_item.as_ref().unwrap());
         let pipeline = self.compute_pipelines[ComputePipelineType::HzbDownsample as usize].get();
 
         let workgroup_size: u32 = 8;
 
-        for (level, bg) in self.hzb_downsample_bind_group.bind_groups.iter().enumerate()
+        for (level, bg) in hzb_downsample_bind_group.bind_groups.iter().enumerate()
         {
-            let dst_width  = (config.width  >> (level + 1)).max(1);
-            let dst_height = (config.height >> (level + 1)).max(1);
+            let dst_width  = (width  as u32  >> (level + 1)).max(1);
+            let dst_height = (height  as u32 >> (level + 1)).max(1);
 
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
             {
@@ -1369,6 +1404,8 @@ impl Scene
 
             pass.dispatch_workgroups(wg_x, wg_y, 1);
         }
+
+        draw_calls
     }
 
     /*
