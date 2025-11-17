@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, single_binding_group::SingleBindingBindGroup}, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -62,7 +62,9 @@ pub enum PipelineType
     ColorNoWrite,
     ColorNoWriteNoCompare,
 
-    OcclusionCulling,
+    DepthExport,
+
+    //OcclusionCulling,
 }
 
 pub struct Scene
@@ -72,7 +74,8 @@ pub struct Scene
     color_shader: String,
     depth_shader: String,
 
-    occlusion_culling_shader: String,
+    // occlusion_culling_shader: String,
+    depth_export_shader: String,
 
     samples: u32,
     pub distance_sorting: bool,
@@ -82,11 +85,14 @@ pub struct Scene
     pipelines: Vec<Pipeline>,
 
     buffer: wgpu::Buffer,
-    occlusion_query_buffer: wgpu::Buffer,
-    occlusion_query_buffer_staging: wgpu::Buffer,
+    // occlusion_query_buffer: wgpu::Buffer,
+    // occlusion_query_buffer_staging: wgpu::Buffer,
 
     depth_pass_buffer_texture: Texture,
     depth_buffer_texture: Texture,
+    hzb_texture: Texture,
+
+    depth_export_bind_group: DepthExportBindGroup,
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
@@ -105,14 +111,15 @@ impl Scene
         // shader source
         let color_shader = resources::load_string("shader/base.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
-        let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
+        //let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
+        let depth_export_shader = resources::load_string("shader/depth_export.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
 
         let empty_skeleton_morph_group = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
 
-
+        /*
         let num_queries = wgpu::QUERY_SET_MAX_QUERIES as u64;
         let occlusion_query_result_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -129,6 +136,12 @@ impl Scene
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        */
+
+        let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples);
+        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
+
+        let depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &depth_pass_buffer_texture);
 
         let mut render_scene = Self
         {
@@ -136,7 +149,8 @@ impl Scene
 
             color_shader,
             depth_shader,
-            occlusion_culling_shader,
+            // occlusion_culling_shader,
+            depth_export_shader,
 
             samples,
             distance_sorting: true,
@@ -146,16 +160,19 @@ impl Scene
             pipelines: vec![],
 
             buffer: create_empty_buffer(wgpu),
-            occlusion_query_buffer: occlusion_query_result_buffer,
-            occlusion_query_buffer_staging: occlusion_query_result_buffer_staging,
+            // occlusion_query_buffer: occlusion_query_result_buffer,
+            // occlusion_query_buffer_staging: occlusion_query_result_buffer_staging,
 
-            depth_buffer_texture: Texture::new_depth_texture(wgpu, samples),
+            depth_buffer_texture,
 
-            depth_pass_buffer_texture: Texture::new_depth_texture(wgpu, 1),
+            depth_pass_buffer_texture,
+
+            hzb_texture: Texture::new_hzb_texture(wgpu),
+
+            depth_export_bind_group,
 
             empty_skeleton,
             empty_morph_target,
-
             empty_skeleton_morph_group
         };
 
@@ -274,6 +291,7 @@ impl Scene
         - (1) Lights, Camera, Scene Properties (Tonemapping/HDR/Gamma) (scene)
         */
 
+        /*
         let occlusion_culling_bind_layout = SingleBindingBindGroup::bind_layout(wgpu, true, false, true, true);
 
         let bind_group_layouts =
@@ -290,6 +308,23 @@ impl Scene
         {
             self.pipelines.get_mut(PipelineType::OcclusionCulling as usize).unwrap().re_create_occlusion_culling(wgpu, &bind_group_layouts);
         }
+        */
+
+        // ********** depth export pass (for occlusion culling - hzb) **********
+
+        let depth_export_bind_layout = DepthExportBindGroup::bind_layout(wgpu);
+
+        let bind_group_layouts = [ &depth_export_bind_layout ];
+
+        if !re_create
+        {
+            self.pipelines.push(Pipeline::new_depth_export(wgpu, "depth export", &self.depth_export_shader, &bind_group_layouts));
+        }
+        else
+        {
+            self.pipelines.get_mut(PipelineType::DepthExport as usize).unwrap().re_create_depth_export(wgpu, &bind_group_layouts);
+        }
+
     }
 
     pub fn update_textures(&mut self, _wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
@@ -923,6 +958,9 @@ impl Scene
     {
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
+        self.hzb_texture = Texture::new_hzb_texture(wgpu);
+
+        self.depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &self.depth_pass_buffer_texture);
     }
 
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>, check_visibility: bool) -> Vec<NodeItem>
@@ -1202,15 +1240,19 @@ impl Scene
             }
             draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear);
 
+
             // SUBMIT depth pre-pass so it's executed before occlusion queries
+            /*
             let new_encoder = wgpu.create_command_encoder();
             let old_encoder = std::mem::replace(encoder, new_encoder);
             wgpu.submit_commands(vec![old_encoder]);
+            */
 
             // ********** occlusion culling **********
             // test bounding boxes against the depth buffer we just rendered
             if self.occlusion_culling
             {
+                /*
                 let occlusion_clear = false; // DON'T clear - test against depth pre-pass!
                 for (solid_objects, _) in &mut render_groups_frustum_culled
                 {
@@ -1218,6 +1260,7 @@ impl Scene
                     draw_calls += occlusion_draw_calls;
                     *solid_objects = visible_objects;
                 }
+                */
             }
 
             // ********** color pass **********
@@ -1233,9 +1276,59 @@ impl Scene
             i += 1;
         }
 
+        self.create_hzb(wgpu, encoder);
+
         draw_calls
     }
 
+    pub fn create_hzb(&mut self, wgpu: &mut WGpu, encoder: &mut CommandEncoder)
+    {
+        /*
+        let config = wgpu.surface_config();
+
+        // copy depth buffer into r32 texture
+        encoder.copy_texture_to_texture
+        (
+            self.depth_pass_buffer_texture.get_texture().as_image_copy(),
+            self.hzb_texture.get_texture().as_image_copy(),
+            wgpu::Extent3d
+            {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        */
+
+        // *********** depth export pass **********
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+        {
+            label: Some("Depth Export Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment
+            {
+                view: &self.hzb_texture.get_view(),
+                resolve_target: None,
+                ops: wgpu::Operations
+                {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        let pipeline = self.pipelines[PipelineType::DepthExport as usize].get();
+
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &self.depth_export_bind_group.bind_group, &[]);
+
+        pass.draw(0..3, 0..1); // fullscreen triangle
+    }
+
+    /*
     pub fn render_occlusion_query_pass<'a>(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, nodes: &Vec<RenderData<'a>>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, _clear: bool) -> (u32, Vec<RenderData<'a>>)
     {
         let mut draw_calls: u32 = 0;
@@ -1363,6 +1456,7 @@ impl Scene
 
         (draw_calls, visible_nodes)
     }
+    */
 
     pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {

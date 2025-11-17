@@ -13,7 +13,8 @@ pub enum TextureFormat
     Srgba,
     Rgba,
     Gray,
-    Depth
+    Depth,
+    R32Float,
 }
 
 pub struct Texture
@@ -41,6 +42,7 @@ impl Texture
     pub const SRGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
     pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub const GRAY_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+    pub const R32_FLOAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 
     pub fn new_from_texture(wgpu: &mut WGpu, name: &str, scene_texture: &crate::state::resources::texture::Texture, format: TextureFormat) -> Texture
     {
@@ -172,6 +174,7 @@ impl Texture
             TextureFormat::Rgba => wgpu_format = Self::RGBA_FORMAT,
             TextureFormat::Gray => wgpu_format = Self::GRAY_FORMAT,
             TextureFormat::Depth => wgpu_format = Self::DEPTH_FORMAT,
+            TextureFormat::R32Float => wgpu_format = Self::R32_FLOAT,
         }
 
         let texture_size = wgpu::Extent3d
@@ -259,7 +262,56 @@ impl Texture
             texture,
             view
         }
+    }
 
+    pub fn new_hzb_texture(wgpu: &mut WGpu) -> Texture
+    {
+        let device = wgpu.device();
+        let config = wgpu.surface_config();
+
+        let mip_count = (config.width.max(config.height) as f32).log2().floor() as u32 + 1;
+
+        let size = wgpu::Extent3d
+        {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        };
+
+        let desc = wgpu::TextureDescriptor
+        {
+            label: Some("HZB texture"),
+            size,
+            mip_level_count: mip_count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::R32_FLOAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[Self::R32_FLOAT],
+        };
+        let texture = device.create_texture(&desc);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor
+        {
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+
+
+        Self
+        {
+            name: "HZB texture".to_string(),
+
+            width: config.width,
+            height: config.height,
+
+            format: TextureFormat::R32Float,
+            is_depth_texture: false,
+
+            texture,
+            view
+        }
     }
 
     pub fn get_wgpu_format(format: &TextureFormat) -> wgpu::TextureFormat
@@ -270,9 +322,11 @@ impl Texture
             TextureFormat::Rgba => Self::RGBA_FORMAT,
             TextureFormat::Gray => Self::GRAY_FORMAT,
             TextureFormat::Depth => Self::DEPTH_FORMAT,
+            TextureFormat::R32Float => Self::R32_FLOAT,
         }
     }
 
+    /*
     pub fn create_default_sampler(wgpu: &mut WGpu) -> Sampler
     {
         wgpu.device().create_sampler(&wgpu::SamplerDescriptor
@@ -286,7 +340,9 @@ impl Texture
             ..Default::default()
         })
     }
+    */
 
+    /*
     pub fn create_depth_sampler(wgpu: &mut WGpu) -> Sampler
     {
         wgpu.device().create_sampler
@@ -304,7 +360,9 @@ impl Texture
             }
         )
     }
+    */
 
+    /*
     pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState) -> Sampler
     {
         let address_mode_u;
@@ -368,6 +426,7 @@ impl Texture
 
         sampler
     }
+    */
 
     pub fn get_texture(&self) -> &wgpu::Texture
     {

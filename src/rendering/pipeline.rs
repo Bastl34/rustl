@@ -52,6 +52,7 @@ impl Pipeline
         pipe
     }
 
+    /*
     pub fn new_occlusion_culling(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
     {
         let shader;
@@ -77,6 +78,36 @@ impl Pipeline
         };
 
         pipe.create_occlusion_culling(wgpu, bind_group_layouts);
+
+        pipe
+    }
+    */
+
+    pub fn new_depth_export(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
+    {
+        let shader;
+        {
+            let device = wgpu.device();
+
+            // shader
+            shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
+            {
+                label: Some(name),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)).into(),
+            });
+        }
+
+        // create pipe
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: false,
+
+            shader,
+            pipeline: None,
+        };
+
+        pipe.create_depth_export(wgpu, bind_group_layouts);
 
         pipe
     }
@@ -219,6 +250,7 @@ impl Pipeline
         self.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
     }
 
+    /*
     pub fn re_create_occlusion_culling(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
     {
         console_log!("recreating occlusion culling pipeline");
@@ -281,6 +313,73 @@ impl Pipeline
         });
 
         self.pipeline = Some(render_pipeline);
+    }
+    */
+
+    pub fn create_depth_export(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    {
+        // for converting depth buffer R32Float texture
+
+        let device = wgpu.device();
+
+        let layout_name = format!("{} Layout", self.name);
+
+        let depth_export_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some(layout_name.as_str()),
+            bind_group_layouts,
+            push_constant_ranges: &[],
+        });
+
+        let depth_export_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some("depth_export_pipeline"),
+            layout: Some(&depth_export_pipeline_layout),
+            vertex: wgpu::VertexState
+            {
+                module: &self.shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState
+            {
+                module: &self.shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState
+                {
+                    format: wgpu::TextureFormat::R32Float,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+
+            depth_stencil: None, // no depth test here
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        self.pipeline = Some(depth_export_pipeline);
+    }
+
+    pub fn re_create_depth_export(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    {
+        console_log!("recreating depth export pipeline");
+
+        self.create_depth_export(wgpu, bind_group_layouts);
     }
 
 }

@@ -22,6 +22,7 @@ mod rendering
         pub(crate) mod light_cam_scene;
         pub(crate) mod skeleton_morph_target;
         pub(crate) mod single_binding_group;
+        pub(crate) mod depth_export;
     }
 
     pub(crate) mod helper
