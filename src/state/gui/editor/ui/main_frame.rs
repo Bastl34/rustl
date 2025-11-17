@@ -4,7 +4,7 @@ use std::mem::swap;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
 use crate::rendering::instance;
-use crate::state::gui::editor::helper::get_pointer_world_position;
+use crate::state::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::state::gui::editor::ui::console::create_console_section;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::state::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
@@ -85,9 +85,9 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                     ui.spinner();
                 }
 
-                if let Some(pointer_pos) =  get_pointer_world_position(state)
+                if let Some((object_name, pointer_pos)) =  get_object_and_pointer_world_position(state)
                 {
-                    ui.label(RichText::new(format!("x: {:.2}, y: {:.2}, z: {:.2}", pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
+                    ui.label(RichText::new(format!("{} | x: {:.2}, y: {:.2}, z: {:.2}", object_name, pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
                 }
 
                 let (_scene, node, instance_id) = editor_state.get_selected_node(state);

@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{State, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast_mut, console_debug, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use super::editor_state::EditorState;
 
@@ -144,7 +144,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
     None
 }
 
-pub fn get_pointer_world_position(state: &State) -> Option<Point3<f32>>
+pub fn get_object_and_pointer_world_position(state: &State) -> Option<(String, Point3<f32>)>
 {
     let pointer_pos = state.io.input_manager.get_pointer_input().pos;
 
@@ -152,7 +152,7 @@ pub fn get_pointer_world_position(state: &State) -> Option<Point3<f32>>
     {
         if let Some((_scene, pick_res)) = pick(state, pointer_pos, true, false, false, None)
         {
-            return Some(pick_res.point);
+            return Some((pick_res.node.read().unwrap().name.clone(), pick_res.point));
         }
     }
 
