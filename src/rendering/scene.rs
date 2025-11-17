@@ -1343,7 +1343,7 @@ impl Scene
                         let samples_passed = u64::from_ne_bytes(data_chunk.try_into().unwrap());
                         if samples_passed > 0
                         {
-                            console_debug!("object visible: {} samples passed {}", rendered_objects[i].node.name, samples_passed);
+                            // console_debug!("object visible: {} samples passed {}", rendered_objects[i].node.name, samples_passed);
                             visible_nodes.push(rendered_objects[i].clone());
                         }
                         else

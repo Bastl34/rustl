@@ -320,6 +320,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
 
     let mut move_grid_y_to = None;
 
+    // move grid to selected node bounding box top
     if state.io.input_manager.keyboard.is_pressed(Key::Numpad8)
     {
         if let (Some(_), Some(node), instance_id) = editor_state.get_selected_node(state)
@@ -331,6 +332,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             }
         }
     }
+    // move grid to selected node bounding box bottom
     else if state.io.input_manager.keyboard.is_pressed(Key::Numpad2)
     {
         if let (Some(_), Some(node), instance_id) = editor_state.get_selected_node(state)
@@ -342,6 +344,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             }
         }
     }
+    // move grid back to 0 (ground level)
     else if state.io.input_manager.keyboard.is_pressed(Key::Numpad0)
     {
         move_grid_y_to = Some(0.0);
