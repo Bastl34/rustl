@@ -2,7 +2,7 @@
 
 use wgpu::{BindGroupLayout, BindGroup};
 
-use crate::{render_item_impl_default, rendering::{bind_groups::uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer, texture::Texture, wgpu::WGpu}, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::{texture::Texture, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 pub struct DepthExportBindGroup
 {
@@ -19,7 +19,7 @@ impl DepthExportBindGroup
 {
     pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
-        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             label: Some("depth_export_binding_group_layout"),
             entries:
@@ -47,9 +47,7 @@ impl DepthExportBindGroup
                     count: None,
                 },
             ],
-        });
-
-        bind_group_layout
+        })
     }
 
     pub fn new(wgpu: &mut WGpu, name: &str, depth_texture: &Texture) -> DepthExportBindGroup

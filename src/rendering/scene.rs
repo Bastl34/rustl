@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, single_binding_group::SingleBindingBindGroup}, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, single_binding_group::SingleBindingBindGroup}, compute_pipeline::ComputePipeline, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::CameraData, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -51,7 +51,7 @@ impl SceneUniform
 }
 
 #[derive(EnumCount)]
-pub enum PipelineType
+pub enum RenderPipelineType
 {
     Depth = 0,
     DepthNoCompare,
@@ -62,9 +62,16 @@ pub enum PipelineType
     ColorNoWrite,
     ColorNoWriteNoCompare,
 
+    // hzb,
     DepthExport,
 
     //OcclusionCulling,
+}
+
+#[derive(EnumCount)]
+pub enum ComputePipelineType
+{
+    HzbDownsample = 0,
 }
 
 pub struct Scene
@@ -76,13 +83,15 @@ pub struct Scene
 
     // occlusion_culling_shader: String,
     depth_export_shader: String,
+    hzb_downsample_shader: String,
 
     samples: u32,
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
 
-    pipelines: Vec<Pipeline>,
+    render_pipelines: Vec<Pipeline>,
+    compute_pipelines: Vec<ComputePipeline>,
 
     buffer: wgpu::Buffer,
     // occlusion_query_buffer: wgpu::Buffer,
@@ -93,6 +102,7 @@ pub struct Scene
     hzb_texture: Texture,
 
     depth_export_bind_group: DepthExportBindGroup,
+    hzb_downsample_bind_group: HZBDownsampleBindGroup,
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
@@ -113,6 +123,7 @@ impl Scene
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
         //let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
         let depth_export_shader = resources::load_string("shader/depth_export.wgsl").unwrap();
+        let hzb_downsample_shader = resources::load_string("shader/compute/hzb_downsample.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
@@ -140,8 +151,10 @@ impl Scene
 
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
+        let hzb_texture = Texture::new_hzb_texture(wgpu);
 
-        let depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &depth_pass_buffer_texture);
+        let depth_export_bind_group = DepthExportBindGroup::new(wgpu, "depth export", &depth_pass_buffer_texture);
+        let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
 
         let mut render_scene = Self
         {
@@ -151,25 +164,26 @@ impl Scene
             depth_shader,
             // occlusion_culling_shader,
             depth_export_shader,
+            hzb_downsample_shader,
 
             samples,
             distance_sorting: true,
             frustum_culling: true,
             occlusion_culling: true,
 
-            pipelines: vec![],
+            render_pipelines: vec![],
+            compute_pipelines: vec![],
 
             buffer: create_empty_buffer(wgpu),
             // occlusion_query_buffer: occlusion_query_result_buffer,
             // occlusion_query_buffer_staging: occlusion_query_result_buffer_staging,
 
             depth_buffer_texture,
-
             depth_pass_buffer_texture,
-
-            hzb_texture: Texture::new_hzb_texture(wgpu),
+            hzb_texture,
 
             depth_export_bind_group,
+            hzb_downsample_bind_group,
 
             empty_skeleton,
             empty_morph_target,
@@ -247,19 +261,19 @@ impl Scene
         ];
 
         // ********** depth pass **********
-        if !re_create || self.pipelines.len() < PipelineType::COUNT
+        if !re_create || self.render_pipelines.len() < RenderPipelineType::COUNT
         {
-            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1));
-            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1));
-            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1));
-            self.pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1));
         }
         else
         {
-            self.pipelines.get_mut(PipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, 1);
-            self.pipelines.get_mut(PipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, 1);
-            self.pipelines.get_mut(PipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, 1);
-            self.pipelines.get_mut(PipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, 1);
+            self.render_pipelines.get_mut(RenderPipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, 1);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, 1);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, 1);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, 1);
         }
 
         // ********** color pass **********
@@ -268,17 +282,17 @@ impl Scene
 
         if !re_create
         {
-            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples));
-            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples));
-            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples));
-            self.pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples));
         }
         else
         {
-            self.pipelines.get_mut(PipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, self.samples);
-            self.pipelines.get_mut(PipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, self.samples);
-            self.pipelines.get_mut(PipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, self.samples);
-            self.pipelines.get_mut(PipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
+            self.render_pipelines.get_mut(RenderPipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, self.samples);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, self.samples);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, self.samples);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
         }
 
 
@@ -318,11 +332,26 @@ impl Scene
 
         if !re_create
         {
-            self.pipelines.push(Pipeline::new_depth_export(wgpu, "depth export", &self.depth_export_shader, &bind_group_layouts));
+            self.render_pipelines.push(Pipeline::new_depth_export(wgpu, "depth export", &self.depth_export_shader, &bind_group_layouts));
         }
         else
         {
-            self.pipelines.get_mut(PipelineType::DepthExport as usize).unwrap().re_create_depth_export(wgpu, &bind_group_layouts);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthExport as usize).unwrap().re_create_depth_export(wgpu, &bind_group_layouts);
+        }
+
+        // ********** downsample pass (for occlusion culling - hzb) **********
+
+        let hzb_downsample_bind_layout = HZBDownsampleBindGroup::bind_layout(wgpu);
+
+        let bind_group_layouts = [ &hzb_downsample_bind_layout ];
+
+        if !re_create
+        {
+            self.compute_pipelines.push(ComputePipeline::new_hzb_downsample_compute(wgpu, "hzb downsample", &self.hzb_downsample_shader, &bind_group_layouts));
+        }
+        else
+        {
+            self.compute_pipelines.get_mut(ComputePipelineType::HzbDownsample as usize).unwrap().re_create_hzb_downsample_compute(wgpu, &bind_group_layouts);
         }
 
     }
@@ -1283,49 +1312,63 @@ impl Scene
 
     pub fn create_hzb(&mut self, wgpu: &mut WGpu, encoder: &mut CommandEncoder)
     {
-        /*
         let config = wgpu.surface_config();
 
-        // copy depth buffer into r32 texture
-        encoder.copy_texture_to_texture
-        (
-            self.depth_pass_buffer_texture.get_texture().as_image_copy(),
-            self.hzb_texture.get_texture().as_image_copy(),
-            wgpu::Extent3d
-            {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        */
-
         // *********** depth export pass **********
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
-            label: Some("Depth Export Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
-                view: &self.hzb_texture.get_view(),
-                resolve_target: None,
-                ops: wgpu::Operations
+                label: Some("Depth Export Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment
                 {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
+                    view: &self.hzb_texture.get_view(),
+                    resolve_target: None,
+                    ops: wgpu::Operations
+                    {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
 
-        let pipeline = self.pipelines[PipelineType::DepthExport as usize].get();
+            let pipeline = self.render_pipelines[RenderPipelineType::DepthExport as usize].get();
 
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &self.depth_export_bind_group.bind_group, &[]);
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &self.depth_export_bind_group.bind_group, &[]);
 
-        pass.draw(0..3, 0..1); // fullscreen triangle
+            pass.draw(0..3, 0..1); // fullscreen triangle
+        }
+
+
+        // ************ generate HZB mipmaps **********
+
+        let pipeline = self.compute_pipelines[ComputePipelineType::HzbDownsample as usize].get();
+
+        let workgroup_size: u32 = 8;
+
+        for (level, bg) in self.hzb_downsample_bind_group.bind_groups.iter().enumerate()
+        {
+            let dst_width  = (config.width  >> (level + 1)).max(1);
+            let dst_height = (config.height >> (level + 1)).max(1);
+
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
+            {
+                label: Some("HZB Downsample"),
+                timestamp_writes: None,
+            });
+
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, bg, &[]);
+
+            let wg_x = (dst_width  + (workgroup_size - 1)) / workgroup_size;
+            let wg_y = (dst_height + (workgroup_size - 1)) / workgroup_size;
+
+            pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
     }
 
     /*
@@ -1634,44 +1677,44 @@ impl Scene
                         {
                             if color_pipeline
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::Color as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Color as usize].get());
                             }
                             else
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::Depth as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Depth as usize].get());
                             }
                         }
                         else if !node.settings.depth_test && node.settings.depth_write
                         {
                             if color_pipeline
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::ColorNoCompare as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoCompare as usize].get());
                             }
                             else
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::DepthNoCompare as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoCompare as usize].get());
                             }
                         }
                         else if node.settings.depth_test && !node.settings.depth_write
                         {
                             if color_pipeline
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWrite as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWrite as usize].get());
                             }
                             else
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWrite as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWrite as usize].get());
                             }
                         }
                         else
                         {
                             if color_pipeline
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::ColorNoWriteNoCompare as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWriteNoCompare as usize].get());
                             }
                             else
                             {
-                                pass.set_pipeline(&self.pipelines[PipelineType::DepthNoWriteNoCompare as usize].get());
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWriteNoCompare as usize].get());
                             }
                         }
 

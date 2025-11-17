@@ -21,7 +21,7 @@ impl SkeletonMorphTargetBindGroup
     {
         let morph_layout_entry = MorphTarget::get_bind_group_layout_entry(2);
 
-        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
             &[
@@ -35,9 +35,7 @@ impl SkeletonMorphTargetBindGroup
                 morph_layout_entry
             ],
             label: Some("skeleton_morph_target_bind_group_layout"),
-        });
-
-        bind_group_layout
+        })
     }
 
     pub fn new(wgpu: &mut WGpu, name: &str, skeleton_buffer: &SkeletonBuffer, morph_target: &MorphTarget) -> SkeletonMorphTargetBindGroup

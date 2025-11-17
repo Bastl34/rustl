@@ -19,7 +19,7 @@ impl LightCamSceneBindGroup
 {
     pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
-        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
             &[
@@ -29,9 +29,7 @@ impl LightCamSceneBindGroup
                 uniform::uniform_bind_group_layout_entry(3, true, true),
             ],
             label: Some("light_cam_scene_bind_group_layout"),
-        });
-
-        bind_group_layout
+        })
     }
 
     pub fn new(wgpu: &mut WGpu, name: &str, cam_buffer: &CameraBuffer, light_buffer: &LightBuffer, scene_buffer: &Scene) -> LightCamSceneBindGroup

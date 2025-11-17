@@ -132,6 +132,14 @@ impl WGpu
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
         state.rendering_adapter.storage_buffer_array_support = supports_storage_resources;
 
+        /* TODO: store and use as occlusion culling feature to enable/disable it
+         ----> STORAGE_READ_ONLY | STORAGE_WRITE_ONLY | STORAGE_READ_WRITE
+        console_log!(" ********** R32Float **********");
+        let features = adapter.get_texture_format_features(wgpu::TextureFormat::R32Float);
+        console_log!("{:?}", features.flags);
+        console_log!("{:?}", features.allowed_usages);
+         */
+
         // apply adapter infos
         state.rendering_adapter.name = adapter_info.name.clone();
         state.rendering_adapter.driver = adapter_info.driver.clone();

@@ -3,6 +3,7 @@ mod rendering
     pub(crate) mod wgpu;
     pub(crate) mod egui;
     pub(crate) mod pipeline;
+    pub(crate) mod compute_pipeline;
     pub(crate) mod vertex_buffer;
     pub(crate) mod instance;
     pub(crate) mod texture;
@@ -23,6 +24,7 @@ mod rendering
         pub(crate) mod skeleton_morph_target;
         pub(crate) mod single_binding_group;
         pub(crate) mod depth_export;
+        pub(crate) mod hzb_downsample;
     }
 
     pub(crate) mod helper

@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Sampler};
+use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
-use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::material::TextureState}};
+use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
@@ -28,7 +28,7 @@ pub struct Texture
     is_depth_texture: bool,
 
     texture: wgpu::Texture,
-    view: wgpu::TextureView,
+    views: Vec<wgpu::TextureView>,
 }
 
 impl RenderItem for Texture
@@ -155,7 +155,7 @@ impl Texture
             is_depth_texture: false,
 
             texture: texture,
-            view: texture_view,
+            views: vec![texture_view],
             //sampler: sampler
         }
     }
@@ -215,7 +215,7 @@ impl Texture
             is_depth_texture: false,
 
             texture: texture,
-            view: texture_view,
+            views: vec![texture_view],
             //sampler: sampler
         }
     }
@@ -260,7 +260,7 @@ impl Texture
             is_depth_texture: true,
 
             texture,
-            view
+            views: vec![view]
         }
     }
 
@@ -286,18 +286,20 @@ impl Texture
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::R32_FLOAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
             view_formats: &[Self::R32_FLOAT],
         };
         let texture = device.create_texture(&desc);
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor
+        let views: Vec<wgpu::TextureView> = (0..mip_count).map(|mip| texture.create_view(&wgpu::TextureViewDescriptor
         {
-            base_mip_level: 0,
+            label: Some("HZB Mip View"),
+            format: Some(wgpu::TextureFormat::R32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            base_mip_level: mip,
             mip_level_count: Some(1),
             ..Default::default()
-        });
-
+        })).collect();
 
         Self
         {
@@ -310,7 +312,7 @@ impl Texture
             is_depth_texture: false,
 
             texture,
-            view
+            views
         }
     }
 
@@ -326,108 +328,6 @@ impl Texture
         }
     }
 
-    /*
-    pub fn create_default_sampler(wgpu: &mut WGpu) -> Sampler
-    {
-        wgpu.device().create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        })
-    }
-    */
-
-    /*
-    pub fn create_depth_sampler(wgpu: &mut WGpu) -> Sampler
-    {
-        wgpu.device().create_sampler
-        (
-            &wgpu::SamplerDescriptor
-            {
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                compare: Some(wgpu::CompareFunction::LessEqual),
-                ..Default::default()
-            }
-        )
-    }
-    */
-
-    /*
-    pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState) -> Sampler
-    {
-        let address_mode_u;
-        match texture_state.sampler.address_mode_u
-        {
-            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_u = wgpu::AddressMode::ClampToEdge,
-            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_u = wgpu::AddressMode::Repeat,
-            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_u = wgpu::AddressMode::MirrorRepeat,
-            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_u = wgpu::AddressMode::ClampToBorder,
-        }
-
-        let address_mode_v;
-        match texture_state.sampler.address_mode_v
-        {
-            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_v = wgpu::AddressMode::ClampToEdge,
-            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_v = wgpu::AddressMode::Repeat,
-            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_v = wgpu::AddressMode::MirrorRepeat,
-            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_v = wgpu::AddressMode::ClampToBorder,
-        }
-
-        let address_mode_w;
-        match texture_state.sampler.address_mode_w
-        {
-            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_w = wgpu::AddressMode::ClampToEdge,
-            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_w = wgpu::AddressMode::Repeat,
-            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_w = wgpu::AddressMode::MirrorRepeat,
-            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
-        }
-
-        let mag_filter;
-        match texture_state.sampler.mag_filter
-        {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => mag_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => mag_filter = wgpu::FilterMode::Linear,
-        }
-
-        let min_filter;
-        match texture_state.sampler.min_filter
-        {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => min_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => min_filter = wgpu::FilterMode::Linear,
-        }
-
-        let mipmap_filter;
-        match texture_state.sampler.mipmap_filter
-        {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => mipmap_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => mipmap_filter = wgpu::FilterMode::Linear,
-        }
-
-        let sampler = wgpu.device().create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: address_mode_u,
-            address_mode_v: address_mode_v,
-            address_mode_w: address_mode_w,
-            mag_filter: mag_filter,
-            min_filter: min_filter,
-            mipmap_filter: mipmap_filter,
-            ..Default::default()
-        });
-
-        sampler
-    }
-    */
-
     pub fn get_texture(&self) -> &wgpu::Texture
     {
         &self.texture
@@ -435,7 +335,12 @@ impl Texture
 
     pub fn get_view(&self) -> &wgpu::TextureView
     {
-        &self.view
+        &self.views[0]
+    }
+
+    pub fn get_views(&self) -> &Vec<wgpu::TextureView>
+    {
+        &self.views
     }
 
     pub fn get_bind_group_layout_entries(&self, index_start: u32) -> [BindGroupLayoutEntry; 2]
@@ -558,7 +463,7 @@ impl Texture
                     wgpu::BindGroupEntry
                     {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&self.view), // <- multisample view
+                        resource: wgpu::BindingResource::TextureView(&self.views[0]), // <- multisample view
                     },
                 ],
             });

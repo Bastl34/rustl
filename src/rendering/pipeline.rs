@@ -381,5 +381,4 @@ impl Pipeline
 
         self.create_depth_export(wgpu, bind_group_layouts);
     }
-
 }
