@@ -112,13 +112,19 @@ impl FrustumPlanes
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Viewport
+{
+    pub x: f32,      // 0.0-1.0
+    pub y: f32,      // 0.0-1.0
+    pub width: f32,  // 0.0-1.0
+    pub height: f32, // 0.0-1.0
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct CameraData
 {
-    pub viewport_x: f32,    // 0.0-1.0
-    pub viewport_y: f32, // 0.0-1.0
-    pub viewport_width: f32, // 0.0-1.0
-    pub viewport_height: f32, // 0.0-1.0
+    viewport: Viewport,
 
     pub resolution_aspect_ratio: f32,
 
@@ -158,6 +164,14 @@ pub struct CameraData
 
     #[serde(skip)]
     pub frustum_planes: FrustumPlanes,
+}
+
+impl CameraData
+{
+    pub fn get_viewport(&self) -> Viewport
+    {
+        self.viewport.clone()
+    }
 }
 
 
@@ -231,11 +245,14 @@ impl Camera
 
             data: ChangeTracker::new(CameraData
             {
-                viewport_x: 0.0,
-                viewport_y: 0.0,
-                viewport_width: 1.0,
-                viewport_height: 1.0,
 
+                viewport: Viewport
+                {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 1.0,
+                },
                 resolution_aspect_ratio: 1.0,
 
                 resolution_width: 0,
@@ -325,10 +342,10 @@ impl Camera
     {
         let data = self.data.get_mut();
 
-        data.viewport_x = viewport_x;
-        data.viewport_y = viewport_y;
-        data.viewport_width = viewport_width;
-        data.viewport_height = viewport_height;
+        data.viewport.x = viewport_x;
+        data.viewport.y = viewport_y;
+        data.viewport.width = viewport_width;
+        data.viewport.height = viewport_height;
 
         data.resolution_width = resolution_width;
         data.resolution_height = resolution_height;
@@ -375,6 +392,16 @@ impl Camera
         data.resolution_height = resolution_height;
 
         data.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
+    }
+
+    pub fn update_viewport(&mut self, viewport_x: f32, viewport_y: f32, viewport_width: f32, viewport_height: f32)
+    {
+        let data = self.data.get_mut();
+
+        data.viewport.x = viewport_x;
+        data.viewport.y = viewport_y;
+        data.viewport.width = viewport_width;
+        data.viewport.height = viewport_height;
     }
 
     pub fn init_matrices(&mut self)
@@ -541,11 +568,11 @@ impl Camera
     {
         let data = self.get_data();
 
-        let x0 = data.viewport_x * data.resolution_width as f32;
-        let y0 = data.viewport_y * data.resolution_height as f32;
+        let x0 = data.viewport.x * data.resolution_width as f32;
+        let y0 = data.viewport.y * data.resolution_height as f32;
 
-        let width = data.viewport_width * data.resolution_width as f32;
-        let height = data.viewport_height * data.resolution_height as f32;
+        let width = data.viewport.width * data.resolution_width as f32;
+        let height = data.viewport.height * data.resolution_height as f32;
 
         let x1 = x0 + width;
         let y1 = y0 + height;
@@ -565,11 +592,11 @@ impl Camera
     {
         let data = self.get_data();
 
-        let x_f = point.x as f32 - (data.viewport_x * data.resolution_width as f32);
-        let y_f = point.y as f32 - (data.viewport_y * data.resolution_height as f32);
+        let x_f = point.x as f32 - (data.viewport.x * data.resolution_width as f32);
+        let y_f = point.y as f32 - (data.viewport.y * data.resolution_height as f32);
 
-        let w = data.viewport_width as f32 * data.resolution_width as f32;
-        let h = data.viewport_height as f32 * data.resolution_height as f32;
+        let w = data.viewport.width as f32 * data.resolution_width as f32;
+        let h = data.viewport.height as f32 * data.resolution_height as f32;
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
@@ -589,11 +616,11 @@ impl Camera
     {
         let data = self.get_data();
 
-        let x_f = point.x as f32 - (data.viewport_x * data.resolution_width as f32);
-        let y_f = point.y as f32 - (data.viewport_y * data.resolution_height as f32);
+        let x_f = point.x as f32 - (data.viewport.x * data.resolution_width as f32);
+        let y_f = point.y as f32 - (data.viewport.y * data.resolution_height as f32);
 
-        let w = data.viewport_width as f32 * data.resolution_width as f32;
-        let h = data.viewport_height as f32 * data.resolution_height as f32;
+        let w = data.viewport.width as f32 * data.resolution_width as f32;
+        let h = data.viewport.height as f32 * data.resolution_height as f32;
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
@@ -620,14 +647,14 @@ impl Camera
     {
         let data = self.get_data();
 
-        let w = data.viewport_width as f32 * data.resolution_width as f32;
-        let h = data.viewport_height as f32 * data.resolution_height as f32;
+        let w = data.viewport.width as f32 * data.resolution_width as f32;
+        let h = data.viewport.height as f32 * data.resolution_height as f32;
 
         let camera_point = data.view.transform_point(&point);
         let clip_space_point = data.projection.transform_point(&camera_point);
 
-        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32 + (data.viewport_x * data.resolution_width as f32);
-        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32 + (data.viewport_y * data.resolution_height as f32);
+        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32 + (data.viewport.x * data.resolution_width as f32);
+        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32 + (data.viewport.y * data.resolution_height as f32);
 
         // reduce by 0.5 because the point was the center of the pixel
         Point2::new(screen_x - 0.5, screen_y - 0.5)
@@ -687,10 +714,10 @@ impl Camera
         {
             let data = self.data.get_ref();
 
-            viewport_x = data.viewport_x;
-            viewport_y = data.viewport_y;
-            viewport_width = data.viewport_width;
-            viewport_height = data.viewport_height;
+            viewport_x = data.viewport.x;
+            viewport_y = data.viewport.y;
+            viewport_width = data.viewport.width;
+            viewport_height = data.viewport.height;
 
             fovy = data.fovy.to_degrees();
 
@@ -812,10 +839,10 @@ impl Camera
         {
             let data = self.get_data_mut().get_mut();
 
-            data.viewport_x = viewport_x;
-            data.viewport_y = viewport_y;
-            data.viewport_width = viewport_width;
-            data.viewport_height = viewport_height;
+            data.viewport.x = viewport_x;
+            data.viewport.y = viewport_y;
+            data.viewport.width = viewport_width;
+            data.viewport.height = viewport_height;
             data.fovy = fovy.to_radians();
 
             data.eye_pos = eye_pos;
@@ -856,10 +883,10 @@ impl Camera
         console_log!("name: {:?}", self.name);
         console_log!("enabled: {:?}", self.enabled);
 
-        console_log!("viewport x: {:?}", data.viewport_x);
-        console_log!("viewport y: {:?}", data.viewport_y);
-        console_log!("viewport width: {:?}", data.viewport_width);
-        console_log!("viewport height: {:?}", data.viewport_height);
+        console_log!("viewport x: {:?}", data.viewport.x);
+        console_log!("viewport y: {:?}", data.viewport.y);
+        console_log!("viewport width: {:?}", data.viewport.width);
+        console_log!("viewport height: {:?}", data.viewport.height);
 
         console_log!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
 
@@ -884,6 +911,6 @@ impl Camera
     {
         let data = self.data.get_ref();
 
-        console_log!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
+        console_log!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport.x, data.viewport.y, data.viewport.width, data.viewport.height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
     }
 }

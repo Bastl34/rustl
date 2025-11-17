@@ -1556,11 +1556,13 @@ impl Scene
             occlusion_query_set: None,
         });
 
-        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
-        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let viewport = cam_data.get_viewport();
 
-        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
-        let y = (1.0 - cam_data.viewport_y - cam_data.viewport_height) * cam_data.resolution_height as f32;
+        let x = viewport.x * cam_data.resolution_width as f32;
+        let width = viewport.width * cam_data.resolution_width as f32;
+
+        let height = viewport.height * cam_data.resolution_height as f32;
+        let y = (1.0 - viewport.y - viewport.height) * cam_data.resolution_height as f32;
 
         // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
@@ -1618,11 +1620,13 @@ impl Scene
             occlusion_query_set: None,
         });
 
-        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
-        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
+        let viewport = cam_data.get_viewport();
 
-        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
-        let y = (1.0 - cam_data.viewport_y - cam_data.viewport_height) * cam_data.resolution_height as f32;
+        let x = viewport.x * cam_data.resolution_width as f32;
+        let width = viewport.width * cam_data.resolution_width as f32;
+
+        let height = viewport.height * cam_data.resolution_height as f32;
+        let y = (1.0 - viewport.y - viewport.height) * cam_data.resolution_height as f32;
 
         // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
