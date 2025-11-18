@@ -67,7 +67,7 @@ pub struct Node
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
     pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
-    pub occlusion_render_item: RenderItemOption,
+    // pub occlusion_render_item: RenderItemOption,
 
     delete_later_request: bool,
 }
@@ -256,7 +256,7 @@ impl Node
             instance_render_item: None,
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
-            occlusion_render_item: None,
+            // occlusion_render_item: None,
 
             delete_later_request: false
         }

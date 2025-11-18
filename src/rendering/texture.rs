@@ -3,7 +3,7 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
-use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
+use crate::{console_debug, render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
@@ -264,17 +264,16 @@ impl Texture
         }
     }
 
-    pub fn new_hzb_texture(wgpu: &mut WGpu) -> Texture
+    pub fn new_hzb_texture(wgpu: &mut WGpu, width: u32, height: u32) -> Texture
     {
         let device = wgpu.device();
-        let config = wgpu.surface_config();
 
-        let mip_count = (config.width.max(config.height) as f32).log2().floor() as u32 + 1;
+        let mip_count = (width.max(height) as f32).log2().floor() as u32 + 1;
 
         let size = wgpu::Extent3d
         {
-            width: config.width,
-            height: config.height,
+            width: width,
+            height: height,
             depth_or_array_layers: 1,
         };
 
@@ -305,8 +304,8 @@ impl Texture
         {
             name: "HZB texture".to_string(),
 
-            width: config.width,
-            height: config.height,
+            width: width,
+            height: height,
 
             format: TextureFormat::R32Float,
             is_depth_texture: false,
@@ -400,7 +399,7 @@ impl Texture
         ]
     }
 
-    pub fn to_image(&self, wgpu: &mut WGpu) -> DynamicImage
+    pub fn to_image(&self, wgpu: &mut WGpu, mip_level: Option<u32>) -> DynamicImage
     {
         // https://sotrh.github.io/learn-wgpu/showcase/gifs/#how-do-we-make-the-frames
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/tests/write_texture.rs
@@ -539,8 +538,16 @@ impl Texture
             src_texture = &resolve_texture;
         }
 
+        let original_width = self.width;
+        let original_height = self.height;
+        let mip_level = mip_level.unwrap_or(0);
+
+        // Berechnen der Dimensionen für das spezifische Mip-Level
+        let mip_width = (original_width >> mip_level).max(1);
+        let mip_height = (original_height >> mip_level).max(1);
+
         // ********** create texture buffer **********
-        let buffer_dimensions = BufferDimensions::new(self.width as usize, self.height as usize);
+        let buffer_dimensions = BufferDimensions::new(mip_width as usize, mip_height as usize);
 
         let buffer_desc = wgpu::BufferDescriptor
         {
@@ -559,7 +566,7 @@ impl Texture
             wgpu::TexelCopyTextureInfo
             {
                 texture: src_texture,
-                mip_level: 0,
+                mip_level: mip_level,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
@@ -570,13 +577,13 @@ impl Texture
                 {
                     offset: 0,
                     bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),
-                    rows_per_image: Some(self.height),
+                    rows_per_image: Some(mip_height),
                 }
             },
             wgpu::Extent3d
             {
-                width: self.width,
-                height: self.height,
+                width: mip_width,
+                height: mip_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -594,6 +601,6 @@ impl Texture
         drop(padded_data);
         output_buffer.unmap();
 
-        DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(self.width, self.height, data).unwrap())
+        DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(mip_width, mip_height, data).unwrap())
     }
 }

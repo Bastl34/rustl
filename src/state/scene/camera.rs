@@ -227,6 +227,12 @@ pub struct Camera
 
     #[serde(skip, default)]
     pub hzb_downsample_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub visibility_buffer_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub occlusion_bind_group_render_item: RenderItemOption,
 }
 
 impl Default for Camera
@@ -303,6 +309,8 @@ impl Camera
             bind_group_render_item: None,
             hzb_texture_render_item: None,
             hzb_downsample_bind_group_render_item: None,
+            visibility_buffer_render_item: None,
+            occlusion_bind_group_render_item: None,
         }
     }
 
@@ -666,6 +674,18 @@ impl Camera
 
         // reduce by 0.5 because the point was the center of the pixel
         Point2::new(screen_x - 0.5, screen_y - 0.5)
+    }
+
+    pub fn get_viewport_width_in_px(&self) -> u32
+    {
+        let data = self.get_data();
+        (data.viewport.width * data.resolution_width as f32).ceil() as u32
+    }
+
+    pub fn get_viewport_height_in_px(&self) -> u32
+    {
+        let data = self.get_data();
+        (data.viewport.height * data.resolution_height as f32).ceil() as u32
     }
 
     pub fn get_left_right_ear_positions(&self) -> (Point3::<f32>, Point3<f32>)

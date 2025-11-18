@@ -14,7 +14,8 @@ mod rendering
     pub(crate) mod material;
     pub(crate) mod skeleton;
     pub(crate) mod morph_target;
-    pub(crate) mod occlusion_culling;
+    pub(crate) mod bounding_boxes;
+    pub(crate) mod visibility;
 
     pub(crate) mod bind_groups
     {
@@ -25,6 +26,7 @@ mod rendering
         pub(crate) mod single_binding_group;
         pub(crate) mod depth_export;
         pub(crate) mod hzb_downsample;
+        pub(crate) mod occlusion;
     }
 
     pub(crate) mod helper

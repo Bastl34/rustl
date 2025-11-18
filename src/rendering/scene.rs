@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, single_binding_group::SingleBindingBindGroup}, compute_pipeline::ComputePipeline, occlusion_culling::OcclusionCullingBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, occlusion::OcclusionBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, visibility::{self, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -22,6 +22,29 @@ pub struct RenderData<'a>
     alpha_index: i64,
     middle: Option<Point3::<f32>>,
     radius: Option<f32>,
+}
+
+#[derive(Copy, Clone)]
+pub struct UpdateResult
+{
+    pub scene_changed: bool,
+    pub nodes_amount: usize,
+    pub bounding_boxes_buffer_recreated: bool,
+    pub instances_updated: bool,
+}
+
+impl UpdateResult
+{
+    pub fn new() -> Self
+    {
+        Self
+        {
+            scene_changed: false,
+            nodes_amount: 0,
+            bounding_boxes_buffer_recreated: false,
+            instances_updated: false,
+        }
+    }
 }
 
 #[repr(C)]
@@ -90,6 +113,8 @@ pub struct Scene
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
 
+    update_result: UpdateResult,
+
     render_pipelines: Vec<Pipeline>,
     compute_pipelines: Vec<ComputePipeline>,
 
@@ -103,6 +128,9 @@ pub struct Scene
 
     depth_export_bind_group: DepthExportBindGroup,
     // hzb_downsample_bind_group: HZBDownsampleBindGroup,
+
+    bounding_boxes_buffer: BoundingBoxesBuffer,
+    // occlusion_bind_group: OcclusionBindGroup,
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
@@ -171,6 +199,8 @@ impl Scene
             frustum_culling: true,
             occlusion_culling: true,
 
+            update_result: UpdateResult::new(),
+
             render_pipelines: vec![],
             compute_pipelines: vec![],
 
@@ -184,6 +214,8 @@ impl Scene
 
             depth_export_bind_group,
             // hzb_downsample_bind_group,
+
+            bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
 
             empty_skeleton,
             empty_morph_target,
@@ -384,7 +416,7 @@ impl Scene
         }
     }
 
-    pub fn update_materials(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
+    pub fn update_materials(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
         let default_env_map = scene.get_data().environment_texture.clone();
 
@@ -401,7 +433,7 @@ impl Scene
                 let render_item: MaterialBuffer = MaterialBuffer::new(wgpu, &material, default_env_map.clone(), None);
                 material.get_base_mut().render_item = Some(Box::new(render_item));
             }
-            else if material_changed || force
+            else if material_changed || self.update_result.scene_changed
             {
                 let mut render_item = material.get_base_mut().render_item.take();
 
@@ -418,12 +450,12 @@ impl Scene
         }
     }
 
-    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, force: bool)
+    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
     {
         // ********** lights: all **********
         let max_lights = scene.get_data().max_lights;
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
-        if all_lights_changed || force
+        if all_lights_changed || self.update_result.scene_changed
         {
             if scene.lights_render_item.is_none()
             {
@@ -458,6 +490,8 @@ impl Scene
         for cam in &mut scene.cameras
         {
             let mut cam_changed = cam.get_data_mut().consume_change();
+            let mut hzb_changed = false;
+            let mut visibility_changed = false;
 
             // create cam render item
             if cam.render_item.is_none()
@@ -485,13 +519,35 @@ impl Scene
             // create/recreate hzb texture
             if cam_changed
             {
-                let hzb_texture = Texture::new_hzb_texture(wgpu);
+                let hzb_texture = Texture::new_hzb_texture(wgpu, cam.get_viewport_width_in_px(), cam.get_viewport_height_in_px());
                 let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
 
                 cam.hzb_texture_render_item = Some(Box::new(hzb_texture));
                 cam.hzb_downsample_bind_group_render_item = Some(Box::new(hzb_downsample_bind_group));
 
-                console_debug!("created/recreated HZB texture for camera {}", cam.name);
+                hzb_changed = true;
+            }
+
+            // create/recreate visibility buffer
+            if cam.visibility_buffer_render_item.is_none()
+            {
+                let visibility_buffer = VisibilityBuffer::new(wgpu, self.update_result.nodes_amount);
+                cam.visibility_buffer_render_item = Some(Box::new(visibility_buffer));
+
+                visibility_changed = true;
+            }
+            // re-create buffer if needed (when nodes amount increased)
+            else
+            {
+                let render_item = get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_mut().unwrap());
+                if render_item.buffer_size < self.update_result.nodes_amount
+                {
+                    let visibility_buffer = VisibilityBuffer::new(wgpu, self.update_result.nodes_amount);
+                    cam.visibility_buffer_render_item = Some(Box::new(visibility_buffer));
+                    visibility_changed = true;
+
+                    console_log!("Re-created visibility buffer for camera {}", cam.name);
+                }
             }
 
             // create cam/light/scene bind group
@@ -504,11 +560,26 @@ impl Scene
 
                 cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
             }
+
+            // create or re-create occlusion bind group
+            if cam.occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_changed || self.update_result.bounding_boxes_buffer_recreated
+            {
+                console_debug!("create/re-create occlusion bind group for camera {}", cam.name);
+
+                let cam_buffer = &get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
+                let visibility_buffer = &get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
+                let hzb_texture = &get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
+
+                let occlusion_bind_group = OcclusionBindGroup::new(wgpu, "occlusion", cam_buffer, visibility_buffer, &self.bounding_boxes_buffer, hzb_texture);
+                cam.occlusion_bind_group_render_item = Some(Box::new(occlusion_bind_group));
+            }
         }
     }
 
     pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>)
     {
+        let mut instance_buffers_updated = false;
+
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
         {
@@ -676,7 +747,6 @@ impl Scene
             }
 
             // ********** instances all **********
-            let mut instance_updated = false;
             let mut all_instances_changed;
             {
                 let node_arc = nodes.get_mut(node_id).unwrap();
@@ -722,9 +792,9 @@ impl Scene
                         let instances = node.instances.get_ref();
                         instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
 
-                        // console_log!(" ============ instances updated {}", &node.name);
+                        // console_debug!(" ============ instances updated {}", &node.name);
 
-                        instance_updated = true;
+                        instance_buffers_updated = true;
                     }
 
                     node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
@@ -776,9 +846,9 @@ impl Scene
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
                             render_item.update_buffer(wgpu, &instance, i);
 
-                            // console_log!(" ============ ONE instance updated {}", &node.name);
+                            // console_debug!(" ============ ONE instance updated {}", &node.name);
 
-                            instance_updated = true;
+                            instance_buffers_updated = true;
                         }
                     }
                 }
@@ -790,34 +860,51 @@ impl Scene
                     swap(&mut render_item, &mut node.instance_render_item);
                 }
             }
+        }
 
-            // ********** occlusion culling buffer **********
-            if instance_updated
+        // ********** bounding box / occlusion culling buffer **********
+        if instance_buffers_updated
+        {
+            let mut buffer_data: Vec<BoundingBox> = Vec::with_capacity(nodes.len());
+
+            for node_id in 0..nodes.len()
             {
+                let node = nodes.get_mut(node_id).unwrap();
+                let node = node.read().unwrap();
+
+                // TODO: optimize - only update if node or instances changed -> case base on node_id
                 let bbox_for_all_instances =
                 {
-                    let node = nodes.get_mut(node_id).unwrap();
-                    let node = node.read().unwrap();
-
                     node.get_bounding_box_for_all_instances_from_cached_transform()
                 };
 
-                let node = nodes.get_mut(node_id).unwrap();
-                let mut node = node.write().unwrap();
-
                 if let Some((min, max)) = bbox_for_all_instances
                 {
-                    let buffer = OcclusionCullingBuffer::new(wgpu, min, max);
-                    node.occlusion_render_item = Some(Box::new(buffer));
-
-                    // console_log!(" ============ OCCLUSION BUFFER updated {}", &node.name);
+                    let buffer = BoundingBox
+                    {
+                        object_id: node.id,
+                        min: [min.x, min.y, min.z, 0.0],
+                        max: [max.x, max.y, max.z, 0.0],
+                    };
+                    buffer_data.push(buffer);
                 }
                 else
                 {
-                    node.occlusion_render_item = None;
+                    let buffer = BoundingBox
+                    {
+                        object_id: node.id,
+                        min: [0.0, 0.0, 0.0, 0.0],
+                        max: [0.0, 0.0, 0.0, 0.0],
+                    };
+                    buffer_data.push(buffer);
                 }
             }
+
+            self.update_result.bounding_boxes_buffer_recreated = self.bounding_boxes_buffer.update(wgpu, &buffer_data);
+            console_debug!("occlusion culling buffer updated");
         }
+
+        self.update_result.instances_updated = instance_buffers_updated;
     }
 
     pub fn consume_changed_morph_targets(node: Arc<RwLock<Box<Node>>>) -> bool
@@ -897,13 +984,17 @@ impl Scene
             };
         }
 
+        self.update_result = UpdateResult::new();
+
         // ********** dynamic items **********
         self.update_textures(wgpu, scene);
 
+        let mut all_nodes = Scene::list_all_child_nodes(&scene.nodes, false);
         let scene_changed = scene.get_data_mut().consume_change();
+        self.update_result.scene_changed = scene_changed;
+        self.update_result.nodes_amount = all_nodes.len();
 
-        self.update_materials(wgpu, scene, scene_changed);
-        self.update_light_cameras(wgpu, scene, scene_changed);
+        self.update_materials(wgpu, scene);
 
         if scene_changed
         {
@@ -916,9 +1007,10 @@ impl Scene
             self.create_pipelines(wgpu, scene, true);
         }
 
-        let mut all_nodes = Scene::list_all_child_nodes(&scene.nodes, false);
         self.update_nodes(wgpu, &mut all_nodes);
         Self::consume_changed_joints(&all_nodes);
+
+        self.update_light_cameras(wgpu, scene);
 
         // ********** save image stuff **********
         if state.save_image
@@ -942,7 +1034,7 @@ impl Scene
                         let render_item = base_tex.render_item.as_ref().unwrap();
                         let render_item = get_render_item::<Texture>(&render_item);
 
-                        let img_data = render_item.to_image(wgpu);
+                        let img_data = render_item.to_image(wgpu, None);
                         img_data.save("data/base_texture.png").unwrap();
                     }
                 }
@@ -955,7 +1047,7 @@ impl Scene
                         let render_item = texture_normal.render_item.as_ref().unwrap();
                         let render_item = get_render_item::<Texture>(&render_item);
 
-                        let img_data = render_item.to_image(wgpu);
+                        let img_data = render_item.to_image(wgpu, None);
                         img_data.save("data/normal_texture.png").unwrap();
                     }
                 }
@@ -966,7 +1058,7 @@ impl Scene
 
         if state.save_depth_pass_image
         {
-            let img_data = self.depth_pass_buffer_texture.to_image(wgpu);
+            let img_data = self.depth_pass_buffer_texture.to_image(wgpu, None);
             img_data.save("data/depth_pass.png").unwrap();
 
             let img_data_gray = float32_to_grayscale(img_data);
@@ -977,13 +1069,34 @@ impl Scene
 
         if state.save_depth_buffer_image
         {
-            let img_data = self.depth_buffer_texture.to_image(wgpu);
+            let img_data = self.depth_buffer_texture.to_image(wgpu, None);
             img_data.save("data/depth_buffer.png").unwrap();
 
             let img_data_gray = float32_to_grayscale(img_data);
             img_data_gray.save("data/depth_buffer_gray.png").unwrap();
 
             state.save_depth_buffer_image = false;
+        }
+
+        if state.save_hzb_image
+        {
+            for cam in &scene.cameras
+            {
+                let hzb_texture = get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
+
+                let mips = hzb_texture.get_texture().mip_level_count();
+
+                for mip in 0..mips
+                {
+                    let img_data = hzb_texture.to_image(wgpu, Some(mip));
+                    img_data.save(format!("data/hzb_scene{}_cam{}_mip{}.png", scene.id, cam.id, mip)).unwrap();
+
+                    let img_data_gray = float32_to_grayscale(img_data);
+                    img_data_gray.save(format!("data/hzb_scene{}_cam{}_mip{}_gray.png", scene.id, cam.id, mip)).unwrap();
+                }
+            }
+
+            state.save_hzb_image = false;
         }
     }
 

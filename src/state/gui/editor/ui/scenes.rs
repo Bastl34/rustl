@@ -211,6 +211,11 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                 state.save_depth_buffer_image = true;
             }
 
+            if ui.button("save hzb image").clicked()
+            {
+                state.save_hzb_image = true;
+            }
+
             if ui.button("save screenshot").clicked()
             {
                 state.save_screenshot = true;

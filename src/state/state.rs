@@ -219,6 +219,7 @@ pub struct State
     pub save_image: bool,
     pub save_depth_pass_image: bool,
     pub save_depth_buffer_image: bool,
+    pub save_hzb_image: bool,
 
     pub save_screenshot: bool,
 
@@ -323,6 +324,7 @@ impl State
             save_image: false,
             save_depth_pass_image: false,
             save_depth_buffer_image: false,
+            save_hzb_image: false,
             save_screenshot: false,
 
             stats: Statistics
