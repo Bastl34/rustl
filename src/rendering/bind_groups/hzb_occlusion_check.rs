@@ -2,26 +2,26 @@
 
 use wgpu::{BindGroupLayout, BindGroup};
 
-use crate::{render_item_impl_default, rendering::{bind_groups::uniform, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, camera::CameraBuffer, light::LightBuffer, scene::Scene, texture::Texture, visibility::{self, VisibilityBuffer}, wgpu::WGpu}, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::{bounding_boxes::BoundingBoxesBuffer, camera::CameraBuffer, hzb_cull_buffer::HZBCullBuffer, texture::Texture, visibility::VisibilityBuffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
-pub struct OcclusionBindGroup
+pub struct HZBOcclusionCheckBindGroup
 {
     pub layout: BindGroupLayout,
     pub bind_group: BindGroup
 }
 
-impl RenderItem for OcclusionBindGroup
+impl RenderItem for HZBOcclusionCheckBindGroup
 {
     render_item_impl_default!();
 }
 
-impl OcclusionBindGroup
+impl HZBOcclusionCheckBindGroup
 {
     pub fn bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
     {
         wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
-            label: Some("Occlusion Culling"),
+            label: Some("HZB Occlusion Check"),
             entries:
             &[
                 wgpu::BindGroupLayoutEntry
@@ -72,11 +72,23 @@ impl OcclusionBindGroup
                     },
                     count: None,
                 },
+                 wgpu::BindGroupLayoutEntry
+                 {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer
+                    {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
 
-    pub fn new(wgpu: &mut WGpu, name: &str, cam_buffer: &CameraBuffer, visibility: &VisibilityBuffer, bounding_boxes: &BoundingBoxesBuffer, hzb_texture: &Texture) -> OcclusionBindGroup
+    pub fn new(wgpu: &mut WGpu, name: &str, cam_buffer: &CameraBuffer, visibility: &VisibilityBuffer, bounding_boxes: &BoundingBoxesBuffer, hzb_cull_buffer: &HZBCullBuffer, hzb_texture: &Texture) -> HZBOcclusionCheckBindGroup
     {
         let bind_group_layout = Self::bind_layout(wgpu);
 
@@ -106,11 +118,16 @@ impl OcclusionBindGroup
                     binding: 3,
                     resource: cam_buffer.get_buffer().as_entire_binding(),
                 },
+                wgpu::BindGroupEntry
+                {
+                    binding: 4,
+                    resource: hzb_cull_buffer.get_buffer().as_entire_binding(),
+                },
             ],
             label: Some(bind_group_name.as_str()),
         });
 
-        OcclusionBindGroup
+        HZBOcclusionCheckBindGroup
         {
             layout: bind_group_layout,
             bind_group

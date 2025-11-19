@@ -1,8 +1,4 @@
-use gltf::buffer;
-use nalgebra::Point3;
-use wgpu::{BindGroup, util::DeviceExt};
-
-use crate::{render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::{helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 const MIN_SIZE: usize = 64 * 1024; // 64k entries
 
@@ -10,10 +6,10 @@ const MIN_SIZE: usize = 64 * 1024; // 64k entries
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BoundingBox
 {
-    pub object_id: u64,
     pub min: [f32; 4],
     pub max: [f32; 4],
-    // pub model_transform: [[f32; 4]; 4],
+    pub object_id: u32, // TODO: check if u32 is enough (internally we use u64)
+    pub _padding: u32,
 }
 
 pub struct BoundingBoxesBuffer
@@ -73,6 +69,7 @@ impl BoundingBoxesBuffer
             object_id: 0,
             min: [0.0, 0.0, 0.0, 0.0],
             max: [0.0, 0.0, 0.0, 0.0],
+            _padding: 0,
         };
 
         for _ in padded_data.len()..new_buffer_size

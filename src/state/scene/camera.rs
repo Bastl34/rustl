@@ -232,7 +232,7 @@ pub struct Camera
     pub visibility_buffer_render_item: RenderItemOption,
 
     #[serde(skip, default)]
-    pub occlusion_bind_group_render_item: RenderItemOption,
+    pub hzb_occlusion_bind_group_render_item: RenderItemOption,
 }
 
 impl Default for Camera
@@ -310,7 +310,7 @@ impl Camera
             hzb_texture_render_item: None,
             hzb_downsample_bind_group_render_item: None,
             visibility_buffer_render_item: None,
-            occlusion_bind_group_render_item: None,
+            hzb_occlusion_bind_group_render_item: None,
         }
     }
 

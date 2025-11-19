@@ -16,6 +16,7 @@ mod rendering
     pub(crate) mod morph_target;
     pub(crate) mod bounding_boxes;
     pub(crate) mod visibility;
+    pub(crate) mod hzb_cull_buffer;
 
     pub(crate) mod bind_groups
     {
@@ -26,7 +27,7 @@ mod rendering
         pub(crate) mod single_binding_group;
         pub(crate) mod depth_export;
         pub(crate) mod hzb_downsample;
-        pub(crate) mod occlusion;
+        pub(crate) mod hzb_occlusion_check;
     }
 
     pub(crate) mod helper

@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, occlusion::OcclusionBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, visibility::{self, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{self, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -95,6 +95,7 @@ pub enum RenderPipelineType
 pub enum ComputePipelineType
 {
     HzbDownsample = 0,
+    HzbOcclusionCheck,
 }
 
 pub struct Scene
@@ -107,6 +108,7 @@ pub struct Scene
     // occlusion_culling_shader: String,
     depth_export_shader: String,
     hzb_downsample_shader: String,
+    hzb_occlusion_check_shader: String,
 
     samples: u32,
     pub distance_sorting: bool,
@@ -132,6 +134,8 @@ pub struct Scene
     bounding_boxes_buffer: BoundingBoxesBuffer,
     // occlusion_bind_group: OcclusionBindGroup,
 
+    hzb_cull_buffer: HZBCullBuffer,
+
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
     empty_skeleton_morph_group: SkeletonMorphTargetBindGroup,
@@ -152,6 +156,7 @@ impl Scene
         //let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
         let depth_export_shader = resources::load_string("shader/depth_export.wgsl").unwrap();
         let hzb_downsample_shader = resources::load_string("shader/compute/hzb_downsample.wgsl").unwrap();
+        let hzb_occlusion_check_shader = resources::load_string("shader/compute/occlusion_hzb_check.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
@@ -193,6 +198,7 @@ impl Scene
             // occlusion_culling_shader,
             depth_export_shader,
             hzb_downsample_shader,
+            hzb_occlusion_check_shader,
 
             samples,
             distance_sorting: true,
@@ -216,6 +222,8 @@ impl Scene
             // hzb_downsample_bind_group,
 
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
+
+            hzb_cull_buffer: HZBCullBuffer::new(wgpu),
 
             empty_skeleton,
             empty_morph_target,
@@ -327,35 +335,6 @@ impl Scene
             self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
         }
 
-
-        // ********** bounding box pass (for occlusion query) **********
-
-        /*
-        Bounding Box Bind Group layout:
-
-        - (0) BBox Data (node)
-        - (1) Lights, Camera, Scene Properties (Tonemapping/HDR/Gamma) (scene)
-        */
-
-        /*
-        let occlusion_culling_bind_layout = SingleBindingBindGroup::bind_layout(wgpu, true, false, true, true);
-
-        let bind_group_layouts =
-        [
-            &occlusion_culling_bind_layout,
-            &light_cam_scene_bind_layout,
-        ];
-
-        if !re_create
-        {
-            self.pipelines.push(Pipeline::new_occlusion_culling(wgpu, "occlusion culling", &self.occlusion_culling_shader, &bind_group_layouts));
-        }
-        else
-        {
-            self.pipelines.get_mut(PipelineType::OcclusionCulling as usize).unwrap().re_create_occlusion_culling(wgpu, &bind_group_layouts);
-        }
-        */
-
         // ********** depth export pass (for occlusion culling - hzb) **********
 
         let depth_export_bind_layout = DepthExportBindGroup::bind_layout(wgpu);
@@ -384,6 +363,21 @@ impl Scene
         else
         {
             self.compute_pipelines.get_mut(ComputePipelineType::HzbDownsample as usize).unwrap().re_create_hzb_downsample_compute(wgpu, &bind_group_layouts);
+        }
+
+        // ********** occlusion check pass (for occlusion culling - hzb) **********
+
+        let hzb_occlusion_check_bind_layout = HZBOcclusionCheckBindGroup::bind_layout(wgpu);
+
+        let bind_group_layouts = [ &hzb_occlusion_check_bind_layout ];
+
+        if !re_create
+        {
+            self.compute_pipelines.push(ComputePipeline::new_hzb_occlusion_check_compute(wgpu, "hzb occlusion check", &self.hzb_occlusion_check_shader, &bind_group_layouts));
+        }
+        else
+        {
+            self.compute_pipelines.get_mut(ComputePipelineType::HzbOcclusionCheck as usize).unwrap().re_create_hzb_occlusion_check_compute(wgpu, &bind_group_layouts);
         }
 
     }
@@ -562,7 +556,7 @@ impl Scene
             }
 
             // create or re-create occlusion bind group
-            if cam.occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_changed || self.update_result.bounding_boxes_buffer_recreated
+            if cam.hzb_occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_changed || self.update_result.bounding_boxes_buffer_recreated
             {
                 console_debug!("create/re-create occlusion bind group for camera {}", cam.name);
 
@@ -570,8 +564,8 @@ impl Scene
                 let visibility_buffer = &get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
                 let hzb_texture = &get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
 
-                let occlusion_bind_group = OcclusionBindGroup::new(wgpu, "occlusion", cam_buffer, visibility_buffer, &self.bounding_boxes_buffer, hzb_texture);
-                cam.occlusion_bind_group_render_item = Some(Box::new(occlusion_bind_group));
+                let hzb_occlusion_bind_group = HZBOcclusionCheckBindGroup::new(wgpu, "occlusion", cam_buffer, visibility_buffer, &self.bounding_boxes_buffer, &self.hzb_cull_buffer, hzb_texture);
+                cam.hzb_occlusion_bind_group_render_item = Some(Box::new(hzb_occlusion_bind_group));
             }
         }
     }
@@ -882,9 +876,10 @@ impl Scene
                 {
                     let buffer = BoundingBox
                     {
-                        object_id: node.id,
+                        object_id: node.id as u32,
                         min: [min.x, min.y, min.z, 0.0],
                         max: [max.x, max.y, max.z, 0.0],
+                        _padding: 0,
                     };
                     buffer_data.push(buffer);
                 }
@@ -892,9 +887,10 @@ impl Scene
                 {
                     let buffer = BoundingBox
                     {
-                        object_id: node.id,
+                        object_id: node.id as u32,
                         min: [0.0, 0.0, 0.0, 0.0],
                         max: [0.0, 0.0, 0.0, 0.0],
+                        _padding: 0,
                     };
                     buffer_data.push(buffer);
                 }
@@ -902,6 +898,15 @@ impl Scene
 
             self.update_result.bounding_boxes_buffer_recreated = self.bounding_boxes_buffer.update(wgpu, &buffer_data);
             console_debug!("occlusion culling buffer updated");
+        }
+
+        // ********** occlusion culling param buffer **********
+        if self.hzb_cull_buffer.num_objects != nodes.len()
+        {
+            self.hzb_cull_buffer.num_objects = nodes.len();
+            self.hzb_cull_buffer.update(wgpu, nodes.len() as u32);
+
+            console_debug!("occlusion culling param buffer updated");
         }
 
         self.update_result.instances_updated = instance_buffers_updated;
@@ -1432,6 +1437,9 @@ impl Scene
             // ********** hzb **********
             draw_calls += self.create_hzb(wgpu, encoder, cam);
 
+            // ********** hzb occlusion culling **********
+            self.hzb_occlusion_culling(wgpu, encoder, cam);
+
             i += 1;
         }
 
@@ -1446,12 +1454,6 @@ impl Scene
         let viewport = cam.get_data().get_viewport();
 
         // in pxels
-        /*
-        let vp_x      = (vp.x      * config.width  as f32) as u32;
-        let vp_y      = (vp.y      * config.height as f32) as u32;
-        let vp_width  = (vp.width  * config.width  as f32) as u32;
-        let vp_height = (vp.height * config.height as f32) as u32;
-        */
         let x = viewport.x * cam.get_data().resolution_width as f32;
         let width = viewport.width * cam.get_data().resolution_width as f32;
 
@@ -1498,7 +1500,7 @@ impl Scene
 
         let workgroup_size: u32 = 8;
 
-        for (level, bg) in hzb_downsample_bind_group.bind_groups.iter().enumerate()
+        for (level, bind_group) in hzb_downsample_bind_group.bind_groups.iter().enumerate()
         {
             let dst_width  = (width  as u32  >> (level + 1)).max(1);
             let dst_height = (height  as u32 >> (level + 1)).max(1);
@@ -1510,7 +1512,7 @@ impl Scene
             });
 
             pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, bg, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
 
             let wg_x = (dst_width  + (workgroup_size - 1)) / workgroup_size;
             let wg_y = (dst_height + (workgroup_size - 1)) / workgroup_size;
@@ -1519,6 +1521,28 @@ impl Scene
         }
 
         draw_calls
+    }
+
+    pub fn hzb_occlusion_culling(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera)
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
+        {
+            label: Some("Occlusion Culling Pass"),
+            timestamp_writes: None,
+        });
+
+        let pipeline = self.compute_pipelines[ComputePipelineType::HzbOcclusionCheck as usize].get();
+
+        let bind_group = get_render_item::<HZBOcclusionCheckBindGroup>(cam.hzb_occlusion_bind_group_render_item.as_ref().unwrap());
+
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group.bind_group, &[]);
+
+        // Workgroup Size wie im Shader
+        let workgroup_size = 64u32;
+        let num_wg = (self.hzb_cull_buffer.num_objects as u32 + workgroup_size - 1) / workgroup_size;
+
+        compute_pass.dispatch_workgroups(num_wg, 1, 1);
     }
 
     /*

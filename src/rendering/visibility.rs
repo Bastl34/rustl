@@ -1,6 +1,5 @@
-use wgpu::{BindGroup, util::DeviceExt};
 
-use crate::{render_item_impl_default, rendering::{bind_groups::single_binding_group::SingleBindingBindGroup, wgpu::WGpu}, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::wgpu::WGpu, state::helper::render_item::RenderItem};
 
 const MIN_SIZE: usize = 64 * 1024; // 64k entries
 
@@ -8,11 +7,9 @@ const MIN_SIZE: usize = 64 * 1024; // 64k entries
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Visibility
 {
-    pub object_id: u64,
+    pub object_id: u32, // TODO: check if 32 is ok (internally we save u64)
     pub visible: u32,
-    pub _padding: u32,
 }
-
 
 pub struct VisibilityBuffer
 {
@@ -38,8 +35,6 @@ impl VisibilityBuffer
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-        //let bind_group = SingleBindingBindGroup::new(wgpu, "occlusion culling", &buffer, true, false, true, true);
 
         Self
         {

@@ -1,3 +1,5 @@
+// TODO DELETE ME (FILE NO LONGER USED)
+
 struct CameraUniform
 {
     view_pos: vec4<f32>,
