@@ -486,6 +486,7 @@ impl Scene
             let mut cam_changed = cam.get_data_mut().consume_change();
             let mut hzb_changed = false;
             let mut visibility_changed = false;
+            let mut cam_buffer_created = false;
 
             // create cam render item
             if cam.render_item.is_none()
@@ -496,7 +497,7 @@ impl Scene
                 let camera_buffer = CameraBuffer::new(wgpu, &cam);
                 cam.render_item = Some(Box::new(camera_buffer));
 
-                cam_changed = true;
+                cam_buffer_created = true;
             }
             else if cam_changed
             {
@@ -511,7 +512,7 @@ impl Scene
             }
 
             // create/recreate hzb texture
-            if cam_changed
+            if cam_buffer_created || cam.hzb_texture_render_item.is_none() || cam.get_viewport_width_in_px() != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).width || cam.get_viewport_height_in_px() != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).height
             {
                 let hzb_texture = Texture::new_hzb_texture(wgpu, cam.get_viewport_width_in_px(), cam.get_viewport_height_in_px());
                 let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
@@ -556,9 +557,9 @@ impl Scene
             }
 
             // create or re-create occlusion bind group
-            if cam.hzb_occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_changed || self.update_result.bounding_boxes_buffer_recreated
+            if cam.hzb_occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_buffer_created || self.update_result.bounding_boxes_buffer_recreated
             {
-                console_debug!("create/re-create occlusion bind group for camera {}", cam.name);
+                console_debug!("create/re-create occlusion bind group for cam {}", cam.name);
 
                 let cam_buffer = &get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
                 let visibility_buffer = &get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
