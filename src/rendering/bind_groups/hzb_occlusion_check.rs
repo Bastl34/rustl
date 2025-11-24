@@ -106,7 +106,7 @@ impl HZBOcclusionCheckBindGroup
                 wgpu::BindGroupEntry
                 {
                     binding: 1,
-                    resource: visibility.get_buffer().as_entire_binding(),
+                    resource: visibility.get_storage_buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry
                 {

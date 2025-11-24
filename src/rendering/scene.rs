@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{self, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{self, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData, Visibility}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -1289,6 +1289,11 @@ impl Scene
             }
         }
 
+        if self.occlusion_culling
+        {
+            self.read_back_visibility_results(wgpu, &scene.cameras);
+        }
+
         let mut draw_calls: u32 = 0;
 
         let mut i = 0;
@@ -1435,15 +1440,17 @@ impl Scene
             }
             draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
 
-            // ********** hzb **********
-            draw_calls += self.create_hzb(wgpu, encoder, cam);
+            if self.occlusion_culling
+            {
+                // ********** hzb **********
+                draw_calls += self.create_hzb(wgpu, encoder, cam);
 
-            // ********** hzb occlusion culling **********
-            self.hzb_occlusion_culling(wgpu, encoder, cam);
+                // ********** hzb occlusion culling **********
+                self.hzb_occlusion_culling(wgpu, encoder, cam);
+            }
 
             i += 1;
         }
-
 
         draw_calls
     }
@@ -1526,24 +1533,76 @@ impl Scene
 
     pub fn hzb_occlusion_culling(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera)
     {
-        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
         {
-            label: Some("Occlusion Culling Pass"),
-            timestamp_writes: None,
-        });
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
+            {
+                label: Some("Occlusion Culling Pass"),
+                timestamp_writes: None,
+            });
 
-        let pipeline = self.compute_pipelines[ComputePipelineType::HzbOcclusionCheck as usize].get();
+            let pipeline = self.compute_pipelines[ComputePipelineType::HzbOcclusionCheck as usize].get();
 
-        let bind_group = get_render_item::<HZBOcclusionCheckBindGroup>(cam.hzb_occlusion_bind_group_render_item.as_ref().unwrap());
+            let bind_group = get_render_item::<HZBOcclusionCheckBindGroup>(cam.hzb_occlusion_bind_group_render_item.as_ref().unwrap());
 
-        compute_pass.set_pipeline(&pipeline);
-        compute_pass.set_bind_group(0, &bind_group.bind_group, &[]);
+            compute_pass.set_pipeline(&pipeline);
+            compute_pass.set_bind_group(0, &bind_group.bind_group, &[]);
 
-        // Workgroup Size wie im Shader
-        let workgroup_size = 64u32;
-        let num_wg = (self.hzb_cull_buffer.num_objects as u32 + workgroup_size - 1) / workgroup_size;
+            // Workgroup size (same as in shader)
+            let workgroup_size = 64u32;
+            let num_wg = (self.hzb_cull_buffer.num_objects as u32 + workgroup_size - 1) / workgroup_size;
 
-        compute_pass.dispatch_workgroups(num_wg, 1, 1);
+            compute_pass.dispatch_workgroups(num_wg, 1, 1);
+        }
+
+        let visibility_buffer = get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
+        visibility_buffer.copy_to_readback_buffer(encoder);
+    }
+
+    pub fn read_back_visibility_results(&mut self, wgpu: &mut WGpu, cameras: &std::vec::Vec<Box<Camera>>)
+    {
+        for cam in cameras
+        {
+            if !cam.enabled { continue; }
+
+            let visibility_buffer = get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
+            let readback_buffer = &visibility_buffer.readback_buffer;
+
+            let num_objects = self.hzb_cull_buffer.num_objects;
+
+            let slice = readback_buffer.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| ());
+
+            if let Ok(_) = wgpu.device().poll(wgpu::PollType::wait_indefinitely())
+            {
+                let data = slice.get_mapped_range();
+
+                let count_in_bytes = num_objects * std::mem::size_of::<Visibility>();
+                let vis_slice = &data[..count_in_bytes];
+
+                let result = bytemuck::cast_slice::<u8, Visibility>(vis_slice).to_vec();
+
+                for res in result.iter()
+                {
+                    /*
+                    if res.object_id as usize >= self.visibility_results.len()
+                    {
+                        continue;
+                    }
+                    self.visibility_results[res.object_id as usize] = res.visible != 0;
+                     */
+
+                    if res.visible > 0
+                    {
+                        console_log!("object id {} visible {}", res.object_id, res.visible);
+                    }
+                }
+
+                //cam.visibility_data_last_frame = result;
+
+                drop(data);
+                readback_buffer.unmap();
+            }
+        }
     }
 
     /*

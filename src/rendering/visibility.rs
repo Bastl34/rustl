@@ -1,19 +1,12 @@
 
-use crate::{render_item_impl_default, rendering::wgpu::WGpu, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::wgpu::WGpu, state::{helper::render_item::RenderItem, scene::camera::Visibility}};
 
 const MIN_SIZE: usize = 64 * 1024; // 64k entries
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Visibility
-{
-    pub object_id: u32, // TODO: check if 32 is ok (internally we save u64)
-    pub visible: u32,
-}
-
 pub struct VisibilityBuffer
 {
-    pub buffer: wgpu::Buffer,
+    pub storage_buffer: wgpu::Buffer,
+    pub readback_buffer: wgpu::Buffer,
     pub buffer_size: usize,
 }
 
@@ -36,15 +29,34 @@ impl VisibilityBuffer
             mapped_at_creation: false,
         });
 
+        let readback_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("visibility readback buffer"),
+            size: (std::mem::size_of::<Visibility>() * buffer_size) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self
         {
-            buffer: visibility_buffer,
+            storage_buffer: visibility_buffer,
+            readback_buffer,
             buffer_size,
         }
     }
 
-    pub fn get_buffer(&self) -> &wgpu::Buffer
+    pub fn get_storage_buffer(&self) -> &wgpu::Buffer
     {
-        &self.buffer
+        &self.storage_buffer
+    }
+
+    pub fn get_readback_buffer(&self) -> &wgpu::Buffer
+    {
+        &self.readback_buffer
+    }
+
+    pub fn copy_to_readback_buffer(&self, encoder: &mut wgpu::CommandEncoder)
+    {
+        encoder.copy_buffer_to_buffer(&self.storage_buffer, 0, &self.readback_buffer, 0, (std::mem::size_of::<Visibility>() * self.buffer_size) as u64);
     }
 }
