@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{self, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData, Visibility}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, single_binding_group::SingleBindingBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{self, Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -43,6 +43,29 @@ impl UpdateResult
             nodes_amount: 0,
             bounding_boxes_buffer_recreated: false,
             instances_updated: false,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RenderResultForCamera
+{
+    pub camera_id: u64,
+    pub objects_visible: Vec<u32>,
+    pub objects_invisible: Vec<u32>,
+    pub draw_calls: u32,
+}
+
+impl RenderResultForCamera
+{
+    pub fn new() -> Self
+    {
+        Self
+        {
+            camera_id: 0,
+            objects_visible: Vec::new(),
+            objects_invisible: Vec::new(),
+            draw_calls: 0,
         }
     }
 }
@@ -1007,7 +1030,7 @@ impl Scene
         self.update_light_cameras(wgpu, scene);
 
         // ********** save image stuff **********
-        if state.save_image
+        if state.debug.save_image
         {
             let node_id = 0;
             let node_arc = scene.nodes.get(node_id).unwrap();
@@ -1047,10 +1070,10 @@ impl Scene
                 }
             }
 
-            state.save_image = false;
+            state.debug.save_image = false;
         }
 
-        if state.save_depth_pass_image
+        if state.debug.save_depth_pass_image
         {
             let img_data = self.depth_pass_buffer_texture.to_image(wgpu, None);
             img_data.save("data/depth_pass.png").unwrap();
@@ -1058,10 +1081,10 @@ impl Scene
             let img_data_gray = float32_to_grayscale(img_data);
             img_data_gray.save("data/depth_pass_gray.png").unwrap();
 
-            state.save_depth_pass_image = false;
+            state.debug.save_depth_pass_image = false;
         }
 
-        if state.save_depth_buffer_image
+        if state.debug.save_depth_buffer_image
         {
             let img_data = self.depth_buffer_texture.to_image(wgpu, None);
             img_data.save("data/depth_buffer.png").unwrap();
@@ -1069,10 +1092,10 @@ impl Scene
             let img_data_gray = float32_to_grayscale(img_data);
             img_data_gray.save("data/depth_buffer_gray.png").unwrap();
 
-            state.save_depth_buffer_image = false;
+            state.debug.save_depth_buffer_image = false;
         }
 
-        if state.save_hzb_image
+        if state.debug.save_hzb_image
         {
             for cam in &scene.cameras
             {
@@ -1090,7 +1113,7 @@ impl Scene
                 }
             }
 
-            state.save_hzb_image = false;
+            state.debug.save_hzb_image = false;
         }
     }
 
@@ -1147,7 +1170,7 @@ impl Scene
         all_nodes
     }
 
-    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> u32
+    pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>) -> Vec<RenderResultForCamera>
     {
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
 
@@ -1162,7 +1185,7 @@ impl Scene
         if scene.get_default_material().is_none()
         {
             console_warning!("default material not found -> please do not delete it");
-            return 0;
+            return vec![];
         }
 
         let default_material_arc = default_material.unwrap();
@@ -1277,17 +1300,30 @@ impl Scene
             }
         }
 
-        if self.occlusion_culling
-        {
-            self.read_back_visibility_results(wgpu, &scene.cameras);
-        }
+        let mut render_results = vec![];
 
-        let mut draw_calls: u32 = 0;
-
-        let mut i = 0;
+        // create render results
         for cam in &scene.cameras
         {
+            if cam.enabled
+            {
+                render_results.push(RenderResultForCamera::new());
+            }
+        }
+
+        // read back visibility results from previous frame
+        if self.occlusion_culling
+        {
+            self.read_back_visibility_results(wgpu, &scene.cameras, &mut render_results);
+        }
+
+        // render for each camera
+        let mut i = 0;
+        for (cam_index, cam) in scene.cameras.iter().enumerate()
+        {
             if !cam.enabled { continue; }
+
+            let render_result = &mut render_results[cam_index];
 
             let cam_data = cam.get_data();
             let cam_pos = cam_data.eye_pos;
@@ -1393,7 +1429,7 @@ impl Scene
                 render_data_before_occlusion.extend(solid_objects.iter().cloned());
                 render_data_before_occlusion.extend(transparent_objects.iter().cloned());
             }
-            draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear);
+            render_result.draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear);
 
 
             // SUBMIT depth pre-pass so it's executed before occlusion queries
@@ -1412,7 +1448,7 @@ impl Scene
                 for (solid_objects, _) in &mut render_groups_frustum_culled
                 {
                     let (occlusion_draw_calls, visible_objects) = self.render_occlusion_query_pass(wgpu, encoder, &solid_objects, cam_data, &bind_group_render_item.bind_group, occlusion_clear);
-                    draw_calls += occlusion_draw_calls;
+                    render_result.draw_calls += occlusion_draw_calls;
                     *solid_objects = visible_objects;
                 }
                 */
@@ -1426,12 +1462,12 @@ impl Scene
                 render_data.extend(solid_objects.iter().cloned());
                 render_data.extend(transparent_objects.iter().cloned());
             }
-            draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
+            render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
 
             if self.occlusion_culling
             {
                 // ********** hzb **********
-                draw_calls += self.create_hzb(wgpu, encoder, cam);
+                render_result.draw_calls += self.create_hzb(wgpu, encoder, cam);
 
                 // ********** hzb occlusion culling **********
                 self.hzb_occlusion_culling(wgpu, encoder, cam);
@@ -1440,7 +1476,7 @@ impl Scene
             i += 1;
         }
 
-        draw_calls
+        render_results
     }
 
     pub fn create_hzb(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera) -> u32
@@ -1546,9 +1582,11 @@ impl Scene
         visibility_buffer.copy_to_readback_buffer(encoder);
     }
 
-    pub fn read_back_visibility_results(&mut self, wgpu: &mut WGpu, cameras: &std::vec::Vec<Box<Camera>>)
+    pub fn read_back_visibility_results(&mut self, wgpu: &mut WGpu, cameras: &std::vec::Vec<Box<Camera>>, render_results: &mut Vec<RenderResultForCamera>)
     {
-        for cam in cameras
+         console_log!("------");
+
+        for (cam_index, cam) in cameras.iter().enumerate()
         {
             if !cam.enabled { continue; }
 
@@ -1584,7 +1622,13 @@ impl Scene
 
                     if res.visible > 0
                     {
+                        render_results[cam_index].objects_visible.push(res.object_id);
                         console_log!("object id {} is VISIBLE", res.object_id);
+                    }
+                    else
+                    {
+                        render_results[cam_index].objects_invisible.push(res.object_id);
+                        // console_log!("object id {} is OCCLUDED", res.object_id);
                     }
                 }
 

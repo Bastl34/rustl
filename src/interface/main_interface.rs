@@ -20,7 +20,8 @@ use crate::input::input_point::PointState;
 use crate::input::keyboard::Modifier;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
-use crate::{console_error, console_log, rendering};
+use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
+use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
 use crate::state::gui::editor::editor::Editor;
@@ -417,7 +418,24 @@ impl MainInterface
                     render_scene.distance_sorting = state.rendering.distance_sorting;
                     render_scene.frustum_culling = state.rendering.frustum_culling;
                     render_scene.occlusion_culling = state.rendering.occlusion_culling;
-                    state.stats.draw_calls += render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+                    let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+
+                    // update visibility info for cameras
+                    for (cam_index, cam) in scene.cameras.iter_mut().enumerate()
+                    {
+                        cam.visible_nodes_last_frame = render_results[cam_index].objects_visible.clone();
+                    }
+
+                    // all draw calls
+                    state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>();
+
+                    // debug highlight visible occlusions
+                    if state.debug.highlight_visible_occlusions
+                    {
+                        let all_highlighted = render_results.iter().flat_map(|r| r.objects_visible.iter()).cloned().collect();
+                        highlight_and_unhighlight_scene_meshes(scene, &all_highlighted);
+                        console_debug!("Highlighted {} visible occluded objects", all_highlighted.len());
+                    }
 
                     scene.render_item = render_item;
                 }
@@ -441,7 +459,7 @@ impl MainInterface
         {
             let state = &mut *(self.context.state.borrow_mut());
 
-            if state.save_screenshot
+            if state.debug.save_screenshot
             {
                 let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_screenshot_render();
                 let mut encoder = self.context.wgpu.create_command_encoder();
@@ -464,7 +482,7 @@ impl MainInterface
                 let img_data = self.context.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
-                state.save_screenshot = false;
+                state.debug.save_screenshot = false;
             }
         }
 

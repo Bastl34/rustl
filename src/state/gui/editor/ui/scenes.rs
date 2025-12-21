@@ -198,28 +198,30 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         {
             if ui.button("save image").clicked()
             {
-                state.save_image = true;
+                state.debug.save_image = true;
             }
 
             if ui.button("save depth pass image").clicked()
             {
-                state.save_depth_pass_image = true;
+                state.debug.save_depth_pass_image = true;
             }
 
             if ui.button("save depth buffer image").clicked()
             {
-                state.save_depth_buffer_image = true;
+                state.debug.save_depth_buffer_image = true;
             }
 
             if ui.button("save hzb image").clicked()
             {
-                state.save_hzb_image = true;
+                state.debug.save_hzb_image = true;
             }
 
             if ui.button("save screenshot").clicked()
             {
-                state.save_screenshot = true;
+                state.debug.save_screenshot = true;
             }
+
+            ui.checkbox(&mut state.debug.highlight_visible_occlusions, "highlight visible occlusions");
         });
     });
 

@@ -121,14 +121,6 @@ pub struct Viewport
     pub height: f32, // 0.0-1.0
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
-pub struct Visibility
-{
-    pub object_id: u32, // TODO: check if 32 is ok (internally we save u64)
-    pub visible: u32,
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct CameraData
 {
@@ -243,7 +235,7 @@ pub struct Camera
     pub hzb_occlusion_bind_group_render_item: RenderItemOption,
 
     #[serde(skip, default)]
-    pub visibility_data_last_frame: Vec<Visibility>,
+    pub visible_nodes_last_frame: Vec<u32>,
 }
 
 impl Default for Camera
@@ -323,7 +315,7 @@ impl Camera
             visibility_buffer_render_item: None,
             hzb_occlusion_bind_group_render_item: None,
 
-            visibility_data_last_frame: Vec::new(),
+            visible_nodes_last_frame: Vec::new(),
         }
     }
 

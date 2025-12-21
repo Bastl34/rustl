@@ -1,7 +1,15 @@
 
-use crate::{render_item_impl_default, rendering::wgpu::WGpu, state::{helper::render_item::RenderItem, scene::camera::Visibility}};
+use crate::{render_item_impl_default, rendering::wgpu::WGpu, state::{helper::render_item::RenderItem}};
 
 const MIN_SIZE: usize = 64 * 1024; // 64k entries
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
+pub struct Visibility
+{
+    pub object_id: u32,
+    pub visible: u32,
+}
 
 pub struct VisibilityBuffer
 {

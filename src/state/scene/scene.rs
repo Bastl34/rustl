@@ -849,6 +849,11 @@ impl Scene
         all_nodes
     }
 
+    pub fn list_all_nodes(&self) -> Vec<NodeItem>
+    {
+        Scene::list_all_child_nodes(&self.nodes)
+    }
+
     pub fn list_all_child_nodes_with_predicate(nodes: &Vec<NodeItem>, predicate: Arc<dyn Fn(NodeItem) -> bool>) -> Vec<NodeItem>
     {
         let mut all_nodes = vec![];

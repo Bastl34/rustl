@@ -235,6 +235,27 @@ pub fn clone_animation(animation_component_from: ComponentItem, animation_compon
     None
 }
 
+pub fn highlight_and_unhighlight_scene_meshes(scene: &mut Scene, highlight_nodes: &Vec<u32>)
+{
+    let all_nodes = scene.list_all_nodes();
+
+    for node in &all_nodes
+    {
+        let highlight = highlight_nodes.contains(&(node.read().unwrap().id as u32)); // TODO remove after u64->u32 migration
+
+        let node = node.write().unwrap();
+
+        for instance in node.instances.get_ref()
+        {
+            let mut instance = instance.write().unwrap();
+            if instance.get_data().highlight != highlight
+            {
+                instance.get_data_mut().get_mut().highlight = highlight;
+            }
+        }
+    }
+}
+
 pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
 {
     let res;

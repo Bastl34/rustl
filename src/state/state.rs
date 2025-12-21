@@ -187,6 +187,19 @@ impl<'de> Deserialize<'de> for Resources
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Debug
+{
+    pub save_image: bool,
+    pub save_depth_pass_image: bool,
+    pub save_depth_buffer_image: bool,
+    pub save_hzb_image: bool,
+
+    pub save_screenshot: bool,
+
+    pub highlight_visible_occlusions: bool,
+}
+
 pub struct State
 {
     pub project: Project,
@@ -216,12 +229,7 @@ pub struct State
     pub height: u32,
     pub scale_factor: f32,
 
-    pub save_image: bool,
-    pub save_depth_pass_image: bool,
-    pub save_depth_buffer_image: bool,
-    pub save_hzb_image: bool,
-
-    pub save_screenshot: bool,
+    pub debug: Debug,
 
     pub stats: Statistics,
 
@@ -321,11 +329,17 @@ impl State
             height: 0,
             scale_factor: 1.0,
 
-            save_image: false,
-            save_depth_pass_image: false,
-            save_depth_buffer_image: false,
-            save_hzb_image: false,
-            save_screenshot: false,
+            debug: Debug
+            {
+                save_image: false,
+                save_depth_pass_image: false,
+                save_depth_buffer_image: false,
+                save_hzb_image: false,
+
+                save_screenshot: false,
+
+                highlight_visible_occlusions: false,
+            },
 
             stats: Statistics
             {
