@@ -1,4 +1,6 @@
-use crate::{render_item_impl_default, rendering::{helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
+use nalgebra::Point3;
+
+use crate::{console_debug, render_item_impl_default, rendering::{helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 const MIN_SIZE: usize = 64 * 1024; // 64k entries
 
@@ -8,8 +10,22 @@ pub struct BoundingBox
 {
     pub min: [f32; 4],
     pub max: [f32; 4],
-    pub object_id: u32, // TODO: check if u32 is enough (internally we use u64)
-    pub _padding: u32,
+    pub object_id: u32,
+    pub _padding: [u32; 3],
+}
+
+impl BoundingBox
+{
+    pub fn new(object_id: u64, min: &Point3<f32>, max: &Point3<f32>) -> Self
+    {
+        Self
+        {
+            object_id: object_id as u32,
+            min: [min.x, min.y, min.z, 0.0],
+            max: [max.x, max.y, max.z, 0.0],
+            _padding: [0; 3],
+        }
+    }
 }
 
 pub struct BoundingBoxesBuffer
@@ -56,8 +72,6 @@ impl BoundingBoxesBuffer
             });
 
             self.buffer_size = new_buffer_size;
-
-             // TODO bind group
         }
 
         let mut padded_data = Vec::with_capacity(new_buffer_size);
@@ -69,7 +83,7 @@ impl BoundingBoxesBuffer
             object_id: 0,
             min: [0.0, 0.0, 0.0, 0.0],
             max: [0.0, 0.0, 0.0, 0.0],
-            _padding: 0,
+            _padding: [0, 0, 0],
         };
 
         for _ in padded_data.len()..new_buffer_size

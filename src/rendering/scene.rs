@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem::swap, sync::{Arc, RwLock, RwLockReadGuard}, vec};
 
-use nalgebra::{Point3, distance_squared};
+use nalgebra::{Point3, Vector3, distance_squared};
 use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
@@ -875,24 +875,12 @@ impl Scene
 
                 if let Some((min, max)) = bbox_for_all_instances
                 {
-                    let buffer = BoundingBox
-                    {
-                        object_id: node.id as u32,
-                        min: [min.x, min.y, min.z, 0.0],
-                        max: [max.x, max.y, max.z, 0.0],
-                        _padding: 0,
-                    };
+                    let buffer = BoundingBox::new(node.id, &min, &max);
                     buffer_data.push(buffer);
                 }
                 else
                 {
-                    let buffer = BoundingBox
-                    {
-                        object_id: node.id as u32,
-                        min: [0.0, 0.0, 0.0, 0.0],
-                        max: [0.0, 0.0, 0.0, 0.0],
-                        _padding: 0,
-                    };
+                    let buffer = BoundingBox::new(node.id, &Point3::origin(), &Point3::origin());
                     buffer_data.push(buffer);
                 }
             }
@@ -1591,9 +1579,12 @@ impl Scene
                     self.visibility_results[res.object_id as usize] = res.visible != 0;
                      */
 
+                    // Log all objects to debug visibility issues
+                    //console_log!("object id {} visible {} (status: {})", res.object_id, res.visible, if res.visible > 0 { "VISIBLE" } else { "OCCLUDED" });
+
                     if res.visible > 0
                     {
-                        console_log!("object id {} visible {}", res.object_id, res.visible);
+                        console_log!("object id {} is VISIBLE", res.object_id);
                     }
                 }
 
