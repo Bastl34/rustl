@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::{env, sync::{Arc, RwLock}};
+use web_time::Instant;
 
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
@@ -161,6 +162,7 @@ pub struct EditorState
 
     pub last_hover_object: Option<String>,
     pub last_hover_pointer_position: Option<Point3<f32>>,
+    pub last_hover_check: Instant,
 
     pub copy_asset: Option<String>,
     pub copy_asset_transform: Option<TransformationData>,
@@ -243,6 +245,7 @@ impl EditorState
 
             last_hover_object: None,
             last_hover_pointer_position: None,
+            last_hover_check: Instant::now(),
 
             copy_asset: None,
             copy_asset_transform: None,

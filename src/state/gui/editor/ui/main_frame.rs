@@ -20,6 +20,7 @@ use crate::state::gui::editor::editor_state::SettingsPanel;
 use crate::state::scene::scene::Scene;
 use crate::state::scene::exporter::json;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
+use web_time::Instant;
 
 use super::assets::create_asset_section;
 use super::cameras::{build_camera_list, create_camera_settings};
@@ -85,9 +86,11 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                     ui.spinner();
                 }
 
-                // just run this once a second to reduce performance overhead
-                if state.stats.fps == 0
+                // just run every 1/10 second to reduce performance overhead (especially for skinned meshes)
+                if editor_state.last_hover_check.elapsed().as_secs_f32() > 0.1
                 {
+                    editor_state.last_hover_check = Instant::now();
+
                     if let Some((object_name, pointer_pos)) =  get_object_and_pointer_world_position(state)
                     {
                         editor_state.last_hover_object = Some(object_name);
