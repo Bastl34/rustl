@@ -418,6 +418,8 @@ impl MainInterface
                     render_scene.distance_sorting = state.rendering.distance_sorting;
                     render_scene.frustum_culling = state.rendering.frustum_culling;
                     render_scene.occlusion_culling = state.rendering.occlusion_culling;
+
+                    // render scene
                     let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
 
                     // update visibility info for cameras
