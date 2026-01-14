@@ -99,7 +99,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     ui.label(RichText::new("ℹ Info").strong());
     ui.label(format!(" ⚫ fps: {}", state.stats.last_fps));
     ui.label(format!(" ⚫ fps 1% low: {}", state.stats.last_fps_1_percent_low));
-    ui.label(format!(" ⚫ absolute fps: {}", state.stats.fps_absolute));
+    ui.label(format!(" ⚫ absolute cpu fps: {}", state.stats.fps_cpu_absolute));
     ui.label(format!(" ⚫ frame time: {:.3} ms", state.stats.frame_time));
 
     ui.label(RichText::new("⚙ Engine").strong());

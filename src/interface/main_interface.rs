@@ -530,7 +530,7 @@ impl MainInterface
             state.stats.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
             state.stats.frame_times.push_back(frame_time.elapsed().as_micros() as f32);
 
-            state.stats.fps_absolute = (1000.0 / (state.stats.engine_render_time + state.stats.engine_update_time)) as u32;
+            state.stats.fps_cpu_absolute = (1000.0 / (state.stats.engine_render_time + state.stats.engine_update_time)) as u32;
 
             // frame update
             state.stats.frame += 1;
