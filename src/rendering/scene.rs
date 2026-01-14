@@ -1584,7 +1584,7 @@ impl Scene
 
     pub fn read_back_visibility_results(&mut self, wgpu: &mut WGpu, cameras: &std::vec::Vec<Box<Camera>>, render_results: &mut Vec<RenderResultForCamera>)
     {
-         console_log!("------");
+         // console_log!("------");
 
         for (cam_index, cam) in cameras.iter().enumerate()
         {
@@ -1620,6 +1620,7 @@ impl Scene
                     // Log all objects to debug visibility issues
                     //console_log!("object id {} visible {} (status: {})", res.object_id, res.visible, if res.visible > 0 { "VISIBLE" } else { "OCCLUDED" });
 
+                    /*
                     if res.visible > 0
                     {
                         render_results[cam_index].objects_visible.push(res.object_id);
@@ -1630,6 +1631,7 @@ impl Scene
                         render_results[cam_index].objects_invisible.push(res.object_id);
                         // console_log!("object id {} is OCCLUDED", res.object_id);
                     }
+                    */
                 }
 
                 //cam.visibility_data_last_frame = result;

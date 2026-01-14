@@ -3,7 +3,7 @@
 use std::{env, sync::{Arc, RwLock}};
 
 use image::{ImageFormat, EncodableLayout};
-use nalgebra::{Point2, Vector3};
+use nalgebra::{Point2, Point3, Vector3};
 
 use crate::{helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
@@ -159,6 +159,9 @@ pub struct EditorState
     pub selected_gizmo: Option<GizmoTypeAndAxis>,
     pub selected_object_gizmo_value: Option<Vector3<f32>>,
 
+    pub last_hover_object: Option<String>,
+    pub last_hover_pointer_position: Option<Point3<f32>>,
+
     pub copy_asset: Option<String>,
     pub copy_asset_transform: Option<TransformationData>,
     pub copy_node_id: Arc<RwLock<Option<u64>>>,
@@ -237,6 +240,9 @@ impl EditorState
             selected_object_position: None,
             selected_gizmo: None,
             selected_object_gizmo_value: None,
+
+            last_hover_object: None,
+            last_hover_pointer_position: None,
 
             copy_asset: None,
             copy_asset_transform: None,
