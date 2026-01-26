@@ -3,14 +3,13 @@ use std::mem::swap;
 
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
-use crate::rendering::instance;
 use crate::state::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::state::gui::editor::ui::console::create_console_section;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::state::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::execute_on_scene_mut;
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
-use crate::{component_downcast, component_downcast_mut, console_debug};
+use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::state::gui::helper::generic_items::collapse_with_title;
 use crate::state::scene::components::component::ComponentItem;

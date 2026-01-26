@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use nalgebra::Matrix4;
-use wgpu::{BindGroup, util::DeviceExt};
+use wgpu::{util::DeviceExt};
 use colored::Colorize;
 
 use crate::{console_error, render_item_impl_default, state::helper::render_item::RenderItem};

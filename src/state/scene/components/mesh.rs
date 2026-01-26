@@ -2,7 +2,7 @@
 
 use egui::RichText;
 use nalgebra::{Isometry3, Matrix4, Point3, Point4, Vector3};
-use parry3d::{bounding_volume::{Aabb, BoundingSphere, BoundingVolume}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
+use parry3d::{bounding_volume::{Aabb, BoundingSphere}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
 use serde::{Deserialize, Serialize};
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, console_error, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, resources::mesh_resource::MeshResourceItem, scene::node::NodeItem}};

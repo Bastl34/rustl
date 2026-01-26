@@ -12,7 +12,7 @@ pub type SoundSourceItem = Arc<RwLock<Box<SoundSource>>>;
 pub struct SoundSource
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
 
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,

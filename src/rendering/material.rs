@@ -306,7 +306,7 @@ impl MaterialBuffer
         bind_id += 1;
 
         // ********* textures *********
-        let mut texture_render_items: HashMap<u64, (RenderItemType, TextureItem, wgpu::Sampler)> = HashMap::new();
+        let mut texture_render_items: HashMap<u32, (RenderItemType, TextureItem, wgpu::Sampler)> = HashMap::new();
         let mut texture_render_items_dir = vec![];
 
         for texture_type in ALL_TEXTURE_TYPES

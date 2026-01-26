@@ -8,7 +8,7 @@ use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes}
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
 
-pub fn create_grid(scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
+pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
     let integer_grid_line_scale = 3.0;
 

@@ -462,7 +462,7 @@ impl State
         arc
     }
 
-    pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
+    pub fn get_texture_by_id(&self, id: u32) -> Option<TextureItem>
     {
         for texture_arc in self.resources.textures.values()
         {
@@ -476,7 +476,7 @@ impl State
         None
     }
 
-    pub fn delete_texture_by_id(&mut self, id: u64) -> bool
+    pub fn delete_texture_by_id(&mut self, id: u32) -> bool
     {
         for scene in &mut self.scenes
         {
@@ -517,7 +517,7 @@ impl State
         self.resources.textures.len() != len
     }
 
-    pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
+    pub fn get_sound_source_by_id(&self, id: u32) -> Option<SoundSourceItem>
     {
         for sound_arc in self.resources.sound_sources.values()
         {
@@ -531,7 +531,7 @@ impl State
         None
     }
 
-    pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
+    pub fn delete_sound_source_by_id(&mut self, id: u32) -> bool
     {
         // remove sound source from all node and instance components
         for scene in &mut self.scenes
@@ -598,7 +598,7 @@ impl State
         self.resources.sound_sources.len() != len
     }
 
-    pub fn get_mesh_resource_by_id(&self, id: u64) -> Option<MeshResourceItem>
+    pub fn get_mesh_resource_by_id(&self, id: u32) -> Option<MeshResourceItem>
     {
         for mesh_arc in self.resources.mesh_resources.values()
         {
@@ -612,7 +612,7 @@ impl State
         None
     }
 
-    pub fn delete_mesh_resource_by_id(&mut self, id: u64) -> bool
+    pub fn delete_mesh_resource_by_id(&mut self, id: u32) -> bool
     {
         // remove mesh resource from all node components
         for scene in &mut self.scenes
@@ -655,7 +655,7 @@ impl State
         self.resources.mesh_resources.len() != len
     }
 
-    pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
+    pub fn load_scene_env_map(&mut self, path: &str, scene_id: u32)
     {
         let path = path.to_string().clone();
 
@@ -694,7 +694,7 @@ impl State
         None
     }
 
-    pub fn get_main_scene_id(&self) -> Option<u64>
+    pub fn get_main_scene_id(&self) -> Option<u32>
     {
         let scene = self.get_main_scene();
         if let Some(scene) = scene
@@ -704,7 +704,7 @@ impl State
         None
     }
 
-    pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>
+    pub fn find_scene_by_id(&self, id: u32) -> Option<&SceneItem>
     {
         for scene in &self.scenes
         {
@@ -717,7 +717,7 @@ impl State
         None
     }
 
-    pub fn find_scene_by_id_mut(&mut self, id: u64) -> Option<&mut SceneItem>
+    pub fn find_scene_by_id_mut(&mut self, id: u32) -> Option<&mut SceneItem>
     {
         for scene in &mut self.scenes
         {

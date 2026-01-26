@@ -18,7 +18,7 @@ pub struct Context
 
 impl Context
 {
-    pub fn get_main_scene_id(&self) -> Option<u64>
+    pub fn get_main_scene_id(&self) -> Option<u32>
     {
         for scene in &self.state.borrow().scenes
         {

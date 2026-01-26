@@ -123,7 +123,7 @@ impl MeshResourceData
 pub struct MeshResource
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
 

@@ -5,7 +5,7 @@ use std::{path::Path, sync::{Arc, Mutex, RwLock}};
 use crate::{component_downcast_mut, console_error, console_success, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
 use crate::state::scene::loader::gltf;
 
-pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load_object(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u32>>
 {
     let extension = Path::new(path).extension();
 
@@ -30,7 +30,7 @@ pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_
     Ok(vec![])
 }
 
-pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u64>, material_id: Option<u64>, mipmapping: bool, max_tex_res: u32)
+pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u32>, material_id: Option<u32>, mipmapping: bool, max_tex_res: u32)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
@@ -81,7 +81,7 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Op
     }));
 }
 
-pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, sound_component_id: Option<u64>)
+pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, sound_component_id: Option<u32>)
 {
     let extension = get_extension(path);
     let name = get_stem(path);
@@ -155,7 +155,7 @@ pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, 
     });
 }
 
-pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
+pub fn load_and_re_target_animation(path: &str, scene_id: u32, target_id: u32, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
 {
     let animations = load_object(path, scene_id, None, main_queue.clone(), false, false, true, false, 0);
 
@@ -241,7 +241,7 @@ pub fn highlight_and_unhighlight_scene_meshes(scene: &mut Scene, highlight_nodes
 
     for node in &all_nodes
     {
-        let highlight = highlight_nodes.contains(&(node.read().unwrap().id as u32)); // TODO remove after u64->u32 migration
+        let highlight = highlight_nodes.contains(&(node.read().unwrap().id));
 
         let node = node.write().unwrap();
 
@@ -256,7 +256,7 @@ pub fn highlight_and_unhighlight_scene_meshes(scene: &mut Scene, highlight_nodes
     }
 }
 
-pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
+pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u32, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
 {
     let res;
     {
@@ -272,7 +272,7 @@ pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u
     res.join();
 }
 
-pub fn execute_on_scene_mut(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
+pub fn execute_on_scene_mut(main_queue: ExecutionQueueItem, scene_id: u32, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
 {
     let mut main_queue = main_queue.write().unwrap();
     main_queue.add(Box::new(move |state|

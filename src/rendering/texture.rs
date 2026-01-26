@@ -3,7 +3,7 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
-use crate::{console_debug, render_item_impl_default, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 

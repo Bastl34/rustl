@@ -8,7 +8,7 @@ use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsP
 
 const MAX_COMPONENT_NAME_LENGTH: usize = 14;
 
-pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u64, parent_visible: bool, parent_locked: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u32, parent_visible: bool, parent_locked: bool)
 {
     for node_arc in nodes
     {
@@ -354,7 +354,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
     }
 }
 
-pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: NodeItem, scene_id: u64, parent_visible: bool, parent_locked: bool)
+pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: NodeItem, scene_id: u32, parent_visible: bool, parent_locked: bool)
 {
     let node_arc = node.clone();
     let node = node.read().unwrap();
@@ -482,8 +482,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         return;
     }
 
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
-    let node_id: u64 = node_id.unwrap();
+    let scene_id: u32 = editor_state.selected_scene_id.unwrap();
+    let node_id: u32 = node_id.unwrap();
 
     let scene = state.find_scene_by_id(scene_id);
 
@@ -871,7 +871,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
     }
 }
 
-pub fn create_instance_settings(_editor_state: &mut EditorState, _state: &mut State, _scene_id: u64, node_arc: NodeItem, instance_id: u64 , ui: &mut Ui)
+pub fn create_instance_settings(_editor_state: &mut EditorState, _state: &mut State, _scene_id: u32, node_arc: NodeItem, instance_id: u32 , ui: &mut Ui)
 {
     let node = node_arc.read().unwrap();
     let instance = node.find_instance_by_id(instance_id);
@@ -969,8 +969,8 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
         return;
     }
 
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
-    let node_id: u64 = node_id.unwrap();
+    let scene_id: u32 = editor_state.selected_scene_id.unwrap();
+    let node_id: u32 = node_id.unwrap();
 
     let scene = state.find_scene_by_id(scene_id);
 

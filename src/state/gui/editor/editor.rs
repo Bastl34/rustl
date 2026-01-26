@@ -456,7 +456,7 @@ impl Editor
             if left_mouse_button || right_mouse_button || tapped
             {
                 let mut hit: Option<ScenePickRes> = None;
-                let mut scene_id: u64 = 0;
+                let mut scene_id: u32 = 0;
 
                 if let Some(pos) = pos
                 {
@@ -474,7 +474,7 @@ impl Editor
                     // pick camera target
                     if self.editor_state.pick_mode == PickType::Camera && self.editor_state.selected_scene_id.is_some()
                     {
-                        let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
+                        let scene_id: u32 = self.editor_state.selected_scene_id.unwrap();
 
                         let (camera_id, ..) = self.editor_state.get_object_ids();
 
@@ -494,7 +494,7 @@ impl Editor
                     // pick parent target
                     else if self.editor_state.pick_mode == PickType::Parent && self.editor_state.selected_scene_id.is_some()
                     {
-                        let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
+                        let scene_id: u32 = self.editor_state.selected_scene_id.unwrap();
 
                         let (node_id, ..) = self.editor_state.get_object_ids();
 
@@ -514,7 +514,7 @@ impl Editor
                     // animation re-targeting (copy)
                     else if self.editor_state.pick_mode == PickType::AnimationCopy && self.editor_state.selected_scene_id.is_some()
                     {
-                        let scene_id: u64 = self.editor_state.selected_scene_id.unwrap();
+                        let scene_id: u32 = self.editor_state.selected_scene_id.unwrap();
 
                         let (node_id, ..) = self.editor_state.get_object_ids();
 
@@ -1162,7 +1162,7 @@ impl Editor
 
             // ***** pick info without node itself *****
             let selected_node_clone = selected_node.clone();
-            let pick_predicate = move |node: NodeItem, check_instance_id: Option<u64>| -> bool
+            let pick_predicate = move |node: NodeItem, check_instance_id: Option<u32>| -> bool
             {
                 let node = node.read().unwrap();
                 let has_currect_parent = node.has_parent_or_is_equal(selected_node_clone.clone());
@@ -1182,7 +1182,7 @@ impl Editor
                 true
             };
 
-            let pick_predicate_grid_only = move |node: NodeItem, _check_instance_id: Option<u64>| -> bool
+            let pick_predicate_grid_only = move |node: NodeItem, _check_instance_id: Option<u32>| -> bool
             {
                 node.read().unwrap().name == "grid"
             };
@@ -1214,7 +1214,7 @@ impl Editor
             let new_bottom_center = bottom_center_screen_space + pos_delta;
 
 
-            let pick_res: Option<(u64, ScenePickRes)>;
+            let pick_res: Option<(u32, ScenePickRes)>;
             if self.editor_state.drag_and_drop_grid_only
             {
                 pick_res = pick(state, new_bottom_center, true, false, false, Some(Arc::new(pick_predicate_grid_only)));

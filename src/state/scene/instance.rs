@@ -50,7 +50,7 @@ pub struct InstanceData
 #[derive(Serialize, Deserialize)]
 pub struct Instance
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
     pub is_default: bool,
 
@@ -195,7 +195,7 @@ impl Instance
         find_component::<T>(&self.components)
     }
 
-    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn find_component_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         find_component_by_id(&self.components, id)
     }
@@ -213,7 +213,7 @@ impl Instance
         }
     }
 
-    pub fn remove_component_by_id(&mut self, id: u64)
+    pub fn remove_component_by_id(&mut self, id: u32)
     {
         if remove_component_by_id(&mut self.components, id)
         {
@@ -221,7 +221,7 @@ impl Instance
         }
     }
 
-    pub fn remove_components_by_ids(&mut self, ids: &Vec<u64>)
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u32>)
     {
         if remove_components_by_ids(&mut self.components, &ids)
         {

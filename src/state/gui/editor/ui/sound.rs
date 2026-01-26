@@ -173,7 +173,7 @@ pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, 
 {
     // no scene selected
     if editor_state.selected_scene_id.is_none() { return; }
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
+    let scene_id: u32 = editor_state.selected_scene_id.unwrap();
 
     let (sound_id, ..) = editor_state.get_object_ids();
 

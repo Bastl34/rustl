@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use wgpu::{BindGroupLayout, PipelineCompilationOptions, ShaderModule};
+use wgpu::{BindGroupLayout, ShaderModule};
 
 use crate::{console_log, render_item_impl_default, state::helper::render_item::RenderItem};
 

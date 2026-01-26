@@ -50,7 +50,7 @@ impl UpdateResult
 #[derive(Clone)]
 pub struct RenderResultForCamera
 {
-    pub camera_id: u64,
+    pub camera_id: u32,
     pub objects_visible: Vec<u32>,
     pub objects_invisible: Vec<u32>,
     pub draw_calls: u32,

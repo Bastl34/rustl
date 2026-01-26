@@ -38,12 +38,12 @@ pub struct NodeSettings
 
 pub struct NodeUpdateResult
 {
-    pub delete_nodes: Vec<u64>,
+    pub delete_nodes: Vec<u32>,
 }
 
 pub struct Node
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub source: Option<AssetPathDesciptor>,
@@ -408,7 +408,7 @@ impl Node
         find_component::<T>(&self.components).is_some()
     }
 
-    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn find_component_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         find_component_by_id(&self.components, id)
     }
@@ -426,7 +426,7 @@ impl Node
         }
     }
 
-    pub fn remove_component_by_id(&mut self, id: u64)
+    pub fn remove_component_by_id(&mut self, id: u32)
     {
         if remove_component_by_id(&mut self.components, id)
         {
@@ -434,7 +434,7 @@ impl Node
         }
     }
 
-    pub fn remove_components_by_ids(&mut self, ids: &Vec<u64>)
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u32>)
     {
         if remove_components_by_ids(&mut self.components, &ids)
         {
@@ -510,7 +510,7 @@ impl Node
         self.tags.contains(tag)
     }
 
-    pub fn get_world_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_world_bounding_info(&self, instance_id: Option<u32>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -618,7 +618,7 @@ impl Node
         None
     }
 
-    pub fn get_world_bbox_center(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
+    pub fn get_world_bbox_center(&self, instance_id: Option<u32>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
         let bounding_info = self.get_world_bounding_info(instance_id, recursive, predicate);
 
@@ -868,7 +868,7 @@ impl Node
         self.has_parent(node)
     }
 
-    pub fn has_parent_id(&self, parent_node_id: u64) -> bool
+    pub fn has_parent_id(&self, parent_node_id: u32) -> bool
     {
         let mut parent = self.parent.clone();
         while parent.is_some()
@@ -889,7 +889,7 @@ impl Node
         false
     }
 
-    pub fn has_parent_id_or_is_equal(&self, node_id: u64) -> bool
+    pub fn has_parent_id_or_is_equal(&self, node_id: u32) -> bool
     {
         if self.id == node_id
         {
@@ -1123,7 +1123,7 @@ impl Node
         self.transform_vec_global_to_local(&global_vec)
     }
 
-    pub fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u64, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
+    pub fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u32, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
     {
         let joint_component = self.find_component::<Joint>();
 
@@ -1177,7 +1177,7 @@ impl Node
         }
 
         // store transforms in a cache -> no complete parent traversal needed for each joint
-        let mut transform_cache: HashMap<u64, Matrix4::<f32>> = HashMap::new();
+        let mut transform_cache: HashMap<u32, Matrix4::<f32>> = HashMap::new();
 
         let mut joints = vec![];
         for joint in &self.skin
@@ -1238,7 +1238,7 @@ impl Node
         Some(morph_targets)
     }
 
-    pub fn find_child_node_by_id(&self, id: u64) -> Option<NodeItem>
+    pub fn find_child_node_by_id(&self, id: u32) -> Option<NodeItem>
     {
         for node in &self.nodes
         {
@@ -1298,7 +1298,7 @@ impl Node
         None
     }
 
-    pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
+    pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u32) -> Option<NodeItem>
     {
         for node in nodes
         {
@@ -1358,7 +1358,7 @@ impl Node
         None
     }
 
-    pub fn find_mesh_node_by_ids(nodes: &Vec<NodeItem>, ids: &Vec<u64>) -> Option<NodeItem>
+    pub fn find_mesh_node_by_ids(nodes: &Vec<NodeItem>, ids: &Vec<u32>) -> Option<NodeItem>
     {
         for node in nodes
         {
@@ -2001,7 +2001,7 @@ impl Node
         }
     }
 
-    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemArc>
+    pub fn find_instance_by_id(&self, id: u32) -> Option<&InstanceItemArc>
     {
         for instance in self.instances.get_ref()
         {
@@ -2014,7 +2014,7 @@ impl Node
         None
     }
 
-    pub fn delete_instance_by_id(&mut self, id: u64) -> bool
+    pub fn delete_instance_by_id(&mut self, id: u32) -> bool
     {
         let len = self.instances.get_ref().len();
         self.instances.get_mut().retain(|instance|
@@ -2030,7 +2030,7 @@ impl Node
         self.instances.get_mut().clear();
     }
 
-    pub fn delete_child_node_by_id(&mut self, id: u64) -> bool
+    pub fn delete_child_node_by_id(&mut self, id: u32) -> bool
     {
         {
             let node = Node::find_node_by_id(&self.nodes, id);

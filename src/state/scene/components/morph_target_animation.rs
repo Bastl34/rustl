@@ -16,7 +16,7 @@ pub struct MorphTargetAnimation
 {
     base: ComponentBase,
 
-    pub target_id: Option<u64>,
+    pub target_id: Option<u32>,
 
     pub looped: bool,
     pub ping_pong: bool,
@@ -36,7 +36,7 @@ pub struct MorphTargetAnimation
 
 impl MorphTargetAnimation
 {
-    pub fn new( name: &str, target_id: u64, from: f32, to: f32, speed: f32, looped: bool) -> MorphTargetAnimation
+    pub fn new( name: &str, target_id: u32, from: f32, to: f32, speed: f32, looped: bool) -> MorphTargetAnimation
     {
         let mut animation = MorphTargetAnimation
         {
@@ -280,7 +280,7 @@ impl Component for MorphTargetAnimation
         let mut target_id = self.target_id.unwrap_or(0);
         let mut target_name = "".to_string();
 
-        let mut morph_targets: Vec<(u64, String)> = vec![];
+        let mut morph_targets: Vec<(u32, String)> = vec![];
 
         if let Some(node) = node
         {

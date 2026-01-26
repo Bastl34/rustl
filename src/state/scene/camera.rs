@@ -200,7 +200,7 @@ where
 #[derive(Serialize, Deserialize)]
 pub struct Camera
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub name: String,

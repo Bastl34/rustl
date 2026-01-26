@@ -528,7 +528,7 @@ impl Material
         self.get_texture_by_type_mut(tex_type).unwrap().enabled = state;
     }
 
-    pub fn has_texture_id(&self, texture_id: u64) -> bool
+    pub fn has_texture_id(&self, texture_id: u32) -> bool
     {
         for texture_type in ALL_TEXTURE_TYPES
         {
@@ -671,7 +671,7 @@ impl Material
         tex.is_some() && tex.unwrap().enabled
     }
 
-    pub fn remove_texture_by_id(&mut self, id: u64) -> bool
+    pub fn remove_texture_by_id(&mut self, id: u32) -> bool
     {
         let mut removed = false;
         for texture_type in ALL_TEXTURE_TYPES

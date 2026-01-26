@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use wgpu::{ShaderModule, Device, BindGroupLayout};
+use wgpu::{ShaderModule, BindGroupLayout};
 
 use crate::{console_log, render_item_impl_default, state::helper::render_item::RenderItem};
 

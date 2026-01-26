@@ -6,7 +6,7 @@ use crate::{component_downcast_mut, helper::{concurrency::thread::spawn_thread, 
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u64, MaterialItem>, ui: &mut Ui, scene_id: u64)
+pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u32, MaterialItem>, ui: &mut Ui, scene_id: u32)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
@@ -54,7 +54,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
 {
     // no scene selected
     if editor_state.selected_scene_id.is_none() { return; }
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
+    let scene_id: u32 = editor_state.selected_scene_id.unwrap();
 
     let (material_id, ..) = editor_state.get_object_ids();
 

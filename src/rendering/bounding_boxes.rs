@@ -1,6 +1,6 @@
 use nalgebra::Point3;
 
-use crate::{console_debug, render_item_impl_default, rendering::{helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
+use crate::{render_item_impl_default, rendering::{helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 const MIN_SIZE: usize = 64 * 1024; // 64k entries
 
@@ -16,7 +16,7 @@ pub struct BoundingBox
 
 impl BoundingBox
 {
-    pub fn new(object_id: u64, min: &Point3<f32>, max: &Point3<f32>) -> Self
+    pub fn new(object_id: u32, min: &Point3<f32>, max: &Point3<f32>) -> Self
     {
         Self
         {

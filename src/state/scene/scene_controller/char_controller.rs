@@ -1148,7 +1148,7 @@ impl SceneController for CharacterController
 
                 let character_node = node.clone();
 
-                let predicate_func = move |node: NodeItem, _instance_id: Option<u64>| -> bool
+                let predicate_func = move |node: NodeItem, _instance_id: Option<u32>| -> bool
                 {
                     let check_node = node.read().unwrap();
 

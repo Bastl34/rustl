@@ -2,20 +2,20 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, console_debug, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use super::editor_state::EditorState;
 
-pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<(u64, ScenePickRes)>
+pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<(u32, ScenePickRes)>
 {
     let scenes = &state.scenes;
 
     let mut hit: Option<ScenePickRes> = None;
-    let mut scene_id: u64 = 0;
+    let mut scene_id: u32 = 0;
 
     // do not pick internal predicate
     let inner_predicate = predicate.clone();
-    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, check_instance_id: Option<u64>| -> bool
+    let do_not_pick_internal_nodes_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, check_instance_id: Option<u32>| -> bool
     {
         if node_arc.read().unwrap().tags.contains(ENGINE_INTERNAL_TAG) || node_arc.read().unwrap().tags.contains(EDITOR_INTERNAL_TAG)
         {
@@ -119,7 +119,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     None
 }
 
-pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visible: bool, ignore_pickable: bool) -> Option<(u64, ScenePickRes)>
+pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visible: bool, ignore_pickable: bool) -> Option<(u32, ScenePickRes)>
 {
     let scenes = &state.scenes;
 
@@ -292,7 +292,7 @@ pub fn get_parent_world_transform_from_selected_node(editor_state: &mut EditorSt
     transform
 }
 
-pub fn transform_vec_to_parent_local(instance_id: Option<u64>, selected_node: NodeItem, vec: Vector3<f32>) -> Vector3<f32>
+pub fn transform_vec_to_parent_local(instance_id: Option<u32>, selected_node: NodeItem, vec: Vector3<f32>) -> Vector3<f32>
 {
     let mut vec = vec;
 

@@ -12,7 +12,7 @@ use crate::{component_downcast, component_downcast_mut, console_log, helper::{ch
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
 pub type SceneItem = Box<Scene>;
-pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
+pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u32>) -> bool>;
 
 #[derive(Clone)]
 pub struct ScenePickRes
@@ -21,13 +21,13 @@ pub struct ScenePickRes
     pub point: Point3<f32>,
     pub normal: Option<Vector3<f32>>,
     pub node: NodeItem,
-    pub instance_id: u64,
+    pub instance_id: u32,
     pub face_id: Option<u32>,
 }
 
 impl ScenePickRes
 {
-    pub fn new(time_of_impact: f32, point: Point3<f32>, normal: Option<Vector3<f32>>, node: NodeItem, instance_id: u64, face_id: Option<u32>) -> ScenePickRes
+    pub fn new(time_of_impact: f32, point: Point3<f32>, normal: Option<Vector3<f32>>, node: NodeItem, instance_id: u32, face_id: Option<u32>) -> ScenePickRes
     {
         Self
         {
@@ -54,7 +54,7 @@ pub struct SceneData
 
 pub struct Scene
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub name: String,
@@ -66,7 +66,7 @@ pub struct Scene
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
-    pub materials: HashMap<u64, MaterialItem>,
+    pub materials: HashMap<u32, MaterialItem>,
 
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
     pub post_controller: Vec<SceneControllerBox>, // after scene updates
@@ -83,7 +83,7 @@ impl Default for Scene
     }
 }
 
-impl_arc_rwbox_map_serializer!(MaterialsSerializer, u64, dyn Component);
+impl_arc_rwbox_map_serializer!(MaterialsSerializer, u32, dyn Component);
 
 impl Serialize for Scene
 {
@@ -164,7 +164,7 @@ impl<'de> Deserialize<'de> for Scene
                             scene.lights = ChangeTracker::new(map.next_value().into_iter().map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst)))).collect())
                         }
                         "materials" => {
-                            let material_map: HashMap<u64, Box<dyn Component>> = map.next_value()?;
+                            let material_map: HashMap<u32, Box<dyn Component>> = map.next_value()?;
                             scene.materials = material_map.into_iter().map(|(id, mat)| (id, Arc::new(RwLock::new(mat)))).collect();
                         }
                         "pre_controller" =>
@@ -449,7 +449,7 @@ impl Scene
         self.add_defaults();
     }
 
-    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>, remove_internals: bool)
+    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u32>, remove_internals: bool)
     {
         let mut node = None;
         if let Some(node_id) = from_node_id
@@ -611,7 +611,7 @@ impl Scene
         None
     }
 
-    pub fn get_material_by_id(&self, id: u64) -> Option<MaterialItem>
+    pub fn get_material_by_id(&self, id: u32) -> Option<MaterialItem>
     {
         if self.materials.contains_key(&id)
         {
@@ -649,7 +649,7 @@ impl Scene
         material
     }
 
-    pub fn delete_material_by_id(&mut self, id: u64) -> bool
+    pub fn delete_material_by_id(&mut self, id: u32) -> bool
     {
         // remove material from all nodes
         let all_nodes = Self::list_all_child_nodes(&self.nodes);
@@ -679,7 +679,7 @@ impl Scene
         false
     }
 
-    pub fn get_sound_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn get_sound_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
 
@@ -706,12 +706,12 @@ impl Scene
         None
     }
 
-    pub fn get_camera_by_id(&self, id: u64) -> Option<&CameraItem>
+    pub fn get_camera_by_id(&self, id: u32) -> Option<&CameraItem>
     {
         self.cameras.iter().find(|cam|{ cam.id == id })
     }
 
-    pub fn get_camera_by_id_mut(&mut self, id: u64) -> Option<&mut CameraItem>
+    pub fn get_camera_by_id_mut(&mut self, id: u32) -> Option<&mut CameraItem>
     {
         self.cameras.iter_mut().find(|cam|{ cam.id == id })
     }
@@ -726,7 +726,7 @@ impl Scene
         self.cameras.iter_mut().find(|cam|{ cam.name == name })
     }
 
-    pub fn delete_camera_by_id(&mut self, id: u64) -> bool
+    pub fn delete_camera_by_id(&mut self, id: u32) -> bool
     {
         let len = self.cameras.len();
         self.cameras.retain(|camera|
@@ -770,13 +770,13 @@ impl Scene
         None
     }
 
-    pub fn get_light_by_id(&self, id: u64) -> Option<&RefCell<ChangeTracker<Box<Light>>>>
+    pub fn get_light_by_id(&self, id: u32) -> Option<&RefCell<ChangeTracker<Box<Light>>>>
     {
         let lights = self.lights.get_ref();
         lights.iter().find(|light|{ light.borrow().get_ref().id == id })
     }
 
-    pub fn delete_light_by_id(&mut self, id: u64) -> bool
+    pub fn delete_light_by_id(&mut self, id: u32) -> bool
     {
         // only mark as changed if there was a change
         let lights = self.lights.get_unmarked_mut();
@@ -892,7 +892,7 @@ impl Scene
         all_nodes
     }
 
-    pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
+    pub fn find_node_by_id(&self, id: u32) -> Option<NodeItem>
     {
         Node::find_node_by_id(&self.nodes, id)
     }
@@ -907,12 +907,12 @@ impl Scene
         Node::find_mesh_node_by_name(&self.nodes, name)
     }
 
-    pub fn find_mesh_node_by_ids(&self, ids: &Vec<u64>) -> Option<NodeItem>
+    pub fn find_mesh_node_by_ids(&self, ids: &Vec<u32>) -> Option<NodeItem>
     {
         Node::find_mesh_node_by_ids(&self.nodes, ids)
     }
 
-    pub fn delete_node_by_id(&mut self, id: u64, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
+    pub fn delete_node_by_id(&mut self, id: u32, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
     {
         if self.find_node_by_id(id).is_none()
         {
@@ -927,7 +927,7 @@ impl Scene
         // ********** delete mesh resource **********
         if delete_mesh_resource
         {
-            let mut mesh_resources_to_delete: HashMap<u64, MeshResourceItem> = HashMap::new();
+            let mut mesh_resources_to_delete: HashMap<u32, MeshResourceItem> = HashMap::new();
 
             let mut all_nodes_to_delete;
             {
@@ -970,7 +970,7 @@ impl Scene
         // ********** delete sound sources **********
         if delete_sound_sources
         {
-            let mut sound_sources_to_delete: HashMap<u64, SoundSourceItem> = HashMap::new();
+            let mut sound_sources_to_delete: HashMap<u32, SoundSourceItem> = HashMap::new();
 
             let mut all_nodes_to_delete;
             {
@@ -1011,7 +1011,7 @@ impl Scene
         }
 
         // ********** delete materials **********
-        let mut materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+        let mut materials_to_delete: HashMap<u32, ComponentItem> = HashMap::new();
         if delete_materials
         {
             let mut all_nodes_to_delete;
@@ -1025,7 +1025,7 @@ impl Scene
             }
 
             // find all affecting
-            let mut possible_materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+            let mut possible_materials_to_delete: HashMap<u32, ComponentItem> = HashMap::new();
             for node in all_nodes_to_delete
             {
                 let mut node_materials = vec![];
@@ -1083,7 +1083,7 @@ impl Scene
             }
 
             // find all affecting
-            let mut textures_to_delete: HashMap<u64, TextureItem> = HashMap::new();
+            let mut textures_to_delete: HashMap<u32, TextureItem> = HashMap::new();
 
             // find all textures from materials and delete them from materials
             for (_material_id, material) in &materials_to_delete

@@ -4,7 +4,7 @@ use crate::{helper::generic::cut_string_to_length, state::{gui::{editor::editor:
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
-pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u64)
+pub fn build_camera_list(editor_state: &mut EditorState, cameras: &Vec<CameraItem>, ui: &mut Ui, scene_id: u32)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
@@ -53,7 +53,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
 {
     // no scene selected
     if editor_state.selected_scene_id.is_none() { return; }
-    let scene_id: u64 = editor_state.selected_scene_id.unwrap();
+    let scene_id: u32 = editor_state.selected_scene_id.unwrap();
 
     let (camera_id, ..) = editor_state.get_object_ids();
 

@@ -16,7 +16,7 @@ const GIZMO_ROTATION_SLOW_FACTOR: f32 = 0.1;
 
 const GIZMO_SCALE_DISTANCE_FACTOR: f32 = 0.1;
 
-pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, editor_utils_id: u64)
+pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, editor_utils_id: u32)
 {
     let scene = state.scenes.get_mut(0);
     if scene.is_none()

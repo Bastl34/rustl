@@ -76,8 +76,8 @@ pub struct TextureData
     #[serde(skip, default)]
     pub mipmap_cache: Option<Vec<DynamicImage>>,
 
-    pub width: u64,
-    pub height: u64,
+    pub width: u32,
+    pub height: u32,
 
     pub mipmapping: bool,
     pub mipmap_sampling_type: MipmapSamplingFilterType,
@@ -102,7 +102,7 @@ pub struct TextureData
 pub struct Texture
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
 
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
@@ -210,8 +210,8 @@ impl Texture
 
         let data: TextureData = TextureData
         {
-            width: image.width() as u64,
-            height: image.height() as u64,
+            width: image.width(),
+            height: image.height(),
 
             mipmapping: false,
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
@@ -286,8 +286,8 @@ impl Texture
 
         let data: TextureData = TextureData
         {
-            width: image.width() as u64,
-            height: image.height() as u64,
+            width: image.width(),
+            height: image.height(),
 
             has_transparency: false,
 
@@ -507,7 +507,7 @@ impl Texture
     pub fn memory_usage(&self) -> u64
     {
         // image
-        let mut bytes = self.get_data().width * self.get_data().height * self.channels() as u64;
+        let mut bytes = self.get_data().width as u64 * self.get_data().height as u64 * self.channels() as u64;
 
         // preview
         bytes += self.get_data().preview.width() as u64 * self.get_data().preview.width() as u64 * 4;
@@ -531,7 +531,7 @@ impl Texture
             return 0;
         }
 
-        let mut bytes = self.get_data().width * self.get_data().height * self.channels() as u64;
+        let mut bytes = self.get_data().width as u64 * self.get_data().height as u64 * self.channels() as u64;
 
         // mipmaps are using around + 1/3 more gpu memory --> https://en.wikipedia.org/wiki/Mipmap
         if self.get_data().mipmapping

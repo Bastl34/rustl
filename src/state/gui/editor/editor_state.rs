@@ -153,7 +153,7 @@ pub struct EditorState
 
     pub tag_input: String,
 
-    pub selected_scene_id: Option<u64>,
+    pub selected_scene_id: Option<u32>,
     pub selected_type: SelectionType,
     pub selected_object: String,
     pub selected_object_position: Option<Vector3<f32>>,
@@ -166,7 +166,7 @@ pub struct EditorState
 
     pub copy_asset: Option<String>,
     pub copy_asset_transform: Option<TransformationData>,
-    pub copy_node_id: Arc<RwLock<Option<u64>>>,
+    pub copy_node_id: Arc<RwLock<Option<u32>>>,
 
     pub drag_id: Option<String>,
 
@@ -288,7 +288,7 @@ impl EditorState
         self.grid_recreate = true;
     }
 
-    pub fn get_object_ids(&self) -> (Option<u64>, Option<u64>)
+    pub fn get_object_ids(&self) -> (Option<u32>, Option<u32>)
     {
         // no scene selected
         if self.selected_scene_id == None && self.selected_object.is_empty()
@@ -298,8 +298,8 @@ impl EditorState
 
         let parts: Vec<&str> = self.selected_object.split('_').collect();
 
-        let mut item_id: Option<u64> = None;
-        let mut subitem_id: Option<u64> = None; // like instance id
+        let mut item_id: Option<u32> = None;
+        let mut subitem_id: Option<u32> = None; // like instance id
 
         if parts.len() >= 2
         {
@@ -314,7 +314,7 @@ impl EditorState
         (item_id, subitem_id)
     }
 
-    pub fn get_selected_node<'a>(&'a mut self, state: &'a mut State) -> (Option<&'a mut Box<Scene>>, Option<NodeItem>, Option<u64>)
+    pub fn get_selected_node<'a>(&'a mut self, state: &'a mut State) -> (Option<&'a mut Box<Scene>>, Option<NodeItem>, Option<u32>)
     {
         let (node_id, instance_id) = self.get_object_ids();
 
@@ -323,8 +323,8 @@ impl EditorState
             return (None, None, None);
         }
 
-        let scene_id: u64 = self.selected_scene_id.unwrap();
-        let node_id: u64 = node_id.unwrap();
+        let scene_id: u32 = self.selected_scene_id.unwrap();
+        let node_id: u32 = node_id.unwrap();
 
         let scene = state.find_scene_by_id_mut(scene_id);
 
@@ -354,7 +354,7 @@ impl EditorState
             return None;
         }
 
-        let scene_id: u64 = self.selected_scene_id.unwrap();
+        let scene_id: u32 = self.selected_scene_id.unwrap();
 
         state.find_scene_by_id_mut(scene_id)
     }
@@ -395,7 +395,7 @@ impl EditorState
         self.apply_highlight_for_node(&node.unwrap(), instance_id);
     }
 
-    pub fn apply_highlight_for_node(&mut self, node: &NodeItem, instance_id: Option<u64>)
+    pub fn apply_highlight_for_node(&mut self, node: &NodeItem, instance_id: Option<u32>)
     {
         if let Some(instance_id) = instance_id
         {
@@ -549,7 +549,7 @@ impl EditorState
         apply_fly_camera_move_state(scene, true);
     }
 
-    pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u64, instance_id: Option<u64>, selection_type: SelectionType, highlight: bool) -> bool
+    pub fn set_selected_object(&mut self, scene: &mut Scene, node_id: u32, instance_id: Option<u32>, selection_type: SelectionType, highlight: bool) -> bool
     {
         let scene_id = scene.id;
 

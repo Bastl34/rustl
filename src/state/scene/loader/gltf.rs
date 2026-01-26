@@ -12,7 +12,7 @@ use crate::{component_downcast, component_downcast_mut, console_log, console_war
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
 
-pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
+pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u32>>
 {
     console_log!("load gltf file {}", path);
 
@@ -21,7 +21,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
     let mut gltf = Gltf::from_slice(gltf_content.as_slice())?;
     let mut blob = gltf.blob.take();
 
-    let mut loaded_ids: Vec<u64> = vec![];
+    let mut loaded_ids: Vec<u32> = vec![];
 
     // ********** buffers **********
     let mut buffers: Vec<gltf::buffer::Data> = vec![];
@@ -239,7 +239,7 @@ pub fn load(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: 
 }
 
 
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: String, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u64, main_queue: ExecutionQueueItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
+fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: String, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u32, main_queue: ExecutionQueueItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
@@ -797,7 +797,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
 
         let mut duration: f32 = 0.0;
 
-        let mut target_map: HashMap<u64, Arc<RwLock<Box<Node>>>> = HashMap::new();
+        let mut target_map: HashMap<u32, Arc<RwLock<Box<Node>>>> = HashMap::new();
 
         // create channels
         for channel in animation.channels()
