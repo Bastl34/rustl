@@ -51,6 +51,7 @@ pub enum SettingsPanel
     Scene,
     Object,
     General,
+    Debug,
     Resources,
     MeshResource
 }

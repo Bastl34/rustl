@@ -191,41 +191,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         });
     }
 
-    // Debugging
-    collapse_with_title(ui, "scene_debugging", true, "🐛 Debugging Settings", None, |ui|
-    {
-        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
-        {
-            if ui.button("save image").clicked()
-            {
-                state.debug.save_image = true;
-            }
-
-            if ui.button("save depth pass image").clicked()
-            {
-                state.debug.save_depth_pass_image = true;
-            }
-
-            if ui.button("save depth buffer image").clicked()
-            {
-                state.debug.save_depth_buffer_image = true;
-            }
-
-            if ui.button("save hzb image").clicked()
-            {
-                state.debug.save_hzb_image = true;
-            }
-
-            if ui.button("save screenshot").clicked()
-            {
-                state.debug.save_screenshot = true;
-            }
-
-            ui.checkbox(&mut state.debug.highlight_visible_occlusions, "highlight visible occlusions");
-        });
-    });
-
-
     // Pre Scene Controller
     {
         ui.separator();
@@ -257,7 +222,6 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
                     }
 
                     // enabled toggle
-
                     let toggle_text;
                     if enabled
                     {

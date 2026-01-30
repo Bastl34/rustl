@@ -1,0 +1,2 @@
+[alias]
+watch-full = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resources/"]

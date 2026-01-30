@@ -5,6 +5,7 @@ use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
 use crate::state::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::state::gui::editor::ui::console::create_console_section;
+use crate::state::gui::editor::ui::debug::create_debug_settings;
 use crate::state::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::state::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::execute_on_scene_mut;
@@ -435,6 +436,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
         if editor_state.selected_scene_id.is_some()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
+            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Debug, "🐛 Debug");
         }
 
         if editor_state.selected_type == SelectionType::Texture && !editor_state.selected_object.is_empty()
@@ -483,6 +485,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
             SettingsPanel::General => create_general_settings(editor_state, state, ui),
+            SettingsPanel::Debug => create_debug_settings(editor_state, state, ui),
             SettingsPanel::Resources => create_general_settings(editor_state, state, ui),
         }
     });
