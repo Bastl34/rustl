@@ -378,7 +378,11 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
     {
         ScrollArea::vertical().show(ui, |ui|
         {
-            create_hierarchy(editor_state, state, ui);
+            ui.scope(|ui|
+            {
+                ui.style_mut().visuals.indent_has_left_vline = true;
+                create_hierarchy(editor_state, state, ui);
+            });
         });
     });
 }

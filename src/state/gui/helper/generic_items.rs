@@ -9,24 +9,37 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
     }
     else
     {
-        background_color = Color32::from_white_alpha(3);
+        background_color = Color32::from_white_alpha(0);
     }
 
-    let mut frame = egui::Frame::group(ui.style()).fill(background_color);
+    let mut frame = egui::Frame::group(ui.style()).fill(background_color).stroke(egui::Stroke::NONE);
+    //let mut frame = egui::Frame::group(ui.style()).fill(background_color);
     frame.inner_margin = egui::Margin::same(2);
+    frame = frame.shadow(egui::Shadow
+    {
+        color: Color32::from_white_alpha(35),
+        offset: [0, 0],
+        blur: 5,
+        spread: 0,
+    });
 
     frame.show(ui, |ui|
     {
-        let ui_id = ui.make_persistent_id(id);
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, open).show_header(ui, |ui|
+        ui.scope(|ui|
         {
-            ui.horizontal(|ui|
+            ui.style_mut().visuals.indent_has_left_vline = false;
+
+            let ui_id = ui.make_persistent_id(id.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, open).show_header(ui, |ui|
             {
-                header(ui);
+                ui.horizontal(|ui|
+                {
+                    header(ui);
+                });
+            }).body(|ui|
+            {
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), body);
             });
-        }).body(|ui|
-        {
-            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), body);
         });
     });
 }
