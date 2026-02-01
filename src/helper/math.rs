@@ -248,10 +248,13 @@ pub fn yaw_pitch_to_direction(yaw: f32, pitch: f32) -> Vector3::<f32>
 
 pub fn inverse_ray(ray: &Ray, trans_inverse: &Matrix4<f32>) -> Ray
 {
-    let ray_inverse_start = trans_inverse * ray.origin.to_homogeneous();
-    let ray_inverse_dir = trans_inverse * ray.dir.to_homogeneous();
+    let origin = Point3::new(ray.origin.x, ray.origin.y, ray.origin.z);
+    let dir = Vector3::new(ray.dir.x, ray.dir.y, ray.dir.z);
 
-    Ray::new(Point3::from_homogeneous(ray_inverse_start).unwrap(), Vector3::from_homogeneous(ray_inverse_dir).unwrap())
+    let ray_inverse_start = trans_inverse * origin.to_homogeneous();
+    let ray_inverse_dir = trans_inverse * dir.to_homogeneous();
+
+    Ray::new(Point3::from_homogeneous(ray_inverse_start).unwrap().into(), Vector3::from_homogeneous(ray_inverse_dir).unwrap().into())
 }
 
 /*
@@ -314,7 +317,7 @@ pub fn ray_plane_intersection(ray: &Ray, plane_normal: Vector3<f32>, plane_point
     let ray_origin = ray.origin;
 
     let d = plane_normal.dot(&plane_point.coords);
-    let denominator = plane_normal.dot(&ray_dir);
+    let denominator = plane_normal.dot(&ray_dir.into());
 
     // parallel
     if denominator.abs() < 1e-6
@@ -322,14 +325,14 @@ pub fn ray_plane_intersection(ray: &Ray, plane_normal: Vector3<f32>, plane_point
         return None;
     }
 
-    let t = (d - plane_normal.dot(&ray_origin.coords)) / denominator;
+    let t = (d - plane_normal.dot(&Vector3::<f32>::from(ray_origin))) / denominator;
 
     if !t.is_finite() || t < 0.0
     {
         return None;
     }
 
-    Some(ray_origin + ray_dir * t)
+    Some((ray_origin + ray_dir * t).into())
 }
 
 pub fn signed_angle_between_points(origin: &Point3<f32>, p1: &Point3<f32>, p2: &Point3<f32>, reference_axis: &Vector3<f32>) -> f32

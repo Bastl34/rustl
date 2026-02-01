@@ -694,7 +694,7 @@ impl Node
                 // merge into final sphere
                 let instance_sphere = BoundingSphere::new
                 (
-                    Point3::<f32>::new(transformed_center.x, transformed_center.y, transformed_center.z),
+                    Point3::<f32>::new(transformed_center.x, transformed_center.y, transformed_center.z).into(),
                     transformed_radius
                 );
 
@@ -711,7 +711,7 @@ impl Node
 
         if let Some(bounding_sphere_result) = bounding_sphere_result
         {
-            return Some((bounding_sphere_result.center, bounding_sphere_result.radius));
+            return Some((bounding_sphere_result.center.into(), bounding_sphere_result.radius));
         }
 
         None
@@ -795,7 +795,7 @@ impl Node
                 }
 
                 // neue transformierte box
-                let instance_box = Aabb::new(new_min, new_max);
+                let instance_box = Aabb::new(new_min.into(), new_max.into());
 
                 if let Some(bounding_box_all) = bounding_box_result.as_mut()
                 {
@@ -810,7 +810,7 @@ impl Node
 
         if let Some(bounding_box_result) = bounding_box_result
         {
-            return Some((bounding_box_result.mins, bounding_box_result.maxs));
+            return Some((bounding_box_result.mins.into(), bounding_box_result.maxs.into()));
         }
 
         None

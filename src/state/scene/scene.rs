@@ -1347,7 +1347,7 @@ impl Scene
 
                 let pos = ray.origin + (ray.dir * dist);
 
-                res.push(ScenePickRes::new(dist, pos, None, node.clone(), instance, None));
+                res.push(ScenePickRes::new(dist, pos.into(), None, node.clone(), instance, None));
 
                 if stop_on_first_hit
                 {
@@ -1415,7 +1415,7 @@ impl Scene
             {
                 let pos = ray.origin + (ray.dir * intersection.0);
 
-                hits.push(ScenePickRes::new(intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
+                hits.push(ScenePickRes::new(intersection.0, pos.into(), Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
 
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
                 /*

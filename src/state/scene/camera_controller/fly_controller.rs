@@ -282,7 +282,7 @@ impl CameraController for FlyController
             let origin = cam_data.eye_pos;
             let dir = movement_vec.normalize();
 
-            let ray = Ray::new(origin, dir);
+            let ray = Ray::new(origin.into(), dir.into());
 
             let hit = scene.pick(&ray, false, false, false, false, None);
 

@@ -1157,7 +1157,7 @@ impl SceneController for CharacterController
                     !is_char_node
                 };
 
-                let ray = Ray::new(pos, down_dir);
+                let ray = Ray::new(pos.into(), down_dir.into());
                 let pick_res = scene.multi_pick(&ray, false, false, false, false, Some(Arc::new(predicate_func)));
 
                 if let Some(first_pick) = pick_res.first()

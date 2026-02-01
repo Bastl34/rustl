@@ -658,7 +658,7 @@ impl Camera
 
         let ray_dir = (far_point - near_point).normalize();
 
-        let mut ray = Ray::new(near_point, Vector3::<f32>::from(ray_dir.xyz()));
+        let mut ray = Ray::new(near_point.into(), parry3d::math::Vec3::new(ray_dir.x, ray_dir.y, ray_dir.z));
         ray.dir = ray.dir.normalize();
 
         ray

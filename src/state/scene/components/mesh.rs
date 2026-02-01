@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use egui::RichText;
-use nalgebra::{Isometry3, Matrix4, Point3, Point4, Vector3};
-use parry3d::{bounding_volume::{Aabb, BoundingSphere}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
+use nalgebra::{Matrix4, Point3, Point4, Vector3};
+use parry3d::{bounding_volume::{Aabb, BoundingSphere}, math::{Pose3, Vec3}, query::{Ray, RayCast}, shape::{FeatureId, TriMesh}};
 use serde::{Deserialize, Serialize};
 
 use crate::{component_impl_default, component_impl_no_cleanup_node, component_impl_no_update, component_impl_set_enabled, console_error, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{gui::helper::info_box::info_box_with_body, helper::render_item::RenderItemOption, resources::mesh_resource::MeshResourceItem, scene::node::NodeItem}};
@@ -135,12 +135,12 @@ impl Mesh
                 transformed_pos.y /= transformed_pos.w;
                 transformed_pos.z /= transformed_pos.w;
 
-                Point3::<f32>::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
-            }).collect::<Vec<Point3<f32>>>();
+                Vec3::new(transformed_pos.x, transformed_pos.y, transformed_pos.z)
+            }).collect::<Vec<Vec3>>();
 
             let mesh = TriMesh::new(vertices.clone(), mesh_resource_data.indices.clone()).unwrap();
 
-            let trans = Isometry3::<f32>::identity();
+            let trans = Pose3::identity();
 
             let data = self.data.get_mut();
             data.b_box_skin = Some(mesh.aabb(&trans));
@@ -161,7 +161,7 @@ impl Mesh
         if let Some(b_box_skin) = self.get_data().b_box_skin
         {
             let s = self.get_data().b_volume_skin_multiplier;
-            let b_box_skin_scaled = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
+            let b_box_skin_scaled = b_box_skin.scaled(Vec3::new(s, s, s));
 
             return b_box_skin_scaled;
         }
@@ -184,7 +184,7 @@ impl Mesh
         if let Some(b_box_skin) = data.b_box_skin
         {
             let s = data.b_volume_skin_multiplier;
-            let b_box_skin_scaled = b_box_skin.scaled(&Vector3::<f32>::new(s, s, s));
+            let b_box_skin_scaled = b_box_skin.scaled(Vec3::new(s, s, s));
 
             return Some(b_box_skin_scaled);
         }
@@ -201,7 +201,7 @@ impl Mesh
             let s = data.b_volume_skin_multiplier;
             let b_sphere_skin = BoundingSphere::new
             (
-                *b_sphere_skin.center(),
+                b_sphere_skin.center(),
                 b_sphere_skin.radius() * s
             );
 
@@ -226,7 +226,7 @@ impl Mesh
             return data.b_sphere;
         }
 
-        BoundingSphere::new(Point3::origin(), 0.0)
+        BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
     }
 
     pub fn get_height(&self) -> f32
@@ -284,7 +284,7 @@ impl Mesh
                 if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
                 {
                     let hit = ray.origin + (ray.dir * res.time_of_impact);
-                    normal = mesh_resource.get_normal(hit, face_id, trans_inverse, &data.vertices);
+                    normal = mesh_resource.get_normal(hit.into(), face_id, trans_inverse, &data.vertices);
                     normal = (trans * normal.to_homogeneous()).xyz().normalize();
 
                     if data.mesh.is_backface(res.feature)
@@ -294,10 +294,11 @@ impl Mesh
                 }
                 else
                 {
-                    normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
+                    let res_normal: Vector3<f32> = res.normal.into();
+                    normal = (trans * res_normal.to_homogeneous()).xyz().normalize();
                 }
 
-                let time_of_impact = res.time_of_impact * ray.dir.magnitude();
+                let time_of_impact = res.time_of_impact * ray.dir.length();
 
                 return Some((time_of_impact, normal, face_id))
                 //return Some((res.time_of_impact, normal, face_id))
@@ -355,10 +356,11 @@ impl Mesh
                 skinned_pos.y /= skinned_pos.w;
                 skinned_pos.z /= skinned_pos.w;
 
-                Point3::<f32>::new(skinned_pos.x, skinned_pos.y, skinned_pos.z)
+                Point3::new(skinned_pos.x, skinned_pos.y, skinned_pos.z)
             }).collect::<Vec<Point3<f32>>>();
 
-            let mesh = TriMesh::new(vertices.clone(), data.indices.clone()).unwrap();
+            let vertices_vec3 = vertices.iter().map(|p| Vec3::new(p.x, p.y, p.z)).collect::<Vec<Vec3>>();
+            let mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
 
             // run intersection test
             let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
@@ -376,7 +378,7 @@ impl Mesh
                 if smooth_shading && data.normals.len() > 0 && data.normals_indices.len() > 0
                 {
                     let hit = ray.origin + (ray.dir * res.time_of_impact);
-                    normal = mesh_resource.get_normal(hit, face_id, trans_inverse, &vertices);
+                    normal = mesh_resource.get_normal(hit.into(), face_id, trans_inverse, &vertices);
                     normal = (trans * normal.to_homogeneous()).xyz().normalize();
 
                     if mesh.is_backface(res.feature)
@@ -386,10 +388,11 @@ impl Mesh
                 }
                 else
                 {
-                    normal = (trans * res.normal.to_homogeneous()).xyz().normalize();
+                    let res_normal: Vector3<f32> = res.normal.into();
+                    normal = (trans * res_normal.to_homogeneous()).xyz().normalize();
                 }
 
-                let time_of_impact = res.time_of_impact * ray.dir.magnitude();
+                let time_of_impact = res.time_of_impact * ray.dir.length();
 
                 return Some((time_of_impact, normal, face_id))
                 //return Some((res.time_of_impact, normal, face_id))

@@ -283,7 +283,7 @@ impl CameraController for TargetRotationController
                 dir *= self.data.get_ref().radius;
             }
 
-            let ray = Ray::new(target_pos, dir);
+            let ray = Ray::new(target_pos.into(), dir.into());
 
             let target_node = node.clone().unwrap();
             let pick_res = scene.pick(&ray, false, false, false, false, Some(Arc::new(move |node, _instance|

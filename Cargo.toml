@@ -15,7 +15,7 @@ bytemuck = { version = "1.24.0", features = [ "derive" ] }
 web-time = "1.1.0"
 winit = "0.30.12"
 anyhow = "1.0.100"
-nalgebra = { version = "0.34.1", features = ["serde-serialize"]}
+nalgebra = { version = "0.34.1", features = ["serde-serialize", "convert-glam030"]}
 colored = "3.1.1"
 base64 = "0.22.1"
 strum = "0.27.2"
@@ -36,7 +36,7 @@ uuid = {version = "1.20.0", features = ["v4"] }
 
 xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 
-parry3d = "0.25.0"
+parry3d = "0.26.0"
 
 arboard = "3.6.1"
 
