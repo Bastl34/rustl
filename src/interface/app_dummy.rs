@@ -1,9 +1,7 @@
-use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
+use std::sync::{Arc, RwLock};
+use nalgebra::Vector3;
 
-use egui::epaint::EllipseShape;
-use nalgebra::{Matrix4, Point3, UnitQuaternion, Vector2, Vector3};
-
-use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::{animation::{Animation, AnimationLayerType}, look_at::LookAt}, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{components::look_at::LookAt, node::Node, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -64,12 +62,12 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
         */
 
@@ -79,7 +77,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -91,7 +89,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
         */
 
@@ -103,7 +101,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -116,7 +114,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
             */
 
@@ -125,7 +123,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 200.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -138,7 +136,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
             */
 
@@ -248,7 +246,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
             */
 
@@ -535,7 +533,7 @@ impl App for AppDummy
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
                 let light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
 
                 scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
             }));
