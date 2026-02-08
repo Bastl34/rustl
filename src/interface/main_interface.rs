@@ -313,7 +313,7 @@ impl MainInterface
         {
             let now = Instant::now();
             let state = &mut *(self.context.state.borrow_mut());
-            self.editor_gui.update(state);
+            self.editor_gui.update(state, &mut self.context.wgpu, &self.context.egui.ctx);
 
             state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }

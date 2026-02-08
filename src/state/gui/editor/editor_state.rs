@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{console_debug, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -112,6 +112,13 @@ pub struct Asset
     pub egui_preview: Option<egui::TextureHandle>,
 }
 
+pub struct DebugImages
+{
+    pub depth_pass_image: Option<egui::TextureHandle>,
+    pub depth_buffer_image: Option<egui::TextureHandle>,
+    pub hzb_image: Option<egui::TextureHandle>,
+}
+
 pub struct EditorState
 {
     pub visible: bool,
@@ -182,6 +189,9 @@ pub struct EditorState
     pub add_scene_controller_id: usize,
     pub add_scene_controller_post: bool,
 
+    pub dialog_debug_image: bool,
+    pub dialog_debug_image_id: Option<egui::TextureHandle>,
+
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
     pub assets_objects: Vec<Asset>,
@@ -189,6 +199,8 @@ pub struct EditorState
 
     pub log_filter: String,
     pub log_auto_scroll: bool,
+
+    pub debug_images: DebugImages,
 }
 
 impl EditorState
@@ -265,6 +277,9 @@ impl EditorState
             add_scene_controller_id: 0,
             add_scene_controller_post: false,
 
+            dialog_debug_image: false,
+            dialog_debug_image_id: None,
+
             asset_filter: "".to_string(),
             reuse_materials_by_name: false,
             assets_objects: vec![],
@@ -272,7 +287,91 @@ impl EditorState
 
             log_filter: "".to_string(),
             log_auto_scroll: true,
+
+            debug_images: DebugImages
+            {
+                depth_pass_image: None,
+                depth_buffer_image: None,
+                hzb_image: None,
+            },
         }
+    }
+
+    pub fn update_debug_images(&mut self, state: &mut State, wgpu: &mut rendering::wgpu::WGpu, egui_context: &egui::Context)
+    {
+        // ******************** depth pass image ********************
+        if state.debug.show_depth_pass_image
+        {
+            let scene = self.get_selected_scene(state);
+
+            if let Some(scene) = scene
+            {
+                if let Some(ref render_item_box) = scene.render_item
+                {
+                    let scene_render_scene = get_render_item::<rendering::scene::Scene>(render_item_box);
+
+                    let image = scene_render_scene.depth_pass_buffer_texture.to_image(wgpu, None);
+                    let size = [image.width() as usize, image.height() as usize];
+                    let pixels = image.to_rgba8().into_raw();
+                    let color = egui::ColorImage::from_rgba_unmultiplied(size, pixels.as_slice());
+
+                    match self.debug_images.depth_pass_image.as_mut()
+                    {
+                        Some(handle) =>
+                        {
+                            handle.set(color, Default::default());
+                        }
+                        None =>
+                        {
+                            let tex = egui_context.load_texture("depth_pass_image", color, Default::default());
+                            self.debug_images.depth_pass_image = Some(tex);
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            self.debug_images.depth_pass_image = None;
+        }
+
+        // ******************** depth buffer image ********************
+        if state.debug.show_depth_buffer_image
+        {
+            let scene = self.get_selected_scene(state);
+
+            if let Some(scene) = scene
+            {
+                if let Some(ref render_item_box) = scene.render_item
+                {
+                    let scene_render_scene = get_render_item::<rendering::scene::Scene>(render_item_box);
+
+                    let image = scene_render_scene.depth_buffer_texture.to_image(wgpu, None);
+                    let size = [image.width() as usize, image.height() as usize];
+                    let pixels = image.to_rgba8().into_raw();
+                    let color = egui::ColorImage::from_rgba_unmultiplied(size, pixels.as_slice());
+
+                    match self.debug_images.depth_buffer_image.as_mut()
+                    {
+                        Some(handle) =>
+                        {
+                            handle.set(color, Default::default());
+                        }
+                        None =>
+                        {
+                            let tex = egui_context.load_texture("depth_buffer_image", color, Default::default());
+                            self.debug_images.depth_buffer_image = Some(tex);
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            self.debug_images.depth_buffer_image = None;
+        }
+
+
     }
 
     pub fn set_grid_size(&mut self, size: f32)

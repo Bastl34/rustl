@@ -1,4 +1,4 @@
-use crate::state::{gui::helper::generic_items::modal_with_title, state::State};
+use crate::{console_debug, state::{gui::{editor::ui::helper::ui_helper::fit_size, helper::generic_items::modal_with_title}, state::State}};
 
 use super::super::editor_state::EditorState;
 
@@ -16,6 +16,10 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     {
         create_scene_controller_modal(editor_state, state, ctx);
     }
+    else if editor_state.dialog_debug_image
+    {
+        create_debug_image_modal(editor_state, state, ctx);
+    }
 }
 
 pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
@@ -25,7 +29,7 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
     let (_, instance_id) = editor_state.get_object_ids();
     let is_instance = instance_id.is_some();
 
-    modal_with_title(ctx, &mut dialog_add_component, "Add component", |ui|
+    modal_with_title(ctx, &mut dialog_add_component, "Add component", false, false, |ui|
     {
         ui.label("Add your component");
 
@@ -95,7 +99,7 @@ pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mu
 {
     let mut dialog_add_camera_controller = editor_state.dialog_add_camera_controller;
 
-    modal_with_title(ctx, &mut dialog_add_camera_controller, "Add Controller", |ui|
+    modal_with_title(ctx, &mut dialog_add_camera_controller, "Add Controller", false, false, |ui|
     {
         ui.label("Add Camera Controller");
 
@@ -146,7 +150,7 @@ pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut
     let mut dialog_add_scene_controller = editor_state.dialog_add_scene_controller;
     let post_controller = editor_state.add_scene_controller_post;
 
-    modal_with_title(ctx, &mut dialog_add_scene_controller, "Add Controller", |ui|
+    modal_with_title(ctx, &mut dialog_add_scene_controller, "Add Controller", false, false, |ui|
     {
         ui.label("Add Scene Controller");
 
@@ -193,5 +197,35 @@ pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut
     if !dialog_add_scene_controller
     {
         editor_state.dialog_add_scene_controller = dialog_add_scene_controller;
+    }
+}
+
+pub fn create_debug_image_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    let mut dialog_debug_image = editor_state.dialog_debug_image;
+
+    modal_with_title(ctx, &mut dialog_debug_image, "Debug Image", true, true, |ui|
+    {
+        if let Some(debug_image_id) = editor_state.dialog_debug_image_id.as_ref()
+        {
+            let avail = ui.available_size();
+            let texture_size = debug_image_id.size();
+            let tex_size = egui::vec2(texture_size[0] as f32, texture_size[1] as f32);
+            let draw_size = fit_size(avail, tex_size);
+
+            ui.allocate_ui(draw_size, |ui|
+            {
+                ui.image((debug_image_id.id(), draw_size));
+            });
+        }
+        else
+        {
+            ui.label("No image to display");
+        }
+    });
+
+    if !dialog_debug_image
+    {
+        editor_state.dialog_debug_image = dialog_debug_image;
     }
 }

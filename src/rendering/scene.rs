@@ -147,8 +147,8 @@ pub struct Scene
     // occlusion_query_buffer: wgpu::Buffer,
     // occlusion_query_buffer_staging: wgpu::Buffer,
 
-    depth_pass_buffer_texture: Texture,
-    depth_buffer_texture: Texture,
+    pub depth_pass_buffer_texture: Texture,
+    pub depth_buffer_texture: Texture,
     // hzb_texture: Texture,
 
     depth_export_bind_group: DepthExportBindGroup,

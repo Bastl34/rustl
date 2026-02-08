@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::egui::EGui, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::{State, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{gui::editor::helper::transform_vec_to_parent_local, scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -145,8 +145,11 @@ impl Editor
         full_output
     }
 
-    pub fn update(&mut self, state: &mut State)
+    pub fn update(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
     {
+        // update debug images
+        self.editor_state.update_debug_images(state, wgpu, egui_ctx);
+
         // update modes
         self.update_modes(state);
 

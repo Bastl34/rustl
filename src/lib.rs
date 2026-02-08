@@ -141,6 +141,11 @@ mod state
 
             pub(crate) mod ui
             {
+                pub(crate) mod helper
+                {
+                    pub(crate) mod ui_helper;
+                }
+
                 pub(crate) mod main_frame;
                 pub(crate) mod modals;
                 pub(crate) mod dialogs;
