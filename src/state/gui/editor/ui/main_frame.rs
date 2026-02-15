@@ -86,20 +86,24 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                     ui.spinner();
                 }
 
-                // just run every 1/10 second to reduce performance overhead (especially for skinned meshes)
-                if editor_state.last_hover_check.elapsed().as_secs_f32() > 0.1
+                // just refresh if mouse was moved
+                if state.io.input_manager.get_pointer_input().velocity.magnitude() > 0.0
                 {
-                    editor_state.last_hover_check = Instant::now();
+                    // just run every 1/10 second to reduce performance overhead (especially for skinned meshes)
+                    if editor_state.last_hover_check.elapsed().as_secs_f32() > 0.1
+                    {
+                        editor_state.last_hover_check = Instant::now();
 
-                    if let Some((object_name, pointer_pos)) =  get_object_and_pointer_world_position(state)
-                    {
-                        editor_state.last_hover_object = Some(object_name);
-                        editor_state.last_hover_pointer_position = Some(pointer_pos);
-                    }
-                    else
-                    {
-                        editor_state.last_hover_object = None;
-                        editor_state.last_hover_pointer_position = None;
+                        if let Some((object_name, pointer_pos)) =  get_object_and_pointer_world_position(state)
+                        {
+                            editor_state.last_hover_object = Some(object_name);
+                            editor_state.last_hover_pointer_position = Some(pointer_pos);
+                        }
+                        else
+                        {
+                            editor_state.last_hover_object = None;
+                            editor_state.last_hover_pointer_position = None;
+                        }
                     }
                 }
 
