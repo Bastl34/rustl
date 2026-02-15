@@ -35,11 +35,15 @@ cargo install cargo-watch
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 ```
 
+```bash
+#dev mode (without optimization of rustl crate)
+cargo dev
+```
+
 
 ```bash
-
-# build locally (with watch)
-cargo watch -s "cargo run --release" -w src/ -w resources/
+# build locally (watch + dev-fast profile)
+cargo watch -s "cargo run --profile dev-fast" -w src/ -w resources/
 
 # build for web  (with watch)
 cargo watch -s "wasm-pack build --target web" -w src/ -w resources/

@@ -1,2 +1,2 @@
 [alias]
-watch-full = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resources/"]
+dev = ["watch", "-s", "cargo run --profile dev-fast", "-w", "src/", "-w", "resources/"]
