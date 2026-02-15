@@ -197,9 +197,9 @@ pub struct Debug
 
     pub save_screenshot: bool,
 
-    pub show_depth_pass_image: bool,
-    pub show_depth_buffer_image: bool,
-    pub show_hzb_image: bool,
+    pub show_depth_pass_image: Option<u32>,
+    pub show_depth_buffer_image: Option<u32>,
+    pub show_hzb_image: Option<u32>,
 
     pub highlight_visible_occlusions: bool,
 }
@@ -342,9 +342,9 @@ impl State
 
                 save_screenshot: false,
 
-                show_depth_pass_image: false,
-                show_depth_buffer_image: false,
-                show_hzb_image: false,
+                show_depth_pass_image: None,
+                show_depth_buffer_image: None,
+                show_hzb_image: None,
 
                 highlight_visible_occlusions: false,
             },

@@ -399,6 +399,11 @@ impl Texture
         ]
     }
 
+    pub fn get_mip_level_count(&self) -> u32
+    {
+        self.texture.mip_level_count()
+    }
+
     pub fn to_image(&self, wgpu: &mut WGpu, mip_level: Option<u32>) -> DynamicImage
     {
         // https://sotrh.github.io/learn-wgpu/showcase/gifs/#how-do-we-make-the-frames
@@ -540,7 +545,7 @@ impl Texture
 
         let original_width = self.width;
         let original_height = self.height;
-        let mip_level = mip_level.unwrap_or(0);
+        let mip_level = mip_level.unwrap_or(0).clamp(0, self.texture.mip_level_count() - 1);
 
         // Berechnen der Dimensionen für das spezifische Mip-Level
         let mip_width = (original_width >> mip_level).max(1);

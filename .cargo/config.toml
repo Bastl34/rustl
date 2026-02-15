@@ -1,2 +1,3 @@
 [alias]
 dev = ["watch", "-s", "cargo run --profile dev-fast", "-w", "src/", "-w", "resources/"]
+dev-release = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resources/"]

@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_debug, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{gui::editor::helper::apply_fly_camera_move_state, helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -300,7 +300,7 @@ impl EditorState
     pub fn update_debug_images(&mut self, state: &mut State, wgpu: &mut rendering::wgpu::WGpu, egui_context: &egui::Context)
     {
         // ******************** depth pass image ********************
-        if state.debug.show_depth_pass_image
+        if state.debug.show_depth_pass_image.is_some()
         {
             let scene = self.get_selected_scene(state);
 
@@ -336,7 +336,7 @@ impl EditorState
         }
 
         // ******************** depth buffer image ********************
-        if state.debug.show_depth_buffer_image
+        if state.debug.show_depth_buffer_image.is_some()
         {
             let scene = self.get_selected_scene(state);
 
@@ -371,7 +371,45 @@ impl EditorState
             self.debug_images.depth_buffer_image = None;
         }
 
+        // ******************** hzb image ********************
+        if let Some(show_hzb_image_mip) = state.debug.show_hzb_image
+        {
+            let scene = self.get_selected_scene(state);
 
+            if let Some(scene) = scene
+            {
+                if let Some(cam) = scene.get_active_camera()
+                {
+                    if let Some(ref render_item_box) = cam.hzb_texture_render_item
+                    {
+                        let hzb_texture = get_render_item::<Texture>(render_item_box);
+
+                        let image = hzb_texture.to_image(wgpu, Some(show_hzb_image_mip));
+                        let size = [image.width() as usize, image.height() as usize];
+                        let pixels = image.to_rgba8().into_raw();
+                        let color = egui::ColorImage::from_rgba_unmultiplied(size, pixels.as_slice());
+
+                        match self.debug_images.hzb_image.as_mut()
+                        {
+                            Some(handle) =>
+                            {
+                                handle.set(color, egui::TextureOptions::NEAREST);
+                            }
+                            None =>
+                            {
+                                let tex = egui_context.load_texture("hzb_image", color, egui::TextureOptions::NEAREST);
+                                self.debug_images.hzb_image = Some(tex);
+                            }
+                        }
+                    }
+                }
+
+            }
+        }
+        else
+        {
+            self.debug_images.hzb_image = None;
+        }
     }
 
     pub fn set_grid_size(&mut self, size: f32)
