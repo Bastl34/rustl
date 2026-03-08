@@ -185,6 +185,18 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 {
     ui.menu_button("File", |ui|
     {
+        if ui.button("New").clicked()
+        {
+            let exec_queue = state.main_thread_execution_queue.clone();
+            for scene in &state.scenes
+            {
+                let scene_id = scene.id;
+                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                {
+                    scene.clear(false, true);
+                }));
+            }
+        }
         if ui.button("Save Project").clicked()
         {
             json::export(state, (("data/".to_string()) + &editor_state.project_name).as_str());

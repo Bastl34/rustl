@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{gui::editor::ui::console, helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -406,8 +406,6 @@ impl Scene
 
     pub fn clear(&mut self, remove_internals: bool, delete_resources: bool)
     {
-        self.cleanup_cyclic_references(None, remove_internals);
-
         let mut nodes_to_delete = vec![];
         for node in &self.nodes
         {
@@ -423,6 +421,8 @@ impl Scene
             let node_id = node.read().unwrap().id;
             self.delete_node_by_id(node_id, delete_resources, delete_resources, delete_resources, delete_resources);
         }
+
+        self.cleanup_cyclic_references(None, remove_internals);
 
         self.lights.get_mut().retain(|light|
         {
@@ -921,7 +921,7 @@ impl Scene
 
         if delete_textures && !delete_materials
         {
-            println!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
+            console_warning!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
         }
 
         // ********** delete mesh resource **********
