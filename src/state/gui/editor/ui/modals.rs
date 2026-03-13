@@ -1,4 +1,4 @@
-use crate::{console_debug, state::{gui::{editor::ui::helper::ui_helper::fit_size, helper::generic_items::modal_with_title}, state::State}};
+use crate::{state::{gui::{editor::ui::helper::ui_helper::fit_size, helper::generic_items::modal_with_title}, state::State}};
 
 use super::super::editor_state::EditorState;
 
@@ -200,7 +200,7 @@ pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut
     }
 }
 
-pub fn create_debug_image_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+pub fn create_debug_image_modal(editor_state: &mut EditorState, _state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_debug_image = editor_state.dialog_debug_image;
 

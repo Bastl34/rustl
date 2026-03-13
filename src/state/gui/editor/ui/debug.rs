@@ -2,7 +2,7 @@ use std::ops::Sub;
 
 use egui::{Ui};
 
-use crate::{console_debug, rendering::texture::Texture, state::{gui::helper::generic_items::collapse_with_title, helper::render_item::get_render_item, state::State}};
+use crate::{rendering::texture::Texture, state::{gui::helper::generic_items::collapse_with_title, helper::render_item::get_render_item, state::State}};
 use crate::state::gui::editor::ui::helper::ui_helper::fit_size;
 
 use super::super::editor_state::EditorState;

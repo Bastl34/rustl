@@ -1365,14 +1365,15 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
 
                         // after each ui update, check if new components were added during the update --> add
                         {
-                            let maybe_new_components = &node.read().unwrap().components;
+                            //let maybe_new_components = &node.read().unwrap().components;
+                            let maybe_new_components = &instance.read().unwrap().components;
                             find_and_add_new_components(&mut all_components_clone, maybe_new_components);
                         }
 
                         // re-add current component
                         {
-                            let mut node = node.write().unwrap();
-                            node.components = all_components_clone.clone();
+                            let mut instance = instance.write().unwrap();
+                            instance.components = all_components_clone.clone();
                         }
                     });
                 }
