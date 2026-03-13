@@ -7,21 +7,21 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-simple_logger = "5.1.0"
+simple_logger = "5.2.0"
 log = "0.4.29"
 cfg-if = "1.0.3"
 wgpu = "27.0.1"
 bytemuck = { version = "1.25.0", features = [ "derive" ] }
 web-time = "1.1.0"
-winit = "0.30.12"
-anyhow = "1.0.101"
+winit = "0.30.13"
+anyhow = "1.0.102"
 nalgebra = { version = "0.34.1", features = ["serde-serialize", "convert-glam030"]}
 colored = "3.1.1"
 base64 = "0.22.1"
-strum = "0.27.2"
-strum_macros = "0.27.2"
+strum = "0.28.0"
+strum_macros = "0.28.0"
 rfd = "0.17.2"
-chrono = "0.4.43"
+chrono = "0.4.44"
 
 serde = "1.0.228"
 serde_json = "1.0.149"
@@ -32,7 +32,7 @@ regex = "1.12.3"
 rodio = { version = "0.21.1", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
 gilrs = { version = "0.11.1", features = ["wgi"]}
 take_mut = "0.2.2"
-uuid = {version = "1.21.0", features = ["v4"] }
+uuid = {version = "1.22.0", features = ["v4"] }
 
 xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 
@@ -83,9 +83,9 @@ console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.13.2"
 wgpu = { version = "27.0.1", features = ["webgl"]}
-wasm-bindgen = "0.2.108"
-wasm-bindgen-futures = "0.4.58"
-web-sys = { version = "0.3.85", features = [
+wasm-bindgen = "0.2.114"
+wasm-bindgen-futures = "0.4.64"
+web-sys = { version = "0.3.91", features = [
     "Document",
     "Window",
     "Element",
