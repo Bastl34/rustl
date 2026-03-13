@@ -201,6 +201,8 @@ pub struct EditorState
     pub log_auto_scroll: bool,
 
     pub debug_images: DebugImages,
+
+    pub highlighted_gizmo_id: Option<u32>,
 }
 
 impl EditorState
@@ -294,6 +296,7 @@ impl EditorState
                 depth_buffer_image: None,
                 hzb_image: None,
             },
+            highlighted_gizmo_id: None,
         }
     }
 

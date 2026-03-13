@@ -176,8 +176,8 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
         }
     }
 
-    let pointer_pos = state.io.input_manager.get_pointer_input().pos;
-    let pointer_pos_last = state.io.input_manager.get_pointer_input().last_pos;
+    let pointer_pos = state.io.input_manager.mouse.point.pos;
+    let pointer_pos_last = state.io.input_manager.mouse.point.last_pos;
     if pointer_pos.is_none() || pointer_pos_last.is_none()
     {
         return;
@@ -874,8 +874,16 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
         if let Some(transform_component) = transform_component
         {
             component_downcast_mut!(transform_component, Transformation);
-            transform_component.set_translation(pos);
-            transform_component.set_scale(Vector3::new(scale, scale, scale));
+            let new_scale = Vector3::new(scale, scale, scale);
+
+            if !math::approx_equal_vec(&transform_component.get_data().position, &pos)
+            {
+                transform_component.set_translation(pos);
+            }
+            if !math::approx_equal_vec(&transform_component.get_data().scale, &new_scale)
+            {
+                transform_component.set_scale(new_scale);
+            }
         }
     }
 
@@ -889,9 +897,18 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
         if let Some(transform_component) = transform_component
         {
             component_downcast_mut!(transform_component, Transformation);
-            transform_component.set_translation(pos);
-            transform_component.set_rotation(parent_world_rotation_only);
-            transform_component.set_scale(Vector3::new(scale, scale, scale));
+            let new_scale = Vector3::new(scale, scale, scale);
+
+            if !math::approx_equal_vec(&transform_component.get_data().position, &pos)
+            {
+                transform_component.set_translation(pos);
+            }
+            if !math::approx_equal_vec(&transform_component.get_data().rotation, &parent_world_rotation_only) {
+                transform_component.set_rotation(parent_world_rotation_only);
+            }
+            if !math::approx_equal_vec(&transform_component.get_data().scale, &new_scale) {
+                transform_component.set_scale(new_scale);
+            }
         }
     }
 
@@ -905,15 +922,32 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
         if let Some(transform_component) = transform_component
         {
             component_downcast_mut!(transform_component, Transformation);
-            transform_component.set_translation(pos);
-            transform_component.set_rotation(world_rotatio_only);
-            transform_component.set_scale(Vector3::new(scale, scale, scale));
+            let new_scale = Vector3::new(scale, scale, scale);
+
+            if !math::approx_equal_vec(&transform_component.get_data().position, &pos)
+            {
+                transform_component.set_translation(pos);
+            }
+            if !math::approx_equal_vec(&transform_component.get_data().rotation, &world_rotatio_only)
+            {
+                transform_component.set_rotation(world_rotatio_only);
+            }
+            if !math::approx_equal_vec(&transform_component.get_data().scale, &new_scale)
+            {
+                transform_component.set_scale(new_scale);
+            }
         }
     }
 }
 
 pub fn hover_gizmos(pointer_pos: Point2<f32>, editor_state: &mut EditorState, state: &mut State, gizmo_transform_updated: bool)
 {
+    // if transform was updated (e.g. by dragging), keep the current highlight state
+    if gizmo_transform_updated
+    {
+        return;
+    }
+
     let gizmos = vec!
     [
         ("gizmo_position", editor_state.gizmo_position),
@@ -921,42 +955,68 @@ pub fn hover_gizmos(pointer_pos: Point2<f32>, editor_state: &mut EditorState, st
         ("gizmo_scale", editor_state.gizmo_scale)
     ];
 
-    for (gizmo_name, gizmo_enabled) in gizmos
+    let mut hovered_node_id = None;
+    let mut min_dist = std::f32::MAX;
+
+    // only pick if not doing action
+    if !state.io.input_manager.is_main_pointer_action_active()
     {
-        if !gizmo_enabled
-        {
-            continue;
-        }
+        let selected_scene_id = editor_state.selected_scene_id;
 
-        let gizmo_node;
+        if let Some(selected_scene_id) = selected_scene_id
         {
-            let scene = editor_state.get_selected_scene(state);
-            if let Some(scene) = scene
+            if let Some(scene) = state.find_scene_by_id(selected_scene_id)
             {
-                gizmo_node = scene.find_node_by_name(gizmo_name);
-            }
-            else
-            {
-                gizmo_node = None;
-            }
-        }
-
-        if let Some(gizmo_node) = gizmo_node
-        {
-            // reset
-            if !gizmo_transform_updated
-            {
-                gizmo_node.write().unwrap().set_highlighted(false);
-            }
-
-            if !state.io.input_manager.is_main_pointer_action_active()
-            {
-                if let Some((_scene_id, pick_res)) = pick_node(state, gizmo_node, pointer_pos, false, true)
+                for (gizmo_name, gizmo_enabled) in &gizmos
                 {
-                    let mut node = pick_res.node.write().unwrap();
-                    node.set_highlighted(true);
+                    if !gizmo_enabled { continue; }
+
+                    if let Some(gizmo_node) = scene.find_node_by_name(gizmo_name)
+                    {
+                        if let Some((_, pick_res)) = pick_node(state, gizmo_node, pointer_pos, false, true)
+                        {
+                            if pick_res.time_of_impact < min_dist
+                            {
+                                min_dist = pick_res.time_of_impact;
+                                hovered_node_id = Some(pick_res.node.read().unwrap().id);
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    // determine if we need to update highlights
+    if hovered_node_id != editor_state.highlighted_gizmo_id
+    {
+        // 1. clear everything (safest way to ensure old highlight is gone)
+        let selected_scene_id = editor_state.selected_scene_id;
+        if let Some(selected_scene_id) = selected_scene_id
+        {
+            if let Some(scene) = state.find_scene_by_id_mut(selected_scene_id)
+            {
+                for (gizmo_name, gizmo_enabled) in &gizmos
+                {
+                    if !gizmo_enabled { continue; }
+
+                    if let Some(gizmo_node) = scene.find_node_by_name(gizmo_name)
+                    {
+                        gizmo_node.write().unwrap().set_highlighted(false);
+                    }
+                }
+
+                // 2. highlight new one if it exists
+                if let Some(node_id) = hovered_node_id
+                {
+                    if let Some(node) = scene.find_node_by_id(node_id)
+                    {
+                        node.write().unwrap().set_highlighted(true);
+                    }
+                }
+            }
+        }
+
+        editor_state.highlighted_gizmo_id = hovered_node_id;
     }
 }
