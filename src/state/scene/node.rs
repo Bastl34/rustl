@@ -324,6 +324,19 @@ impl Node
         }
     }
 
+    pub fn add_node_front(node: NodeItem, child_node: NodeItem)
+    {
+        {
+            let mut node = node.write().unwrap();
+            node.nodes.insert(0, child_node.clone());
+        }
+
+        {
+            let mut child_node = child_node.write().unwrap();
+            child_node.parent = OptionOrId::Some(node.clone());
+        }
+    }
+
     pub fn move_to_front(&mut self, node: NodeItem)
     {
         let nodes_amount = self.nodes.len();

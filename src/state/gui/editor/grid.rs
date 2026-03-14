@@ -22,6 +22,8 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
     let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), false, true, true, false, 0).unwrap();
     let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), false, false, true, false, 0).unwrap();
 
+    let mut grid_root = None;
+
     execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
     {
         if state.find_scene_by_id_mut(scene_id).is_none()
@@ -70,6 +72,7 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
             {
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
+                    grid_root = Some(root_node.clone());
                     root_node.write().unwrap().name = "grid root".to_string();
 
                     // move to front
@@ -299,7 +302,10 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
                 plane_node.write().unwrap().create_default_instance(plane_node.clone());
             }
 
-            Node::add_node(grid_area_arc, plane_node);
+            if let Some(grid_root) = grid_root
+            {
+                Node::add_node_front(grid_root, plane_node);
+            }
         }
 
         // run internal tagging
