@@ -257,20 +257,14 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
         }
 
         // ********** create plane **********
-        let grid_area_arc;
-        {
-            let scene = state.find_scene_by_id(scene_id).unwrap();
-            grid_area_arc = scene.find_mesh_node_by_ids(&loaded_ids_grid);
-        }
-
-        if let Some(grid_area_arc) = grid_area_arc
+        if let Some(grid_root) = grid_root
         {
             let half_size = size / 2.0;
 
-            let p0 = Point3::<f32>::new(-half_size, -0.001, half_size);
-            let p1 = Point3::<f32>::new(half_size, -0.001, half_size);
-            let p2 = Point3::<f32>::new(half_size, -0.001, -half_size);
-            let p3 = Point3::<f32>::new(-half_size, -0.001, -half_size);
+            let p0 = Point3::<f32>::new(-half_size, -0.01, half_size);
+            let p1 = Point3::<f32>::new(half_size, -0.01, half_size);
+            let p2 = Point3::<f32>::new(half_size, -0.01, -half_size);
+            let p3 = Point3::<f32>::new(-half_size, -0.01, -half_size);
 
             let plane_mesh_resource = MeshResource::new_plane("grid plane mesh", p0, p1, p2, p3);
             let plane_mesh = state.insert_mesh_resource_or_reuse(plane_mesh_resource, "grid plane mesh");
@@ -302,10 +296,7 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
                 plane_node.write().unwrap().create_default_instance(plane_node.clone());
             }
 
-            if let Some(grid_root) = grid_root
-            {
-                Node::add_node_front(grid_root, plane_node);
-            }
+            Node::add_node_front(grid_root, plane_node);
         }
 
         // run internal tagging

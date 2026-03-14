@@ -71,7 +71,7 @@ impl Editor
                 // add camera
                 if scene.cameras.len() == 0
                 {
-                    let mut cam = Camera::new("Cam".to_string());
+                    let mut cam = Camera::new("Editor Cam".to_string());
                     cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
                     cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
