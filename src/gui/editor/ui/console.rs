@@ -1,6 +1,6 @@
 use egui::{Color32, Ui};
 
-use crate::{helper::console_log::{self, LogType}, state::{gui::{editor::editor_state::EditorState, helper::generic_items::button_with_background}, state::State}};
+use crate::{gui::{editor::editor_state::EditorState, helper::generic_items::button_with_background}, helper::console_log::{self, LogType}, state::state::State};
 use egui_extras::{Column, TableBuilder};
 
 pub fn create_console_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use egui::{Ui, RichText};
 
-use crate::{helper::{change_tracker::ChangeTracker, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::collapse_with_title}, scene::light::{Light, LightItem}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::collapse_with_title}, helper::{change_tracker::ChangeTracker, generic::cut_string_to_length}, state::{scene::light::{Light, LightItem}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 

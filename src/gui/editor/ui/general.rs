@@ -1,7 +1,7 @@
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, state::{gui::helper::generic_items::collapse_with_title, scene::{components::material::Material, scene::Scene}, state::State}};
+use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, state::{scene::{components::material::Material, scene::Scene}, state::State}};
 
 use super::super::editor_state::EditorState;
 

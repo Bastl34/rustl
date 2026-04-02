@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use egui::{Color32, RichText, Ui};
 use rfd::FileDialog;
 
-use crate::{component_downcast, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::{generic_items::collapse_with_title, info_box::info_box}}, resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
-use crate::state::gui::editor::ui::dialogs::load_sound_dialog;
+use crate::gui::editor::ui::dialogs::load_sound_dialog;
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
 pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &HashMap<std::string::String, SoundSourceItem>, ui: &mut Ui)

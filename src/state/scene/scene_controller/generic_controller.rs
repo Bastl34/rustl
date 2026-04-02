@@ -5,7 +5,7 @@ use crate::state::scene::components::mesh::Mesh;
 use crate::state::scene::scene::Scene;
 use crate::state::state::InputOutput;
 use crate::scene_controller_impl_default;
-use crate::state::gui::helper::info_box::warn_box;
+use crate::gui::helper::info_box::warn_box;
 
 use super::scene_controller::{SceneController, SceneControllerBase};
 

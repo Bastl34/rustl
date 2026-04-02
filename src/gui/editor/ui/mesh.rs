@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 
 use egui::{RichText, Ui};
 
-use crate::{component_downcast, helper::generic::cut_string_to_length, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::{generic_items::collapse_with_title, info_box::info_box}}, resources::mesh_resource::MeshResourceItem, scene::{components::{component::Component, mesh::Mesh}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::generic::cut_string_to_length, state::{resources::mesh_resource::MeshResourceItem, scene::{components::{component::Component, mesh::Mesh}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 

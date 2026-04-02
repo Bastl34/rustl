@@ -123,46 +123,47 @@ mod state
         pub(crate) mod mesh_resource;
     }
 
-    pub(crate) mod gui
+}
+
+mod gui
+{
+    pub(crate) mod helper
     {
-        pub(crate) mod helper
-        {
-            pub(crate) mod info_box;
-            pub(crate) mod generic_items;
-        }
+        pub(crate) mod info_box;
+        pub(crate) mod generic_items;
+    }
 
-        pub(crate) mod editor
-        {
-            pub(crate) mod editor;
-            pub(crate) mod editor_state;
-            pub(crate) mod helper;
-            pub(crate) mod gizmo;
-            pub(crate) mod grid;
+    pub(crate) mod editor
+    {
+        pub(crate) mod editor;
+        pub(crate) mod editor_state;
+        pub(crate) mod helper;
+        pub(crate) mod gizmo;
+        pub(crate) mod grid;
 
-            pub(crate) mod ui
+        pub(crate) mod ui
+        {
+            pub(crate) mod helper
             {
-                pub(crate) mod helper
-                {
-                    pub(crate) mod ui_helper;
-                }
-
-                pub(crate) mod main_frame;
-                pub(crate) mod modals;
-                pub(crate) mod dialogs;
-                pub(crate) mod statistics;
-                pub(crate) mod cameras;
-                pub(crate) mod objects;
-                pub(crate) mod materials;
-                pub(crate) mod lights;
-                pub(crate) mod scenes;
-                pub(crate) mod general;
-                pub(crate) mod debug;
-                pub(crate) mod textures;
-                pub(crate) mod sound;
-                pub(crate) mod mesh;
-                pub(crate) mod assets;
-                pub(crate) mod console;
+                pub(crate) mod ui_helper;
             }
+
+            pub(crate) mod main_frame;
+            pub(crate) mod modals;
+            pub(crate) mod dialogs;
+            pub(crate) mod statistics;
+            pub(crate) mod cameras;
+            pub(crate) mod objects;
+            pub(crate) mod materials;
+            pub(crate) mod lights;
+            pub(crate) mod scenes;
+            pub(crate) mod general;
+            pub(crate) mod debug;
+            pub(crate) mod textures;
+            pub(crate) mod sound;
+            pub(crate) mod mesh;
+            pub(crate) mod assets;
+            pub(crate) mod console;
         }
     }
 }

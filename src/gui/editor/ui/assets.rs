@@ -1,6 +1,6 @@
 use egui::{Ui, ScrollArea, Id, Color32, RichText};
 
-use crate::state::{gui::helper::generic_items::separator_colored, state::State};
+use crate::{gui::helper::generic_items::separator_colored, state::state::State};
 
 use super::super::editor_state::{EditorState, AssetType};
 

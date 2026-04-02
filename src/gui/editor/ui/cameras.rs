@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{helper::generic::cut_string_to_length, state::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title}}, scene::camera::CameraItem, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title}}, helper::generic::cut_string_to_length, state::{scene::camera::CameraItem, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 

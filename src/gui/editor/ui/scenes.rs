@@ -2,7 +2,7 @@ use std::mem::swap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast, helper::concurrency::thread::spawn_thread, state::{gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title}}, scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene}, state::State}};
+use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene}, state::State}};
 
 use super::dialogs::load_texture_dialog;
 

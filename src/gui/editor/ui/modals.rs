@@ -1,4 +1,4 @@
-use crate::{state::{gui::{editor::ui::helper::ui_helper::fit_size, helper::generic_items::modal_with_title}, state::State}};
+use crate::{gui::{editor::ui::helper::ui_helper::fit_size, helper::generic_items::modal_with_title}, state::state::State};
 
 use super::super::editor_state::EditorState;
 

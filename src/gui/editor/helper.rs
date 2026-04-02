@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, state::{gui::editor::editor::EDITOR_INTERNAL_TAG, scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast_mut, gui::editor::editor::EDITOR_INTERNAL_TAG, state::{scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use super::editor_state::EditorState;
 

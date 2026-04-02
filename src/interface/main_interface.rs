@@ -24,7 +24,7 @@ use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
-use crate::state::gui::editor::editor::Editor;
+use crate::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
