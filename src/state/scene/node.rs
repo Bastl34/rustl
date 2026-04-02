@@ -51,6 +51,8 @@ pub struct Node
     pub name: String,
     pub root_node: bool,
 
+    pub transient: bool,
+
     pub settings: NodeSettings,
 
     pub parent: OptionOrId<NodeItem>,
@@ -222,6 +224,8 @@ impl Node
 
             name: "default".to_string(),
             root_node: false,
+
+            transient: true,
 
             settings: NodeSettings
             {

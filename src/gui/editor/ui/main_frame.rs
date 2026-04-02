@@ -18,7 +18,6 @@ use crate::state::scene::components::transformation::Transformation;
 use crate::state::state::State;
 use crate::gui::editor::editor_state::{EditorState, SettingsPanel};
 use crate::state::scene::scene::Scene;
-use crate::state::scene::exporter::json;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 use web_time::Instant;
 
@@ -199,7 +198,17 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }
         if ui.button("Save Project").clicked()
         {
-            json::export(state, (("data/".to_string()) + &editor_state.project_name).as_str());
+            let path = format!("data/{}", &editor_state.project_name);
+            crate::gui::editor::editor_project::save_editor_project(state, &editor_state.project_name, &path);
+        }
+        if ui.button("Load Project").clicked()
+        {
+            let path = format!("data/{}", &editor_state.project_name);
+            if let Some(project) = crate::gui::editor::editor_project::load_editor_project(&path)
+            {
+                let loading_flag = editor_state.loading.clone();
+                crate::gui::editor::editor_project::apply_editor_project(state, project, loading_flag);
+            }
         }
         if ui.button("Exit").clicked()
         {

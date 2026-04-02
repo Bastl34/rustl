@@ -123,6 +123,7 @@ mod state
         pub(crate) mod mesh_resource;
     }
 
+
 }
 
 mod gui
@@ -137,6 +138,7 @@ mod gui
     {
         pub(crate) mod editor;
         pub(crate) mod editor_state;
+        pub(crate) mod editor_project;
         pub(crate) mod helper;
         pub(crate) mod gizmo;
         pub(crate) mod grid;

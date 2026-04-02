@@ -716,6 +716,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut visible;
         let mut locked: bool;
         let mut root_node: bool;
+        let mut transient: bool;
         let mut render_children_first;
         let mut depth_test;
         let mut depth_write;
@@ -730,6 +731,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             visible = node.settings.visible;
             locked = node.settings.locked;
             root_node = node.root_node;
+            transient = node.transient;
             render_children_first = node.settings.render_children_first;
             depth_test = node.settings.depth_test;
             depth_write = node.settings.depth_write;
@@ -750,6 +752,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
         changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
+        changed = ui.checkbox(&mut transient, "transient (not saved)").changed() || changed;
         changed = ui.checkbox(&mut render_children_first, "render children first").changed() || changed;
         changed = ui.checkbox(&mut depth_test, "depth test").changed() || changed;
         changed = ui.checkbox(&mut depth_write, "depth write").changed() || changed;

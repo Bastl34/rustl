@@ -12,7 +12,6 @@ use self::math::approx_zero;
 
 use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
-use crate::state::scene::exporter::json;
 
 pub const MAX_NAME_LENGTH: usize = 24;
 
@@ -240,7 +239,8 @@ impl Editor
         {
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
-                json::export(state, (("data/".to_string()) + &self.editor_state.project_name).as_str());
+                let path = format!("data/{}", &self.editor_state.project_name);
+                crate::gui::editor::editor_project::save_editor_project(state, &self.editor_state.project_name, &path);
             }
         }
     }
@@ -1393,20 +1393,25 @@ impl Editor
 
                 let mut root_node = None;
 
-                if let Some(pos) = pos
+                for id in &loaded_ids
                 {
-                    for id in &loaded_ids
+                    if let Some(node) = scene.find_node_by_id(*id)
                     {
-                        if let Some(node) = scene.find_node_by_id(*id)
+                        if node.read().unwrap().root_node
                         {
-                            if node.read().unwrap().root_node
-                            {
-                                root_node = Some(node.clone());
-                                break;
-                            }
+                            root_node = Some(node.clone());
+                            break;
                         }
                     }
+                }
 
+                if let Some(root_node) = &root_node
+                {
+                    root_node.write().unwrap().transient = false;
+                }
+
+                if let Some(pos) = pos
+                {
                     if let Some(root_node) = &root_node
                     {
                         // find offset based on bounding box
