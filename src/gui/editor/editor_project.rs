@@ -299,6 +299,8 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_s
             *loading_progress_state.write().unwrap() = (i + 1) as f32 / project.objects.len() as f32;
         }
 
+        *loading_progress_state.write().unwrap() = 0.0;
+
         console_success!("editor project loaded");
     });
 }
