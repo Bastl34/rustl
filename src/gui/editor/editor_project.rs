@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success};
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::file::write_string_to_tile;
-use crate::gui::editor::editor::EDITOR_INTERNAL_TAG;
+use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
 use crate::resources::resources::load_string;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object};
@@ -25,11 +25,20 @@ pub struct EditorProject
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct EditorObjectOptions
+{
+    pub visible: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reuse_materials_by_name: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EditorObject
 {
     pub source: String,
     pub name: String,
-    pub visible: bool,
+    pub options: EditorObjectOptions,
+
     pub position: [f32; 3],
     pub rotation: [f32; 3],
     pub rotation_quat: Option<[f32; 4]>,
@@ -60,7 +69,7 @@ pub fn extract_editor_project(state: &State, project_name: &str) -> EditorProjec
             }
 
             // skip transient nodes (not meant to be saved)
-            if node.transient
+            if node.settings.transient
             {
                 continue;
             }
@@ -75,11 +84,18 @@ pub fn extract_editor_project(state: &State, project_name: &str) -> EditorProjec
             // transform
             let (position, rotation, rotation_quat, scale) = extract_transform(&node);
 
+            // options
+            let options = EditorObjectOptions
+            {
+                visible: node.settings.visible,
+                reuse_materials_by_name: node.extras.get::<bool>(RESUSE_MATERIALS_TAG).copied(),
+            };
+
             objects.push(EditorObject
             {
                 source,
                 name: node.name.clone(),
-                visible: node.settings.visible,
+                options,
                 position,
                 rotation,
                 rotation_quat,
@@ -197,7 +213,14 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_f
 
         for obj in &project.objects
         {
-            let loaded = load_object(obj.source.as_str(), scene_id, None, main_queue.clone(), true, true, true, create_mipmaps, max_tex_res);
+            let name = obj.name.clone();
+            let options = obj.options.clone();
+            let position = obj.position;
+            let rotation = obj.rotation;
+            let rotation_quat = obj.rotation_quat;
+            let scale = obj.scale;
+
+            let loaded = load_object(obj.source.as_str(), scene_id, None, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
@@ -206,13 +229,6 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_f
             }
 
             let loaded_ids = loaded.unwrap();
-
-            let name = obj.name.clone();
-            let visible = obj.visible;
-            let position = obj.position;
-            let rotation = obj.rotation;
-            let rotation_quat = obj.rotation_quat;
-            let scale = obj.scale;
 
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
             {
@@ -236,12 +252,26 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_f
                     {
                         let mut node = root_node.write().unwrap();
                         node.name = name.clone();
-                        node.settings.visible = visible;
-                        node.transient = false;
+                        node.settings.visible = options.visible;
+                        node.settings.transient = false;
+
+                        if let Some(reuse_materials_by_name) = options.reuse_materials_by_name
+                        {
+                            if reuse_materials_by_name
+                            {
+                                node.extras.insert(RESUSE_MATERIALS_TAG, reuse_materials_by_name);
+                            }
+                            else
+                            {
+                                node.extras.remove(RESUSE_MATERIALS_TAG);
+                            }
+
+                        }
                     }
 
                     // apply transform
-                    let transform = Transformation::new(
+                    let transform = Transformation::new
+                    (
                         "Transform",
                         Vector3::new(position[0], position[1], position[2]),
                         Vector3::new(rotation[0], rotation[1], rotation[2]),

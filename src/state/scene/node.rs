@@ -19,6 +19,8 @@ const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct NodeSettings
 {
+    pub transient: bool,
+
     pub visible: bool,
     pub locked: bool,
     pub pickable: bool,
@@ -50,8 +52,6 @@ pub struct Node
 
     pub name: String,
     pub root_node: bool,
-
-    pub transient: bool,
 
     pub settings: NodeSettings,
 
@@ -225,10 +225,9 @@ impl Node
             name: "default".to_string(),
             root_node: false,
 
-            transient: true,
-
             settings: NodeSettings
             {
+                transient: true,
                 visible: true,
                 locked: false,
                 pickable: true,

@@ -16,6 +16,7 @@ use crate::gui::editor::ui::main_frame;
 pub const MAX_NAME_LENGTH: usize = 24;
 
 pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
+pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
 
 pub struct Editor
 {
@@ -1407,7 +1408,13 @@ impl Editor
 
                 if let Some(root_node) = &root_node
                 {
-                    root_node.write().unwrap().transient = false;
+                    let mut root_node = root_node.write().unwrap();
+                    root_node.settings.transient = false;
+
+                    if reuse_material
+                    {
+                        root_node.extras.insert(RESUSE_MATERIALS_TAG, reuse_material);
+                    }
                 }
 
                 if let Some(pos) = pos

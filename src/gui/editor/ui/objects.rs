@@ -731,7 +731,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             visible = node.settings.visible;
             locked = node.settings.locked;
             root_node = node.root_node;
-            transient = node.transient;
+            transient = node.settings.transient;
             render_children_first = node.settings.render_children_first;
             depth_test = node.settings.depth_test;
             depth_write = node.settings.depth_write;
