@@ -149,17 +149,23 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
     calc_bbox_skin(&nodes);
 
     // ********** mark components **********
+    // Tag on the main thread (inside execute_on_scene_mut_and_wait) to avoid write-lock
+    // contention with the render thread which holds write locks on materials during GPU updates.
+    console_log!("tagging components...");
     {
-        let all_nodes = Scene::list_all_child_nodes(&root_node.read().unwrap().nodes);
-
-        for node in all_nodes
+        let root_node_clone = root_node.clone();
+        execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |_scene: &mut Scene|
         {
-            for component in &node.read().unwrap().components
+            let all_nodes = Scene::list_all_child_nodes(&root_node_clone.read().unwrap().nodes);
+            for node in all_nodes
             {
-                let mut component = component.write().unwrap();
-                component.get_base_mut().from_file = true;
+                let components_snap: Vec<_> = node.read().unwrap().components.iter().map(|c| c.clone()).collect();
+                for component in components_snap
+                {
+                    component.write().unwrap().get_base_mut().from_file = true;
+                }
             }
-        }
+        }));
     }
 
     // ********** add to scene **********
