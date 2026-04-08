@@ -240,7 +240,6 @@ impl Editor
         {
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
-                dbg!("loltest1");
                 crate::gui::editor::editor_project::save_editor_project_with_dialog(&mut self.editor_state, state);
             }
         }
