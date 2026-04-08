@@ -241,7 +241,7 @@ impl Editor
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
                 let path = format!("data/{}", &self.editor_state.project_name);
-                crate::gui::editor::editor_project::save_editor_project(state, &self.editor_state.project_name, &path);
+                crate::gui::editor::editor_project::save_editor_project(state, &self.editor_state, &path);
             }
         }
     }

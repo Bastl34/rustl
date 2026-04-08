@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success};
 use crate::helper::concurrency::thread::spawn_thread;
-use crate::helper::file::write_string_to_tile;
+use crate::helper::file::{make_relative_path, resolve_relative_path, write_string_to_tile};
 use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
-use crate::gui::editor::editor_state::LoadingGuard;
+use crate::gui::editor::editor_state::{EditorState, LoadingGuard};
 use crate::resources::resources::load_string;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object};
@@ -48,7 +48,7 @@ pub struct EditorObject
 
 // ******************** extraction (Runtime --> EditorProject) ********************
 
-pub fn extract_editor_project(state: &State, project_name: &str) -> EditorProject
+pub fn extract_editor_project(state: &State, project_name: &str, path: &str) -> EditorProject
 {
     let mut objects = Vec::new();
 
@@ -81,6 +81,9 @@ pub fn extract_editor_project(state: &State, project_name: &str) -> EditorProjec
                 Some(descriptor) => descriptor.origin_path.clone(),
                 None => continue, // skip nodes without a source asset
             };
+
+            // make relative path if possible
+            let source = make_relative_path(path, &source).unwrap_or(source);
 
             // transform
             let (position, rotation, rotation_quat, scale) = extract_transform(&node);
@@ -137,9 +140,9 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 
 // ******************** save ********************
 
-pub fn save_editor_project(state: &State, project_name: &str, path: &str) -> bool
+pub fn save_editor_project(state: &State, editor_state: &EditorState, path: &str) -> bool
 {
-    let project = extract_editor_project(state, project_name);
+    let project = extract_editor_project(state, &editor_state.project_name, path);
 
     let json = match serde_json::to_string_pretty(&project)
     {
@@ -186,7 +189,7 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
 
 // ******************** apply (EditorProject --> Runtime) ********************
 
-pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
+pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
 {
     // get scene id + clear non-internal nodes
     let mut scene_id = None;
@@ -206,6 +209,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_s
     let main_queue = state.main_thread_execution_queue.clone();
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
+    let base_path = path.to_string();
 
     *loading_state.write().unwrap() = true;
     *loading_progress_state.write().unwrap() = 0.0;
@@ -224,7 +228,9 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_s
             let rotation_quat = obj.rotation_quat;
             let scale = obj.scale;
 
-            let loaded = load_object(obj.source.as_str(), scene_id, None, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, create_mipmaps, max_tex_res);
+            let path = resolve_relative_path(&base_path, &obj.source);
+
+            let loaded = load_object(&path, scene_id, None, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
@@ -269,7 +275,6 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_s
                             {
                                 node.extras.remove(RESUSE_MATERIALS_TAG);
                             }
-
                         }
                     }
 

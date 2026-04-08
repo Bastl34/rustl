@@ -210,7 +210,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         if ui.button("Save Project").clicked()
         {
             let path = format!("data/{}", &editor_state.project_name);
-            crate::gui::editor::editor_project::save_editor_project(state, &editor_state.project_name, &path);
+            crate::gui::editor::editor_project::save_editor_project(state, &editor_state, &path);
         }
         if ui.button("Load Project").clicked()
         {
@@ -219,7 +219,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             {
                 let loading_state = editor_state.loading.clone();
                 let loading_progress_state = editor_state.loading_progress.clone();
-                crate::gui::editor::editor_project::apply_editor_project(state, project, loading_state, loading_progress_state);
+                crate::gui::editor::editor_project::apply_editor_project(state, project, &path, loading_state, loading_progress_state);
             }
         }
         if ui.button("Exit").clicked()
