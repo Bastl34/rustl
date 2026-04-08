@@ -24,7 +24,7 @@ impl ThreadResult
 
 //pub fn spawn_thread<F: Fn() + Send + Sync + 'static, T: Send + 'static>(func: F) -> ThreadResult<T> where F: FnOnce() -> T
 //pub fn spawn_thread<F: Fn() + Send + Sync + 'static, T: Send + 'static>(func: F) -> ThreadResult<T>
-pub fn spawn_thread<F: Fn() + Send + Sync + 'static>(func: F) -> ThreadResult<()>
+pub fn spawn_thread<F: FnOnce() + Send + 'static>(func: F) -> ThreadResult<()>
 {
     thread::spawn(func)
     /*

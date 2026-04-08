@@ -9,6 +9,7 @@ use crate::{component_downcast, component_downcast_mut, console_error, console_l
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::file::write_string_to_tile;
 use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
+use crate::gui::editor::editor_state::LoadingGuard;
 use crate::resources::resources::load_string;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object};
@@ -206,11 +207,13 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_s
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
 
+    *loading_state.write().unwrap() = true;
+    *loading_progress_state.write().unwrap() = 0.0;
+
     spawn_thread(move ||
     {
+        let _guard = LoadingGuard(loading_state);
         console_log!("loading editor project: {} ({} objects)", project.name, project.objects.len());
-        *loading_state.write().unwrap() = true;
-        *loading_progress_state.write().unwrap() = 0.0;
 
         for (i, obj) in project.objects.iter().enumerate()
         {
@@ -296,7 +299,6 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_s
             *loading_progress_state.write().unwrap() = (i + 1) as f32 / project.objects.len() as f32;
         }
 
-        *loading_state.write().unwrap() = false;
         console_success!("editor project loaded");
     });
 }

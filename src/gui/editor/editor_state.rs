@@ -119,6 +119,16 @@ pub struct DebugImages
     pub hzb_image: Option<egui::TextureHandle>,
 }
 
+pub struct LoadingGuard(pub Arc<RwLock<bool>>);
+
+impl Drop for LoadingGuard
+{
+    fn drop(&mut self)
+    {
+        *self.0.write().unwrap() = false;
+    }
+}
+
 pub struct EditorState
 {
     pub visible: bool,

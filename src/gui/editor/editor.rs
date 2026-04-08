@@ -10,7 +10,7 @@ use crate::{component_downcast, component_downcast_mut, console_error, console_l
 
 use self::math::approx_zero;
 
-use super::{editor_state::{AssetType, EditMode, EditorState, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
+use super::{editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
 
 pub const MAX_NAME_LENGTH: usize = 24;
@@ -1370,10 +1370,13 @@ impl Editor
         let object_only = if self.editor_state.asset_type == AssetType::Object { true } else { false };
 
         let editor_state = self.editor_state.loading.clone();
+        *editor_state.write().unwrap() = true;
+
         spawn_thread(move ||
         {
+            let _guard = LoadingGuard(editor_state);
+
             console_log!("loading ...");
-            *editor_state.write().unwrap() = true;
 
             let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, object_only, create_mipmaps, max_tex_res);
 
@@ -1381,7 +1384,6 @@ impl Editor
             {
                 console_error!("loading failed");
                 console_error!(loaded.err());
-                *editor_state.write().unwrap() = false;
                 return;
             }
 
@@ -1451,8 +1453,6 @@ impl Editor
                     }
                 }
             }));
-
-            *editor_state.write().unwrap() = false;
 
             console_success!("loading DONE");
         });
