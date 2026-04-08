@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use nalgebra::Vector3;
 
-use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{components::look_at::LookAt, node::Node, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{components::look_at::LookAt, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -444,11 +444,11 @@ impl App for AppDummy
 
                 // add camera controller and run auto setup
 
-                /*
+
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
-                */
+
 
 
                 // set pos for fall test

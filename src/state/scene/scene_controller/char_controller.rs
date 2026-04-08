@@ -262,7 +262,7 @@ impl CharacterController
 
             animations: AnimationComponents::default(),
 
-            transformation: None
+            transformation: None,
         }
     }
 
@@ -1283,7 +1283,7 @@ impl SceneController for CharacterController
         }
 
         // ********** camera angle for follow mode **********
-        if !approx_zero(movement.z) && !approx_zero(rotation.y) && self.rotation_follow || !approx_zero(self.current_target_rotation)
+        if !approx_zero(movement.z) && !approx_zero(rotation.y) && self.rotation_follow
         {
             if let Some(cam) = scene.get_active_camera_mut()
             {
@@ -1293,14 +1293,28 @@ impl SceneController for CharacterController
                     {
                         let (yaw, _) = yaw_pitch_from_direction(self.direction);
                         self.current_target_rotation = yaw + PI;
+
                         let current = controller.data.get_ref().alpha;
+                        let diff = shortest_angle_dist(current, self.current_target_rotation);
                         let speed = self.rotation_follow_angle_speed * frame_scale;
 
-                        let new_alpha = interpolate_angle(current, self.current_target_rotation, speed.min(1.0));
+                        // smooth interpolation toward target, but at least as fast as the avatar is turning
+                        // so the camera never falls behind during active rotation
+                        let min_delta = (rotation.y * frame_scale).abs();
+                        let interp_delta = diff * speed;
+                        let actual_delta = if interp_delta.abs() < min_delta && diff.abs() > min_delta
+                        {
+                            min_delta * diff.signum()
+                        }
+                        else
+                        {
+                            interp_delta
+                        };
+
+                        let new_alpha = current + actual_delta;
                         controller.data.get_mut().alpha = new_alpha;
 
-                        let new_diff = shortest_angle_dist(controller.data.get_mut().alpha, self.current_target_rotation);
-                        if new_diff.abs() < 0.05
+                        if shortest_angle_dist(new_alpha, self.current_target_rotation).abs() < 0.05
                         {
                             controller.data.get_mut().alpha = self.current_target_rotation;
                             self.current_target_rotation = 0.0;
