@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use nalgebra::{Matrix4, Point2, Point3, Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use serde_json::Value;
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{JOINTS_LIMIT, Mesh}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, file::get_stem, math::{approx_one_vec3, approx_zero_vec3}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, texture::{Texture, TextureItem}, utilities::resource_utils::{insert_texture_or_reuse, load_texture_byte_or_reuse}}, scene::{camera::{Camera, CameraProjectionType}, components::{animation::{Animation, Channel, Interpolation}, component::{Component, ComponentItem}, joint::Joint, material::{BlendMode, Material, MaterialItem, TextureAddressMode, TextureFilterMode, TextureState, TextureType}, mesh::{JOINTS_LIMIT, Mesh}, morph_target::MorphTarget, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::Scene, utilities::{extras::Extras, scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}}};
 
 
 const INTERNAL_JSON_INDEX: &str = "__internal_json_index";
@@ -40,18 +40,11 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
     {
         let (bytes, texture_path, extension) = load_texture(path, &gltf_texture, &buffers);
 
-        let tex = load_texture_byte_or_reuse(main_queue.clone(), max_texture_resolution, &bytes, gltf_texture.name().unwrap_or("unknown"), path, extension);
+        let tex = load_texture_byte_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, &bytes, gltf_texture.name().unwrap_or("unknown"), path, extension);
         if let Some(source) = &mut tex.write().unwrap().source
         {
             source.inner_path = texture_path.clone();
         }
-        tex.write().unwrap().get_data_mut().get_mut().mipmapping = create_mipmaps;
-
-        if tex.read().unwrap().get_data().mipmapping && tex.read().unwrap().get_data().mipmap_cache.is_none()
-        {
-            tex.write().unwrap().create_mipmap_cache();
-        }
-
         // extras
         {
             let mut tex = tex.write().unwrap();
@@ -1417,15 +1410,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 tex_name = tex.name.clone();
                 reflectivity_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 2, max_texture_resolution);
             }
-            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(main_queue.clone(), reflectivity_tex, tex_name.as_str());
-
-            // create mipmap cache
-            if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
-            {
-                tex_arc.write().unwrap().create_mipmap_cache();
-            }
-
-            tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(main_queue.clone(), create_mipmaps, reflectivity_tex, tex_name.as_str());
 
             if let Some(source) = &mut tex_arc.write().unwrap().source
             {
@@ -1462,15 +1447,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 tex_name = tex.name.clone();
                 roughness_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 1, max_texture_resolution);
             }
-            let tex_arc = insert_texture_or_reuse(main_queue.clone(), roughness_tex, tex_name.as_str());
-
-            // create mipmap cache
-            if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
-            {
-                tex_arc.write().unwrap().create_mipmap_cache();
-            }
-
-            tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+            let tex_arc = insert_texture_or_reuse(main_queue.clone(), create_mipmaps, roughness_tex, tex_name.as_str());
 
             if let Some(source) = &mut tex_arc.write().unwrap().source
             {
@@ -1527,15 +1504,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                 tex_name = tex.name.clone();
                 ao_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 0, max_texture_resolution);
             }
-            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(main_queue.clone(), ao_tex, tex_name.as_str());
-
-            // create mipmap cache
-            if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
-            {
-                tex_arc.write().unwrap().create_mipmap_cache();
-            }
-
-            tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+            let tex_arc: Arc<RwLock<Box<Texture>>> = insert_texture_or_reuse(main_queue.clone(), create_mipmaps, ao_tex, tex_name.as_str());
 
             set_texture_name(tex_arc.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientOcclusion);
             material_data.texture_ambient_occlusion = Some(TextureState::new(tex_arc));
@@ -1602,15 +1571,7 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, main_queue: ExecutionQu
                     tex_name = tex.name.clone();
                     new_tex = Texture::new_from_image_channel(tex.name.as_str(), &tex, 3, max_texture_resolution);
                 }
-                let tex_arc = insert_texture_or_reuse(main_queue.clone(), new_tex, tex_name.as_str());
-
-                // create mipmap cache
-                if create_mipmaps && !tex_arc.read().unwrap().get_data().mipmap_cache.is_none()
-                {
-                    tex_arc.write().unwrap().create_mipmap_cache();
-                }
-
-                tex_arc.write().unwrap().data.get_mut().mipmapping = create_mipmaps;
+                let tex_arc = insert_texture_or_reuse(main_queue.clone(), create_mipmaps, new_tex, tex_name.as_str());
 
                 if let Some(source) = &mut tex_arc.write().unwrap().source
                 {

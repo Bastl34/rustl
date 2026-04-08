@@ -223,18 +223,7 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
                             console_log!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
                             let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                             let tex_path = get_texture_path(&diffuse_texture, path);
-                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
-                            {
-                                let mut tex = tex.write().unwrap();
-
-                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
-                                {
-                                    tex.create_mipmap_cache();
-                                }
-
-                                let tex_data = tex.get_data_mut().get_mut();
-                                tex_data.mipmapping = create_mipmaps;
-                            }
+                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, tex_path.as_str(), None)?;
                             material.set_texture(tex, TextureType::Base);
                         }
 
@@ -244,18 +233,7 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
                             console_log!("loading normal texture {}", mat.normal_texture.clone().unwrap());
                             let normal_texture = mat.normal_texture.clone().unwrap();
                             let tex_path = get_texture_path(&normal_texture, path);
-                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
-                            {
-                                let mut tex = tex.write().unwrap();
-
-                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
-                                {
-                                    tex.create_mipmap_cache();
-                                }
-
-                                let tex_data = tex.get_data_mut().get_mut();
-                                tex_data.mipmapping = create_mipmaps;
-                            }
+                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, tex_path.as_str(), None)?;
                             material.set_texture(tex, TextureType::Normal);
                         }
 
@@ -265,18 +243,7 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
                             console_log!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
                             let ambient_texture = mat.ambient_texture.clone().unwrap();
                             let tex_path = get_texture_path(&ambient_texture, path);
-                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
-                            {
-                                let mut tex = tex.write().unwrap();
-
-                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
-                                {
-                                    tex.create_mipmap_cache();
-                                }
-
-                                let tex_data = tex.get_data_mut().get_mut();
-                                tex_data.mipmapping = create_mipmaps;
-                            }
+                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, tex_path.as_str(), None)?;
                             material.set_texture(tex, TextureType::AmbientEmissive);
                         }
 
@@ -286,18 +253,7 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
                             console_log!("loading specular texture {}", mat.specular_texture.clone().unwrap());
                             let specular_texture = mat.specular_texture.clone().unwrap();
                             let tex_path: String = get_texture_path(&specular_texture, path);
-                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
-                            {
-                                let mut tex = tex.write().unwrap();
-
-                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
-                                {
-                                    tex.create_mipmap_cache();
-                                }
-
-                                let tex_data = tex.get_data_mut().get_mut();
-                                tex_data.mipmapping = create_mipmaps;
-                            }
+                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, tex_path.as_str(), None)?;
                             material.set_texture(tex, TextureType::Specular);
                         }
 
@@ -307,18 +263,7 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
                             console_log!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
                             let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                             let tex_path = get_texture_path(&dissolve_texture, path);
-                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
-                            {
-                                let mut tex = tex.write().unwrap();
-
-                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
-                                {
-                                    tex.create_mipmap_cache();
-                                }
-
-                                let tex_data = tex.get_data_mut().get_mut();
-                                tex_data.mipmapping = create_mipmaps;
-                            }
+                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, tex_path.as_str(), None)?;
                             material.set_texture(tex, TextureType::Alpha);
                         }
 
@@ -328,18 +273,7 @@ pub fn load(path: &str, scene_id: u32, parent_node_id: Option<u32>, main_queue: 
                             console_log!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
                             let shininess_texture = mat.shininess_texture.clone().unwrap();
                             let tex_path = get_texture_path(&shininess_texture, path);
-                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, tex_path.as_str(), None)?;
-                            {
-                                let mut tex = tex.write().unwrap();
-
-                                if create_mipmaps && !tex.get_data().mipmap_cache.is_none()
-                                {
-                                    tex.create_mipmap_cache();
-                                }
-
-                                let tex_data = tex.get_data_mut().get_mut();
-                                tex_data.mipmapping = create_mipmaps;
-                            }
+                            let tex = load_texture_or_reuse(main_queue.clone(), max_texture_resolution, create_mipmaps, tex_path.as_str(), None)?;
                             material.set_texture(tex, TextureType::Shininess);
                         }
                     }
