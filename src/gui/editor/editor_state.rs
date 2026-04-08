@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{gui::editor::helper::apply_fly_camera_move_state, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{console_log, gui::editor::helper::apply_fly_camera_move_state, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -773,6 +773,8 @@ impl EditorState
     pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui_context: &egui::Context, append: bool)
     {
         let files = read_files_recursive(path);
+
+        console_log!("loading assets ({}): {}", path, files.len());
 
         // filter supported file types
         let files: Vec<String> = files.iter().filter(|item|
