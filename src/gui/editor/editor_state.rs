@@ -140,6 +140,7 @@ pub struct EditorState
     pub fly_camera: bool,
 
     pub project_name: String,
+    pub project_path: Option<String>,
 
     pub gizmo_position: bool,
     pub gizmo_rotation: bool,
@@ -220,7 +221,7 @@ impl EditorState
 {
     pub fn new() -> EditorState
     {
-        EditorState
+        let mut state = EditorState
         {
             visible: true,
             loading: Arc::new(RwLock::new(false)),
@@ -230,7 +231,8 @@ impl EditorState
             selectable: true,
             fly_camera: true,
 
-            project_name: "test_project".to_string(),
+            project_name: "".to_string(),
+            project_path: None,
 
             gizmo_position: true,
             gizmo_rotation: false,
@@ -309,7 +311,17 @@ impl EditorState
                 hzb_image: None,
             },
             highlighted_gizmo_id: None,
-        }
+        };
+
+        state.reset_project();
+
+        state
+    }
+
+    pub fn reset_project(&mut self)
+    {
+        self.project_name = "new_project".to_string();
+        self.project_path = None;
     }
 
     pub fn update_debug_images(&mut self, state: &mut State, wgpu: &mut rendering::wgpu::WGpu, egui_context: &egui::Context)

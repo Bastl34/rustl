@@ -197,6 +197,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     {
         if ui.button("New").clicked()
         {
+            editor_state.reset_project();
             let exec_queue = state.main_thread_execution_queue.clone();
             for scene in &state.scenes
             {
@@ -209,18 +210,13 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }
         if ui.button("Save Project").clicked()
         {
-            let path = format!("data/{}", &editor_state.project_name);
-            crate::gui::editor::editor_project::save_editor_project(state, &editor_state, &path);
+            crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state);
         }
         if ui.button("Load Project").clicked()
         {
-            let path = format!("data/{}", &editor_state.project_name);
-            if let Some(project) = crate::gui::editor::editor_project::load_editor_project(&path)
-            {
-                let loading_state = editor_state.loading.clone();
-                let loading_progress_state = editor_state.loading_progress.clone();
-                crate::gui::editor::editor_project::apply_editor_project(state, project, &path, loading_state, loading_progress_state);
-            }
+            let loading_state = editor_state.loading.clone();
+            let loading_progress_state = editor_state.loading_progress.clone();
+            crate::gui::editor::editor_project::load_editor_project_with_dialog(editor_state, state, loading_state, loading_progress_state);
         }
         if ui.button("Exit").clicked()
         {

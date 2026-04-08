@@ -6,6 +6,7 @@ use nalgebra::{Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success};
+use rfd;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::file::{make_relative_path, resolve_relative_path, write_string_to_tile};
 use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
@@ -170,11 +171,54 @@ pub fn save_editor_project(state: &State, editor_state: &EditorState, path: &str
     }
 }
 
+pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &State)
+{
+    let path = if let Some(p) = &editor_state.project_path
+    {
+        Some(p.clone())
+    }
+    else
+    {
+        rfd::FileDialog::new()
+            .add_filter("Rustl Project", &["json"])
+            .set_file_name(&format!("{}.json", editor_state.project_name))
+            .save_file()
+            .map(|p| p.to_string_lossy().into_owned())
+    };
+
+    if let Some(path) = path
+    {
+        // save_editor_project appends .json, so strip it if already present
+        let base = path.strip_suffix(".json").unwrap_or(&path).to_string();
+        if save_editor_project(state, editor_state, &base)
+        {
+            editor_state.project_path = Some(format!("{}.json", base));
+        }
+    }
+}
+
+pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
+{
+    let path = rfd::FileDialog::new()
+        .add_filter("Rustl Project", &["json"])
+        .pick_file()
+        .map(|p| p.to_string_lossy().into_owned());
+
+    if let Some(path) = path
+    {
+        if let Some(project) = load_editor_project(&path)
+        {
+            apply_editor_project(state, project, &path, loading_state, loading_progress_state);
+            editor_state.project_path = Some(path);
+        }
+    }
+}
+
 // ******************** load ********************
 
 pub fn load_editor_project(path: &str) -> Option<EditorProject>
 {
-    let json = match load_string(format!("{}.json", path).as_str())
+    let json = match load_string(path)
     {
         Ok(json) => json,
         Err(_) => return None,
