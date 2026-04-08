@@ -185,7 +185,7 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
 
 // ******************** apply (EditorProject --> Runtime) ********************
 
-pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_flag: Arc<RwLock<bool>>)
+pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
 {
     // get scene id + clear non-internal nodes
     let mut scene_id = None;
@@ -209,9 +209,10 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_f
     spawn_thread(move ||
     {
         console_log!("loading editor project: {} ({} objects)", project.name, project.objects.len());
-        *loading_flag.write().unwrap() = true;
+        *loading_state.write().unwrap() = true;
+        *loading_progress_state.write().unwrap() = 0.0;
 
-        for obj in &project.objects
+        for (i, obj) in project.objects.iter().enumerate()
         {
             let name = obj.name.clone();
             let options = obj.options.clone();
@@ -291,9 +292,11 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, loading_f
                     }
                 }
             }));
+
+            *loading_progress_state.write().unwrap() = (i + 1) as f32 / project.objects.len() as f32;
         }
 
-        *loading_flag.write().unwrap() = false;
+        *loading_state.write().unwrap() = false;
         console_success!("editor project loaded");
     });
 }

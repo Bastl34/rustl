@@ -8,6 +8,7 @@ use crate::gui::editor::ui::console::create_console_section;
 use crate::gui::editor::ui::debug::create_debug_settings;
 use crate::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
+use crate::helper::math::approx_zero;
 use crate::state::scene::utilities::scene_utils::execute_on_scene_mut;
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
@@ -47,6 +48,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     };
 
     let loading = *editor_state.loading.read().unwrap();
+    let loading_progress: f32 = *editor_state.loading_progress.read().unwrap();
 
     let frame = egui::Frame::side_top_panel(&style);
 
@@ -82,7 +84,16 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                 if loading
                 {
                     ui.separator();
-                    ui.spinner();
+
+                    if !approx_zero(loading_progress)
+                    {
+                        let progress_text = format!("{:.0}%", loading_progress * 100.0);
+                        ui.add(egui::ProgressBar::new(loading_progress as f32).desired_width(120.0).text(progress_text));
+                    }
+                    else
+                    {
+                        ui.spinner();
+                    }
                 }
 
                 // just refresh if mouse was moved
@@ -206,8 +217,9 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             let path = format!("data/{}", &editor_state.project_name);
             if let Some(project) = crate::gui::editor::editor_project::load_editor_project(&path)
             {
-                let loading_flag = editor_state.loading.clone();
-                crate::gui::editor::editor_project::apply_editor_project(state, project, loading_flag);
+                let loading_state = editor_state.loading.clone();
+                let loading_progress_state = editor_state.loading_progress.clone();
+                crate::gui::editor::editor_project::apply_editor_project(state, project, loading_state, loading_progress_state);
             }
         }
         if ui.button("Exit").clicked()

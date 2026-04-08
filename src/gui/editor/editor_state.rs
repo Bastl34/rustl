@@ -123,6 +123,7 @@ pub struct EditorState
 {
     pub visible: bool,
     pub loading: Arc<RwLock<bool>>,
+    pub loading_progress: Arc<RwLock<f32>>,
 
     pub try_mode: bool,
     pub selectable: bool,
@@ -213,6 +214,7 @@ impl EditorState
         {
             visible: true,
             loading: Arc::new(RwLock::new(false)),
+            loading_progress: Arc::new(RwLock::new(0.0)),
 
             try_mode: false,
             selectable: true,
@@ -283,7 +285,7 @@ impl EditorState
             dialog_debug_image_id: None,
 
             asset_filter: "".to_string(),
-            reuse_materials_by_name: false,
+            reuse_materials_by_name: true,
             assets_objects: vec![],
             assets_scenes: vec![],
 
