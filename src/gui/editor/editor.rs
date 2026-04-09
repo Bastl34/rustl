@@ -247,7 +247,7 @@ impl Editor
         }
 
         // wireframe mode toggle
-        if state.io.input_manager.keyboard.is_pressed(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+        if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
         {
             state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
         }
