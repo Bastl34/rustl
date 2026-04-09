@@ -562,8 +562,19 @@ impl MainInterface
 
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
+        let egui_consumed = self.editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone());
+
+        // Always forward mouse button releases to the input manager, even if egui consumed the event.
+        // Otherwise, if the user presses in the scene and releases over egui, the scene gets stuck
+        // thinking a button is held, causing unwanted camera rotation.
+        if egui_consumed
         {
+            if let winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } = event
+            {
+                let global_state = &mut *(self.context.state.borrow_mut());
+                let button = winit_map_mouse_button(button);
+                global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+            }
             return;
         }
         else
