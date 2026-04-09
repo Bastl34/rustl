@@ -79,6 +79,8 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
                 ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, format!("📝 Console ({})", console_log_amount));
             }
 
+            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
                 if loading
@@ -149,6 +151,10 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         else if editor_state.bottom == BottomPanel::Console
         {
             create_console_section(editor_state, state, ui);
+        }
+        else if editor_state.bottom == BottomPanel::Debug
+        {
+            create_debug_settings(editor_state, state, ui);
         }
     });
 
@@ -473,7 +479,6 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
         if editor_state.selected_scene_id.is_some()
         {
             ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Debug, "🐛 Debug");
         }
 
         if editor_state.selected_type == SelectionType::Texture && !editor_state.selected_object.is_empty()
@@ -522,7 +527,6 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Light => if light_settings { create_light_settings(editor_state, state, ui); },
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
             SettingsPanel::General => create_general_settings(editor_state, state, ui),
-            SettingsPanel::Debug => create_debug_settings(editor_state, state, ui),
             SettingsPanel::Resources => create_general_settings(editor_state, state, ui),
         }
     });

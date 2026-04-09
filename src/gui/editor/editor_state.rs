@@ -51,7 +51,6 @@ pub enum SettingsPanel
     Scene,
     Object,
     General,
-    Debug,
     Resources,
     MeshResource
 }
@@ -85,7 +84,17 @@ pub enum BottomPanel
 {
     Assets,
     Console,
+    Debug,
     None
+}
+
+#[derive(PartialEq, Eq)]
+pub enum DebugPanel
+{
+    SceneDebugging,
+    DepthPassImage,
+    DepthBufferImage,
+    HzbImage,
 }
 
 #[derive(PartialEq, Eq)]
@@ -161,6 +170,7 @@ pub struct EditorState
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
+    pub debug_panel: DebugPanel,
     pub log_type: LogType,
 
     pub settings: SettingsPanel,
@@ -253,6 +263,7 @@ impl EditorState
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
+            debug_panel: DebugPanel::SceneDebugging,
             log_type: LogType::All,
 
             settings: SettingsPanel::General,
@@ -329,7 +340,7 @@ impl EditorState
         // ******************** depth pass image ********************
         if state.debug.show_depth_pass_image.is_some()
         {
-            let scene = self.get_selected_scene(state);
+            let scene = self.get_debug_scene(state);
 
             if let Some(scene) = scene
             {
@@ -365,7 +376,7 @@ impl EditorState
         // ******************** depth buffer image ********************
         if state.debug.show_depth_buffer_image.is_some()
         {
-            let scene = self.get_selected_scene(state);
+            let scene = self.get_debug_scene(state);
 
             if let Some(scene) = scene
             {
@@ -401,7 +412,7 @@ impl EditorState
         // ******************** hzb image ********************
         if let Some(show_hzb_image_mip) = state.debug.show_hzb_image
         {
-            let scene = self.get_selected_scene(state);
+            let scene = self.get_debug_scene(state);
 
             if let Some(scene) = scene
             {
@@ -477,6 +488,19 @@ impl EditorState
         }
 
         (item_id, subitem_id)
+    }
+
+    pub fn get_debug_scene<'a>(&'a self, state: &'a mut State) -> Option<&'a mut Box<Scene>>
+    {
+        if let Some(scene_id) = self.selected_scene_id
+        {
+            state.find_scene_by_id_mut(scene_id)
+        }
+        else
+        {
+            let main_scene_id = state.scenes.iter().position(|s| s.main).or_else(|| if state.scenes.is_empty() { None } else { Some(0) });
+            main_scene_id.and_then(|i| state.scenes.get_mut(i))
+        }
     }
 
     pub fn get_selected_node<'a>(&'a mut self, state: &'a mut State) -> (Option<&'a mut Box<Scene>>, Option<NodeItem>, Option<u32>)
