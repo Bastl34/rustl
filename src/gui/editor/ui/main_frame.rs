@@ -30,6 +30,7 @@ use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
 use super::general::create_general_settings;
+use super::project::create_project_settings;
 use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
@@ -503,6 +504,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
         }
 
         ui.selectable_value(&mut editor_state.settings, SettingsPanel::General, "⛭ General");
+        ui.selectable_value(&mut editor_state.settings, SettingsPanel::Project, "📋 Project");
     });
     ui.separator();
 
@@ -528,6 +530,7 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
             SettingsPanel::Scene => create_scene_settings(editor_state, state, ui),
             SettingsPanel::General => create_general_settings(editor_state, state, ui),
             SettingsPanel::Resources => create_general_settings(editor_state, state, ui),
+            SettingsPanel::Project => create_project_settings(editor_state, state, ui),
         }
     });
 }

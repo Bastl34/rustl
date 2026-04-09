@@ -160,6 +160,7 @@ mod gui
             pub(crate) mod lights;
             pub(crate) mod scenes;
             pub(crate) mod general;
+            pub(crate) mod project;
             pub(crate) mod debug;
             pub(crate) mod textures;
             pub(crate) mod sound;

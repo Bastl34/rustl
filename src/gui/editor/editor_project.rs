@@ -19,10 +19,41 @@ use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
 // ******************** structs ********************
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct EditorProjectMetadata
+{
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub description: String,
+    pub license: String,
+    pub url: String,
+
+    pub build: u32,
+}
+
+impl Default for EditorProjectMetadata
+{
+    fn default() -> Self
+    {
+        EditorProjectMetadata
+        {
+            name: "Untitled".to_string(),
+            version: "0.0.1".to_string(),
+            author: "".to_string(),
+            description: "".to_string(),
+            license: "".to_string(),
+            url: "".to_string(),
+
+            build: 1,
+        }
+    }
+}
+
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EditorProject
 {
-    pub version: String,
-    pub name: String,
+    pub metadata: EditorProjectMetadata,
     pub objects: Vec<EditorObject>,
 }
 
@@ -49,7 +80,7 @@ pub struct EditorObject
 
 // ******************** extraction (Runtime --> EditorProject) ********************
 
-pub fn extract_editor_project(state: &State, project_name: &str, path: &str) -> EditorProject
+pub fn extract_editor_project(state: &State, project_metadata: &EditorProjectMetadata, path: &str) -> EditorProject
 {
     let mut objects = Vec::new();
 
@@ -111,8 +142,7 @@ pub fn extract_editor_project(state: &State, project_name: &str, path: &str) -> 
 
     EditorProject
     {
-        version: "1.0.0".to_string(),
-        name: project_name.to_string(),
+        metadata: project_metadata.clone(),
         objects,
     }
 }
@@ -141,9 +171,10 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 
 // ******************** save ********************
 
-pub fn save_editor_project(state: &State, editor_state: &EditorState, path: &str) -> bool
+pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: &str) -> bool
 {
-    let project = extract_editor_project(state, &editor_state.project_name, path);
+    editor_state.project_metadata.build += 1;
+    let project = extract_editor_project(state, &editor_state.project_metadata, path);
 
     let json = match serde_json::to_string_pretty(&project)
     {
@@ -181,7 +212,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
     {
         rfd::FileDialog::new()
             .add_filter("Rustl Project", &["json"])
-            .set_file_name(&format!("{}.json", editor_state.project_name))
+            .set_file_name(&format!("{}.json", editor_state.project_metadata.name))
             .save_file()
             .map(|p| p.to_string_lossy().into_owned())
     };
@@ -208,8 +239,9 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
     {
         if let Some(project) = load_editor_project(&path)
         {
+            editor_state.project_metadata = project.metadata.clone();
+            editor_state.project_path = Some(path.clone());
             apply_editor_project(state, project, &path, loading_state, loading_progress_state);
-            editor_state.project_path = Some(path);
         }
     }
 }
@@ -261,7 +293,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     spawn_thread(move ||
     {
         let _guard = LoadingGuard(loading_state);
-        console_log!("loading editor project: {} ({} objects)", project.name, project.objects.len());
+        console_log!("loading editor project: {} ({} objects)", project.metadata.name, project.objects.len());
 
         for (i, obj) in project.objects.iter().enumerate()
         {
