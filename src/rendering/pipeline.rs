@@ -22,7 +22,7 @@ impl RenderItem for Pipeline
 
 impl Pipeline
 {
-    pub fn new_std(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32) -> Pipeline
+    pub fn new_std(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], max_lights: u32, depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32, polygon_mode: wgpu::PolygonMode) -> Pipeline
     {
         let shader;
         {
@@ -47,7 +47,7 @@ impl Pipeline
             pipeline: None,
         };
 
-        pipe.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
+        pipe.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples, polygon_mode);
 
         pipe
     }
@@ -128,7 +128,7 @@ impl Pipeline
         self.pipeline.as_ref().unwrap()
     }
 
-    pub fn create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
+    pub fn create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32, polygon_mode: wgpu::PolygonMode)
     {
         let device = wgpu.device();
         let config = wgpu.surface_config();
@@ -221,9 +221,7 @@ impl Pipeline
                 front_face: wgpu::FrontFace::Ccw,
                 //cull_mode: Some(wgpu::Face::Back), // backface culling
                 cull_mode: None,
-                // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
-                // or Features::POLYGON_MODE_POINT
-                polygon_mode: wgpu::PolygonMode::Fill,
+                polygon_mode,
                 // Requires Features::DEPTH_CLIP_CONTROL
                 unclipped_depth: false,
                 // Requires Features::CONSERVATIVE_RASTERIZATION
@@ -243,11 +241,11 @@ impl Pipeline
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32)
+    pub fn re_create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, fragment_attachment: bool, samples: u32, polygon_mode: wgpu::PolygonMode)
     {
         console_log!("recreating pipeline");
 
-        self.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples);
+        self.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples, polygon_mode);
     }
 
     /*

@@ -382,6 +382,12 @@ impl MainInterface
                 {
                     render_scene.msaa_sample_size_update(&mut self.context.wgpu, scene, msaa_samples);
                 }
+
+                if state.rendering.wireframe_mode != render_scene.wireframe_mode
+                {
+                    render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.wireframe_mode);
+                }
+
                 render_scene.update(&mut self.context.wgpu, state, scene);
 
                 scene.render_item = render_item;

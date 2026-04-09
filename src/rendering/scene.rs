@@ -134,6 +134,7 @@ pub struct Scene
     hzb_occlusion_check_shader: String,
 
     samples: u32,
+    pub wireframe_mode: bool,
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
@@ -224,6 +225,7 @@ impl Scene
             hzb_occlusion_check_shader,
 
             samples,
+            wireframe_mode: false,
             distance_sorting: true,
             frustum_culling: true,
             occlusion_culling: true,
@@ -326,17 +328,17 @@ impl Scene
         // ********** depth pass **********
         if !re_create || self.render_pipelines.len() < RenderPipelineType::COUNT
         {
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1, wgpu::PolygonMode::Fill));
         }
         else
         {
-            self.render_pipelines.get_mut(RenderPipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, 1);
-            self.render_pipelines.get_mut(RenderPipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, 1);
-            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, 1);
-            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, 1);
+            self.render_pipelines.get_mut(RenderPipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, 1, wgpu::PolygonMode::Fill);
         }
 
         // ********** color pass **********
@@ -345,17 +347,19 @@ impl Scene
 
         if !re_create
         {
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples));
+            let polygon_mode = if self.wireframe_mode { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill };
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples, polygon_mode));
         }
         else
         {
-            self.render_pipelines.get_mut(RenderPipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, self.samples);
-            self.render_pipelines.get_mut(RenderPipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, self.samples);
-            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, self.samples);
-            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples);
+            let polygon_mode = if self.wireframe_mode { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill };
+            self.render_pipelines.get_mut(RenderPipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples, polygon_mode);
         }
 
         // ********** depth export pass (for occlusion culling - hzb) **********
@@ -1115,6 +1119,12 @@ impl Scene
 
             state.debug.save_hzb_image = false;
         }
+    }
+
+    pub fn wireframe_mode_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, wireframe_mode: bool)
+    {
+        self.wireframe_mode = wireframe_mode;
+        self.create_pipelines(wgpu, scene, true);
     }
 
     pub fn msaa_sample_size_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, samples: u32)

@@ -155,6 +155,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            ui.add_enabled(state.rendering_adapter.wireframe_mode_support, egui::Checkbox::new(&mut state.rendering.wireframe_mode, "Wireframe Mode"));
+            ui.label("ℹ").on_hover_text(if state.rendering_adapter.wireframe_mode_support { "renders all objects in wireframe mode, useful for debugging" } else { "not supported by this GPU/backend" });
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.checkbox(&mut state.rendering.create_mipmaps, "create mipmaps");
             ui.label("ℹ").on_hover_text("applied only for new loaded objects");
         });

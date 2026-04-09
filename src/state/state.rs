@@ -40,6 +40,7 @@ pub struct RenderingAdapterFeatures
     pub backend: String,
 
     pub storage_buffer_array_support: bool,
+    pub wireframe_mode_support: bool,
     pub max_msaa_samples: u32,
     pub max_texture_resolution: u32,
     pub max_supported_texture_resolution: u32
@@ -59,6 +60,8 @@ pub struct Rendering
     pub occlusion_culling: bool,
     pub create_mipmaps: bool,
     pub max_texture_resolution: Option<u32>,
+
+    pub wireframe_mode: bool,
 }
 
 pub struct SupportedFileTypes
@@ -278,6 +281,7 @@ impl State
                 driver_info: String::new(),
                 backend: String::new(),
                 storage_buffer_array_support: false,
+                wireframe_mode_support: false,
                 max_msaa_samples: 1,
                 max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION,
                 max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
@@ -295,7 +299,9 @@ impl State
                 frustum_culling: true,
                 occlusion_culling: true,
                 create_mipmaps: true,
-                max_texture_resolution: None
+                max_texture_resolution: None,
+
+                wireframe_mode: false,
             },
 
             io: InputOutput

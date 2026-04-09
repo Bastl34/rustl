@@ -63,13 +63,16 @@ impl WGpu
         console_log!(" ********** limits possible **********");
         console_log!(adapter.limits());
 
+        let adapter_features = adapter.features();
+        let polygon_mode_features = wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::POLYGON_MODE_POINT;
+        let supported_polygon_mode_features = adapter_features & polygon_mode_features;
+
         let (device, queue) = adapter.request_device
         (
             &wgpu::DeviceDescriptor
             {
                 label: None,
-                //features: wgpu::Features::empty(),
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | supported_polygon_mode_features, // for multisampling + wireframe (if supported)
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
                 required_limits: if cfg!(target_arch = "wasm32")
                 {
@@ -131,6 +134,9 @@ impl WGpu
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
         state.rendering_adapter.storage_buffer_array_support = supports_storage_resources;
+
+        // wireframe support
+        state.rendering_adapter.wireframe_mode_support = device.features().contains(wgpu::Features::POLYGON_MODE_LINE);
 
         /* TODO: store and use as occlusion culling feature to enable/disable it
          ----> STORAGE_READ_ONLY | STORAGE_WRITE_ONLY | STORAGE_READ_WRITE
