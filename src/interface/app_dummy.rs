@@ -363,6 +363,7 @@ impl App for AppDummy
 
             //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
+            /*
             let avatar_nodes = scene_utils::load_object("resourcesLocal/objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
 
             if avatar_nodes.is_err()
@@ -380,7 +381,7 @@ impl App for AppDummy
             let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle aim.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
             let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle prone.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
             let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle crouch.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
-
+            */
 
             //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
             //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
@@ -445,9 +446,11 @@ impl App for AppDummy
                 // add camera controller and run auto setup
 
 
+                /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
+                */
 
 
 
@@ -464,69 +467,69 @@ impl App for AppDummy
                     */
 
                 // add look up joint animation
-                if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
-                {
-                    let avatar_root = avatar_root.read().unwrap();
+                // if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
+                // {
+                //     let avatar_root = avatar_root.read().unwrap();
 
-                    let spine = avatar_root.find_child_node_by_name("mixamorig:Spine1");
-                    let armature = avatar_root.find_child_node_by_name("Armature");
+                //     let spine = avatar_root.find_child_node_by_name("mixamorig:Spine1");
+                //     let armature = avatar_root.find_child_node_by_name("Armature");
 
-                    if spine.is_some() && armature.is_some()
-                    {
-                        let armature = armature.unwrap();
-                        // Target position in world space: 2 units in front of the avatar
-                        let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 1.5, -2.0));
-                        armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
+                //     if spine.is_some() && armature.is_some()
+                //     {
+                //         let armature = armature.unwrap();
+                //         // Target position in world space: 2 units in front of the avatar
+                //         let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 1.5, -2.0));
+                //         armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
 
-                        // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
-                        /*
-                        let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
-                        let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+                //         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                //         /*
+                //         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                //         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
 
-                        console_debug!(parent_inv);
-                        */
+                //         console_debug!(parent_inv);
+                //         */
 
-                        /*
-                        // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
-                        let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
-                        let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+                //         /*
+                //         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                //         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                //         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
 
-                        let parent_axes = parent_inv.fixed_view::<3,3>(0,0);
-                        let avatar_x = nalgebra::Unit::new_normalize(parent_axes * Vector3::x()); // Look Up/Down
-                        let avatar_y = nalgebra::Unit::new_normalize(parent_axes * Vector3::y()); // Look Left/Right
+                //         let parent_axes = parent_inv.fixed_view::<3,3>(0,0);
+                //         let avatar_x = nalgebra::Unit::new_normalize(parent_axes * Vector3::x()); // Look Up/Down
+                //         let avatar_y = nalgebra::Unit::new_normalize(parent_axes * Vector3::y()); // Look Left/Right
 
-                        let directions = vec!
-                        [
-                            ("look up", UnitQuaternion::from_axis_angle(&avatar_x, std::f32::consts::PI / 2.0)),
-                            ("look down", UnitQuaternion::from_axis_angle(&avatar_x, -std::f32::consts::PI / 2.0)),
-                            ("look left", UnitQuaternion::from_axis_angle(&avatar_y, std::f32::consts::PI / 2.0)),
-                            ("look right", UnitQuaternion::from_axis_angle(&avatar_y, -std::f32::consts::PI / 2.0)),
-                        ];
+                //         let directions = vec!
+                //         [
+                //             ("look up", UnitQuaternion::from_axis_angle(&avatar_x, std::f32::consts::PI / 2.0)),
+                //             ("look down", UnitQuaternion::from_axis_angle(&avatar_x, -std::f32::consts::PI / 2.0)),
+                //             ("look left", UnitQuaternion::from_axis_angle(&avatar_y, std::f32::consts::PI / 2.0)),
+                //             ("look right", UnitQuaternion::from_axis_angle(&avatar_y, -std::f32::consts::PI / 2.0)),
+                //         ];
 
-                        let armature = armature.unwrap();
-                        let mut armature = armature.write().unwrap();
+                //         let armature = armature.unwrap();
+                //         let mut armature = armature.write().unwrap();
 
-                        for (name, delta_rot) in directions
-                        {
-                            let mut animation = Animation::new_joint_transform_quat
-                            (
-                                name,
-                                spine.clone().unwrap(),
-                                None,
-                                Some(delta_rot),
-                                None,
-                            );
+                //         for (name, delta_rot) in directions
+                //         {
+                //             let mut animation = Animation::new_joint_transform_quat
+                //             (
+                //                 name,
+                //                 spine.clone().unwrap(),
+                //                 None,
+                //                 Some(delta_rot),
+                //                 None,
+                //             );
 
-                            animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
-                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
-                        }
-                        */
-                    }
+                //             animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
+                //             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                //         }
+                //         */
+                //     }
 
-                    avatar_root.start_animation("aim");
-                    avatar_root.start_animation("idle aim");
-                    //avatar_root.start_animation("look left");
-                }
+                //     avatar_root.start_animation("aim");
+                //     avatar_root.start_animation("idle aim");
+                //     //avatar_root.start_animation("look left");
+                // }
             }));
 
             /*

@@ -2,8 +2,6 @@ todo:
  * everything should be dynamic
  * TODOs
  * flickering on windows (amd)
- * better scene statistics graph
- * deadlock while asset loading
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
  * dead lock while loading an object/scene (just sometimes)
  * optimize shader - do not use empty morph targets or animation weights
@@ -43,3 +41,5 @@ done:
  * json based extras
  * ortho cam
  * alpha cutoff (https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/AlphaBlendModeTest/README.md)
+ * deadlock while asset loading
+ * better scene statistics graph
