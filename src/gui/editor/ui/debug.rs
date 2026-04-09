@@ -43,7 +43,7 @@ pub fn create_debug_settings(editor_state: &mut EditorState, state: &mut State, 
             {
                 DebugPanel::SceneDebugging =>
                 {
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
+                    ui.vertical(|ui|
                     {
                         if ui.button("save image").clicked()
                         {
