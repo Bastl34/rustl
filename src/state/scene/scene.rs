@@ -382,6 +382,23 @@ impl Scene
         node
     }
 
+    pub fn add_empty_node_front(&mut self, name: &str, parent: Option<NodeItem>) -> NodeItem
+    {
+        let node = Node::new(name);
+
+        if let Some(parent) = parent
+        {
+            let mut parent = parent.write().unwrap();
+            parent.nodes.insert(0, node.clone());
+        }
+        else
+        {
+            self.nodes.insert(0, node.clone());
+        }
+
+        node
+    }
+
     pub fn clear_nodes(&mut self)
     {
         self.nodes.clear();

@@ -245,6 +245,12 @@ impl Editor
                 state.io.input_manager.keyboard.reset_key(Key::S);
             }
         }
+
+        // wireframe mode toggle
+        if state.io.input_manager.keyboard.is_pressed(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+        {
+            state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
+        }
     }
 
     pub fn create_instance(&mut self, state: &mut State)

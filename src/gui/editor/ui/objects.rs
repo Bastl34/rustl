@@ -224,14 +224,14 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                 toggle.context_menu(|ui|
                 {
-                    if ui.button("⊞ Add empty node").clicked()
+                    if ui.button("⊞ Add New Node").clicked()
                     {
                         ui.close();
 
                         let node_arc = node_arc.clone();
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.add_empty_node("Node", Some(node_arc.clone()));
+                            scene.add_empty_node_front("Node", Some(node_arc.clone()));
                         }));
                     }
 
