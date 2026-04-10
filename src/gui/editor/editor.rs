@@ -240,7 +240,7 @@ impl Editor
         {
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
-                crate::gui::editor::editor_project::save_editor_project_with_dialog(&mut self.editor_state, state);
+                crate::gui::editor::editor_project::save_editor_project_with_dialog(&mut self.editor_state, state, false);
                 // reset S key cooldown - blocking dialog consumes unknown time, preventing the next press
                 state.io.input_manager.keyboard.reset_key(Key::S);
             }

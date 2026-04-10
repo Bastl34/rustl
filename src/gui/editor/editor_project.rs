@@ -202,20 +202,17 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
     }
 }
 
-pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &State)
+pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &State, force_new_path: bool)
 {
-    let path = if let Some(p) = &editor_state.project_path
+    let mut path = editor_state.project_path.clone();
+    if editor_state.project_path.is_none() || force_new_path
     {
-        Some(p.clone())
-    }
-    else
-    {
-        rfd::FileDialog::new()
+        path = rfd::FileDialog::new()
             .add_filter("Rustl Project", &["json"])
             .set_file_name(&format!("{}.json", editor_state.project_metadata.name))
             .save_file()
             .map(|p| p.to_string_lossy().into_owned())
-    };
+    }
 
     if let Some(path) = path
     {

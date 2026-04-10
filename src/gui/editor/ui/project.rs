@@ -35,6 +35,10 @@ pub fn create_project_settings(editor_state: &mut EditorState, _state: &mut Stat
             ui.add(egui::TextEdit::singleline(&mut editor_state.project_metadata.license).desired_width(f32::INFINITY));
             ui.end_row();
 
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| ui.label(RichText::new("Path:").strong()));
+            ui.add(egui::Label::new(editor_state.project_path.as_ref().map_or_else(|| "None".into(), |p| p.clone())).wrap());
+            ui.end_row();
+
             ui.label(RichText::new("Build:").strong());
             ui.label(editor_state.project_metadata.build.to_string());
             ui.end_row();

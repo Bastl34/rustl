@@ -215,15 +215,19 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }));
             }
         }
-        if ui.button("Save Project").clicked()
-        {
-            crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state);
-        }
-        if ui.button("Load Project").clicked()
+        if ui.button("Load Project...").clicked()
         {
             let loading_state = editor_state.loading.clone();
             let loading_progress_state = editor_state.loading_progress.clone();
             crate::gui::editor::editor_project::load_editor_project_with_dialog(editor_state, state, loading_state, loading_progress_state);
+        }
+        if ui.button("Save Project").clicked()
+        {
+            crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false);
+        }
+        if ui.button("Save Project As...").clicked()
+        {
+            crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, true);
         }
         if ui.button("Exit").clicked()
         {
@@ -699,7 +703,9 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
         }).body(|ui|
         {
             let nodes = scene.nodes.clone();
-            build_objects_list(editor_state, exec_queue.clone(), scene, ui, &nodes, scene.id, true, false);
+            let mut flat_order = vec![];
+            build_objects_list(editor_state, exec_queue.clone(), scene, ui, &nodes, scene.id, true, false, &mut flat_order);
+            editor_state.hierarchy_flat_nodes_order = flat_order;
         });
     }
 

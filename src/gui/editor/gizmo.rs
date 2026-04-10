@@ -125,33 +125,6 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
     });
 }
 
-pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State)
-{
-    let (_, node, _) = editor_state.get_selected_node(state);
-
-    for scene in &mut state.scenes
-    {
-        let gizmo_translation = scene.find_node_by_name("gizmo_position");
-        let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
-        let gizmo_scale = scene.find_node_by_name("gizmo_scale");
-
-        if let Some(gizmo_translation) = gizmo_translation
-        {
-            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
-        }
-
-        if let Some(gizmo_rotation) = gizmo_rotation
-        {
-            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
-        }
-
-        if let Some(gizmo_scale) = gizmo_scale
-        {
-            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
-        }
-    }
-}
-
 pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
 {
     update_gizmo_visibility(editor_state, state);
@@ -214,6 +187,32 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
     hover_gizmos(pointer_pos, editor_state, state, updated);
 }
 
+pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State)
+{
+    let (_, node, _) = editor_state.get_selected_node(state);
+
+    for scene in &mut state.scenes
+    {
+        let gizmo_translation = scene.find_node_by_name("gizmo_position");
+        let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
+        let gizmo_scale = scene.find_node_by_name("gizmo_scale");
+
+        if let Some(gizmo_translation) = gizmo_translation
+        {
+            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+        }
+
+        if let Some(gizmo_rotation) = gizmo_rotation
+        {
+            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+        }
+
+        if let Some(gizmo_scale) = gizmo_scale
+        {
+            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+        }
+    }
+}
 
 pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
 {

@@ -8,7 +8,7 @@ use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsP
 
 const MAX_COMPONENT_NAME_LENGTH: usize = 14;
 
-pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u32, parent_visible: bool, parent_locked: bool)
+pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, ui: &mut Ui, nodes: &Vec<NodeItem>, scene_id: u32, parent_visible: bool, parent_locked: bool, flat_node_order_ref: &mut Vec<u32>)
 {
     for node_arc in nodes
     {
@@ -97,11 +97,231 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     heading = heading.color(Color32::LIGHT_RED);
                 }
 
-                let mut selection; if editor_state.selected_object == id { selection = true; } else { selection = false; }
+                let in_multi_select = editor_state.hierarchy_multi_select.contains(&node_id);
+                let mut selection = editor_state.selected_object == id || in_multi_select;
 
-                let toggle = ui.toggle_value(&mut selection, heading);
+                let drag_id = egui::Id::new(("node_drag", node_id));
+                let is_being_dragged = ui.ctx().is_being_dragged(drag_id);
+
+                let (toggle, row_rect) = ui.horizontal(|ui|
+                {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+
+                    // *** drag handle: dots — constant size avoids ghost jump ***
+                    ui.dnd_drag_source(drag_id, node_id, |ui|
+                    {
+                        let (rect, resp) = ui.allocate_exact_size(egui::vec2(8.0, 16.0), egui::Sense::hover());
+                        let color = if is_being_dragged { Color32::WHITE }
+                                    else if resp.hovered() { Color32::LIGHT_GRAY }
+                                    else { Color32::DARK_GRAY };
+                        let cx = rect.center().x;
+                        for row in [-4.0f32, 0.0, 4.0]
+                        {
+                            let y = rect.center().y + row;
+                            ui.painter().circle_filled(egui::pos2(cx - 2.0, y), 1.5, color);
+                            ui.painter().circle_filled(egui::pos2(cx + 2.0, y), 1.5, color);
+                        }
+                    });
+
+                    // *** drag tooltip: show node name near cursor while dragging ***
+                    if is_being_dragged
+                    {
+                        if let Some(pointer_pos) = ui.ctx().pointer_hover_pos()
+                        {
+                            egui::Area::new(egui::Id::new(("drag_label", node_id)))
+                                .fixed_pos(pointer_pos + egui::vec2(14.0, -14.0))
+                                .order(egui::Order::Tooltip)
+                                .interactable(false)
+                                .show(ui.ctx(), |ui|
+                                {
+                                    egui::Frame::popup(ui.style()).show(ui, |ui|
+                                    {
+                                        let count = editor_state.hierarchy_multi_select.len();
+                                        if count > 1 && editor_state.hierarchy_multi_select.contains(&node_id)
+                                        {
+                                            ui.label(egui::RichText::new(format!("{} objects", count)).strong());
+                                        }
+                                        else
+                                        {
+                                            ui.label(egui::RichText::new(&name).strong());
+                                        }
+                                    });
+                                });
+                        }
+                    }
+
+                    let toggle = ui.toggle_value(&mut selection, heading);
+
+                    let icon_size = egui::vec2(28.0, 16.0);
+
+                    let buttons: Vec<(&str, Color32, &str, Box<dyn FnOnce()>)> = vec![
+                        (
+                            if node_locked { "🔒" } else { "🔓" },
+                            if node_locked { Color32::GRAY } else { Color32::DARK_GRAY },
+                            "lock/unlock",
+                            Box::new
+                            ({
+                                let node_arc = node_arc.clone();
+                                let exec_queue = exec_queue.clone();
+                                move || execute_on_scene_mut(exec_queue, scene_id, Box::new(move |_|
+                                {
+                                    node_arc.write().unwrap().settings.locked = !node_locked;
+                                }))
+                            }),
+                        ),
+                        (
+                            "👁",
+                            if node_visible { Color32::GRAY } else { Color32::DARK_GRAY },
+                            "show/hide",
+                            Box::new
+                            ({
+                                let node_arc = node_arc.clone();
+                                let exec_queue = exec_queue.clone();
+                                move || execute_on_scene_mut(exec_queue, scene_id, Box::new(move |_|
+                                {
+                                    node_arc.write().unwrap().settings.visible = !node_visible;
+                                }))
+                            }),
+                        ),
+                    ];
+
+                    let total_btn_width = icon_size.x * buttons.len() as f32;
+                    let space = ui.available_width() - total_btn_width - 2.0;
+                    if space > 0.0 { ui.add_space(space); }
+
+                    for (icon, color, tooltip, func) in buttons.into_iter()
+                    {
+                        let button = ui.add(egui::Button::new(egui::RichText::new(icon).color(color).size(20.0)).frame(false).min_size(icon_size)).on_hover_text(tooltip);
+                        if button.clicked()
+                        {
+                            func();
+                        }
+                    }
+
+                    let row_rect = ui.min_rect();
+                    (toggle, row_rect)
+                }).inner;
+
+                // *** flat order for shift-select ***
+                flat_node_order_ref.push(node_id);
+
+                // *** drop target: hover-only sense so toggle clicks are not consumed ***
+                let drop_resp = ui.interact(row_rect, egui::Id::new(("node_drop", node_id)), egui::Sense::hover());
+                let is_drop_target = drop_resp.dnd_hover_payload::<u32>().is_some();
+                if is_drop_target
+                {
+                    ui.painter().rect_stroke(row_rect, 2.0, egui::Stroke::new(2.0, Color32::YELLOW), egui::StrokeKind::Outside);
+                }
+
+                // *** handle drop: move dragged nodes to this node ***
+                if let Some(payload) = drop_resp.dnd_release_payload::<u32>()
+                {
+                    let dragged_id = *payload;
+                    let target_id = node_id;
+                    let multi = &editor_state.hierarchy_multi_select;
+                    let target_in_selection = multi.contains(&target_id) && multi.contains(&dragged_id);
+
+                    if dragged_id != target_id && !target_in_selection
+                    {
+                        let nodes_to_move: Vec<u32> = if editor_state.hierarchy_multi_select.contains(&dragged_id) && !editor_state.hierarchy_multi_select.is_empty()
+                        {
+                            editor_state.hierarchy_multi_select.clone()
+                        }
+                        else
+                        {
+                            vec![dragged_id]
+                        };
+
+                        editor_state.hierarchy_multi_select.clear();
+
+                        execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                        {
+                            EditorState::de_select_all_items(state, None);
+                        }));
+
+                        if let Some(target_node) = scene.find_node_by_id(target_id)
+                        {
+                            let source_nodes: Vec<NodeItem> = nodes_to_move.iter()
+                                .filter(|&&id| id != target_id)
+                                .filter_map(|&id| scene.find_node_by_id(id))
+                                .collect();
+
+                            if !source_nodes.is_empty()
+                            {
+                                let source_nodes = std::sync::Arc::new(source_nodes);
+                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                                {
+                                    for source_node in source_nodes.iter()
+                                    {
+                                        if source_node.read().unwrap().parent.is_none()
+                                        {
+                                            let id = source_node.read().unwrap().id;
+                                            scene.nodes.retain(|n| n.read().unwrap().id != id);
+                                        }
+                                        Node::set_parent(source_node.clone(), target_node.clone());
+                                    }
+                                }));
+                            }
+                        }
+                    }
+                }
 
                 if toggle.clicked()
+                {
+                    let (ctrl_held, shift_held) = toggle.ctx.input(|i| (i.modifiers.ctrl, i.modifiers.shift));
+
+                    if editor_state.pick_mode == PickType::None
+                    {
+                        if shift_held
+                        {
+                            // Shift+click: select range from last clicked to this node
+                            if let Some(last_id) = editor_state.hierarchy_last_click_id
+                            {
+                                let flat_node_list = &editor_state.hierarchy_flat_nodes_order;
+                                let pos_last = flat_node_list.iter().position(|&x| x == last_id);
+                                let pos_cur  = flat_node_list.iter().position(|&x| x == node_id);
+                                if let (Some(a), Some(b)) = (pos_last, pos_cur)
+                                {
+                                    let range = if a <= b { a..=b } else { b..=a };
+                                    editor_state.hierarchy_multi_select = flat_node_list[range].to_vec();
+                                }
+                            }
+                        }
+                        else if ctrl_held
+                        {
+                            // On the first ctrl+click: seed multi_select with the currently
+                            // selected node so dragging it later also moves all selected nodes.
+                            if editor_state.hierarchy_multi_select.is_empty()
+                            {
+                                if let Some(selected_id) = editor_state.get_selected_node_id()
+                                {
+                                    editor_state.hierarchy_multi_select.push(selected_id);
+                                }
+                            }
+
+                            if in_multi_select
+                            {
+                                editor_state.hierarchy_multi_select.retain(|&x| x != node_id);
+                            }
+                            else
+                            {
+                                editor_state.hierarchy_multi_select.push(node_id);
+                                editor_state.hierarchy_last_click_id = Some(node_id);
+                            }
+                        }
+                        else
+                        {
+                            editor_state.hierarchy_multi_select.clear();
+                            editor_state.hierarchy_last_click_id = Some(node_id);
+                        }
+                    }
+                    else
+                    {
+                        editor_state.hierarchy_multi_select.clear();
+                    }
+                }
+
+                if toggle.clicked() && !toggle.ctx.input(|i| i.modifiers.ctrl || i.modifiers.shift)
                 {
                     if editor_state.pick_mode == PickType::Camera
                     {
@@ -348,7 +568,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
             if child_nodes.len() > 0
             {
-                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible, locked);
+                build_objects_list(editor_state, exec_queue.clone(), scene, ui, child_nodes, scene_id, visible, locked, flat_node_order_ref);
             }
         });
     }

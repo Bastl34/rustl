@@ -157,6 +157,7 @@ pub struct EditorState
     pub gizmo_scale: bool,
 
     pub use_highlight: bool,
+    pub show_internal_entries: bool,
 
     pub pick_id: String,
     pub pick_mode: PickType,
@@ -178,7 +179,10 @@ pub struct EditorState
 
     pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
-    pub show_internal_entries: bool,
+
+    pub hierarchy_multi_select: Vec<u32>,
+    pub hierarchy_last_click_id: Option<u32>,
+    pub hierarchy_flat_nodes_order: Vec<u32>, // flat list of all node ids in the hierarchy, used for shift+click range selection
 
     pub component_filter: String,
 
@@ -250,6 +254,7 @@ impl EditorState
             gizmo_scale: false,
 
             use_highlight: true,
+            show_internal_entries: false,
 
             pick_id: "".to_string(),
             pick_mode: PickType::None,
@@ -271,7 +276,10 @@ impl EditorState
 
             hierarchy_expand_all: false,
             hierarchy_filter: String::new(),
-            show_internal_entries: false,
+
+            hierarchy_multi_select: vec![],
+            hierarchy_last_click_id: None,
+            hierarchy_flat_nodes_order: vec![],
 
             component_filter: String::new(),
 
@@ -489,6 +497,13 @@ impl EditorState
         }
 
         (item_id, subitem_id)
+    }
+
+    pub fn get_selected_node_id(&self) -> Option<u32>
+    {
+        let (node_id, _) = self.get_object_ids();
+
+        node_id
     }
 
     pub fn get_debug_scene<'a>(&'a self, state: &'a mut State) -> Option<&'a mut Box<Scene>>
