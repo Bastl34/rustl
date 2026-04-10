@@ -26,6 +26,7 @@ impl EGui
         let size = window.inner_size();
 
         let ctx: egui::Context = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
         let viewport_id = ctx.viewport_id();
 
         let native_pixels_per_point = window.scale_factor() as f32;

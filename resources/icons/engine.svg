@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
+    <!-- gear teeth -->
+    <path d="M10,2L10,4.5L14,4.5L14,2Z" style="fill:white;"/>
+    <path d="M10,19.5L10,22L14,22L14,19.5Z" style="fill:white;"/>
+    <path d="M2,10L2,14L4.5,14L4.5,10Z" style="fill:white;"/>
+    <path d="M19.5,10L19.5,14L22,14L22,10Z" style="fill:white;"/>
+    <path d="M4.22,5.64L3.51,6.34L5.28,8.11L6.7,6.7L4.93,4.93Z" style="fill:white;"/>
+    <path d="M17.3,17.3L18.72,15.89L20.49,17.66L19.07,19.07Z" style="fill:white;"/>
+    <path d="M5.28,15.89L3.51,17.66L4.93,19.07L6.7,17.3Z" style="fill:white;"/>
+    <path d="M18.72,8.11L20.49,6.34L19.07,4.93L17.3,6.7Z" style="fill:white;"/>
+    <!-- outer ring -->
+    <circle cx="12" cy="12" r="7.5" style="fill:none;stroke:white;stroke-width:2px;"/>
+    <!-- inner circle -->
+    <circle cx="12" cy="12" r="3" style="fill:none;stroke:white;stroke-width:2px;"/>
+</svg>

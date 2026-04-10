@@ -239,6 +239,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let icon_size = 20.0;
+    let padding = 4.0;
 
     ui.horizontal(|ui|
     {
@@ -252,82 +253,132 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
         {
+            ui.spacing_mut().button_padding = egui::vec2(padding, padding);
+
             // fullscreen change
-            if ui.toggle_value(&mut fullscreen, RichText::new("⛶").size(icon_size)).on_hover_text("fullscreen").changed()
             {
-                state.rendering.fullscreen.set(fullscreen);
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/fullscreen.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(fullscreen).frame(true);
+                if ui.add(btn).on_hover_text("Fullscreen").clicked()
+                {
+                    fullscreen = !fullscreen;
+                    state.rendering.fullscreen.set(fullscreen);
+                }
             }
 
             // try out mode
-            if ui.toggle_value(&mut try_out, RichText::new("🎮").size(icon_size)).on_hover_text("try out").changed()
             {
-                editor_state.set_try_mode(state, try_out);
-            };
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/tryout.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(try_out).frame(true);
+                if ui.add(btn).on_hover_text("Try Out").clicked()
+                {
+                    try_out = !try_out;
+                    editor_state.set_try_mode(state, try_out);
+                }
+            }
 
             ui.separator();
 
             // gizmo
-            if ui.toggle_value(&mut editor_state.gizmo_scale, RichText::new("🕂").size(icon_size)).on_hover_text("use scale gizmo").clicked()
             {
-                if editor_state.gizmo_scale
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/gizmo_scale.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.gizmo_scale).frame(true);
+                if ui.add(btn).on_hover_text("use scale gizmo").clicked()
                 {
-                    editor_state.gizmo_position = false;
-                    editor_state.gizmo_rotation = false;
+                    editor_state.gizmo_scale = !editor_state.gizmo_scale;
+                    if editor_state.gizmo_scale
+                    {
+                        editor_state.gizmo_position = false;
+                        editor_state.gizmo_rotation = false;
+                    }
                 }
             }
 
-            if ui.toggle_value(&mut editor_state.gizmo_rotation, RichText::new("↻").size(icon_size)).on_hover_text("use rotation gizmo").clicked()
             {
-                if editor_state.gizmo_rotation
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/gizmo_rotation.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.gizmo_rotation).frame(true);
+                if ui.add(btn).on_hover_text("use rotation gizmo").clicked()
                 {
-                    editor_state.gizmo_position = false;
-                    editor_state.gizmo_scale = false;
+                    editor_state.gizmo_rotation = !editor_state.gizmo_rotation;
+                    if editor_state.gizmo_rotation
+                    {
+                        editor_state.gizmo_position = false;
+                        editor_state.gizmo_scale = false;
+                    }
                 }
             }
 
-            if ui.toggle_value(&mut editor_state.gizmo_position, RichText::new("⬌").size(icon_size)).on_hover_text("use position gizmo").clicked()
             {
-                if editor_state.gizmo_position
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/gizmo_position.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.gizmo_position).frame(true);
+                if ui.add(btn).on_hover_text("use position gizmo").clicked()
                 {
-                    editor_state.gizmo_rotation = false;
-                    editor_state.gizmo_scale = false;
+                    editor_state.gizmo_position = !editor_state.gizmo_position;
+                    if editor_state.gizmo_position
+                    {
+                        editor_state.gizmo_rotation = false;
+                        editor_state.gizmo_scale = false;
+                    }
                 }
             }
 
             ui.separator();
 
-            if ui.toggle_value(&mut editor_state.use_highlight, RichText::new("🔦").size(icon_size)).on_hover_text("highlight objects in the editor").clicked()
             {
-                if !editor_state.use_highlight
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/highlight.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.use_highlight).frame(true);
+                if ui.add(btn).on_hover_text("highlight objects in the editor").clicked()
                 {
-                    editor_state.remove_highlight(state);
-                }
-                else
-                {
-                    editor_state.apply_highlight(state);
+                    editor_state.use_highlight = !editor_state.use_highlight;
+                    if !editor_state.use_highlight
+                    {
+                        editor_state.remove_highlight(state);
+                    }
+                    else
+                    {
+                        editor_state.apply_highlight(state);
+                    }
                 }
             }
 
             ui.separator();
 
             // fly camera
-            ui.toggle_value(&mut editor_state.fly_camera, RichText::new("✈").size(icon_size)).on_hover_text("fly camera");
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/fly_camera.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.fly_camera).frame(true);
+                if ui.add(btn).on_hover_text("fly camera").clicked()
+                {
+                    editor_state.fly_camera = !editor_state.fly_camera;
+                }
+            }
 
             // selectable
-            if ui.toggle_value(&mut editor_state.selectable, RichText::new("🖱").size(icon_size)).on_hover_text("select objects").changed()
             {
-                if !editor_state.selectable
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/select.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.selectable).frame(true);
+                if ui.add(btn).on_hover_text("select objects").clicked()
                 {
-                    editor_state.de_select_current_item(state);
+                    editor_state.selectable = !editor_state.selectable;
+                    if !editor_state.selectable
+                    {
+                        editor_state.de_select_current_item(state);
+                    }
                 }
             }
 
             ui.separator();
 
-            // play
-            let mut playing = !state.pause;
-            ui.toggle_value(&mut playing, RichText::new("⏵").size(icon_size)).on_hover_text("Playing/Pause");
-            state.pause = !playing;
+            // play/pause
+            {
+                let playing = !state.pause;
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/engine.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(playing).frame(true);
+                if ui.add(btn).on_hover_text("Playing/Pause").clicked()
+                {
+                    state.pause = playing;
+                }
+            }
         });
     });
 }
@@ -572,7 +623,9 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
-                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}: {}", scene_id, scene.name)).strong());
+                let mut toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}", scene.name)).strong());
+
+                toggle = toggle.on_hover_text(format!("Scene ID: {}", scene.id));
 
                 if toggle.clicked()
                 {
