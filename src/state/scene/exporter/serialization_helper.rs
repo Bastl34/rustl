@@ -4,6 +4,12 @@ use serde::{Deserialize, Deserializer, Serializer};
 
 use crate::{helper::option_or_id::OptionOrId, state::{resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::component::{Component, ComponentItem}, node::NodeItem}}};
 
+
+pub fn default_true() -> bool { true }
+pub fn is_true(v: &bool) -> bool { *v }
+pub fn is_false(v: &bool) -> bool { !*v }
+
+
 // ******************** node serialization ********************
 
 pub fn serialize_node<S>(item: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>

@@ -15,6 +15,9 @@ use crate::resources::resources::load_string;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object};
 use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
+use crate::state::scene::exporter::serialization_helper::default_true;
+use crate::state::scene::exporter::serialization_helper::is_true;
+use crate::state::scene::exporter::serialization_helper::is_false;
 
 // ******************** structs ********************
 
@@ -60,7 +63,12 @@ pub struct EditorProject
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EditorObjectOptions
 {
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub visible: bool,
+
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub locked: bool,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reuse_materials_by_name: Option<bool>,
 }
@@ -124,6 +132,7 @@ pub fn extract_editor_project(state: &State, project_metadata: &EditorProjectMet
             let options = EditorObjectOptions
             {
                 visible: node.settings.visible,
+                locked: node.settings.locked,
                 reuse_materials_by_name: node.extras.get::<bool>(RESUSE_MATERIALS_TAG).copied(),
             };
 
@@ -250,13 +259,21 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
     let json = match load_string(path)
     {
         Ok(json) => json,
-        Err(_) => return None,
+        Err(error) =>
+        {
+            console_error!("failed to load project: {}", error);
+            return None;
+        },
     };
 
     match serde_json::from_str::<EditorProject>(&json)
     {
         Ok(project) => Some(project),
-        Err(_) => None,
+        Err(error) =>
+        {
+            console_error!("failed to parse project: {}", error);
+            None
+        },
     }
 }
 
@@ -336,6 +353,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
                         let mut node = root_node.write().unwrap();
                         node.name = name.clone();
                         node.settings.visible = options.visible;
+                        node.settings.locked = options.locked;
                         node.settings.transient = false;
 
                         if let Some(reuse_materials_by_name) = options.reuse_materials_by_name
