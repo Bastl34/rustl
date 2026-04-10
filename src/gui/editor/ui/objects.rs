@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{find_and_add_new_components, ComponentItem}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut}}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -217,11 +217,10 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 if let Some(payload) = drop_resp.dnd_release_payload::<u32>()
                 {
                     let dragged_id = *payload;
-                    let target_id = node_id;
                     let multi = &editor_state.hierarchy_multi_select;
-                    let target_in_selection = multi.contains(&target_id) && multi.contains(&dragged_id);
+                    let target_in_selection = multi.contains(&node_id) && multi.contains(&dragged_id);
 
-                    if dragged_id != target_id && !target_in_selection
+                    if dragged_id != node_id && !target_in_selection
                     {
                         let nodes_to_move: Vec<u32> = if editor_state.hierarchy_multi_select.contains(&dragged_id) && !editor_state.hierarchy_multi_select.is_empty()
                         {
@@ -231,38 +230,16 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         {
                             vec![dragged_id]
                         };
-
                         editor_state.hierarchy_multi_select.clear();
+
+                        let target_node = scene.find_node_by_id(node_id);
+                        move_nodes_to(exec_queue.clone(), scene, nodes_to_move, target_node);
 
                         execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
                         {
                             EditorState::de_select_all_items(state, None);
                         }));
-
-                        if let Some(target_node) = scene.find_node_by_id(target_id)
-                        {
-                            let source_nodes: Vec<NodeItem> = nodes_to_move.iter()
-                                .filter(|&&id| id != target_id)
-                                .filter_map(|&id| scene.find_node_by_id(id))
-                                .collect();
-
-                            if !source_nodes.is_empty()
-                            {
-                                let source_nodes = std::sync::Arc::new(source_nodes);
-                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
-                                {
-                                    for source_node in source_nodes.iter()
-                                    {
-                                        if source_node.read().unwrap().parent.is_none()
-                                        {
-                                            let id = source_node.read().unwrap().id;
-                                            scene.nodes.retain(|n| n.read().unwrap().id != id);
-                                        }
-                                        Node::set_parent(source_node.clone(), target_node.clone());
-                                    }
-                                }));
-                            }
-                        }
+                        editor_state.de_select_current_item_from_scene(scene);
                     }
                 }
 

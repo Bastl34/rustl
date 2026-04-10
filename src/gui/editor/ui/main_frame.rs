@@ -9,7 +9,7 @@ use crate::gui::editor::ui::debug::create_debug_settings;
 use crate::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::helper::math::approx_zero;
-use crate::state::scene::utilities::scene_utils::execute_on_scene_mut;
+use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
@@ -675,6 +675,33 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::Object { selection = true; } else { selection = false; }
                 let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive(show_internal))).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
+
+                // *** drop onto root: make nodes top-level (no parent) ***
+                let drop_resp = ui.interact(toggle.rect, egui::Id::new("objects_root_drop"), egui::Sense::hover());
+                if drop_resp.dnd_hover_payload::<u32>().is_some()
+                {
+                    ui.painter().rect_stroke(toggle.rect, 2.0, egui::Stroke::new(2.0, egui::Color32::YELLOW), egui::StrokeKind::Outside);
+                }
+                if let Some(payload) = drop_resp.dnd_release_payload::<u32>()
+                {
+                    let dragged_id = *payload;
+                    let nodes_to_move: Vec<u32> = if editor_state.hierarchy_multi_select.contains(&dragged_id) && !editor_state.hierarchy_multi_select.is_empty()
+                    {
+                        editor_state.hierarchy_multi_select.clone()
+                    }
+                    else
+                    {
+                        vec![dragged_id]
+                    };
+                    editor_state.hierarchy_multi_select.clear();
+                    move_nodes_to(exec_queue.clone(), scene, nodes_to_move, None);
+
+                    execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                    {
+                        EditorState::de_select_all_items(state, None);
+                    }));
+                    editor_state.de_select_current_item_from_scene(scene);
+                }
 
                 if toggle.clicked()
                 {
