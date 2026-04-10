@@ -428,7 +428,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         let node_arc = node_arc.clone();
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
-                            scene.add_empty_node_front("Node", Some(node_arc.clone()));
+                            let node = scene.add_empty_node_front("Node", Some(node_arc.clone()));
+                            node.write().unwrap().settings.transient = false;
                         }));
                     }
 

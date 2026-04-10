@@ -723,7 +723,8 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
                     if ui.button("⊞ Add New Node").clicked()
                     {
                         ui.close();
-                        scene.add_empty_node_front("Node", None);
+                        let node = scene.add_empty_node_front("Node", None);
+                        node.write().unwrap().settings.transient = false;
                     }
                 });
             });

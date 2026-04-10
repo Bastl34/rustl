@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
 
 use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
@@ -191,6 +191,28 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
 {
     let (_, node, _) = editor_state.get_selected_node(state);
 
+    // check if node has meshes (either on itself or on children) — if not, no need to show gizmos
+    let mut has_meshes = false;
+    if let Some(node) = &node
+    {
+        if node.read().unwrap().has_mesh()
+        {
+            has_meshes = true;
+        }
+        else
+        {
+            let all_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
+            for child_node in all_nodes
+            {
+                if child_node.read().unwrap().has_mesh()
+                {
+                    has_meshes = true;
+                    break;
+                }
+            }
+        }
+    }
+
     for scene in &mut state.scenes
     {
         let gizmo_translation = scene.find_node_by_name("gizmo_position");
@@ -199,17 +221,17 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
 
         if let Some(gizmo_translation) = gizmo_translation
         {
-            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked() && has_meshes;
         }
 
         if let Some(gizmo_rotation) = gizmo_rotation
         {
-            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked() && has_meshes;
         }
 
         if let Some(gizmo_scale) = gizmo_scale
         {
-            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked();
+            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node.as_ref().unwrap().read().unwrap().is_locked() && has_meshes;
         }
     }
 }

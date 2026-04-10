@@ -76,7 +76,9 @@ pub struct EditorObjectOptions
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EditorObject
 {
-    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+
     pub name: String,
     pub options: EditorObjectOptions,
 
@@ -84,6 +86,9 @@ pub struct EditorObject
     pub rotation: [f32; 3],
     pub rotation_quat: Option<[f32; 4]>,
     pub scale: [f32; 3],
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<EditorObject>,
 }
 
 // ******************** extraction (Runtime --> EditorProject) ********************
@@ -96,56 +101,10 @@ pub fn extract_editor_project(state: &State, project_metadata: &EditorProjectMet
     {
         for node_item in &scene.nodes
         {
-            let node = node_item.read().unwrap();
-
-            if !node.root_node
+            if let Some(obj) = extract_node(node_item, path)
             {
-                continue;
+                objects.push(obj);
             }
-
-            // skip internal nodes (editor + engine)
-            if node.has_tag(EDITOR_INTERNAL_TAG) || node.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
-            {
-                continue;
-            }
-
-            // skip transient nodes (not meant to be saved)
-            if node.settings.transient
-            {
-                continue;
-            }
-
-            // source path
-            let source = match &node.source
-            {
-                Some(descriptor) => descriptor.origin_path.clone(),
-                None => continue, // skip nodes without a source asset
-            };
-
-            // make relative path if possible
-            let source = make_relative_path(path, &source).unwrap_or(source);
-
-            // transform
-            let (position, rotation, rotation_quat, scale) = extract_transform(&node);
-
-            // options
-            let options = EditorObjectOptions
-            {
-                visible: node.settings.visible,
-                locked: node.settings.locked,
-                reuse_materials_by_name: node.extras.get::<bool>(RESUSE_MATERIALS_TAG).copied(),
-            };
-
-            objects.push(EditorObject
-            {
-                source,
-                name: node.name.clone(),
-                options,
-                position,
-                rotation,
-                rotation_quat,
-                scale,
-            });
         }
     }
 
@@ -154,6 +113,55 @@ pub fn extract_editor_project(state: &State, project_metadata: &EditorProjectMet
         metadata: project_metadata.clone(),
         objects,
     }
+}
+
+fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> Option<EditorObject>
+{
+    let node = node_item.read().unwrap();
+
+    // skip internal nodes (editor + engine)
+    if node.has_tag(EDITOR_INTERNAL_TAG) || node.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+    {
+        return None;
+    }
+
+    // skip transient nodes (not meant to be saved)
+    if node.settings.transient
+    {
+        return None;
+    }
+
+    // source path (optional — None for empty/editor-created nodes)
+    let source = node.source.as_ref().map(|descriptor|
+    {
+        let p = descriptor.origin_path.clone();
+        make_relative_path(path, &p).unwrap_or(p)
+    });
+
+    let (position, rotation, rotation_quat, scale) = extract_transform(&node);
+
+    let options = EditorObjectOptions
+    {
+        visible: node.settings.visible,
+        locked: node.settings.locked,
+        reuse_materials_by_name: node.extras.get::<bool>(RESUSE_MATERIALS_TAG).copied(),
+    };
+
+    let objects = node.nodes.iter()
+        .filter_map(|child| extract_node(child, path))
+        .collect();
+
+    Some(EditorObject
+    {
+        source,
+        name: node.name.clone(),
+        options,
+        position,
+        rotation,
+        rotation_quat,
+        scale,
+        objects,
+    })
 }
 
 fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32; 3], Option<[f32; 4]>, [f32; 3])
@@ -279,6 +287,122 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
 
 // ******************** apply (EditorProject --> Runtime) ********************
 
+fn apply_editor_object(obj: &EditorObject, parent: Option<crate::state::scene::node::NodeItem>, scene_id: u32, main_queue: &crate::helper::concurrency::execution_queue::ExecutionQueueItem, base_path: &str, create_mipmaps: bool, max_tex_res: u32)
+{
+    let name = obj.name.clone();
+    let options = obj.options.clone();
+    let position = obj.position;
+    let rotation = obj.rotation;
+    let rotation_quat = obj.rotation_quat;
+    let scale = obj.scale;
+    let objects = obj.objects.clone();
+
+    let node: Option<crate::state::scene::node::NodeItem> = match &obj.source
+    {
+        Some(source) =>
+        {
+            let path = resolve_relative_path(base_path, source);
+            let parent_id = parent.as_ref().map(|p| p.read().unwrap().id);
+            let loaded = load_object(&path, scene_id, parent_id, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, create_mipmaps, max_tex_res);
+
+            if let Err(_) = loaded
+            {
+                console_error!("failed to load object: {}", source);
+                return;
+            }
+
+            let loaded_ids = loaded.unwrap();
+            let result: Arc<RwLock<Option<crate::state::scene::node::NodeItem>>> = Arc::new(RwLock::new(None));
+            let result2 = result.clone();
+
+            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+            {
+                for id in &loaded_ids
+                {
+                    if let Some(node) = scene.find_node_by_id(*id)
+                    {
+                        if node.read().unwrap().root_node
+                        {
+                            {
+                                let mut n = node.write().unwrap();
+                                n.name = name.clone();
+                                n.settings.visible = options.visible;
+                                n.settings.locked = options.locked;
+                                n.settings.transient = false;
+
+                                if let Some(reuse) = options.reuse_materials_by_name
+                                {
+                                    if reuse { n.extras.insert(RESUSE_MATERIALS_TAG, reuse); }
+                                    else     { n.extras.remove(RESUSE_MATERIALS_TAG); }
+                                }
+                            }
+
+                            let transform = Transformation::new
+                            (
+                                "Transform",
+                                Vector3::new(position[0], position[1], position[2]),
+                                Vector3::new(rotation[0], rotation[1], rotation[2]),
+                                Vector3::new(scale[0], scale[1], scale[2]),
+                            );
+                            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+
+                            if let Some(quat) = rotation_quat
+                            {
+                                if let Some(tc) = node.read().unwrap().find_component::<Transformation>()
+                                {
+                                    component_downcast_mut!(tc, Transformation);
+                                    tc.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
+                                }
+                            }
+
+                            *result2.write().unwrap() = Some(node.clone());
+                            break;
+                        }
+                    }
+                }
+            }));
+
+            Arc::try_unwrap(result).ok().and_then(|rw| rw.into_inner().ok()).flatten()
+        }
+        None =>
+        {
+            // editor-created empty node (no source asset)
+            let name2 = name.clone();
+            let parent2 = parent.clone();
+            let result: Arc<RwLock<Option<crate::state::scene::node::NodeItem>>> = Arc::new(RwLock::new(None));
+            let result2 = result.clone();
+
+            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+            {
+                let node = scene.add_empty_node(&name2, parent2.clone());
+                {
+                    let mut n = node.write().unwrap();
+                    n.settings.visible = options.visible;
+                    n.settings.locked = options.locked;
+                }
+
+                let transform = Transformation::new
+                (
+                    "Transform",
+                    Vector3::new(position[0], position[1], position[2]),
+                    Vector3::new(rotation[0], rotation[1], rotation[2]),
+                    Vector3::new(scale[0], scale[1], scale[2]),
+                );
+                node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+                *result2.write().unwrap() = Some(node);
+            }));
+
+            Arc::try_unwrap(result).ok().and_then(|rw| rw.into_inner().ok()).flatten()
+        }
+    };
+
+    // recursively apply objects
+    for child in &objects
+    {
+        apply_editor_object(child, node.clone(), scene_id, main_queue, base_path, create_mipmaps, max_tex_res);
+    }
+}
+
 pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
 {
     // get scene id + clear non-internal nodes
@@ -309,94 +433,14 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
         let _guard = LoadingGuard(loading_state);
         console_log!("loading editor project: {} ({} objects)", project.metadata.name, project.objects.len());
 
+        let total = project.objects.len();
         for (i, obj) in project.objects.iter().enumerate()
         {
-            let name = obj.name.clone();
-            let options = obj.options.clone();
-            let position = obj.position;
-            let rotation = obj.rotation;
-            let rotation_quat = obj.rotation_quat;
-            let scale = obj.scale;
-
-            let path = resolve_relative_path(&base_path, &obj.source);
-
-            let loaded = load_object(&path, scene_id, None, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, create_mipmaps, max_tex_res);
-
-            if loaded.is_err()
-            {
-                console_error!("failed to load object: {}", obj.source);
-                continue;
-            }
-
-            let loaded_ids = loaded.unwrap();
-
-            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
-            {
-                // find the root node from loaded ids
-                let mut root_node = None;
-                for id in &loaded_ids
-                {
-                    if let Some(node) = scene.find_node_by_id(*id)
-                    {
-                        if node.read().unwrap().root_node
-                        {
-                            root_node = Some(node.clone());
-                            break;
-                        }
-                    }
-                }
-
-                if let Some(root_node) = root_node
-                {
-                    // apply name + visibility + authored flag
-                    {
-                        let mut node = root_node.write().unwrap();
-                        node.name = name.clone();
-                        node.settings.visible = options.visible;
-                        node.settings.locked = options.locked;
-                        node.settings.transient = false;
-
-                        if let Some(reuse_materials_by_name) = options.reuse_materials_by_name
-                        {
-                            if reuse_materials_by_name
-                            {
-                                node.extras.insert(RESUSE_MATERIALS_TAG, reuse_materials_by_name);
-                            }
-                            else
-                            {
-                                node.extras.remove(RESUSE_MATERIALS_TAG);
-                            }
-                        }
-                    }
-
-                    // apply transform
-                    let transform = Transformation::new
-                    (
-                        "Transform",
-                        Vector3::new(position[0], position[1], position[2]),
-                        Vector3::new(rotation[0], rotation[1], rotation[2]),
-                        Vector3::new(scale[0], scale[1], scale[2]),
-                    );
-
-                    root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
-
-                    // apply quaternion rotation if present
-                    if let Some(quat) = rotation_quat
-                    {
-                        if let Some(transform_component) = root_node.read().unwrap().find_component::<Transformation>()
-                        {
-                            component_downcast_mut!(transform_component, Transformation);
-                            transform_component.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
-                        }
-                    }
-                }
-            }));
-
-            *loading_progress_state.write().unwrap() = (i + 1) as f32 / project.objects.len() as f32;
+            apply_editor_object(obj, None, scene_id, &main_queue, &base_path, create_mipmaps, max_tex_res);
+            *loading_progress_state.write().unwrap() = (i + 1) as f32 / total as f32;
         }
 
         *loading_progress_state.write().unwrap() = 0.0;
-
         console_success!("editor project loaded");
     });
 }

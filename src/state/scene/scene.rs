@@ -371,8 +371,11 @@ impl Scene
 
         if let Some(parent) = parent
         {
-            let mut parent = parent.write().unwrap();
-            parent.nodes.push(node.clone());
+            {
+                let mut parent = parent.write().unwrap();
+                parent.nodes.push(node.clone());
+            }
+            node.write().unwrap().parent = OptionOrId::Some(parent.clone());
         }
         else
         {
@@ -388,8 +391,11 @@ impl Scene
 
         if let Some(parent) = parent
         {
-            let mut parent = parent.write().unwrap();
-            parent.nodes.insert(0, node.clone());
+            {
+                let mut parent = parent.write().unwrap();
+                parent.nodes.insert(0, node.clone());
+            }
+            node.write().unwrap().parent = OptionOrId::Some(parent.clone());
         }
         else
         {
