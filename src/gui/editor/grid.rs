@@ -7,6 +7,7 @@ use crate::{component_downcast_mut, helper::{concurrency::{execution_queue::Exec
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
+const GRID_ROOT_NAME: &str = "grid root";
 
 pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
@@ -73,7 +74,7 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
                     grid_root = Some(root_node.clone());
-                    root_node.write().unwrap().name = "grid root".to_string();
+                    root_node.write().unwrap().name = GRID_ROOT_NAME.to_string();
 
                     // move to front
                     if let Some(parent) = root_node.read().unwrap().parent.as_ref()
@@ -351,7 +352,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
     {
         let scene_id = scene.id;
 
-        let grid = scene.find_node_by_name("grid");
+        let grid = scene.find_node_by_name(GRID_ROOT_NAME);
 
         // recreate grid
         if grid.is_some() && editor_state.grid_recreate

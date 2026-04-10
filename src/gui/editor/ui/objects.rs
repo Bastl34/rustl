@@ -56,7 +56,11 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut headline_name: String;
-                if node.find_component::<Animation>().is_some()
+                if node.source.is_some()
+                {
+                    headline_name = format!("📦 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
+                }
+                else if node.find_component::<Animation>().is_some()
                 {
                     headline_name = format!("🎞 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
