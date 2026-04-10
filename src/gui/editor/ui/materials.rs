@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast_mut, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType, ui::dialogs::load_texture_dialog}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{scene::{components::material::{Material, MaterialItem, ALL_TEXTURE_TYPES}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast_mut, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType, ui::{dialogs::load_texture_dialog, helper::ui_helper::rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::material::{ALL_TEXTURE_TYPES, Material, MaterialItem}, scene::Scene, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u32, MaterialItem>, ui: &mut Ui, scene_id: u32)
+pub fn build_material_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, materials: &HashMap<u32, MaterialItem>, ui: &mut Ui, scene_id: u32)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
@@ -29,7 +29,25 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::Material && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
+
+            let name = material.get_base().name.clone();
+            let exec_queue_clone = exec_queue.clone();
+
+            let material_id = *material_id;
+
+
+            let toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, material_id, name.clone(), Box::new(move |new_name|
+            {
+                execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
+                {
+                    if let Some(material) = scene.get_material_by_id(material_id)
+                    {
+                        material.write().unwrap().get_base_mut().name = new_name.clone();
+                    }
+                }));
+            }));
+
+            if toggle.clicked()
             {
                 //if self.selected_material.is_none() || (self.selected_material.is_some() && self.selected_material.unwrap() != *material_id)
                 if selection
@@ -46,6 +64,28 @@ pub fn build_material_list(editor_state: &mut EditorState, materials: &HashMap<u
                     editor_state.selected_scene_id = None;
                 }
             }
+
+            toggle.context_menu(|ui|
+            {
+                if ui.button("✏ Rename").clicked()
+                {
+                    ui.close();
+                    editor_state.hierarchy_rename_id = Some(material_id);
+                    editor_state.hierarchy_rename_value = name.clone();
+                }
+
+                // delete
+                ui.separator();
+                if ui.button("🗑 Delete").clicked()
+                {
+                    ui.close();
+
+                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        scene.delete_material_by_id(material_id);
+                    }));
+                }
+            });
         }
     });
 }

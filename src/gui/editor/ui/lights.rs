@@ -2,11 +2,11 @@ use std::cell::RefCell;
 
 use egui::{Ui, RichText};
 
-use crate::{gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::generic_items::collapse_with_title}, helper::{change_tracker::ChangeTracker, generic::cut_string_to_length}, state::{scene::light::{Light, LightItem}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::collapse_with_title}, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, generic::cut_string_to_length}, state::{scene::{light::{Light, LightItem}, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
-pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>, ui: &mut Ui, scene_id: u32)
+pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQueueItem, lights: &ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>, ui: &mut Ui, scene_id: u32)
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
@@ -36,7 +36,23 @@ pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<V
             }
 
             let mut selection; if editor_state.selected_type == SelectionType::Light && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
+
+            let name = light.name.clone();
+            let light_id = light.id;
+            let exec_queue_clone = exec_queue.clone();
+
+            let toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, light_id, name.clone(), Box::new(move |new_name|
+            {
+                execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
+                {
+                    if let Some(light) = scene.get_light_by_id(light_id)
+                    {
+                        light.borrow_mut().get_mut().name = new_name.clone();
+                    }
+                }));
+            }));
+
+            if toggle.clicked()
             {
                 if selection
                 {
@@ -51,6 +67,28 @@ pub fn build_light_list(editor_state: &mut EditorState, lights: &ChangeTracker<V
                     editor_state.selected_scene_id = None;
                 }
             }
+
+            toggle.context_menu(|ui|
+            {
+                if ui.button("✏ Rename").clicked()
+                {
+                    ui.close();
+                    editor_state.hierarchy_rename_id = Some(light_id);
+                    editor_state.hierarchy_rename_value = name.clone();
+                }
+
+                // delete
+                ui.separator();
+                if ui.button("🗑 Delete").clicked()
+                {
+                    ui.close();
+
+                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        scene.delete_light_by_id(light_id);
+                    }));
+                }
+            });
         }
     });
 }

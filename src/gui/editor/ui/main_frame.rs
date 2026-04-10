@@ -771,7 +771,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
 
                 toggle.context_menu(|ui|
                 {
-                    if ui.button("Add New Camera").clicked()
+                    if ui.button("⊞ Add New Camera").clicked()
                     {
                         ui.close();
                         scene.add_empty_camera("Camera");
@@ -780,7 +780,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             });
         }).body(|ui|
         {
-            build_camera_list(editor_state, &scene.cameras, ui, scene_id);
+            build_camera_list(editor_state, exec_queue.clone(), &scene.cameras, ui, scene_id);
         });
     }
 
@@ -818,7 +818,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
 
                 toggle.context_menu(|ui|
                 {
-                    if ui.button("Add New Light").clicked()
+                    if ui.button("⊞ Add New Light").clicked()
                     {
                         ui.close();
                         scene.add_empty_light("Light");
@@ -827,7 +827,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             });
         }).body(|ui|
         {
-            build_light_list(editor_state, &scene.lights, ui, scene_id);
+            build_light_list(editor_state, exec_queue.clone(), &scene.lights, ui, scene_id);
         });
     }
 
@@ -865,7 +865,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
 
                 toggle.context_menu(|ui|
                 {
-                    if ui.button("Add New Material").clicked()
+                    if ui.button("⊞ Add New Material").clicked()
                     {
                         scene.add_empty_material("Material");
                         ui.close();
@@ -874,7 +874,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             });
         }).body(|ui|
         {
-            build_material_list(editor_state, &scene.materials, ui, scene_id);
+            build_material_list(editor_state, exec_queue.clone(), &scene.materials, ui, scene_id);
         });
     }
 }

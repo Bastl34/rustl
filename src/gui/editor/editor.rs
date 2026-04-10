@@ -122,7 +122,10 @@ impl Editor
 
     pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
     {
-        let raw_input = egui.ui_state.take_egui_input(window);
+        let mut raw_input = egui.ui_state.take_egui_input(window);
+
+        // ensure egui always knows the window has focus so text cursor blinks correctly
+        raw_input.focused = true;
 
         let full_output = egui.ctx.run(raw_input, |ctx|
         {

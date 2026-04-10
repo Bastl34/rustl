@@ -155,6 +155,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
 
                                 frame.show(ui, |ui|
                                 {
+                                    ui.style_mut().interaction.selectable_labels = false;
                                     apply_size(ui);
 
                                     ui.vertical(|ui|

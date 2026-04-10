@@ -183,6 +183,10 @@ pub struct EditorState
     pub hierarchy_multi_select: Vec<u32>,
     pub hierarchy_last_click_id: Option<u32>,
     pub hierarchy_flat_nodes_order: Vec<u32>, // flat list of all node ids in the hierarchy, used for shift+click range selection
+    pub hierarchy_rename_id: Option<u32>,
+    pub hierarchy_rename_value: String,
+    pub hierarchy_rename_click_id: Option<u32>,
+    pub hierarchy_rename_click_time: Option<Instant>,
 
     pub component_filter: String,
 
@@ -280,6 +284,10 @@ impl EditorState
             hierarchy_multi_select: vec![],
             hierarchy_last_click_id: None,
             hierarchy_flat_nodes_order: vec![],
+            hierarchy_rename_id: None,
+            hierarchy_rename_value: String::new(),
+            hierarchy_rename_click_id: None,
+            hierarchy_rename_click_time: None,
 
             component_filter: String::new(),
 
