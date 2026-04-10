@@ -13,7 +13,7 @@ pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mu
         for (_texture_hash, texture_arc) in &state.resources.textures
         {
             let texture = texture_arc.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", texture.id, cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
+            let headline_name = format!("⚫ {}", cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
 
             let is_internal = texture.tags.contains(ENGINE_INTERNAL_TAG) || texture.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
@@ -29,7 +29,9 @@ pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mu
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::Texture && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            let toggle = ui.toggle_value(&mut selection, heading);
+            let mut toggle = ui.toggle_value(&mut selection, heading);
+
+            toggle = toggle.on_hover_text(format!("Texture ID: {}", texture.id));
 
             if toggle.clicked()
             {

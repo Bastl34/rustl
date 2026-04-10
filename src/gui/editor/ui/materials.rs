@@ -13,7 +13,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
         for (material_id, material) in materials
         {
             let material = material.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", material_id, cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
+            let headline_name = format!("⚫ {}", cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
 
             let is_internal = material.get_base().tags.contains(ENGINE_INTERNAL_TAG) || material.get_base().tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
@@ -36,7 +36,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
             let material_id = *material_id;
 
 
-            let toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, material_id, name.clone(), Box::new(move |new_name|
+            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, material_id, name.clone(), Box::new(move |new_name|
             {
                 execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
                 {
@@ -46,6 +46,8 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
                     }
                 }));
             }));
+
+            toggle = toggle.on_hover_text(format!("Material ID: {}", material_id));
 
             if toggle.clicked()
             {

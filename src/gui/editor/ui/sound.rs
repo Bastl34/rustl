@@ -15,7 +15,7 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
         for (_sound_hash, sound) in sound_sources
         {
             let sound = sound.read().unwrap();
-            let headline_name = format!("⚫ {}: {}", sound.id, cut_string_to_length(&sound.name, MAX_NAME_LENGTH));
+            let headline_name = format!("⚫ {}", cut_string_to_length(&sound.name, MAX_NAME_LENGTH));
 
             let is_internal = sound.tags.contains(ENGINE_INTERNAL_TAG) || sound.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
@@ -31,11 +31,14 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::SoundSource && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
+
+            let mut toggle = ui.toggle_value(&mut selection, heading);
+            toggle = toggle.on_hover_text(format!("Sound Source ID: {}", sound.id));
+
+            if toggle.clicked()
             {
                 if selection
                 {
-
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::SoundSource;

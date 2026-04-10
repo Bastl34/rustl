@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, console_debug, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{component_downcast, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -58,23 +58,23 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let mut headline_name: String;
                 if node.find_component::<Animation>().is_some()
                 {
-                    headline_name = format!("🎞 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
+                    headline_name = format!("🎞 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.find_component::<Joint>().is_some()
                 {
-                    headline_name = format!("🕱 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
+                    headline_name = format!("🕱 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.is_empty()
                 {
-                    headline_name = format!("👻 {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
+                    headline_name = format!("👻 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else if node.get_mesh().is_some()
                 {
-                    headline_name = format!("◼ {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
+                    headline_name = format!("◼ {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
                 else
                 {
-                    headline_name = format!("◻ {}: {}", node_id, cut_string_to_length(&name, MAX_NAME_LENGTH));
+                    headline_name = format!("◻ {}",  cut_string_to_length(&name, MAX_NAME_LENGTH));
                 }
 
                 if locked
@@ -151,7 +151,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                     let exec_queue_clone = exec_queue.clone();
                     let node_arc_clone = node_arc.clone();
-                    let toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, node_id, name.clone(), Box::new(move |new_name|
+                    let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, node_id, name.clone(), Box::new(move |new_name|
                     {
                         let node_arc = node_arc_clone.clone();
                         execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |_|
@@ -160,57 +160,9 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }));
                     }));
 
-                    /*
-                    let toggle = if editor_state.hierarchy_rename_id == Some(node_id)
-                    {
-                        // *** inline rename input ***
-                        let input_id = egui::Id::new(("rename_input", node_id));
-                        let input_wdith = 140.0;
-                        let resp = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_rename_value).id(input_id).desired_width(input_wdith));
-                        if !resp.has_focus() && !resp.lost_focus()
-                        {
-                            resp.request_focus();
-                        }
-
-                        let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                        let lost_focus = ui.input(|i| i.key_pressed(egui::Key::Enter)) || resp.lost_focus();
-
-                        if (commit || lost_focus) && !cancel
-                        {
-                            let new_name = editor_state.hierarchy_rename_value.trim().to_string();
-                            if !new_name.is_empty()
-                            {
-                                let node_arc = node_arc.clone();
-                                let new_name = std::sync::Arc::new(new_name);
-                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
-                                {
-                                    node_arc.write().unwrap().name = (*new_name).clone();
-                                }));
-                            }
-                        }
-                        if commit || cancel || lost_focus
-                        {
-                            editor_state.hierarchy_rename_id = None;
-                        }
-
-                        // return a dummy response that never fires clicked()
-                        resp
-                    }
-                    else
-                    {
-                        let toggle = ui.toggle_value(&mut selection, heading);
-                        if toggle.double_clicked()
-                        {
-                            editor_state.hierarchy_rename_id = Some(node_id);
-                            editor_state.hierarchy_rename_value = name.clone();
-                        }
-                        toggle
-                    };
-                    */
+                    toggle = toggle.on_hover_text(format!("Node ID: {}", node_id));
 
                     let icon_size = egui::vec2(28.0, 16.0);
-
                     let buttons: Vec<(&str, Color32, &str, Box<dyn FnOnce()>)> = vec
                     ![
                         (

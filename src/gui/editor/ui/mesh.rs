@@ -21,7 +21,7 @@ pub fn build_mesh_resources_list(editor_state: &mut EditorState, mesh_resources:
                 mesh_resource_name += format!(" ({})", filename.to_string_lossy()).as_str();
             }
 
-            let headline_name = format!("⚫ {}: {}", mesh.id, cut_string_to_length(&mesh_resource_name, MAX_NAME_LENGTH));
+            let headline_name = format!("⚫ {}", cut_string_to_length(&mesh_resource_name, MAX_NAME_LENGTH));
 
             let is_internal = mesh.tags.contains(ENGINE_INTERNAL_TAG) || mesh.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
@@ -37,7 +37,11 @@ pub fn build_mesh_resources_list(editor_state: &mut EditorState, mesh_resources:
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::MeshResource && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            if ui.toggle_value(&mut selection, heading).clicked()
+
+            let mut toggle = ui.toggle_value(&mut selection, heading);
+            toggle = toggle.on_hover_text(format!("Mesh Resource ID: {}", mesh.id));
+
+            if toggle.clicked()
             {
                 if selection
                 {

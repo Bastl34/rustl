@@ -25,7 +25,7 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
                 continue;
             }
 
-            let headline_name = format!("⚫ {}: {}", light.id, cut_string_to_length(&light.name, MAX_NAME_LENGTH));
+            let headline_name = format!("⚫ {}", cut_string_to_length(&light.name, MAX_NAME_LENGTH));
 
             let id = format!("light_{}", light.id);
 
@@ -41,7 +41,7 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
             let light_id = light.id;
             let exec_queue_clone = exec_queue.clone();
 
-            let toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, light_id, name.clone(), Box::new(move |new_name|
+            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, light_id, name.clone(), Box::new(move |new_name|
             {
                 execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
                 {
@@ -51,6 +51,8 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
                     }
                 }));
             }));
+
+            toggle = toggle.on_hover_text(format!("Light ID: {}", light_id));
 
             if toggle.clicked()
             {
