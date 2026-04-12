@@ -166,49 +166,56 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                     toggle = toggle.on_hover_text(format!("Node ID: {}", node_id));
 
-                    let icon_size = egui::vec2(28.0, 16.0);
-                    let buttons: Vec<(&str, Color32, &str, Box<dyn FnOnce()>)> = vec
-                    ![
-                        (
-                            if node_locked { "🔒" } else { "🔓" },
-                            if node_locked { Color32::GRAY } else { Color32::DARK_GRAY },
-                            "lock/unlock",
-                            Box::new
-                            ({
-                                let node_arc = node_arc.clone();
-                                let exec_queue = exec_queue.clone();
-                                move || execute_on_scene_mut(exec_queue, scene_id, Box::new(move |_|
-                                {
-                                    node_arc.write().unwrap().settings.locked = !node_locked;
-                                }))
-                            }),
-                        ),
-                        (
-                            "👁",
-                            if node_visible { Color32::GRAY } else { Color32::DARK_GRAY },
-                            "show/hide",
-                            Box::new
-                            ({
-                                let node_arc = node_arc.clone();
-                                let exec_queue = exec_queue.clone();
-                                move || execute_on_scene_mut(exec_queue, scene_id, Box::new(move |_|
-                                {
-                                    node_arc.write().unwrap().settings.visible = !node_visible;
-                                }))
-                            }),
-                        ),
-                    ];
+                    let button_size = egui::vec2(24.0, 18.0);
+                    let img_size = egui::vec2(18.0, 18.0);
 
-                    let total_btn_width = icon_size.x * buttons.len() as f32;
+                    let total_btn_width = button_size.x * 2.0;
                     let space = ui.available_width() - total_btn_width - 2.0;
                     if space > 0.0 { ui.add_space(space); }
 
-                    for (icon, color, tooltip, func) in buttons.into_iter()
+                    // lock/unlock
                     {
-                        let button = ui.add(egui::Button::new(egui::RichText::new(icon).color(color).size(20.0)).frame(false).min_size(icon_size)).on_hover_text(tooltip);
-                        if button.clicked()
+                        let tint = if node_locked { Color32::LIGHT_GRAY } else { Color32::DARK_GRAY };
+                        let img = if node_locked
                         {
-                            func();
+                            egui::Image::new(egui::include_image!("../../../../resources/icons/lock_closed.svg"))
+                        }
+                        else
+                        {
+                            egui::Image::new(egui::include_image!("../../../../resources/icons/lock_open.svg"))
+                        }.fit_to_exact_size(img_size).tint(tint);
+
+                        let btn = ui.add(egui::Button::image(img).frame(false).min_size(button_size)).on_hover_text("lock/unlock");
+                        if btn.clicked()
+                        {
+                            let node_arc = node_arc.clone();
+                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
+                            {
+                                node_arc.write().unwrap().settings.locked = !node_locked;
+                            }));
+                        }
+                    }
+
+                    // show/hide
+                    {
+                        let tint = if node_visible { Color32::LIGHT_GRAY } else { Color32::DARK_GRAY };
+                        let img = if node_visible
+                        {
+                            egui::Image::new(egui::include_image!("../../../../resources/icons/eye.svg"))
+                        }
+                        else
+                        {
+                            egui::Image::new(egui::include_image!("../../../../resources/icons/eye_off.svg"))
+                        }.fit_to_exact_size(img_size).tint(tint);
+
+                        let btn = ui.add(egui::Button::image(img).frame(false).min_size(button_size)).on_hover_text("show/hide");
+                        if btn.clicked()
+                        {
+                            let node_arc = node_arc.clone();
+                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
+                            {
+                                node_arc.write().unwrap().settings.visible = !node_visible;
+                            }));
                         }
                     }
 

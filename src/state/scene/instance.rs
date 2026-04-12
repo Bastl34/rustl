@@ -553,6 +553,26 @@ impl Instance
         false
     }
 
+    pub fn accumulate_visible(&self) -> bool
+    {
+        if !self.get_data().visible
+        {
+            return false;
+        }
+
+        if let Some(node) = self.node.as_ref()
+        {
+            let node = node.read().unwrap();
+
+            if !node.is_visible()
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
     pub fn get_cached_world_transform(&self) -> Matrix4::<f32>
     {
         self.get_data().computed.world_matrix

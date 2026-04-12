@@ -939,6 +939,30 @@ impl Node
         false
     }
 
+    pub fn is_visible(&self) -> bool
+    {
+        if !self.settings.visible
+        {
+            return false;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if !parent.read().unwrap().settings.visible
+                {
+                    return false;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        true
+    }
+
     pub fn set_pickable(&mut self, pickable: bool)
     {
         self.settings.pickable = pickable;

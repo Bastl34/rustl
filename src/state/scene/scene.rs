@@ -1260,7 +1260,7 @@ impl Scene
             let node = node_arc.read().unwrap();
 
             // early "return" checks
-            if !ignore_visible && !node.settings.visible
+            if !ignore_visible && !node.is_visible()
             {
                 continue;
             }
@@ -1311,6 +1311,12 @@ impl Scene
                 }
 
                 let instance = instance.read().unwrap();
+
+                if !ignore_visible && !instance.get_data().visible
+                {
+                    continue;
+                }
+
                 if !ignore_pickable && !instance.pickable
                 {
                     continue;
