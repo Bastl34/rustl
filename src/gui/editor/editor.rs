@@ -61,7 +61,7 @@ impl Editor
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {
                 // light
-                let mut light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+                let mut light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0, 0.0);
                 light.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
                 scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 

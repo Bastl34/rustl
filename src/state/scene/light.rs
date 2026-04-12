@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{console_log, helper::change_tracker::ChangeTracker, state::scene::utilities::tags::Tags};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::approx_zero}, state::scene::utilities::tags::Tags};
 
 use super::manager::id_manager;
 
@@ -41,6 +41,7 @@ pub struct Light
     pub color: Vector3<f32>,
     pub ground_color: Vector3<f32>,
     pub intensity: f32,
+    pub range: f32, // 0.0 == undefined (infinity)
     pub distance_based_intensity: bool,
     pub max_angle: f32, //in rad
     pub light_type: LightType,
@@ -48,7 +49,7 @@ pub struct Light
 
 impl Light
 {
-    pub fn new_point(name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> Light
+    pub fn new_point(name: String, pos: Point3<f32>, color: Vector3<f32>, intensity: f32, range: f32) -> Light
     {
         Self
         {
@@ -66,6 +67,7 @@ impl Light
             color: color,
             ground_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             intensity: intensity,
+            range: range,
             distance_based_intensity: false,
             max_angle: 0.0,
             light_type: LightType::Point,
@@ -90,13 +92,14 @@ impl Light
             color: color,
             ground_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             intensity: intensity,
+            range: 0.0,
             distance_based_intensity: false,
             max_angle: 0.0,
             light_type: LightType::Directional,
         }
     }
 
-    pub fn new_spot(name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> Light
+    pub fn new_spot(name: String, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32, range: f32) -> Light
     {
         Self
         {
@@ -114,6 +117,7 @@ impl Light
             color: color,
             ground_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
             intensity: intensity,
+            range: range,
             distance_based_intensity: false,
             max_angle: max_angle,
             light_type: LightType::Spot,
@@ -138,6 +142,7 @@ impl Light
             color: color,
             ground_color: ground_color,
             intensity: intensity,
+            range: 0.0,
             distance_based_intensity: false,
             max_angle: 0.0,
             light_type: LightType::Hemispheric,
@@ -153,6 +158,7 @@ impl Light
         let mut color;
         let mut ground_color;
         let mut intensity;
+        let mut range;
         let mut max_angle;
         let mut light_type;
         let mut distance_based_intensity;
@@ -181,37 +187,38 @@ impl Light
             }
 
             intensity = light.intensity;
+            range = light.range;
             max_angle = light.max_angle.to_degrees();
             light_type = light.light_type;
             distance_based_intensity = light.distance_based_intensity;
         }
 
-        let mut apply_settings = false;
+        let mut changed = false;
 
         ui.vertical(|ui|
         {
-            apply_settings = ui.checkbox(&mut enabled, "Enabled").changed() || apply_settings;
+            changed = ui.checkbox(&mut enabled, "Enabled").changed() || changed;
 
             ui.horizontal(|ui|
             {
                 ui.label("pos:");
-                apply_settings = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || apply_settings;
-                apply_settings = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || apply_settings;
-                apply_settings = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || apply_settings;
+                changed = ui.add(egui::DragValue::new(&mut pos.x).speed(0.1).prefix("x: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut pos.y).speed(0.1).prefix("y: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut pos.z).speed(0.1).prefix("z: ")).changed() || changed;
             });
 
             ui.horizontal(|ui|
             {
                 ui.label("dir:");
-                apply_settings = ui.add(egui::DragValue::new(&mut dir.x).speed(0.1).prefix("x: ")).changed() || apply_settings;
-                apply_settings = ui.add(egui::DragValue::new(&mut dir.y).speed(0.1).prefix("y: ")).changed() || apply_settings;
-                apply_settings = ui.add(egui::DragValue::new(&mut dir.z).speed(0.1).prefix("z: ")).changed() || apply_settings;
+                changed = ui.add(egui::DragValue::new(&mut dir.x).speed(0.1).prefix("x: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut dir.y).speed(0.1).prefix("y: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut dir.z).speed(0.1).prefix("z: ")).changed() || changed;
             });
 
             ui.horizontal(|ui|
             {
                 ui.label("Color:");
-                apply_settings = ui.color_edit_button_srgba(&mut color).changed() || apply_settings;
+                changed = ui.color_edit_button_srgba(&mut color).changed() || changed;
             });
 
             if light_type == LightType::Hemispheric
@@ -219,33 +226,34 @@ impl Light
                 ui.horizontal(|ui|
                 {
                     ui.label("Ground Color:");
-                    apply_settings = ui.color_edit_button_srgba(&mut ground_color).changed() || apply_settings;
+                    changed = ui.color_edit_button_srgba(&mut ground_color).changed() || changed;
                 });
             }
 
             if light_type == LightType::Directional || light_type == LightType::Hemispheric
             {
-                apply_settings = ui.add(egui::Slider::new(&mut intensity, 0.0..=1.0).text("intensity")).changed() || apply_settings;
+                changed = ui.add(egui::Slider::new(&mut intensity, 0.0..=1.0).text("intensity")).changed() || changed;
             }
             else
             {
-                apply_settings = ui.add(egui::Slider::new(&mut intensity, 0.0..=10000.0).text("intensity")).changed() || apply_settings;
+                changed = ui.add(egui::Slider::new(&mut intensity, 0.0..=10000.0).text("intensity")).changed() || changed;
             }
-            apply_settings = ui.add(egui::Slider::new(&mut max_angle, 0.0..=180.0).text("max_angle").suffix("°")).changed() || apply_settings;
+            changed = ui.add(egui::Slider::new(&mut max_angle, 0.0..=180.0).text("max_angle").suffix("°")).changed() || changed;
+            changed = ui.add(egui::Slider::new(&mut range, 0.0..=1000.0).text("range")).changed() || changed;
 
             ui.horizontal(|ui|
             {
                 ui.label("Type:");
-                apply_settings = ui.selectable_value(& mut light_type, LightType::Directional, "Directional").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut light_type, LightType::Point, "Point").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut light_type, LightType::Spot, "Spot").changed() || apply_settings;
-                apply_settings = ui.selectable_value(& mut light_type, LightType::Hemispheric, "Hemispheric").changed() || apply_settings;
+                changed = ui.selectable_value(& mut light_type, LightType::Directional, "Directional").changed() || changed;
+                changed = ui.selectable_value(& mut light_type, LightType::Point, "Point").changed() || changed;
+                changed = ui.selectable_value(& mut light_type, LightType::Spot, "Spot").changed() || changed;
+                changed = ui.selectable_value(& mut light_type, LightType::Hemispheric, "Hemispheric").changed() || changed;
             });
 
-            apply_settings = ui.checkbox(&mut distance_based_intensity, "Distance based intensity").changed() || apply_settings;
+            changed = ui.checkbox(&mut distance_based_intensity, "Distance based intensity").changed() || changed;
         });
 
-        if apply_settings
+        if changed
         {
             let mut light = light.borrow_mut();
             let light = light.get_mut();
@@ -269,6 +277,7 @@ impl Light
                 light.ground_color = Vector3::<f32>::new(r, g, b);
             }
 
+            light.range = range;
             light.intensity = intensity;
             light.max_angle = max_angle.to_radians();
             light.light_type = light_type;

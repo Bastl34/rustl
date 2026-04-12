@@ -266,7 +266,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             let pos = Point3::<f32>::new(world_transform[(3, 0)], world_transform[(3, 1)], world_transform[(3, 2)]);
             let dir = -1.0 * Vector3::<f32>::new(world_transform[(2,0)], world_transform[(2,1)], world_transform[(2,2)]).normalize();
 
-            // let range = light.range(); TODO
+            let range = light.range();
 
             match light.kind()
             {
@@ -290,7 +290,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_point((*name).clone(), pos, color, intensity);
+                        let light = Light::new_point((*name).clone(), pos, color, intensity, range.unwrap_or(0.0));
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },
@@ -302,7 +302,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
 
                     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene: &mut Scene|
                     {
-                        let light = Light::new_spot((*name).clone(), pos, dir, color, outer_cone_angle, intensity);
+                        let light = Light::new_spot((*name).clone(), pos, dir, color, outer_cone_angle, intensity, range.unwrap_or(0.0));
                         scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
                     }));
                 },

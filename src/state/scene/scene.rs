@@ -822,12 +822,12 @@ impl Scene
 
     pub fn add_empty_light(&mut self, name: &str) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        self.add_light_point(name, Point3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0)
+        self.add_light_point(name, Point3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0, 0.0)
     }
 
-    pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32, range: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_point(name.to_string(), pos, color, intensity);
+        let light = Light::new_point(name.to_string(), pos, color, intensity, range);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -841,9 +841,9 @@ impl Scene
         self.lights.get_ref().last().unwrap()
     }
 
-    pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32, range: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_spot(name.to_string(), pos, dir, color, max_angle, intensity);
+        let light = Light::new_spot(name.to_string(), pos, dir, color, max_angle, intensity, range);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()

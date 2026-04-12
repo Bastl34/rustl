@@ -27,6 +27,7 @@ struct LightUniform
     color: vec4<f32>,
     ground_color: vec4<f32>,
     intensity: f32,
+    range: f32,
     light_type: u32,
     max_angle: f32,
     distance_based_intensity: u32,
@@ -643,6 +644,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             }
 
             intensity = min(intensity, 1.0);
+
+            // range attenuation (point and spot lights only, glTF punctual lights spec)
+            // formula: max(min(1 - (d/range)^4, 1), 0) -- smooth fade to zero at range boundary
+            // NOTE: intentionally NO division by d² here, even though the glTF spec includes it.
+            // Reason: the distance-based falloff (1/d) is already handled above via distance_based_intensity.
+            // Adding /d² here would double-attenuate the intensity and make everything too dark.
+            // range == 0 means infinite range (e.g. loaded from glTF where range was undefined/None).
+            let range = lights[i].range;
+            if range > 0.0 && (lights[i].light_type == 2u || lights[i].light_type == 3u)
+            {
+                let current_distance = length(lights[i].position.xyz - in.position);
+                if current_distance >= range
+                {
+                    continue; // hard cutoff -- no contribution beyond range (glTF spec requirement)
+                }
+                let attenuation = max(min(1.0 - pow(current_distance / range, 4.0), 1.0), 0.0);
+                intensity *= attenuation;
+            }
 
             if (lights[i].light_type == 4u) //LIGHT_TYPE_HEMISPHERIC
             {
