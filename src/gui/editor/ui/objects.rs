@@ -93,7 +93,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 }
                 else
                 {
-                    heading = RichText::new(headline_name).strikethrough();
+                    heading = RichText::new(headline_name);
                 }
 
                 if locked
@@ -611,10 +611,6 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                 if visible && parent_visible
                 {
                     heading = heading.strong()
-                }
-                else
-                {
-                    heading = heading.strikethrough();
                 }
 
                 if locked || parent_locked

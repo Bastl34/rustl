@@ -2,12 +2,13 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, utilities::scene_utils::{execute_on_state_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast_mut, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
 const GRID_ROOT_NAME: &str = "grid root";
+const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
 
 pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
@@ -19,6 +20,13 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
     let amount = amount as i32;
 
     let size = amount as f32 * spacing;
+
+    // delte already existing first ("grid root", and "grid origin root")
+    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+    {
+        scene.delete_node_by_name(GRID_ORIGIN_ROOT_NAME, true, true, true, true);
+        scene.delete_node_by_name(GRID_ROOT_NAME, true, true, true, true);
+    }));
 
     let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), false, true, true, false, 0).unwrap();
     let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), false, false, true, false, 0).unwrap();
@@ -42,7 +50,7 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
                     {
-                        root_node.write().unwrap().name = "grid origin root".to_string();
+                        root_node.write().unwrap().name = GRID_ORIGIN_ROOT_NAME.to_string();
                     }
 
                     // move to front
