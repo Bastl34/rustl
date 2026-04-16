@@ -330,22 +330,25 @@ pub fn execute_on_state_mut_and_wait(main_queue: ExecutionQueueItem, func: Box<d
 }
 
 /// Move `source_nodes` to `target`: if `Some(node)` → set as parent, if `None` → make root-level.
-pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, source_ids: Vec<u32>, target: Option<NodeItem>)
+pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene_id: u32, source_ids: Vec<u32>, target: Option<NodeItem>)
 {
-    let scene_id = scene.id;
-
-    let source_nodes: Vec<NodeItem> = source_ids.iter()
-        .filter(|&&id| target.as_ref().map_or(true, |t| t.read().unwrap().id != id))
-        .filter_map(|&id| scene.find_node_by_id(id))
-        .collect();
-
-    if source_nodes.is_empty() { return; }
-
-    let source_nodes = Arc::new(source_nodes);
-
-    if let Some(target_node) = target
+    if source_ids.len() == 0
     {
-        execute_on_scene_mut(exec_queue, scene_id, Box::new(move |scene|
+        return;
+    }
+
+    execute_on_scene_mut(exec_queue, scene_id, Box::new(move |scene|
+    {
+        let source_nodes: Vec<NodeItem> = source_ids.iter()
+            .filter(|&&id| target.as_ref().map_or(true, |t| t.read().unwrap().id != id))
+            .filter_map(|&id| scene.find_node_by_id(id))
+            .collect();
+
+        if source_nodes.is_empty() { return; }
+
+        let source_nodes = Arc::new(source_nodes);
+
+        if let Some(target_node) = &target
         {
             for source_node in source_nodes.iter()
             {
@@ -357,11 +360,8 @@ pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, sou
                 }
                 Node::set_parent(source_node.clone(), target_node.clone());
             }
-        }));
-    }
-    else
-    {
-        execute_on_scene_mut(exec_queue, scene_id, Box::new(move |scene|
+        }
+        else
         {
             for source_node in source_nodes.iter()
             {
@@ -379,6 +379,6 @@ pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene: &mut Box<Scene>, sou
                 source_node.write().unwrap().force_instances_update();
                 scene.nodes.push(source_node.clone());
             }
-        }));
-    }
+        }
+    }));
 }

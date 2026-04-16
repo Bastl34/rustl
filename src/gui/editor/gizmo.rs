@@ -226,6 +226,8 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
         node_is_visible = false;
     }
 
+    let is_multi_select_active = editor_state.hierarchy_multi_select.len() > 1;
+
     for scene in &mut state.scenes
     {
         let gizmo_translation = scene.find_node_by_name("gizmo_position");
@@ -234,17 +236,17 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
 
         if let Some(gizmo_translation) = gizmo_translation
         {
-            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node_is_locked && node_is_visible && has_meshes;
+            gizmo_translation.write().unwrap().settings.visible = editor_state.gizmo_position && node.is_some() && !node_is_locked && node_is_visible && !is_multi_select_active && has_meshes;
         }
 
         if let Some(gizmo_rotation) = gizmo_rotation
         {
-            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node_is_locked && node_is_visible && has_meshes;
+            gizmo_rotation.write().unwrap().settings.visible = editor_state.gizmo_rotation && node.is_some() && !node_is_locked && node_is_visible && !is_multi_select_active && has_meshes;
         }
 
         if let Some(gizmo_scale) = gizmo_scale
         {
-            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node_is_locked && node_is_visible && has_meshes;
+            gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node_is_locked && node_is_visible && !is_multi_select_active && has_meshes;
         }
     }
 }

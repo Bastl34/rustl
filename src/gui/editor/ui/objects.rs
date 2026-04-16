@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{component_downcast, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_scene_mut_and_wait, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -254,7 +254,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         editor_state.hierarchy_multi_select.clear();
 
                         let target_node = scene.find_node_by_id(node_id);
-                        move_nodes_to(exec_queue.clone(), scene, nodes_to_move, target_node);
+                        move_nodes_to(exec_queue.clone(), scene.id, nodes_to_move, target_node);
 
                         execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
                         {
@@ -316,6 +316,15 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     else
                     {
                         editor_state.hierarchy_multi_select.clear();
+                    }
+
+                    if editor_state.hierarchy_multi_select.len() > 1
+                    {
+                        let selected_ids = editor_state.hierarchy_multi_select.clone();
+                        execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                        {
+                            EditorState::apply_highlight_for_node_ids(state, &selected_ids);
+                        }));
                     }
                 }
 
@@ -462,6 +471,67 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             node.write().unwrap().settings.transient = false;
                         }));
                     }
+
+                    ui.separator();
+
+                    if ui.button("➡ Move Into New Node").clicked()
+                    {
+                        ui.close();
+
+                        let mut selected_objects = editor_state.hierarchy_multi_select.clone();
+                        editor_state.hierarchy_multi_select.clear();
+
+                        // if for single selection, move that one node
+                        if selected_objects.len() == 0
+                        {
+                            selected_objects = vec![node_id];
+                        }
+
+                        let parent = if let Some(parent) = node_arc.read().unwrap().parent.as_ref()
+                        {
+                            Some(parent.clone())
+                        }
+                        else
+                        {
+                            None
+                        };
+
+                        let target_node: std::sync::Arc<std::sync::Mutex<Option<NodeItem>>> = std::sync::Arc::new(std::sync::Mutex::new(None));
+                        let target_node_setter = target_node.clone();
+
+                        // create new node
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                        {
+                            let node = scene.add_empty_node_front("Node", parent.clone());
+                            node.write().unwrap().settings.transient = false;
+                            *target_node_setter.lock().unwrap() = Some(node);
+                        }));
+
+                        // move selected nodes into target
+                        let exec_queue_clone = exec_queue.clone();
+                        spawn_thread(move ||
+                        {
+                            loop
+                            {
+                                if let Some(node) = target_node.lock().unwrap().take()
+                                {
+                                    move_nodes_to(exec_queue_clone, scene_id, selected_objects, Some(node));
+                                    break;
+                                }
+                                sleep_millis(1);
+                            }
+                        });
+
+                        // deseleect all
+                        execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                        {
+                            EditorState::de_select_all_items(state, None);
+                        }));
+
+                        editor_state.selected_object.clear();
+                        editor_state.selected_scene_id = None;
+                    }
+
 
                     ui.separator();
 

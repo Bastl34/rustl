@@ -678,6 +678,65 @@ impl EditorState
         }
     }
 
+        pub fn apply_highlight_for_node_ids(state: &mut State, node_ids: &Vec<u32>)
+    {
+        // first clear all existing highlights
+        for scene in &mut state.scenes
+        {
+            for node in &scene.nodes
+            {
+                let mut all_nodes = vec![];
+                all_nodes.push(node.clone());
+                all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                for node in all_nodes
+                {
+                    let node = node.read().unwrap();
+                    for instance in node.instances.get_ref()
+                    {
+                        if !instance.read().unwrap().get_data().highlight
+                        {
+                            continue;
+                        }
+
+                        let mut instance = instance.write().unwrap();
+                        let instance_data = instance.get_data_mut().get_mut();
+                        instance_data.highlight = false;
+                    }
+                }
+            }
+        }
+
+        for scene in &state.scenes
+        {
+            for node_id in node_ids
+            {
+                if let Some(node) = scene.find_node_by_id(*node_id)
+                {
+                    let mut all_nodes = vec![];
+                    all_nodes.push(node.clone());
+                    all_nodes.extend(Scene::list_all_child_nodes(&node.read().unwrap().nodes));
+
+                    for node in all_nodes
+                    {
+                        let node = node.read().unwrap();
+                        for instance in node.instances.get_ref()
+                        {
+                            if instance.read().unwrap().get_data().highlight
+                            {
+                                continue;
+                            }
+
+                            let mut instance = instance.write().unwrap();
+                            let instance_data = instance.get_data_mut().get_mut();
+                            instance_data.highlight = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn de_select_current_item(&mut self, state: &mut State)
     {
         if self.selected_scene_id == None

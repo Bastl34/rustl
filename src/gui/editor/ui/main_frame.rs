@@ -747,7 +747,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
                         vec![dragged_id]
                     };
                     editor_state.hierarchy_multi_select.clear();
-                    move_nodes_to(exec_queue.clone(), scene, nodes_to_move, None);
+                    move_nodes_to(exec_queue.clone(), scene.id, nodes_to_move, None);
 
                     execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
                     {
