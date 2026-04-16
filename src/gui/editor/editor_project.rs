@@ -5,6 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
+use crate::interface::app;
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success};
 use rfd;
 use crate::helper::concurrency::thread::spawn_thread;
@@ -325,6 +326,19 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
     }
 }
 
+pub fn import_editor_scene_with_dialog(state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
+{
+    let path = rfd::FileDialog::new()
+        .add_filter("Rustl Scene", &["json"])
+        .pick_file()
+        .map(|p| p.to_string_lossy().into_owned());
+
+    if let Some(path) = path
+    {
+        apply_editor_scene(state, &path, loading_state, loading_progress_state);
+    }
+}
+
 // ******************** load ********************
 
 pub fn load_editor_project(path: &str) -> Option<EditorProject>
@@ -503,34 +517,24 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     let mut editor_scenes: Vec<EditorScene> = Vec::new();
     let mut scene_ids: Vec<u32> = Vec::new();
 
-    for (i, scene_path) in project.scenes.iter().enumerate()
+    state.delete_all_scenes(true);
+
+    for scene_path in project.scenes
     {
-        let full_path = resolve_relative_path(path, scene_path);
+        let full_path = resolve_relative_path(path, scene_path.as_str());
         let editor_scene = match load_editor_scene(&full_path)
         {
             Some(s) => s,
             None => continue,
         };
 
-        if i < state.scenes.len()
+        let id = state.add_scene(&editor_scene.name);
+        if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
         {
-            let scene = &mut state.scenes[i];
-            scene.clear(false, true);
-            scene.name = editor_scene.name.clone();
             scene.active = editor_scene.active;
             scene.source = Some(AssetPathDesciptor::new_from_path(full_path));
-            scene_ids.push(scene.id);
         }
-        else
-        {
-            let id = state.add_scene(&editor_scene.name);
-            if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
-            {
-                scene.active = editor_scene.active;
-                scene.source = Some(AssetPathDesciptor::new_from_path(full_path));
-            }
-            scene_ids.push(id);
-        }
+        scene_ids.push(id);
 
         editor_scenes.push(editor_scene);
     }
@@ -566,3 +570,44 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     });
 }
 
+pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
+{
+    let editor_scene = match load_editor_scene(&scene_path)
+    {
+        Some(s) => s,
+        None => return,
+    };
+
+    let scene_id = state.add_scene(&editor_scene.name);
+    if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == scene_id)
+    {
+        scene.active = editor_scene.active;
+        scene.source = Some(AssetPathDesciptor::new_from_path(scene_path.to_string()));
+    }
+
+    let main_queue = state.main_thread_execution_queue.clone();
+    let create_mipmaps = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
+    let base_path = scene_path.to_string();
+    let total_objects: usize = editor_scene.objects.len();
+
+    *loading_state.write().unwrap() = true;
+    *loading_progress_state.write().unwrap() = 0.0;
+
+    spawn_thread(move ||
+    {
+        let _guard = LoadingGuard(loading_state);
+        console_log!("importing editor scene: {} ({} objects)", editor_scene.name, total_objects);
+
+        let mut loaded_count = 0;
+        for obj in &editor_scene.objects
+        {
+            apply_editor_object(obj, None, scene_id, &main_queue, &base_path, create_mipmaps, max_tex_res);
+            loaded_count += 1;
+            *loading_progress_state.write().unwrap() = loaded_count as f32 / total_objects as f32;
+        }
+
+        *loading_progress_state.write().unwrap() = 0.0;
+        console_success!("editor project loaded");
+    });
+}

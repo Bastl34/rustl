@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -50,11 +50,8 @@ impl Editor
     pub fn create_lights_and_cams_entities(&mut self, state: &mut State, scene_id: u32)
     {
         let main_queue = state.main_thread_execution_queue.clone();
-        let loading_state = self.editor_state.loading.clone();
         spawn_thread(move ||
         {
-            *loading_state.write().unwrap() = true;
-
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {
                 // light
@@ -86,8 +83,6 @@ impl Editor
                     scene.cameras.push(Box::new(cam));
                 }
             }));
-
-            *loading_state.write().unwrap() = false;
         });
     }
 
@@ -134,13 +129,17 @@ impl Editor
 
     pub fn update(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
     {
-        // create scene if needed
-        if self.editor_state.add_scene
+        // create editor nodes if needed
         {
-            let scene_id = state.add_scene("Scene");
-            self.create_internal_nodes(state, scene_id);
-
-            self.editor_state.add_scene = false;
+            let scene_id = state.get_active_scene_id();
+            if let Some(scene_id) = scene_id
+            {
+                let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                if scene.find_node_by_name(EDITOR_UTILS_NODE_NAME).is_none()
+                {
+                    self.create_internal_nodes(state, scene_id);
+                }
+            }
         }
 
         // update debug images

@@ -209,8 +209,6 @@ pub struct EditorState
 
     pub drag_id: Option<String>,
 
-    pub add_scene: bool,
-
     pub dialog_add_component: bool,
     pub add_component_id: usize,
     pub add_component_name: String,
@@ -311,8 +309,6 @@ impl EditorState
             copy_node_name: None,
 
             drag_id: None,
-
-            add_scene: false,
 
             dialog_add_component: false,
             add_component_id: 0,

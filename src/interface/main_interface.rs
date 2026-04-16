@@ -399,6 +399,11 @@ impl MainInterface
                     continue;
                 }
 
+                if scene.render_item.is_none()
+                {
+                    continue;
+                }
+
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
@@ -440,6 +445,11 @@ impl MainInterface
                 for scene in &mut state.scenes
                 {
                     if !scene.visible || !scene.active
+                    {
+                        continue;
+                    }
+
+                    if scene.render_item.is_none()
                     {
                         continue;
                     }

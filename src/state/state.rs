@@ -813,6 +813,22 @@ impl State
         success
     }
 
+    pub fn delete_all_scenes(&mut self, clear_resouces: bool) -> bool
+    {
+        if clear_resouces
+        {
+            for scene in &mut self.scenes
+            {
+                scene.clear(true, true);
+            }
+        }
+
+        let len = self.scenes.len();
+        self.scenes.clear();
+
+        len > 0 && self.scenes.is_empty()
+    }
+
     pub fn max_texture_resolution(&self) -> u32
     {
         if let Some(max_tex_resolution) = self.rendering.max_texture_resolution

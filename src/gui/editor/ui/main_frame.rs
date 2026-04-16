@@ -205,15 +205,8 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         if ui.button("New").clicked()
         {
             editor_state.reset_project();
-            let exec_queue = state.main_thread_execution_queue.clone();
-            for scene in &state.scenes
-            {
-                let scene_id = scene.id;
-                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
-                {
-                    scene.clear(false, true);
-                }));
-            }
+            state.delete_all_scenes(true);
+            state.add_scene("main scene");
         }
         if ui.button("Load Project...").clicked()
         {
@@ -490,9 +483,18 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
                         egui::Popup::menu(&add_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
                         {
                             ui.set_min_width(120.0);
-                            if ui.button("Add Scene").clicked()
+                            if ui.button("⊞ Add Scene").clicked()
                             {
-                                editor_state.add_scene = true;
+                                state.add_scene("+ Scene");
+                                egui::Popup::close_all(ui.ctx());
+                            }
+
+                            if ui.button("⬇ Import Scene").clicked()
+                            {
+                                let loading_state = editor_state.loading.clone();
+                                let loading_progress_state = editor_state.loading_progress.clone();
+                                crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state);
+
                                 egui::Popup::close_all(ui.ctx());
                             }
                         });
