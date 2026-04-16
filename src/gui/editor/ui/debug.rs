@@ -118,7 +118,7 @@ pub fn create_debug_settings(editor_state: &mut EditorState, state: &mut State, 
                 DebugPanel::HzbImage =>
                 {
                     let hzb_mip_max = state.scenes.iter()
-                        .find(|scene| Some(scene.id) == editor_state.selected_scene_id || scene.main)
+                        .find(|scene| Some(scene.id) == editor_state.selected_scene_id || scene.active)
                         .and_then(|scene| scene.get_active_camera())
                         .and_then(|cam| cam.hzb_texture_render_item.as_ref())
                         .map(|render_item_box| get_render_item::<Texture>(render_item_box).get_mip_level_count().sub(1))

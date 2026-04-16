@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, load_object}}, state::State}};
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
@@ -10,7 +10,7 @@ const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
 const GRID_ROOT_NAME: &str = "grid root";
 const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
 
-pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
+pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
     let integer_grid_line_scale = 3.0;
 
@@ -21,6 +21,26 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
 
     let size = amount as f32 * spacing;
 
+    let editor_utils_node_id: Arc<RwLock<Option<u32>>> = Arc::new(RwLock::new(None));
+    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new
+    ({
+        let editor_utils_node_id = editor_utils_node_id.clone();
+        move |scene|
+        {
+            if let Some(editor_utils_node) = scene.find_node_by_name(EDITOR_UTILS_NODE_NAME)
+            {
+                *editor_utils_node_id.write().unwrap() = Some(editor_utils_node.read().unwrap().id);
+            }
+        }
+    }));
+    let editor_utils_node_id = *editor_utils_node_id.read().unwrap();
+
+    if editor_utils_node_id.is_none()
+    {
+        console_error!("Failed to find editor utils node for grid creation");
+        return;
+    }
+
     // delte already existing first ("grid root", and "grid origin root")
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
     {
@@ -28,8 +48,8 @@ pub fn create_grid(scene_id: u32, parent_node_id: Option<u32>, main_queue: Execu
         scene.delete_node_by_name(GRID_ROOT_NAME, true, true, true, true);
     }));
 
-    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, parent_node_id, main_queue.clone(), false, true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, parent_node_id, main_queue.clone(), false, false, true, false, 0).unwrap();
+    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, editor_utils_node_id, main_queue.clone(), false, true, true, false, 0).unwrap();
+    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, editor_utils_node_id, main_queue.clone(), false, false, true, false, 0).unwrap();
 
     let mut grid_root = None;
 
@@ -373,16 +393,9 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             let grid_amount = editor_state.grid_amount;
 
             let main_queue_clone = state.main_thread_execution_queue.clone();
-
-            let mut editor_utils_node_id = None;
-            if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
-            {
-                editor_utils_node_id = Some(editor_utils_node.read().unwrap().id);
-            }
-
             spawn_thread(move ||
             {
-                create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), grid_amount, grid_size);
+                create_grid(scene_id, main_queue_clone.clone(), grid_amount, grid_size);
             });
 
             editor_state.grid_recreate = false;

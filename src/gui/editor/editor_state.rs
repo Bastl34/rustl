@@ -209,6 +209,8 @@ pub struct EditorState
 
     pub drag_id: Option<String>,
 
+    pub add_scene: bool,
+
     pub dialog_add_component: bool,
     pub add_component_id: usize,
     pub add_component_name: String,
@@ -309,6 +311,8 @@ impl EditorState
             copy_node_name: None,
 
             drag_id: None,
+
+            add_scene: false,
 
             dialog_add_component: false,
             add_component_id: 0,
@@ -522,7 +526,7 @@ impl EditorState
         }
         else
         {
-            let main_scene_id = state.scenes.iter().position(|s| s.main).or_else(|| if state.scenes.is_empty() { None } else { Some(0) });
+            let main_scene_id = state.scenes.iter().position(|s| s.active).or_else(|| if state.scenes.is_empty() { None } else { Some(0) });
             main_scene_id.and_then(|i| state.scenes.get_mut(i))
         }
     }

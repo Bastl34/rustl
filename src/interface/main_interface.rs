@@ -23,7 +23,7 @@ use crate::output::audio_device::AudioDevice;
 use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
-use crate::rendering::scene::Scene;
+use crate::rendering::scene::{self, Scene};
 use crate::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
@@ -100,29 +100,16 @@ impl MainInterface
             editor_gui,
         };
 
-        interface.scene_init();
-        interface.init();
+        let main_scene_id = interface.scene_init();
+        interface.init(main_scene_id);
 
         interface
     }
 
-    pub fn init(&mut self)
+    pub fn init(&mut self, scene_id: u32)
     {
         {
             let state = &mut *(self.context.state.borrow_mut());
-            let samlpes = *(state.rendering.msaa.get_ref());
-
-            // move out scenes from state to prevent using multiple mut borrows
-            let mut scenes = vec![];
-            swap(&mut state.scenes, &mut scenes);
-
-            for scene in &mut scenes
-            {
-                let render_item = Scene::new(&mut self.context.wgpu, state, scene, samlpes);
-                scene.render_item = Some(Box::new(render_item));
-            }
-
-            swap(&mut scenes, &mut state.scenes);
 
             // gamepad init
             if let Some(gilrs) = &mut self.gilrs
@@ -131,7 +118,7 @@ impl MainInterface
             }
 
             // init editor
-            self.editor_gui.init(state, &self.context.egui);
+            self.editor_gui.init(state, &self.context.egui, scene_id);
         }
 
         // create dummy app
@@ -206,16 +193,15 @@ impl MainInterface
         }
     }
 
-    pub fn scene_init(&mut self)
+    pub fn scene_init(&mut self) -> u32
     {
         //init scene
         let state = &mut *(self.context.state.borrow_mut());
 
-        let mut scene = crate::state::scene::scene::Scene::new("main scene");
-        scene.add_defaults();
-        scene.main = true;
+        let scene_id = state.add_scene("main scene");
+        state.set_active_scene(scene_id);
 
-        state.scenes.push(Box::new(scene));
+        scene_id
     }
 
     pub fn app_update(&mut self)
@@ -234,7 +220,9 @@ impl MainInterface
             return;
         }
 
-        // ******************** update states ********************
+        let frame_time = Instant::now();
+
+        // ******************** update game controller ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             if let Some(gilrs) = &mut self.gilrs
@@ -243,27 +231,10 @@ impl MainInterface
             }
         }
 
-        let frame_time = Instant::now();
 
-        // ******************** update states ********************
+        // ******************** update stats ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-
-            // vsync
-            let (v_sync, vsync_changed) = state.rendering.v_sync.consume_clone();
-            if vsync_changed
-            {
-                self.context.wgpu.set_vsync(v_sync);
-            }
-
-            // full screen
-            let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
-            if fullscreen_changed
-            {
-                let mut fullscreen_mode = None;
-                if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
-                self.context.window.set_fullscreen(fullscreen_mode);
-            }
 
             // fps
             let current_time = state.stats.fps_timer.elapsed().as_millis();
@@ -309,6 +280,7 @@ impl MainInterface
             state.stats.frame_update_time = now;
         }
 
+
         // ******************** editor/ui update ********************
         {
             let now = Instant::now();
@@ -316,6 +288,52 @@ impl MainInterface
             self.editor_gui.update(state, &mut self.context.wgpu, &self.context.egui.ctx);
 
             state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+        }
+
+
+        // ******************** create render items if needed ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            let samlpes = *(state.rendering.msaa.get_ref());
+
+            // move out scenes from state to prevent using multiple mut borrows
+            let mut scenes = vec![];
+            swap(&mut state.scenes, &mut scenes);
+
+            for scene in &mut scenes
+            {
+                if scene.render_item.is_some()
+                {
+                    continue;
+                }
+
+                let render_item = Scene::new(&mut self.context.wgpu, state, scene, samlpes);
+                scene.render_item = Some(Box::new(render_item));
+            }
+
+            swap(&mut scenes, &mut state.scenes);
+        }
+
+
+        // ******************** update rendering states ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+
+            // vsync
+            let (v_sync, vsync_changed) = state.rendering.v_sync.consume_clone();
+            if vsync_changed
+            {
+                self.context.wgpu.set_vsync(v_sync);
+            }
+
+            // full screen
+            let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
+            if fullscreen_changed
+            {
+                let mut fullscreen_mode = None;
+                if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
+                self.context.window.set_fullscreen(fullscreen_mode);
+            }
         }
 
         // ******************** build ui ********************
@@ -331,8 +349,8 @@ impl MainInterface
             state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // ******************** app update ********************
 
+        // ******************** app update ********************
         if !self.context.state.borrow().pause
         {
             let now = Instant::now();
@@ -342,12 +360,14 @@ impl MainInterface
             state.stats.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
+
         // ******************** update main thread queue ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             let main_queue = state.main_thread_execution_queue.clone();
             ExecutionQueue::run_all(main_queue, state);
         }
+
 
         // ******************** update scene and rendering ********************
         if !self.context.state.borrow().pause
@@ -374,6 +394,11 @@ impl MainInterface
 
             for scene in &mut scenes
             {
+                if !scene.active
+                {
+                    continue;
+                }
+
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
@@ -398,6 +423,7 @@ impl MainInterface
             state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
+
         // ******************** render ********************
         let (output, view, msaa_view) = self.context.wgpu.start_render();
         let mut engine_encoder = self.context.wgpu.create_command_encoder();
@@ -413,7 +439,7 @@ impl MainInterface
 
                 for scene in &mut state.scenes
                 {
-                    if !scene.visible
+                    if !scene.visible || !scene.active
                     {
                         continue;
                     }
@@ -463,6 +489,7 @@ impl MainInterface
         self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
         self.context.wgpu.end_render(output);
 
+
         // ******************** screenshot ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
@@ -494,11 +521,13 @@ impl MainInterface
             }
         }
 
+
         // ******************** update inputs ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             state.io.input_manager.update();
         }
+
 
         // ******************** mouse visibility ********************
         {
@@ -524,11 +553,13 @@ impl MainInterface
             }
         }
 
+
         // ******************** reset global change tracker ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             state.io.audio_device.write().unwrap().data.consume_change();
         }
+
 
         // ******************** frame time ********************
         {

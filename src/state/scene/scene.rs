@@ -59,7 +59,7 @@ pub struct Scene
 
     pub name: String,
     pub visible: bool,
-    pub main: bool,
+    pub active: bool,
 
     data: ChangeTracker<SceneData>,
 
@@ -95,7 +95,7 @@ impl Serialize for Scene
         map.serialize_entry("uuid", &self.uuid)?;
         map.serialize_entry("name", &self.name)?;
         map.serialize_entry("visible", &self.visible)?;
-        map.serialize_entry("main", &self.main)?;
+        map.serialize_entry("main", &self.active)?;
         map.serialize_entry("data", &self.data)?;
 
         let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
@@ -149,7 +149,7 @@ impl<'de> Deserialize<'de> for Scene
                         "uuid" => scene.uuid = map.next_value()?,
                         "name" => scene.name = map.next_value()?,
                         "visible" => scene.visible = map.next_value()?,
-                        "main" => scene.main = map.next_value()?,
+                        "main" => scene.active = map.next_value()?,
                         "data" => scene.data = map.next_value()?,
                         "nodes" =>
                         {
@@ -204,7 +204,7 @@ impl Scene
 
             name: name.to_string(),
             visible: true,
-            main: false,
+            active: false,
 
             data: ChangeTracker::new(SceneData
             {

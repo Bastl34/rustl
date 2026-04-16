@@ -160,9 +160,9 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     //left
-    egui::SidePanel::left("left_panel").frame(frame).show(ctx, |ui|
+    egui::SidePanel::left("left_panel").frame(frame).min_width(300.0).show(ctx, |ui|
     {
-        ui.set_min_width(300.0);
+        ui.set_max_width(ui.available_width());
 
         //ui.add_enabled_ui(!loading, |ui|
         //{
@@ -476,6 +476,47 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
             ui.scope(|ui|
             {
                 ui.style_mut().visuals.indent_has_left_vline = true;
+
+                let row_width = ui.available_width();
+                let row_height = ui.spacing().interact_size.y;
+                ui.allocate_ui(egui::vec2(row_width, row_height), |ui|
+                {
+                    ui.horizontal(|ui|
+                    {
+                        let icon_size = 14.0;
+
+                        // add button
+                        let add_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/add.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
+                        egui::Popup::menu(&add_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
+                        {
+                            ui.set_min_width(120.0);
+                            if ui.button("Add Scene").clicked()
+                            {
+                                editor_state.add_scene = true;
+                                egui::Popup::close_all(ui.ctx());
+                            }
+                        });
+
+                        // more button — add right-to-left so TextEdit gets exact remaining space
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                        {
+                            let more_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/more.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
+                            egui::Popup::menu(&more_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
+                            {
+                                ui.set_min_width(160.0);
+                                ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+                            });
+
+                            let search_response = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(f32::INFINITY));
+                            let icon_rect = egui::Rect::from_center_size(egui::pos2(search_response.rect.right() - icon_size / 2.0 - 4.0, search_response.rect.center().y),egui::vec2(icon_size, icon_size));
+                            egui::Image::new(egui::include_image!("../../../../resources/icons/search.svg")).tint(ui.visuals().weak_text_color()).paint_at(ui, icon_rect);
+                        });
+                    });
+                });
+
+                ui.separator();
+
+                // hierarchy
                 create_hierarchy(editor_state, state, ui);
             });
         });
@@ -593,19 +634,6 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
 
 fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    ui.horizontal(|ui|
-    {
-        ui.label("🔍");
-        ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(120.0));
-    });
-
-    ui.horizontal(|ui|
-    {
-        ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
-    });
-
-    ui.separator();
-
     // ******************* scenes *******************
     let exec_queue = state.main_thread_execution_queue.clone();
 
@@ -621,7 +649,15 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
                 let mut selection; if editor_state.selected_scene_id == Some(scene_id) && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
-                let mut toggle = ui.toggle_value(&mut selection, RichText::new(format!("🎬 {}", scene.name)).strong());
+
+                let mut heading = RichText::new(format!("🎬 {}", scene.name)).strong();
+
+                if scene.active
+                {
+                    heading = heading.color(Color32::LIGHT_BLUE);
+                }
+
+                let mut toggle = ui.toggle_value(&mut selection, heading);
 
                 toggle = toggle.on_hover_text(format!("Scene ID: {}", scene.id));
 
@@ -643,6 +679,17 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
                 toggle.context_menu(|ui|
                 {
+                    if ui.button("Set Active").clicked()
+                    {
+                        ui.close();
+                        execute_on_state_mut(exec_queue.clone(),  Box::new(move |sate|
+                        {
+                            sate.set_active_scene(scene_id);
+                        }));
+                    }
+
+                    ui.separator();
+
                     if ui.button("Clear").clicked()
                     {
                         ui.close();
@@ -659,6 +706,28 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                         {
                             scene.clear(false, true);
+                        }));
+                    }
+
+                    ui.separator();
+
+                    if ui.button("🗑 Delete").clicked()
+                    {
+                        ui.close();
+
+                        execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                        {
+                            state.delete_scene_by_id(scene_id, false);
+                        }));
+                    }
+
+                    if ui.button(RichText::new("🗑 Delete + Clear Resources").color(Color32::LIGHT_RED)).clicked()
+                    {
+                        ui.close();
+
+                        execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                        {
+                            state.delete_scene_by_id(scene_id, true);
                         }));
                     }
                 });

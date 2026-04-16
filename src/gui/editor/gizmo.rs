@@ -16,15 +16,13 @@ const GIZMO_ROTATION_SLOW_FACTOR: f32 = 0.1;
 
 const GIZMO_SCALE_DISTANCE_FACTOR: f32 = 0.1;
 
-pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, editor_utils_id: u32)
+pub fn create_grid_and_gizmo_objects(editor_state: &mut EditorState, state: &mut State, scene_id: u32, editor_utils_id: u32)
 {
-    let scene = state.scenes.get_mut(0);
+    let scene = state.find_scene_by_id(scene_id);
     if scene.is_none()
     {
         return;
     }
-    let scene = scene.unwrap();
-    let scene_id = scene.id.clone();
 
     let grid_size = editor_state.grid_size;
     let grid_amount = editor_state.grid_amount;
@@ -34,7 +32,7 @@ pub fn create_gizmo_objects(editor_state: &mut EditorState, state: &mut State, e
 
     spawn_thread(move ||
     {
-        create_grid(scene_id, Some(editor_utils_id), main_queue_clone.clone(), grid_amount, grid_size);
+        create_grid(scene_id, main_queue_clone.clone(), grid_amount, grid_size);
 
         let pos = scene_utils::load_object("objects/gizmo/gizmo_pos.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
         let rot = scene_utils::load_object("objects/gizmo/gizmo_rot.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);

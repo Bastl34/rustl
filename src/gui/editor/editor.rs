@@ -10,13 +10,14 @@ use crate::{component_downcast, component_downcast_mut, console_error, console_l
 
 use self::math::approx_zero;
 
-use super::{editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
+use super::{editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
 
 pub const MAX_NAME_LENGTH: usize = 24;
 
 pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
 pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
+pub const EDITOR_UTILS_NODE_NAME: &str = "editor utils";
 
 pub struct Editor
 {
@@ -33,25 +34,21 @@ impl Editor
         }
     }
 
-    pub fn init(&mut self, state: &mut State, egui: &EGui)
+    pub fn init(&mut self, state: &mut State, egui: &EGui, scene_id: u32)
     {
         self.editor_state.load_all_asset_entries(state, &egui.ctx);
 
-        self.create_main_entities(state);
-        self.create_util_objects(state);
+        self.create_internal_nodes(state, scene_id);
     }
 
-    pub fn create_main_entities(&mut self, state: &mut State)
+    pub fn create_internal_nodes(&mut self, state: &mut State, scene_id: u32)
     {
-        let scene_id = state.get_main_scene_id();
+        self.create_lights_and_cams_entities(state, scene_id);
+        self.create_util_objects(state, scene_id);
+    }
 
-        if scene_id.is_none()
-        {
-            console_error!("No main scene found");
-            return;
-        }
-        let scene_id = scene_id.unwrap();
-
+    pub fn create_lights_and_cams_entities(&mut self, state: &mut State, scene_id: u32)
+    {
         let main_queue = state.main_thread_execution_queue.clone();
         let loading_state = self.editor_state.loading.clone();
         spawn_thread(move ||
@@ -94,30 +91,17 @@ impl Editor
         });
     }
 
-    pub fn create_util_objects(&mut self, state: &mut State)
+    pub fn create_util_objects(&mut self, state: &mut State, scene_id: u32)
     {
-        // use or create new scene if needed
-        let scene = if state.scenes.is_empty()
-        {
-            let mut scene = crate::state::scene::scene::Scene::new("main scene");
-            scene.add_defaults();
+        let scene = state.find_scene_by_id_mut(scene_id).unwrap();
 
-            state.scenes.push(Box::new(scene));
-            state.scenes.last_mut().unwrap()
-        }
-        else
-        {
-            state.scenes.get_mut(0).unwrap()
-        };
-
-        let editor_utils = scene.add_empty_node("editor utils", None);
+        let editor_utils = scene.add_empty_node(EDITOR_UTILS_NODE_NAME, None);
         {
             editor_utils.write().unwrap().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
         }
 
         let editor_utils_id = editor_utils.read().unwrap().id;
-
-        create_gizmo_objects(&mut self.editor_state, state, editor_utils_id);
+        create_grid_and_gizmo_objects(&mut self.editor_state, state, scene_id, editor_utils_id);
     }
 
     pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
@@ -150,6 +134,15 @@ impl Editor
 
     pub fn update(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
     {
+        // create scene if needed
+        if self.editor_state.add_scene
+        {
+            let scene_id = state.add_scene("Scene");
+            self.create_internal_nodes(state, scene_id);
+
+            self.editor_state.add_scene = false;
+        }
+
         // update debug images
         self.editor_state.update_debug_images(state, wgpu, egui_ctx);
 
@@ -461,6 +454,11 @@ impl Editor
             return;
         }
 
+        let scene_id = state.get_active_scene_id();
+        if scene_id.is_none() { return; }
+
+        let mut scene_id = scene_id.unwrap();
+
         //if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
         if !self.editor_state.try_mode && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
@@ -478,7 +476,6 @@ impl Editor
             if left_mouse_button || right_mouse_button || tapped
             {
                 let mut hit: Option<ScenePickRes> = None;
-                let mut scene_id: u32 = 0;
 
                 if let Some(pos) = pos
                 {
@@ -1336,25 +1333,7 @@ impl Editor
 
         let main_queue = state.main_thread_execution_queue.clone();
 
-        let mut scene_id = None;
-        let mut editor_utils_node_id = None;
-        for scene in &mut state.scenes
-        {
-            scene_id = Some(scene.id);
-
-            if self.editor_state.asset_type == AssetType::Scene
-            {
-                scene.clear(false, true);
-            }
-
-            if let Some(editor_utils_node) = scene.find_node_by_name("editor utils")
-            {
-                editor_utils_node_id = Some(editor_utils_node.read().unwrap().id);
-            }
-
-            break;
-        }
-
+        let scene_id = state.get_active_scene_id();
         if scene_id.is_none()
         {
             return;
@@ -1370,7 +1349,7 @@ impl Editor
         {
             spawn_thread(move ||
             {
-                create_grid(scene_id, editor_utils_node_id, main_queue_clone.clone(), grid_amount, grid_size);
+                create_grid(scene_id, main_queue_clone.clone(), grid_amount, grid_size);
             });
         };
 

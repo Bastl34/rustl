@@ -22,7 +22,7 @@ impl Context
     {
         for scene in &self.state.borrow().scenes
         {
-            if scene.main
+            if scene.active
             {
                 return Some(scene.id);
             }

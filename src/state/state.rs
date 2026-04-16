@@ -6,7 +6,7 @@ use web_time::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, rendering::scene, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
 
@@ -222,6 +222,8 @@ pub struct State
 
     pub running: bool,
     pub pause: bool,
+    pub exit: bool,
+
     pub scenes: Vec<SceneItem>,
 
     pub registered_components: Vec<(String, bool, fn(&str) -> ComponentItem)>,
@@ -239,8 +241,6 @@ pub struct State
     pub debug: Debug,
 
     pub stats: Statistics,
-
-    pub exit: bool,
 }
 
 impl State
@@ -321,6 +321,8 @@ impl State
 
             running: false,
             pause: false,
+            exit: false,
+
             scenes: vec![],
 
             registered_components: components,
@@ -385,8 +387,6 @@ impl State
 
                 frame: 0,
             },
-
-            exit: false
         }
     }
 
@@ -682,11 +682,31 @@ impl State
         });
     }
 
-    pub fn get_main_scene(&self) -> Option<&SceneItem>
+    pub fn add_scene(&mut self, name: &str) -> u32
+    {
+        let scenes_amount = self.scenes.len();
+
+        let mut scene = crate::state::scene::scene::Scene::new(name);
+
+        if scenes_amount == 0
+        {
+            scene.active = true;
+        }
+
+        scene.add_defaults();
+
+        let scene_id = scene.id;
+
+        self.scenes.push(Box::new(scene));
+
+        scene_id
+    }
+
+    pub fn get_active_scene(&self) -> Option<&SceneItem>
     {
         for scene in &self.scenes
         {
-            if scene.main
+            if scene.active
             {
                 return Some(&scene);
             }
@@ -695,11 +715,11 @@ impl State
         None
     }
 
-    pub fn get_main_scene_mut(&mut self) -> Option<&mut SceneItem>
+    pub fn get_active_scene_mut(&mut self) -> Option<&mut SceneItem>
     {
         for scene in &mut self.scenes
         {
-            if scene.main
+            if scene.active
             {
                 return Some(scene);
             }
@@ -708,14 +728,29 @@ impl State
         None
     }
 
-    pub fn get_main_scene_id(&self) -> Option<u32>
+    pub fn get_active_scene_id(&self) -> Option<u32>
     {
-        let scene = self.get_main_scene();
+        let scene = self.get_active_scene();
         if let Some(scene) = scene
         {
             return Some(scene.id);
         }
         None
+    }
+
+    pub fn set_active_scene(&mut self, id: u32)
+    {
+        for scene in &mut self.scenes
+        {
+            if scene.id == id
+            {
+                scene.active = true;
+            }
+            else
+            {
+                scene.active = false;
+            }
+        }
     }
 
     pub fn find_scene_by_id(&self, id: u32) -> Option<&SceneItem>
@@ -744,6 +779,40 @@ impl State
         None
     }
 
+    pub fn delete_scene_by_id(&mut self, id: u32, clear_resouces: bool) -> bool
+    {
+        let mut was_active = false;
+        {
+            for scene in &mut self.scenes
+            {
+                if scene.id == id
+                {
+                    if clear_resouces
+                    {
+                        scene.clear(true, true);
+                    }
+
+                    if scene.active
+                    {
+                        was_active = true;
+                    }
+                }
+            }
+        }
+
+        let len = self.scenes.len();
+        self.scenes.retain(|scene| scene.id != id);
+        let success = self.scenes.len() != len;
+
+        // mark another scene as active if the deleted one was active
+        if was_active && self.scenes.len() > 0 && self.get_active_scene().is_none()
+        {
+            self.scenes[0].active = true;
+        }
+
+        success
+    }
+
     pub fn max_texture_resolution(&self) -> u32
     {
         if let Some(max_tex_resolution) = self.rendering.max_texture_resolution
@@ -759,6 +828,11 @@ impl State
         // ********** update scenes **********
         for scene in &mut self.scenes
         {
+            if !scene.active
+            {
+                continue;
+            }
+
             scene.update(&mut self.io, time, time_delta, frame);
         }
 

@@ -2,16 +2,13 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, gui::editor::editor::EDITOR_INTERNAL_TAG, state::{scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast_mut, gui::editor::editor::{EDITOR_INTERNAL_TAG, EDITOR_UTILS_NODE_NAME}, state::{scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use super::editor_state::EditorState;
 
 pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_visible: bool, ignore_pickable: bool, predicate: Option<PickPredicate>) -> Option<(u32, ScenePickRes)>
 {
-    let scenes = &state.scenes;
-
     let mut hit: Option<ScenePickRes> = None;
-    let mut scene_id: u32 = 0;
 
     // do not pick internal predicate
     let inner_predicate = predicate.clone();
@@ -34,82 +31,86 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
 
     let do_not_pick_internal_nodes_predicate: Option<PickPredicate> = Some(do_not_pick_internal_nodes_predicate);
 
-    for scene in scenes
+    let scene = state.get_active_scene();
+    if scene.is_none()
     {
-        for camera in &scene.cameras
+        return None;
+    }
+    let scene = scene.unwrap();
+    let scene_id = scene.id;
+
+    for camera in &scene.cameras
+    {
+        // check if click is insight
+        if camera.is_point_in_viewport(&pos)
         {
-            // check if click is insight
-            if camera.is_point_in_viewport(&pos)
+            let ray = camera.get_ray_from_viewport_coordinates(&pos);
+
+            let mut grid_hit = None;
+            if allow_grid_picking
             {
-                let ray = camera.get_ray_from_viewport_coordinates(&pos);
-
-                let mut grid_hit = None;
-                if allow_grid_picking
+                let grid = scene.find_mesh_node_by_name("grid");
+                if let Some(grid) = grid
                 {
-                    let grid = scene.find_mesh_node_by_name("grid");
-                    if let Some(grid) = grid
-                    {
-                        grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, predicate.clone());
-                    }
+                    grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, predicate.clone());
                 }
+            }
 
-                let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, do_not_pick_internal_nodes_predicate.clone());
+            let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, do_not_pick_internal_nodes_predicate.clone());
 
-                //dbg!(scene_hit.is_some());
-                //dbg!(grid_hit.is_some());
+            //dbg!(scene_hit.is_some());
+            //dbg!(grid_hit.is_some());
 
-                // check if grid hit is closer or scene hit
-                let mut new_hit = grid_hit;
-                if let Some(scene_hit_ref) = scene_hit.as_ref()
+            // check if grid hit is closer or scene hit
+            let mut new_hit = grid_hit;
+            if let Some(scene_hit_ref) = scene_hit.as_ref()
+            {
+                if let Some(new_hit_ref) = new_hit.as_ref()
                 {
-                    if let Some(new_hit_ref) = new_hit.as_ref()
-                    {
-                        if scene_hit_ref.time_of_impact < new_hit_ref.time_of_impact
-                        {
-                            new_hit = scene_hit;
-                        }
-                    }
-                    else
+                    if scene_hit_ref.time_of_impact < new_hit_ref.time_of_impact
                     {
                         new_hit = scene_hit;
                     }
                 }
-
-                //dbg!(new_hit.is_some());
-
-                let mut save_hit = false;
-
-                if let Some(new_hit) = new_hit.as_ref()
+                else
                 {
-                    if let Some(hit) = hit.as_ref()
-                    {
-                        // check if the new hit is near
-                        if new_hit.time_of_impact < hit.time_of_impact
-                        {
-                            save_hit = true;
-                        }
-                    }
-                    else
+                    new_hit = scene_hit;
+                }
+            }
+
+            //dbg!(new_hit.is_some());
+
+            let mut save_hit = false;
+
+            if let Some(new_hit) = new_hit.as_ref()
+            {
+                if let Some(hit) = hit.as_ref()
+                {
+                    // check if the new hit is near
+                    if new_hit.time_of_impact < hit.time_of_impact
                     {
                         save_hit = true;
                     }
                 }
-
-                if save_hit
+                else
                 {
-                    hit = new_hit;
-                    scene_id = scene_id;
+                    save_hit = true;
                 }
             }
-        }
 
-        /*
-        if allow_grid_picking
-        {
-            set_grid_picking(scene, false);
+            if save_hit
+            {
+                hit = new_hit;
+            }
         }
-        */
     }
+
+    /*
+    if allow_grid_picking
+    {
+        set_grid_picking(scene, false);
+    }
+    */
 
     if let Some(hit) = hit
     {
@@ -317,7 +318,7 @@ pub fn transform_vec_to_parent_local(instance_id: Option<u32>, selected_node: No
 
 pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
 {
-    let utils_node = scene.find_node_by_name("editor utils");
+    let utils_node = scene.find_node_by_name(EDITOR_UTILS_NODE_NAME);
 
     if utils_node.is_none()
     {
