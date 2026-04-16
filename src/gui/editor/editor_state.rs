@@ -206,6 +206,7 @@ pub struct EditorState
     pub copy_asset: Option<String>,
     pub copy_asset_transform: Option<TransformationData>,
     pub copy_node_id: Arc<RwLock<Option<u32>>>,
+    pub copy_node_name: Option<String>,
 
     pub drag_id: Option<String>,
 
@@ -307,6 +308,7 @@ impl EditorState
             copy_asset: None,
             copy_asset_transform: None,
             copy_node_id: Arc::new(RwLock::new(None)),
+            copy_node_name: None,
 
             drag_id: None,
 

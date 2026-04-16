@@ -352,6 +352,7 @@ impl Editor
 
                 if let Some(source) = &node.source
                 {
+                    self.editor_state.copy_node_name = Some(node.name.clone());
                     self.editor_state.copy_asset = Some(source.origin_path.clone());
                     self.editor_state.copy_asset_transform = None;
 
@@ -375,6 +376,7 @@ impl Editor
 
                     let copy_node_id = self.editor_state.copy_node_id.clone();
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
+                    let copy_node_name = self.editor_state.copy_node_name.clone();
 
                     self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                     {
@@ -392,6 +394,12 @@ impl Editor
                                     transformation.apply_rotation_quaternion(rotation_quat,true);
                                 }
                             }
+                        }
+
+                        // apply name
+                        if let Some(copy_node_name) = &copy_node_name
+                        {
+                            root_node.write().unwrap().name = copy_node_name.clone();
                         }
 
                         *copy_node_id.write().unwrap() = Some(root_node.read().unwrap().id);
