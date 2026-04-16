@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, execute_on_state_mut, load_object}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -167,7 +167,7 @@ impl Editor
             self.select_object(state);
 
             // delete objects
-            self.delete_objct(state);
+            self.delete_objcts(state);
 
             // edit mode
             self.move_object(state);
@@ -466,6 +466,8 @@ impl Editor
             let right_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Right);
             let tapped = state.io.input_manager.touch.tapped_any().is_some();
 
+            let ctrl_holding = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo);
+
             let mut pos = state.io.input_manager.mouse.point.pos;
 
             if let Some(touch_id) = state.io.input_manager.touch.tapped_any()
@@ -582,35 +584,61 @@ impl Editor
                             }
                         }
 
-                        let scene = state.find_scene_by_id_mut(scene_id);
-                        if scene.is_none() { return; }
-                        let scene = scene.unwrap();
-
                         let node = node_arc.read().unwrap();
 
                         let instande_id = if right_mouse_button && !use_root_node { Some(hit.instance_id) } else { None };
 
                         if right_mouse_button || left_mouse_button || tapped
                         {
-                            let selected = self.editor_state.set_selected_object(scene, node.id, instande_id, SelectionType::Object, self.editor_state.use_highlight);
-
-                            if selected
+                            if ctrl_holding
                             {
-                                let start_pos = pos.unwrap();
-                                self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
-
-                                if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
+                                let already_selected = self.editor_state.hierarchy_multi_select.contains(&node.id);
+                                if already_selected
                                 {
-                                    self.editor_state.settings = SettingsPanel::Object;
+                                    self.editor_state.hierarchy_multi_select.retain(|&id| id != node.id);
+                                }
+                                else
+                                {
+                                    self.editor_state.hierarchy_multi_select.push(node.id);
+                                }
+
+                                // clear selected object if any
+                                self.editor_state.selected_object.clear();
+
+                                EditorState::apply_highlight_for_node_ids(state, &self.editor_state.hierarchy_multi_select);
+                            }
+                            else
+                            {
+                                if self.editor_state.hierarchy_multi_select.len() > 0
+                                {
+                                    EditorState::de_select_all_items(state, None);
+                                    self.editor_state.hierarchy_multi_select.clear();
+                                }
+
+                                let scene = state.find_scene_by_id_mut(scene_id);
+                                let scene = scene.unwrap();
+
+                                let selected = self.editor_state.set_selected_object(scene, node.id, instande_id, SelectionType::Object, self.editor_state.use_highlight);
+
+                                if selected
+                                {
+                                    let start_pos = pos.unwrap();
+                                    self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
+
+                                    if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
+                                    {
+                                        self.editor_state.settings = SettingsPanel::Object;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                else
+                else if !ctrl_holding
                 {
-                    //self.editor_state.de_select_current_item(state);
+                    self.editor_state.de_select_current_item(state);
                     EditorState::de_select_all_items(state, None);
+                    self.editor_state.hierarchy_multi_select.clear();
                 }
 
                 self.editor_state.pick_mode = PickType::None;
@@ -618,87 +646,105 @@ impl Editor
         }
     }
 
-    pub fn delete_objct(&mut self, state: &mut State)
+    pub fn delete_objcts(&mut self, state: &mut State)
     {
-        if !self.editor_state.selected_object.is_empty()
+        if !state.io.input_manager.keyboard.is_pressed(Key::Delete) && !state.io.input_manager.keyboard.is_pressed(Key::Backspace)
         {
-            //if state.io.input_manager.keyboard.is_pressed(Key::X) || state.io.input_manager.keyboard.is_pressed(Key::Delete)
-            if state.io.input_manager.keyboard.is_pressed(Key::Delete) || state.io.input_manager.keyboard.is_pressed(Key::Backspace)
+            return;
+        }
+
+        // multi object deletion
+        if self.editor_state.hierarchy_multi_select.len() > 0
+        {
+            let selected_ids = self.editor_state.hierarchy_multi_select.clone();
+
+            for scene in &mut state.scenes
             {
-                // object
-                if self.editor_state.selected_type == SelectionType::Object
+                for node_id in &selected_ids
                 {
-                    if let (Some(scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
+                    if scene.find_node_by_id(*node_id).is_some()
                     {
-                        let instances_amount = node.read().unwrap().instances.get_ref().len();
-                        let has_mesh = node.read().unwrap().has_component::<Mesh>();
-
-                        if instance_id.is_some() && (instances_amount > 1 || !has_mesh)
-                        {
-                            let instance_id = instance_id.unwrap();
-                            node.write().unwrap().delete_instance_by_id(instance_id);
-                        }
-                        else
-                        {
-                            let id = node.read().unwrap().id;
-                            scene.delete_node_by_id(id, true, true, true, true);
-                        }
-
-                        self.editor_state.de_select_current_item(state);
+                        scene.delete_node_by_id(*node_id, true, true, true, true);
                     }
                 }
-
-                // camera
-                if self.editor_state.selected_type == SelectionType::Camera
+            }
+            self.editor_state.hierarchy_multi_select.clear();
+        }
+        else if !self.editor_state.selected_object.is_empty()
+        {
+            // single object
+            if self.editor_state.selected_type == SelectionType::Object
+            {
+                if let (Some(scene), Some(node), instance_id) = self.editor_state.get_selected_node(state)
                 {
-                    let (camera_id, _) = self.editor_state.get_object_ids();
-                    let scene = self.editor_state.get_selected_scene(state);
-                    if let (Some(camera_id), Some(scene)) = (camera_id, scene)
+                    let instances_amount = node.read().unwrap().instances.get_ref().len();
+                    let has_mesh = node.read().unwrap().has_component::<Mesh>();
+
+                    if instance_id.is_some() && (instances_amount > 1 || !has_mesh)
                     {
-                        scene.delete_camera_by_id(camera_id);
+                        let instance_id = instance_id.unwrap();
+                        node.write().unwrap().delete_instance_by_id(instance_id);
                     }
+                    else
+                    {
+                        let id = node.read().unwrap().id;
+                        scene.delete_node_by_id(id, true, true, true, true);
+                    }
+
+                    self.editor_state.de_select_current_item(state);
                 }
+            }
 
-                // light
-                if self.editor_state.selected_type == SelectionType::Light
+            // camera
+            if self.editor_state.selected_type == SelectionType::Camera
+            {
+                let (camera_id, _) = self.editor_state.get_object_ids();
+                let scene = self.editor_state.get_selected_scene(state);
+                if let (Some(camera_id), Some(scene)) = (camera_id, scene)
                 {
-                    let (light_id, _) = self.editor_state.get_object_ids();
-                    let scene = self.editor_state.get_selected_scene(state);
-                    if let (Some(light_id), Some(scene)) = (light_id, scene)
-                    {
-                        scene.delete_light_by_id(light_id);
-                    }
+                    scene.delete_camera_by_id(camera_id);
                 }
+            }
 
-                // material
-                if self.editor_state.selected_type == SelectionType::Material
+            // light
+            if self.editor_state.selected_type == SelectionType::Light
+            {
+                let (light_id, _) = self.editor_state.get_object_ids();
+                let scene = self.editor_state.get_selected_scene(state);
+                if let (Some(light_id), Some(scene)) = (light_id, scene)
                 {
-                    let (material_id, _) = self.editor_state.get_object_ids();
-                    let scene = self.editor_state.get_selected_scene(state);
-                    if let (Some(material_id), Some(scene)) = (material_id, scene)
-                    {
-                        scene.delete_material_by_id(material_id);
-                    }
+                    scene.delete_light_by_id(light_id);
                 }
+            }
 
-                // texture
-                if self.editor_state.selected_type == SelectionType::Texture
+            // material
+            if self.editor_state.selected_type == SelectionType::Material
+            {
+                let (material_id, _) = self.editor_state.get_object_ids();
+                let scene = self.editor_state.get_selected_scene(state);
+                if let (Some(material_id), Some(scene)) = (material_id, scene)
                 {
-                    let (texture_id, _) = self.editor_state.get_object_ids();
-                    if let Some(texture_id) = texture_id
-                    {
-                        state.delete_texture_by_id(texture_id);
-                    }
+                    scene.delete_material_by_id(material_id);
                 }
+            }
 
-                // sound source
-                if self.editor_state.selected_type == SelectionType::SoundSource
+            // texture
+            if self.editor_state.selected_type == SelectionType::Texture
+            {
+                let (texture_id, _) = self.editor_state.get_object_ids();
+                if let Some(texture_id) = texture_id
                 {
-                    let (sound_source_id, _) = self.editor_state.get_object_ids();
-                    if let Some(sound_source_id) = sound_source_id
-                    {
-                        state.delete_sound_source_by_id(sound_source_id);
-                    }
+                    state.delete_texture_by_id(texture_id);
+                }
+            }
+
+            // sound source
+            if self.editor_state.selected_type == SelectionType::SoundSource
+            {
+                let (sound_source_id, _) = self.editor_state.get_object_ids();
+                if let Some(sound_source_id) = sound_source_id
+                {
+                    state.delete_sound_source_by_id(sound_source_id);
                 }
             }
         }
