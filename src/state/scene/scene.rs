@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, gui::editor::ui::console, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, gui::editor::ui::console, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -57,6 +57,8 @@ pub struct Scene
     pub id: u32,
     pub uuid: String,
 
+    pub source: Option<AssetPathDesciptor>,
+
     pub name: String,
     pub visible: bool,
     pub active: bool,
@@ -94,6 +96,7 @@ impl Serialize for Scene
 
         map.serialize_entry("uuid", &self.uuid)?;
         map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("source", &self.source)?;
         map.serialize_entry("visible", &self.visible)?;
         map.serialize_entry("main", &self.active)?;
         map.serialize_entry("data", &self.data)?;
@@ -148,6 +151,7 @@ impl<'de> Deserialize<'de> for Scene
                     {
                         "uuid" => scene.uuid = map.next_value()?,
                         "name" => scene.name = map.next_value()?,
+                        "source" => scene.source = map.next_value()?,
                         "visible" => scene.visible = map.next_value()?,
                         "main" => scene.active = map.next_value()?,
                         "data" => scene.data = map.next_value()?,
@@ -201,6 +205,8 @@ impl Scene
         {
             id: id_manager::get_next_scene_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
+
+            source: None,
 
             name: name.to_string(),
             visible: true,
@@ -1495,6 +1501,11 @@ impl Scene
     {
         ui.label(format!("Id: {}", self.id));
         ui.label(format!("UUID: {}", self.uuid));
+
+        if let Some(source) = &self.source
+        {
+            ui.label(format!("Source: {:?}", source.get_full_descriptor()));
+        }
 
         ui.horizontal(|ui|
         {

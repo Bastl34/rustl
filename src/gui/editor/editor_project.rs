@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success};
 use rfd;
 use crate::helper::concurrency::thread::spawn_thread;
-use crate::helper::file::{make_relative_path, resolve_relative_path, write_string_to_tile};
+use crate::helper::asset_path_descriptor::AssetPathDesciptor;
+use crate::helper::file::{get_dirname, get_stem, make_relative_path, resolve_relative_path, sanitize_filename, write_string_to_tile};
 use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
 use crate::gui::editor::editor_state::{EditorState, LoadingGuard};
 use crate::resources::resources::load_string;
@@ -57,6 +58,18 @@ impl Default for EditorProjectMetadata
 pub struct EditorProject
 {
     pub metadata: EditorProjectMetadata,
+    pub scenes: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EditorScene
+{
+    pub name: String,
+
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub active: bool,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<EditorObject>,
 }
 
@@ -93,24 +106,21 @@ pub struct EditorObject
 
 // ******************** extraction (Runtime --> EditorProject) ********************
 
-pub fn extract_editor_project(state: &State, project_metadata: &EditorProjectMetadata, path: &str) -> EditorProject
+fn scene_file_name(scene_name: &str, project_name: &str) -> String
 {
-    let mut objects = Vec::new();
+    format!("{}_{}.json", sanitize_filename(project_name), sanitize_filename(&scene_name.to_lowercase()))
+}
 
-    for scene in &state.scenes
-    {
-        for node_item in &scene.nodes
-        {
-            if let Some(obj) = extract_node(node_item, path)
-            {
-                objects.push(obj);
-            }
-        }
-    }
+fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, path: &str) -> EditorScene
+{
+    let objects = scene.nodes.iter()
+        .filter_map(|node_item| extract_node(node_item, path))
+        .collect();
 
-    EditorProject
+    EditorScene
     {
-        metadata: project_metadata.clone(),
+        name: scene.name.clone(),
+        active: scene.active,
         objects,
     }
 }
@@ -191,7 +201,54 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: &str) -> bool
 {
     editor_state.project_metadata.build += 1;
-    let project = extract_editor_project(state, &editor_state.project_metadata, path);
+
+    let project_name = editor_state.project_metadata.name.clone();
+    let base_dir = get_dirname(path);
+
+    let mut project_scenes: Vec<String> = Vec::new();
+    let mut total_objects = 0;
+
+    for scene in &state.scenes
+    {
+        let editor_scene = extract_editor_scene(scene, path);
+        total_objects += editor_scene.objects.len();
+
+        // determine scene file path: reuse source if set, otherwise generate from name
+        let scene_full_path = if let Some(ref descriptor) = scene.source
+        {
+            descriptor.origin_path.clone()
+        }
+        else
+        {
+            let name = scene_file_name(&editor_scene.name, &project_name);
+            if base_dir.is_empty() { name } else { format!("{}/{}", base_dir, name) }
+        };
+
+        let scene_json = match serde_json::to_string_pretty(&editor_scene)
+        {
+            Ok(json) => json,
+            Err(e) =>
+            {
+                console_error!("failed to serialize scene '{}': {}", editor_scene.name, e);
+                return false;
+            },
+        };
+
+        if let Err(e) = write_string_to_tile(&scene_full_path, scene_json)
+        {
+            console_error!("failed to save scene file '{}': {}", scene_full_path, e);
+            return false;
+        }
+
+        let relative = make_relative_path(path, &scene_full_path).unwrap_or(scene_full_path);
+        project_scenes.push(relative);
+    }
+
+    let project = EditorProject
+    {
+        metadata: editor_state.project_metadata.clone(),
+        scenes: project_scenes,
+    };
 
     let json = match serde_json::to_string_pretty(&project)
     {
@@ -208,7 +265,7 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
     {
         Ok(_) =>
         {
-            console_success!("project saved: {} ({} objects)", full_path, project.objects.len());
+            console_success!("project saved: {} ({} scenes, {} objects)", full_path, project.scenes.len(), total_objects);
             true
         },
         Err(e) =>
@@ -235,6 +292,14 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
     {
         // save_editor_project appends .json, so strip it if already present
         let base = path.strip_suffix(".json").unwrap_or(&path).to_string();
+
+        // derive project name from filename if a new path was chosen
+        let stem = get_stem(&base);
+        if !stem.is_empty()
+        {
+            editor_state.project_metadata.name = stem;
+        }
+
         if save_editor_project(state, editor_state, &base)
         {
             editor_state.project_path = Some(format!("{}.json", base));
@@ -280,6 +345,29 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
         Err(error) =>
         {
             console_error!("failed to parse project: {}", error);
+            None
+        },
+    }
+}
+
+pub fn load_editor_scene(path: &str) -> Option<EditorScene>
+{
+    let json = match load_string(path)
+    {
+        Ok(json) => json,
+        Err(error) =>
+        {
+            console_error!("failed to load scene '{}': {}", path, error);
+            return None;
+        },
+    };
+
+    match serde_json::from_str::<EditorScene>(&json)
+    {
+        Ok(scene) => Some(scene),
+        Err(error) =>
+        {
+            console_error!("failed to parse scene '{}': {}", path, error);
             None
         },
     }
@@ -405,25 +493,54 @@ fn apply_editor_object(obj: &EditorObject, parent: Option<crate::state::scene::n
 
 pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
 {
-    // get scene id + clear non-internal nodes
-    let mut scene_id = None;
-    for scene in &mut state.scenes
+    if project.scenes.is_empty()
     {
-        scene_id = Some(scene.id);
-        scene.clear(false, true);
-        break;
+        console_error!("no scenes found in project '{}'", project.metadata.name);
+        return;
     }
 
-    let scene_id = match scene_id
+    // load scene files and sync state scenes
+    let mut editor_scenes: Vec<EditorScene> = Vec::new();
+    let mut scene_ids: Vec<u32> = Vec::new();
+
+    for (i, scene_path) in project.scenes.iter().enumerate()
     {
-        Some(id) => id,
-        None => return,
-    };
+        let full_path = resolve_relative_path(path, scene_path);
+        let editor_scene = match load_editor_scene(&full_path)
+        {
+            Some(s) => s,
+            None => continue,
+        };
+
+        if i < state.scenes.len()
+        {
+            let scene = &mut state.scenes[i];
+            scene.clear(false, true);
+            scene.name = editor_scene.name.clone();
+            scene.active = editor_scene.active;
+            scene.source = Some(AssetPathDesciptor::new_from_path(full_path));
+            scene_ids.push(scene.id);
+        }
+        else
+        {
+            let id = state.add_scene(&editor_scene.name);
+            if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
+            {
+                scene.active = editor_scene.active;
+                scene.source = Some(AssetPathDesciptor::new_from_path(full_path));
+            }
+            scene_ids.push(id);
+        }
+
+        editor_scenes.push(editor_scene);
+    }
 
     let main_queue = state.main_thread_execution_queue.clone();
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
     let base_path = path.to_string();
+    let project_name = project.metadata.name.clone();
+    let total_objects: usize = editor_scenes.iter().map(|s| s.objects.len()).sum();
 
     *loading_state.write().unwrap() = true;
     *loading_progress_state.write().unwrap() = 0.0;
@@ -431,13 +548,17 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     spawn_thread(move ||
     {
         let _guard = LoadingGuard(loading_state);
-        console_log!("loading editor project: {} ({} objects)", project.metadata.name, project.objects.len());
+        console_log!("loading editor project: {} ({} scenes, {} objects)", project_name, editor_scenes.len(), total_objects);
 
-        let total = project.objects.len();
-        for (i, obj) in project.objects.iter().enumerate()
+        let mut loaded_count = 0;
+        for (editor_scene, scene_id) in editor_scenes.iter().zip(scene_ids.iter())
         {
-            apply_editor_object(obj, None, scene_id, &main_queue, &base_path, create_mipmaps, max_tex_res);
-            *loading_progress_state.write().unwrap() = (i + 1) as f32 / total as f32;
+            for obj in &editor_scene.objects
+            {
+                apply_editor_object(obj, None, *scene_id, &main_queue, &base_path, create_mipmaps, max_tex_res);
+                loaded_count += 1;
+                *loading_progress_state.write().unwrap() = loaded_count as f32 / total_objects as f32;
+            }
         }
 
         *loading_progress_state.write().unwrap() = 0.0;

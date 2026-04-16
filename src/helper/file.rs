@@ -59,6 +59,18 @@ pub fn write_string_to_tile(path: &str, content: String) -> std::io::Result<()>
     Ok(())
 }
 
+pub fn sanitize_filename(name: &str) -> String
+{
+    name.chars()
+        .map(|c| match c
+        {
+            ' ' => '_',
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            c => c,
+        })
+        .collect()
+}
+
 pub fn normalize_path_separators(path: &str) -> String
 {
     path.replace('\\', "/")
