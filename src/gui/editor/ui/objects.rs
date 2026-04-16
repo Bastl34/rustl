@@ -51,7 +51,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
         let id = format!("objects_{}", node_id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -166,11 +166,11 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                     toggle = toggle.on_hover_text(format!("Node ID: {}", node_id));
 
-                    let button_size = egui::vec2(24.0, 18.0);
+                    let button_size = egui::vec2(20.0, 18.0);
                     let img_size = egui::vec2(18.0, 18.0);
 
                     let total_btn_width = button_size.x * 2.0;
-                    let space = ui.available_width() - total_btn_width - 2.0;
+                    let space = ui.available_width() - total_btn_width - 4.0;
                     if space > 0.0 { ui.add_space(space); }
 
                     // lock/unlock
@@ -471,8 +471,6 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             node.write().unwrap().settings.transient = false;
                         }));
                     }
-
-                    ui.separator();
 
                     if ui.button("➡ Move Into New Node").clicked()
                     {

@@ -597,8 +597,6 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     {
         ui.label("🔍");
         ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(120.0));
-
-        ui.toggle_value(&mut editor_state.hierarchy_expand_all, "⊞").on_hover_text("expand all items");
     });
 
     ui.horizontal(|ui|
@@ -722,7 +720,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
     {
         let id = format!("objects_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -794,7 +792,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
     {
         let id = format!("cameras_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -841,7 +839,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
     {
         let id = format!("lights_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -888,7 +886,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
     {
         let id = format!("materials_{}", scene.id);
         let ui_id = ui.make_persistent_id(id.clone());
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -943,7 +941,7 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
     {
         let ui_id = ui.make_persistent_id("textures");
         let exec_queue = exec_queue.clone();
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -993,7 +991,7 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
     // meshe resources
     {
         let ui_id = ui.make_persistent_id("mesh_resource");
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
@@ -1028,7 +1026,7 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
     // sound sources
     {
         let ui_id = ui.make_persistent_id("sound_sources");
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, editor_state.hierarchy_expand_all).show_header(ui, |ui|
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, false).show_header(ui, |ui|
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {

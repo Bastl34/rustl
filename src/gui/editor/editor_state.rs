@@ -177,7 +177,6 @@ pub struct EditorState
 
     pub settings: SettingsPanel,
 
-    pub hierarchy_expand_all: bool,
     pub hierarchy_filter: String,
 
     pub hierarchy_multi_select: Vec<u32>,
@@ -279,7 +278,6 @@ impl EditorState
 
             settings: SettingsPanel::General,
 
-            hierarchy_expand_all: false,
             hierarchy_filter: String::new(),
 
             hierarchy_multi_select: vec![],
@@ -678,7 +676,7 @@ impl EditorState
         }
     }
 
-        pub fn apply_highlight_for_node_ids(state: &mut State, node_ids: &Vec<u32>)
+    pub fn apply_highlight_for_node_ids(state: &mut State, node_ids: &Vec<u32>)
     {
         // first clear all existing highlights
         for scene in &mut state.scenes
