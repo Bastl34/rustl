@@ -21,10 +21,31 @@ use crate::state::scene::exporter::serialization_helper::default_true;
 use crate::state::scene::exporter::serialization_helper::is_true;
 use crate::state::scene::exporter::serialization_helper::is_false;
 
+const PROJECT_FILE_VERSION: &str = "1.0.0";
+
 // ******************** structs ********************
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorProjectMetadata
+pub struct EditorProjectFormat
+{
+    pub generator: String,
+    pub version: String,
+}
+
+impl Default for EditorProjectFormat
+{
+    fn default() -> Self
+    {
+        EditorProjectFormat
+        {
+            generator: format!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")).to_string(),
+            version: PROJECT_FILE_VERSION.to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EditorProjectData
 {
     pub name: String,
     pub version: String,
@@ -36,11 +57,11 @@ pub struct EditorProjectMetadata
     pub build: u32,
 }
 
-impl Default for EditorProjectMetadata
+impl Default for EditorProjectData
 {
     fn default() -> Self
     {
-        EditorProjectMetadata
+        EditorProjectData
         {
             name: "Untitled".to_string(),
             version: "0.0.1".to_string(),
@@ -56,10 +77,21 @@ impl Default for EditorProjectMetadata
 
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct EditorProjectSceneRef
+{
+    pub path: String,
+
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub active: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EditorProject
 {
-    pub metadata: EditorProjectMetadata,
-    pub scenes: Vec<String>,
+    pub format: EditorProjectFormat,
+    pub project: EditorProjectData,
+
+    pub scenes: Vec<EditorProjectSceneRef>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -67,7 +99,9 @@ pub struct EditorScene
 {
     pub name: String,
 
-    #[serde(default, skip_serializing_if = "is_false")]
+    /// Legacy field: read from old scene.json files but never written anymore.
+    /// The active state is stored in the project.json instead.
+    #[serde(default, skip_serializing)]
     pub active: bool,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -201,12 +235,12 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 
 pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: &str) -> bool
 {
-    editor_state.project_metadata.build += 1;
+    editor_state.project_data.build += 1;
 
-    let project_name = editor_state.project_metadata.name.clone();
+    let project_name = editor_state.project_data.name.clone();
     let base_dir = get_dirname(path);
 
-    let mut project_scenes: Vec<String> = Vec::new();
+    let mut project_scenes: Vec<EditorProjectSceneRef> = Vec::new();
     let mut total_objects = 0;
 
     for scene in &state.scenes
@@ -242,12 +276,13 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
         }
 
         let relative = make_relative_path(path, &scene_full_path).unwrap_or(scene_full_path);
-        project_scenes.push(relative);
+        project_scenes.push(EditorProjectSceneRef { path: relative, active: scene.active });
     }
 
     let project = EditorProject
     {
-        metadata: editor_state.project_metadata.clone(),
+        project: editor_state.project_data.clone(),
+        format: EditorProjectFormat::default(),
         scenes: project_scenes,
     };
 
@@ -284,7 +319,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
     {
         path = rfd::FileDialog::new()
             .add_filter("Rustl Project", &["json"])
-            .set_file_name(&format!("{}.json", editor_state.project_metadata.name))
+            .set_file_name(&format!("{}.json", editor_state.project_data.name))
             .save_file()
             .map(|p| p.to_string_lossy().into_owned())
     }
@@ -298,7 +333,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
         let stem = get_stem(&base);
         if !stem.is_empty()
         {
-            editor_state.project_metadata.name = stem;
+            editor_state.project_data.name = stem;
         }
 
         if save_editor_project(state, editor_state, &base)
@@ -319,7 +354,7 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
     {
         if let Some(project) = load_editor_project(&path)
         {
-            editor_state.project_metadata = project.metadata.clone();
+            editor_state.project_data = project.project.clone();
             editor_state.project_path = Some(path.clone());
             apply_editor_project(state, project, &path, loading_state, loading_progress_state);
         }
@@ -509,7 +544,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
 {
     if project.scenes.is_empty()
     {
-        console_error!("no scenes found in project '{}'", project.metadata.name);
+        console_error!("no scenes found in project '{}'", project.project.name);
         return;
     }
 
@@ -519,9 +554,9 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
 
     state.delete_all_scenes(true);
 
-    for scene_path in project.scenes
+    for scene_ref in project.scenes
     {
-        let full_path = resolve_relative_path(path, scene_path.as_str());
+        let full_path = resolve_relative_path(path, scene_ref.path.as_str());
         let editor_scene = match load_editor_scene(&full_path)
         {
             Some(s) => s,
@@ -531,7 +566,8 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
         let id = state.add_scene(&editor_scene.name);
         if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
         {
-            scene.active = editor_scene.active;
+            // active state lives in the project, not the scene file
+            scene.active = scene_ref.active;
             scene.source = Some(AssetPathDesciptor::new_from_path(full_path));
         }
         scene_ids.push(id);
@@ -543,7 +579,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
     let base_path = path.to_string();
-    let project_name = project.metadata.name.clone();
+    let project_name = project.project.name.clone();
     let total_objects: usize = editor_scenes.iter().map(|s| s.objects.len()).sum();
 
     *loading_state.write().unwrap() = true;
