@@ -79,6 +79,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
 
             ui.horizontal_wrapped(|ui|
             {
+                ui.spacing_mut().item_spacing = egui::Vec2::new(2.0, 2.0);
                 for asset in items
                 {
                     let filter = editor_state.asset_filter.to_lowercase();
@@ -147,11 +148,9 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                             {
                                 apply_available_size(ui);
 
-                                let mut frame = egui::Frame::default().fill(bg_color).corner_radius(2.0).shadow(shadow).outer_margin(margin);
-                                if is_being_dragged
-                                {
-                                    frame = frame.fill(highlight_color).stroke(egui::Stroke::new(2.0, highlight_color));
-                                }
+                                let stroke_color = if is_being_dragged { highlight_color } else { Color32::TRANSPARENT };
+                                let fill_color = if is_being_dragged { highlight_color } else { bg_color };
+                                let frame = egui::Frame::default().fill(fill_color).corner_radius(2.0).shadow(shadow).outer_margin(margin).stroke(egui::Stroke::new(2.0, stroke_color));
 
                                 frame.show(ui, |ui|
                                 {
