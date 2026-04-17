@@ -113,7 +113,7 @@ impl WGpu
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2, // 1: lower latency, 2: higher throughput
+            desired_maximum_frame_latency: 1, // 1: lower latency, 2: higher throughput maybe check https://github.com/emilk/egui/blob/main/crates/egui-wgpu/src/lib.rs#L331 for ios issues
         };
 
         surface.configure(&device, &surface_config);
