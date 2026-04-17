@@ -1013,7 +1013,7 @@ impl SceneController for CharacterController
                         {
                             self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
-                        movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
+                        movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed };
                     }
                 }
 
