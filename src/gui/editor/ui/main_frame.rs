@@ -485,7 +485,7 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
                             ui.set_min_width(120.0);
                             if ui.button("⊞ Add Scene").clicked()
                             {
-                                state.add_scene("+ Scene");
+                                state.add_scene("Scene");
                                 egui::Popup::close_all(ui.ctx());
                             }
 

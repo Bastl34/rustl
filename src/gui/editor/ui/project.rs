@@ -1,6 +1,7 @@
 use egui::{RichText, Ui};
 
 use crate::gui::helper::generic_items::collapse_with_title;
+use crate::helper::generic::format_duration_secs;
 use crate::state::state::State;
 
 use super::super::editor_state::EditorState;
@@ -41,6 +42,13 @@ pub fn create_project_settings(editor_state: &mut EditorState, _state: &mut Stat
 
             ui.label(RichText::new("Build:").strong());
             ui.label(editor_state.project_data.build.to_string());
+            ui.end_row();
+
+            ui.label(RichText::new("Editing Time:").strong());
+            {
+                let total_time = editor_state.project_data.editing_time_secs + editor_state.project_session_start.elapsed().as_secs();
+                ui.label(format_duration_secs(total_time));
+            }
             ui.end_row();
         });
     });

@@ -151,6 +151,7 @@ pub struct EditorState
 
     pub project_data: EditorProjectData,
     pub project_path: Option<String>,
+    pub project_session_start: Instant,
 
     pub gizmo_position: bool,
     pub gizmo_rotation: bool,
@@ -252,6 +253,7 @@ impl EditorState
 
             project_data: EditorProjectData::default(),
             project_path: None,
+            project_session_start: Instant::now(),
 
             gizmo_position: true,
             gizmo_rotation: false,
@@ -350,6 +352,14 @@ impl EditorState
     {
         self.project_data = EditorProjectData::default();
         self.project_path = None;
+        self.project_session_start = Instant::now();
+    }
+
+    pub fn accumulate_editing_time(&mut self)
+    {
+        let elapsed = self.project_session_start.elapsed().as_secs();
+        self.project_data.editing_time_secs += elapsed;
+        self.project_session_start = Instant::now();
     }
 
     pub fn update_debug_images(&mut self, state: &mut State, wgpu: &mut rendering::wgpu::WGpu, egui_context: &egui::Context)

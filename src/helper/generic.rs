@@ -80,3 +80,34 @@ pub fn point3_as_array(p: &Point3<f32>) -> [f32; 3]
 {
     [p.x, p.y, p.z]
 }
+
+pub fn format_duration_secs(total_secs: u64) -> String
+{
+    let years   = total_secs / 31536000;
+    let months  = (total_secs % 31536000) / 2592000;
+    let days    = (total_secs % 31536000 % 2592000) / 86400;
+    let hours   = (total_secs % 2592000 % 86400) / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let secs    = total_secs % 60;
+
+    if years > 0
+    {
+        format!("{}y {}mo {}d {:02}h {:02}m {:02}s", years, months, days, hours, minutes, secs)
+    }
+    else if months > 0
+    {
+        format!("{}mo {}d {:02}h {:02}m {:02}s", months, days, hours, minutes, secs)
+    }
+    else if days > 0
+    {
+        format!("{}d {:02}h {:02}m {:02}s", days, hours, minutes, secs)
+    }
+    else if hours > 0
+    {
+        format!("{}h {:02}m {:02}s", hours, minutes, secs)
+    }
+    else
+    {
+        format!("{:02}m {:02}s", minutes, secs)
+    }
+}

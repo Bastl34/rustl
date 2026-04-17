@@ -55,6 +55,9 @@ pub struct EditorProjectData
     pub url: String,
 
     pub build: u32,
+
+    #[serde(default)]
+    pub editing_time_secs: u64,
 }
 
 impl Default for EditorProjectData
@@ -71,6 +74,7 @@ impl Default for EditorProjectData
             url: "".to_string(),
 
             build: 1,
+            editing_time_secs: 0,
         }
     }
 }
@@ -236,6 +240,7 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: &str) -> bool
 {
     editor_state.project_data.build += 1;
+    editor_state.accumulate_editing_time();
 
     let project_name = editor_state.project_data.name.clone();
     let base_dir = get_dirname(path);
@@ -356,6 +361,7 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
         {
             editor_state.project_data = project.project.clone();
             editor_state.project_path = Some(path.clone());
+            editor_state.project_session_start = web_time::Instant::now();
             apply_editor_project(state, project, &path, loading_state, loading_progress_state);
         }
     }
