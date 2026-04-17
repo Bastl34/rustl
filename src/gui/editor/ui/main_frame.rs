@@ -1,6 +1,7 @@
 
 use std::mem::swap;
 
+use crate::gui::editor::grid::GRID_ROOT_NAME;
 use crate::gui::editor::ui::help::create_modal_help_shortcuts;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
@@ -428,7 +429,7 @@ fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: 
 
         for scene in &mut state.scenes
         {
-            let grid = scene.find_node_by_name("grid");
+            let grid = scene.find_node_by_name(GRID_ROOT_NAME);
 
             if let Some(grid) = grid
             {

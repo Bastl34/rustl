@@ -7,8 +7,8 @@ use crate::{component_downcast_mut, console_error, gui::editor::editor::EDITOR_U
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
-const GRID_ROOT_NAME: &str = "grid root";
-const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
+pub const GRID_ROOT_NAME: &str = "grid root";
+pub const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
 
 pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {

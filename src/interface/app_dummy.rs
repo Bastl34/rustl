@@ -393,6 +393,7 @@ impl App for AppDummy
             //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
             //let nodes = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+            /*
             {
                 let main_queue_clone = main_queue_clone.clone();
                 spawn_thread(move ||
@@ -401,6 +402,7 @@ impl App for AppDummy
                     let _ = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
                 });
             }
+            */
 
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
