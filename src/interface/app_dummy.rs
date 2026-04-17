@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use nalgebra::Vector3;
 
-use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{components::look_at::LookAt, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -392,7 +392,15 @@ impl App for AppDummy
             //let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
             //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-            //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+            //let nodes = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+            {
+                let main_queue_clone = main_queue_clone.clone();
+                spawn_thread(move ||
+                {
+                    sleep_millis(4000);
+                    let _ = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+                });
+            }
 
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {

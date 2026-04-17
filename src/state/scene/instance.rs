@@ -274,8 +274,11 @@ impl Instance
 
         let mut delete_components = vec![];
 
-        for (component_id, component) in all_components.clone().iter_mut().enumerate()
+        let all_components_len = all_components.len();
+        for component_id in 0..all_components_len
         {
+            let component = all_components[component_id].clone();
+
             if component.read().unwrap().get_base().delete_later_request
             {
                 delete_components.push(component.read().unwrap().id());
@@ -290,8 +293,9 @@ impl Instance
             // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut instance = instance.write().unwrap();
-                instance.components = all_components.clone();
-                instance.components.remove(component_id);
+                instance.components.clear();
+                instance.components.extend(all_components[..component_id].iter().cloned());
+                instance.components.extend(all_components[component_id + 1..].iter().cloned());
             }
 
             {
@@ -300,8 +304,25 @@ impl Instance
             }
 
             // after each update, check if new components were added during the update --> add
-            let maybe_new_components = &instance.read().unwrap().components;
-            find_and_add_new_components(&mut all_components, maybe_new_components);
+            // only check if the component count changed (optimization: skip expensive scan when nothing was added)
+            {
+                let new_instance_components =
+                {
+                    let instance_read = instance.read().unwrap();
+                    if instance_read.components.len() > all_components_len - 1
+                    {
+                        Some(instance_read.components.clone())
+                    }
+                    else
+                    {
+                        None
+                    }
+                };
+                if let Some(maybe_new_components) = new_instance_components
+                {
+                    find_and_add_new_components(&mut all_components, &maybe_new_components);
+                }
+            }
         }
 
         // ***** reassign components *****

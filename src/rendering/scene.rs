@@ -808,18 +808,37 @@ impl Scene
 
                 if all_instances_changed
                 {
-                    let instance_buffer;
+                    // console_debug!(" ============ instances updated {}", &node.name);
+                    instance_buffers_updated = true;
+
+                    let node_instances_count = node_arc.read().unwrap().instances.get_ref().len();
+
+                    let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
+                    {
+                        let mut node_write = node_arc.write().unwrap();
+                        swap(&mut node_write.instance_render_item, &mut render_item);
+                    }
+
+                    let can_reuse_buffer = render_item.as_ref()
+                        .and_then(|r| r.as_any().downcast_ref::<InstanceBuffer>())
+                        .map(|ib| ib.count as usize == node_instances_count)
+                        .unwrap_or(false);
+
+                    if can_reuse_buffer
                     {
                         let node = node_arc.read().unwrap();
                         let instances = node.instances.get_ref();
-                        instance_buffer = InstanceBuffer::new(wgpu, "instance buffer", instances);
-
-                        // console_debug!(" ============ instances updated {}", &node.name);
-
-                        instance_buffers_updated = true;
+                        let instance_buffer = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
+                        instance_buffer.write_all_to_buffer(wgpu, instances);
+                    }
+                    else
+                    {
+                        let node = node_arc.read().unwrap();
+                        let instances = node.instances.get_ref();
+                        render_item = Some(Box::new(InstanceBuffer::new(wgpu, "instance buffer", instances)));
                     }
 
-                    node_arc.write().unwrap().instance_render_item = Some(Box::new(instance_buffer));
+                    node_arc.write().unwrap().instance_render_item = render_item;
                 }
             }
 

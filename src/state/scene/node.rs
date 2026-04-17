@@ -1822,8 +1822,11 @@ impl Node
 
         let mut delete_components = vec![];
 
-        for (component_id, component) in all_components.clone().iter_mut().enumerate()
+        let all_components_len = all_components.len();
+        for component_id in 0..all_components_len
         {
+            let component = all_components[component_id].clone();
+
             if component.read().unwrap().get_base().delete_later_request
             {
                 delete_components.push(component.read().unwrap().id());
@@ -1840,8 +1843,9 @@ impl Node
             // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut node = node.write().unwrap();
-                node.components = all_components.clone();
-                node.components.remove(component_id);
+                node.components.clear();
+                node.components.extend(all_components[..component_id].iter().cloned());
+                node.components.extend(all_components[component_id + 1..].iter().cloned());
             }
 
             // component update
@@ -1851,8 +1855,25 @@ impl Node
             }
 
             // after each update, check if new components were added during the update --> add
-            let maybe_new_components = &node.read().unwrap().components;
-            find_and_add_new_components(&mut all_components, maybe_new_components);
+            // only check if the component count changed (optimization: skip expensive scan when nothing was added)
+            {
+                let new_node_components =
+                {
+                    let node_read = node.read().unwrap();
+                    if node_read.components.len() > all_components_len - 1
+                    {
+                        Some(node_read.components.clone())
+                    }
+                    else
+                    {
+                        None
+                    }
+                };
+                if let Some(maybe_new_components) = new_node_components
+                {
+                    find_and_add_new_components(&mut all_components, &maybe_new_components);
+                }
+            }
         }
 
         // ***** reassign components *****
