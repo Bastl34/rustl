@@ -5,7 +5,6 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::interface::app;
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success};
 use rfd;
 use crate::helper::concurrency::thread::spawn_thread;
@@ -147,7 +146,7 @@ pub struct EditorObject
 
 fn scene_file_name(scene_name: &str, project_name: &str) -> String
 {
-    format!("{}_{}.json", sanitize_filename(project_name), sanitize_filename(&scene_name.to_lowercase()))
+    format!("{}_{}.scene", sanitize_filename(project_name), sanitize_filename(&scene_name.to_lowercase()))
 }
 
 fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, path: &str) -> EditorScene
@@ -247,6 +246,7 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
 
     let mut project_scenes: Vec<EditorProjectSceneRef> = Vec::new();
     let mut total_objects = 0;
+    let mut used_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for scene in &state.scenes
     {
@@ -260,9 +260,19 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
         }
         else
         {
-            let name = scene_file_name(&editor_scene.name, &project_name);
-            if base_dir.is_empty() { name } else { format!("{}/{}", base_dir, name) }
+            let base_name = scene_file_name(&editor_scene.name, &project_name);
+            let stem = base_name.trim_end_matches(".scene");
+            let mut candidate = if base_dir.is_empty() { base_name.clone() } else { format!("{}/{}.scene", base_dir, stem) };
+            let mut suffix = 2;
+            while used_paths.contains(&candidate)
+            {
+                let suffixed = format!("{}_{}", stem, suffix);
+                candidate = if base_dir.is_empty() { format!("{}.scene", suffixed) } else { format!("{}/{}.scene", base_dir, suffixed) };
+                suffix += 1;
+            }
+            candidate
         };
+        used_paths.insert(scene_full_path.clone());
 
         let scene_json = match serde_json::to_string_pretty(&editor_scene)
         {
@@ -370,7 +380,7 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
 pub fn import_editor_scene_with_dialog(state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
 {
     let path = rfd::FileDialog::new()
-        .add_filter("Rustl Scene", &["json"])
+        .add_filter("Rustl Scene", &["scene"])
         .pick_file()
         .map(|p| p.to_string_lossy().into_owned());
 

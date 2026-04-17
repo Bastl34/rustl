@@ -2,7 +2,7 @@
 use std::mem::swap;
 
 use crate::gui::editor::grid::GRID_ROOT_NAME;
-use crate::gui::editor::ui::help::create_modal_help_shortcuts;
+use crate::gui::editor::ui::scene_tabs::create_scene_tabs;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
 use crate::gui::editor::helper::get_object_and_pointer_world_position;
@@ -183,6 +183,11 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
         //});
     });
 
+    // scene tabs
+    egui::TopBottomPanel::top("scene_tabs_panel").frame(frame).show(ctx, |ui|
+    {
+        create_scene_tabs(editor_state, state, ui);
+    });
 
     //top
     egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
@@ -680,6 +685,10 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         editor_state.selected_object.clear();
                         editor_state.selected_type = SelectionType::None;
                         editor_state.settings = SettingsPanel::Scene;
+                        if !editor_state.open_scene_tabs.contains(&scene_id)
+                        {
+                            editor_state.open_scene_tabs.push(scene_id);
+                        }
                     }
                     else
                     {

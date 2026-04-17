@@ -237,6 +237,8 @@ pub struct EditorState
     pub debug_images: DebugImages,
 
     pub highlighted_gizmo_id: Option<u32>,
+
+    pub open_scene_tabs: Vec<u32>,
 }
 
 impl EditorState
@@ -345,6 +347,7 @@ impl EditorState
                 hzb_image: None,
             },
             highlighted_gizmo_id: None,
+            open_scene_tabs: vec![],
         };
 
         state.reset_project();

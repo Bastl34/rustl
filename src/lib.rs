@@ -159,6 +159,7 @@ mod gui
             pub(crate) mod materials;
             pub(crate) mod lights;
             pub(crate) mod scenes;
+            pub(crate) mod scene_tabs;
             pub(crate) mod general;
             pub(crate) mod project;
             pub(crate) mod debug;
