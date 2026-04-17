@@ -236,8 +236,37 @@ impl Editor
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
                 crate::gui::editor::editor_project::save_editor_project_with_dialog(&mut self.editor_state, state, false);
+
                 // reset S key cooldown - blocking dialog consumes unknown time, preventing the next press
                 state.io.input_manager.keyboard.reset_key(Key::S);
+            }
+        }
+
+        // open project
+        if state.io.input_manager.keyboard.is_holding(Key::O) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        {
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::O)
+            {
+                let loading_state = self.editor_state.loading.clone();
+                let loading_progress_state = self.editor_state.loading_progress.clone();
+                crate::gui::editor::editor_project::load_editor_project_with_dialog(&mut self.editor_state, state, loading_state, loading_progress_state);
+
+                // reset O key cooldown - blocking dialog consumes unknown time, preventing the next press
+                state.io.input_manager.keyboard.reset_key(Key::O);
+            }
+        }
+
+        // new project
+        if state.io.input_manager.keyboard.is_holding(Key::N) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        {
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::N)
+            {
+                self.editor_state.reset_project();
+                state.delete_all_scenes(true);
+                state.add_scene("main scene");
+
+                // reset N key cooldown - blocking dialog consumes unknown time, preventing the next press
+                state.io.input_manager.keyboard.reset_key(Key::N);
             }
         }
 

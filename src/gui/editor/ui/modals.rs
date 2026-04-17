@@ -1,4 +1,4 @@
-use crate::{gui::{editor::ui::helper::ui_helper::fit_size, helper::generic_items::modal_with_title}, state::state::State};
+use crate::{gui::{editor::ui::{help::create_modal_help_shortcuts, helper::ui_helper::fit_size}, helper::generic_items::modal_with_title}, state::state::State};
 
 use super::super::editor_state::EditorState;
 
@@ -6,23 +6,27 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
 {
     if editor_state.dialog_add_component
     {
-        create_component_add_modal(editor_state, state, ctx);
+        create_modal_component_add(editor_state, state, ctx);
     }
     else if editor_state.dialog_add_camera_controller
     {
-        create_camera_controller_modal(editor_state, state, ctx);
+        create_modal_camera_controller(editor_state, state, ctx);
     }
     else if editor_state.dialog_add_scene_controller
     {
-        create_scene_controller_modal(editor_state, state, ctx);
+        create_modal_scene_controller(editor_state, state, ctx);
     }
     else if editor_state.dialog_debug_image
     {
-        create_debug_image_modal(editor_state, state, ctx);
+        create_modal_debug_image(editor_state, state, ctx);
+    }
+    else if editor_state.dialog_help_shortcuts
+    {
+        create_modal_help_shortcuts(editor_state, ctx);
     }
 }
 
-pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+pub fn create_modal_component_add(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_add_component = editor_state.dialog_add_component;
 
@@ -95,7 +99,7 @@ pub fn create_component_add_modal(editor_state: &mut EditorState, state: &mut St
     }
 }
 
-pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+pub fn create_modal_camera_controller(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_add_camera_controller = editor_state.dialog_add_camera_controller;
 
@@ -145,7 +149,7 @@ pub fn create_camera_controller_modal(editor_state: &mut EditorState, state: &mu
     }
 }
 
-pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+pub fn create_modal_scene_controller(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_add_scene_controller = editor_state.dialog_add_scene_controller;
     let post_controller = editor_state.add_scene_controller_post;
@@ -200,7 +204,7 @@ pub fn create_scene_controller_modal(editor_state: &mut EditorState, state: &mut
     }
 }
 
-pub fn create_debug_image_modal(editor_state: &mut EditorState, _state: &mut State, ctx: &egui::Context)
+pub fn create_modal_debug_image(editor_state: &mut EditorState, _state: &mut State, ctx: &egui::Context)
 {
     let mut dialog_debug_image = editor_state.dialog_debug_image;
 

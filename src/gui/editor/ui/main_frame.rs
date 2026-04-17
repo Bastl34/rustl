@@ -1,6 +1,7 @@
 
 use std::mem::swap;
 
+use crate::gui::editor::ui::help::create_modal_help_shortcuts;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::console_log;
 use crate::gui::editor::helper::get_object_and_pointer_world_position;
@@ -225,6 +226,14 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         if ui.button("Exit").clicked()
         {
             state.exit = true;
+        }
+    });
+
+    ui.menu_button("Help", |ui|
+    {
+        if ui.button("Shortcuts").clicked()
+        {
+            editor_state.dialog_help_shortcuts = true;
         }
     });
 }
@@ -662,7 +671,6 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
 
                 toggle = toggle.on_hover_text(format!("Scene ID: {}", scene.id));
-
                 if toggle.clicked()
                 {
                     if selection

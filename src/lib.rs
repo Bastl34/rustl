@@ -167,6 +167,7 @@ mod gui
             pub(crate) mod mesh;
             pub(crate) mod assets;
             pub(crate) mod console;
+            pub(crate) mod help;
         }
     }
 }
