@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait, load_object}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -1449,7 +1449,7 @@ impl Editor
 
             console_log!("loading ...");
 
-            let loaded = load_object(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, object_only, create_mipmaps, max_tex_res);
+            let loaded = load_asset_and_add_to_scene(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, true, object_only, create_mipmaps, max_tex_res);
 
             if loaded.is_err()
             {
@@ -1458,7 +1458,7 @@ impl Editor
                 return;
             }
 
-            let loaded_ids = loaded.unwrap();
+            let loaded_assets = loaded.unwrap();
 
             let on_done = on_done.clone();
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
@@ -1467,7 +1467,7 @@ impl Editor
 
                 let mut root_node = None;
 
-                for id in &loaded_ids
+                for id in &loaded_assets.node_ids
                 {
                     if let Some(node) = scene.find_node_by_id(*id)
                     {

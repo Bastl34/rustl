@@ -196,7 +196,7 @@ impl Texture
         let hash = helper::crypto::get_hash_from_byte_vec(image_bytes);
         //let hash = helper::crypto::get_hash_from_byte_vec(&rgba.to_vec());
 
-        let has_transparency = rgba.enumerate_pixels().find(|pixel| { pixel.2[3] < 255 }).is_some();
+        let has_transparency = image.color().has_alpha() && rgba.pixels().any(|pixel| pixel[3] < 255);
 
         let mut image = image::DynamicImage::ImageRgba8(rgba);
 

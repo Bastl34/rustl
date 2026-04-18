@@ -6,9 +6,9 @@ use web_time::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, rendering::scene, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
-use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
 pub type StateItem = Rc<RefCell<State>>;
 
@@ -442,9 +442,9 @@ impl State
         arc
     }
 
-    pub fn insert_texture_or_reuse(&mut self, texture: Texture, name: &str) -> TextureItem
+    pub fn insert_texture_or_reuse(&mut self, texture: TextureItem, name: &str) -> TextureItem
     {
-        let hash = texture.hash.clone();
+        let hash = texture.read().unwrap().hash.clone();
 
         if self.resources.textures.contains_key(&hash)
         {
@@ -452,16 +452,15 @@ impl State
             return self.resources.textures.get_mut(&hash).unwrap().clone();
         }
 
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
 
-        self.resources.textures.insert(hash, arc.clone());
+        self.resources.textures.insert(hash, texture.clone());
 
-        arc
+        texture
     }
 
-    pub fn insert_mesh_resource_or_reuse(&mut self, mesh_resource: MeshResource, name: &str) -> MeshResourceItem
+    pub fn insert_mesh_resource_or_reuse(&mut self, mesh_resource: MeshResourceItem, name: &str) -> MeshResourceItem
     {
-        let hash = mesh_resource.hash.clone();
+        let hash = mesh_resource.read().unwrap().hash.clone();
 
         if self.resources.mesh_resources.contains_key(&hash)
         {
@@ -469,11 +468,9 @@ impl State
             return self.resources.mesh_resources.get_mut(&hash).unwrap().clone();
         }
 
-        let arc = Arc::new(RwLock::new(Box::new(mesh_resource)));
+        self.resources.mesh_resources.insert(hash, mesh_resource.clone());
 
-        self.resources.mesh_resources.insert(hash, arc.clone());
-
-        arc
+        mesh_resource
     }
 
     pub fn get_texture_by_id(&self, id: u32) -> Option<TextureItem>

@@ -14,7 +14,8 @@ use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
 use crate::gui::editor::editor_state::{EditorState, LoadingGuard};
 use crate::resources::resources::load_string;
 use crate::state::scene::components::transformation::Transformation;
-use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut_and_wait, load_object};
+use crate::state::scene::utilities::scene_utils::execute_on_scene_mut_and_wait;
+use crate::state::scene::loader::loader::load_asset_and_add_to_scene;
 use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
 use crate::state::scene::exporter::serialization_helper::default_true;
 use crate::state::scene::exporter::serialization_helper::is_true;
@@ -456,7 +457,7 @@ fn apply_editor_object(obj: &EditorObject, parent: Option<crate::state::scene::n
         {
             let path = resolve_relative_path(base_path, source);
             let parent_id = parent.as_ref().map(|p| p.read().unwrap().id);
-            let loaded = load_object(&path, scene_id, parent_id, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, create_mipmaps, max_tex_res);
+            let loaded = load_asset_and_add_to_scene(&path, scene_id, parent_id, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, true, create_mipmaps, max_tex_res);
 
             if let Err(_) = loaded
             {
@@ -464,13 +465,13 @@ fn apply_editor_object(obj: &EditorObject, parent: Option<crate::state::scene::n
                 return;
             }
 
-            let loaded_ids = loaded.unwrap();
+            let loaded_assets = loaded.unwrap();
             let result: Arc<RwLock<Option<crate::state::scene::node::NodeItem>>> = Arc::new(RwLock::new(None));
             let result2 = result.clone();
 
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
             {
-                for id in &loaded_ids
+                for id in &loaded_assets.node_ids
                 {
                     if let Some(node) = scene.find_node_by_id(*id)
                     {

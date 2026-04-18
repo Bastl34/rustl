@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait, load_object}}, state::State}};
+use crate::{component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::State}};
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
@@ -48,8 +48,8 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
         scene.delete_node_by_name(GRID_ROOT_NAME, true, true, true, true);
     }));
 
-    let loaded_ids_grid = load_object("objects/grid/grid_line.gltf", scene_id, editor_utils_node_id, main_queue.clone(), false, true, true, false, 0).unwrap();
-    let loaded_ids_origin = load_object("objects/grid/grid_line_extruded.glb", scene_id, editor_utils_node_id, main_queue.clone(), false, false, true, false, 0).unwrap();
+    let loaded_assets_grid = load_asset_and_add_to_scene("objects/grid/grid_line.gltf", scene_id, editor_utils_node_id, main_queue.clone(), false, true, true, true, false, 0).unwrap();
+    let loaded_assets_origin = load_asset_and_add_to_scene("objects/grid/grid_line_extruded.glb", scene_id, editor_utils_node_id, main_queue.clone(), false, false, true, true, false, 0).unwrap();
 
     let mut grid_root = None;
 
@@ -65,7 +65,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             let scene = state.find_scene_by_id_mut(scene_id).unwrap();
 
             // origin lines
-            if let Some(root) = loaded_ids_origin.get(0)
+            if let Some(root) = loaded_assets_origin.root_node_ids.get(0)
             {
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
@@ -80,7 +80,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                     }
                 }
             }
-            for (i, id) in loaded_ids_origin.iter().enumerate()
+            for (i, id) in loaded_assets_origin.node_ids.iter().enumerate()
             {
                 // 0 is already checked/renamed
                 if i == 0 { continue; }
@@ -97,7 +97,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
 
 
             // grid itself
-            if let Some(root) = loaded_ids_grid.get(0)
+            if let Some(root) = loaded_assets_grid.root_node_ids.get(0)
             {
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
@@ -114,7 +114,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
 
             // ********** grid **********
 
-            if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_grid)
+            if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_assets_grid.node_ids)
             {
                 {
                     let mut grid = grid_arc.write().unwrap();
@@ -183,7 +183,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             }
 
             // ********** merge together grid mesh **********
-            for id in &loaded_ids_grid
+            for id in &loaded_assets_grid.node_ids
             {
                 if let Some(node) = scene.find_node_by_id(*id)
                 {
@@ -202,7 +202,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             }
 
             // ********** grid origin **********
-            if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_ids_origin)
+            if let Some(grid_arc) = scene.find_mesh_node_by_ids(&loaded_assets_origin.node_ids)
             {
                 {
                     let mut grid = grid_arc.write().unwrap();
@@ -295,7 +295,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             let p2 = Point3::<f32>::new(half_size, -0.01, -half_size);
             let p3 = Point3::<f32>::new(-half_size, -0.01, -half_size);
 
-            let plane_mesh_resource = MeshResource::new_plane("grid plane mesh", p0, p1, p2, p3);
+            let plane_mesh_resource = Arc::new(RwLock::new(Box::new(MeshResource::new_plane("grid plane mesh", p0, p1, p2, p3))));
             let plane_mesh = state.insert_mesh_resource_or_reuse(plane_mesh_resource, "grid plane mesh");
             let mut plane_mesh_component = Mesh::new("grid plane mesh");
             plane_mesh_component.mesh_resource = OptionOrId::Some(plane_mesh);

@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use nalgebra::Vector3;
 
-use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 

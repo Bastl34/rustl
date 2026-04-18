@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use rfd::FileDialog;
 
-use crate::{helper::concurrency::execution_queue::ExecutionQueue, state::scene::{components::material::TextureType, utilities::scene_utils::{load_sound, load_texture}}};
+use crate::{helper::concurrency::execution_queue::ExecutionQueue, state::scene::{components::material::TextureType, loader::loader::{load_sound, load_texture}}};
 
 pub fn load_texture_dialog(main_queue: Arc<RwLock<ExecutionQueue>>, texture_type: Option<TextureType>, scene_id: Option<u32>, material_id: Option<u32>, mipmapping: bool, max_tex_res: u32)
 {

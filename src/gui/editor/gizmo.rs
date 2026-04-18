@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{components::{material::{BlendMode, Material}, transformation::Transformation}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::State}};
 
 use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
@@ -34,9 +34,9 @@ pub fn create_grid_and_gizmo_objects(editor_state: &mut EditorState, state: &mut
     {
         create_grid(scene_id, main_queue_clone.clone(), grid_amount, grid_size);
 
-        let pos = scene_utils::load_object("objects/gizmo/gizmo_pos.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
-        let rot = scene_utils::load_object("objects/gizmo/gizmo_rot.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
-        let scale = scene_utils::load_object("objects/gizmo/gizmo_scale.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, false, 0);
+        let pos = scene_utils::load_asset_and_add_to_scene("objects/gizmo/gizmo_pos.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, true, false, 0);
+        let rot = scene_utils::load_asset_and_add_to_scene("objects/gizmo/gizmo_rot.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, true, false, 0);
+        let scale = scene_utils::load_asset_and_add_to_scene("objects/gizmo/gizmo_scale.glb", scene_id, Some(editor_utils_id), main_queue_clone.clone(), true, false, true, true, false, 0);
 
         if pos.is_err() || rot.is_err() || scale.is_err()
         {
@@ -49,16 +49,16 @@ pub fn create_grid_and_gizmo_objects(editor_state: &mut EditorState, state: &mut
         let scale = scale.unwrap();
 
         let mut gizmo_nodes = vec![];
-        gizmo_nodes.extend(&pos);
-        gizmo_nodes.extend(&rot);
-        gizmo_nodes.extend(&scale);
+        gizmo_nodes.extend(&pos.node_ids);
+        gizmo_nodes.extend(&rot.node_ids);
+        gizmo_nodes.extend(&scale.node_ids);
 
         let main_queue_clone = main_queue.clone();
         execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
         {
-            let pos_root = pos.get(0).unwrap();
-            let rot_root = rot.get(0).unwrap();
-            let sacle_root = scale.get(0).unwrap();
+            let pos_root = pos.root_node_ids.get(0).unwrap();
+            let rot_root = rot.root_node_ids.get(0).unwrap();
+            let sacle_root = scale.root_node_ids.get(0).unwrap();
 
             if let Some(node) = scene.find_node_by_id(*pos_root)
             {
