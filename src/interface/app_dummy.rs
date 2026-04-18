@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use nalgebra::Vector3;
 
-use crate::{console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
 
 use super::{app::App, context::Context};
 
@@ -23,6 +23,39 @@ impl App for AppDummy
     fn init(&mut self, context: &mut Context)
     {
         let scene_id = context.get_main_scene_id();
+
+        // ********** observer examples (context level) **********
+
+        // fires every frame right before rendering
+        /*
+        context.on_before_render.add(|ctx|
+        {
+            let frame = ctx.state.borrow().stats.frame;
+            if frame % 120 == 0
+            {
+                console_debug!("on_before_render @ frame {}", frame);
+            }
+        });
+
+        // fires once after the first render, then auto-removes
+        context.on_after_render.add_once(|_ctx|
+        {
+            console_debug!("first frame rendered");
+        });
+
+        // fires on window resize
+        context.on_resize.add(|ctx|
+        {
+            let state = ctx.state.borrow();
+            console_debug!("resized to {}x{}", state.width, state.height);
+        });
+
+        // fires on app exit
+        context.on_exit.add(|_ctx|
+        {
+            console_debug!("bye");
+        });
+         */
 
         let state = &mut *(context.state.borrow_mut());
 

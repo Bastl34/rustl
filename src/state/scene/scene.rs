@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, gui::editor::ui::console, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, gui::editor::ui::console, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -75,6 +75,9 @@ pub struct Scene
 
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
+
+    pub on_before_update: Observable<Scene>,
+    pub on_after_update: Observable<Scene>,
 }
 
 impl Default for Scene
@@ -231,6 +234,9 @@ impl Scene
 
             render_item: None,
             lights_render_item: None,
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
         }
     }
 
@@ -258,6 +264,8 @@ impl Scene
 
     pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
     {
+        crate::notify_observable!(self, on_before_update);
+
         // check moved nodes (if a node has a parent -> remove it from scene nodes)
         // this can happen when a node parent was set via set_parent
         let mut nodes_to_remove_scene = vec![];
@@ -329,6 +337,46 @@ impl Scene
         for node_id in delete_nodes
         {
             self.delete_node_by_id(node_id, false, false, false, false);
+        }
+
+        crate::notify_observable!(self, on_after_update);
+    }
+
+    pub fn notify_before_render_all(&self)
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in &all_nodes
+        {
+            crate::notify_observable_arc!(node, on_before_render);
+
+            let instances =
+            {
+                let n = node.read().unwrap();
+                n.instances.get_ref().clone()
+            };
+            for instance in &instances
+            {
+                crate::notify_observable_arc!(instance, on_before_render);
+            }
+        }
+    }
+
+    pub fn notify_after_render_all(&self)
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in &all_nodes
+        {
+            let instances =
+            {
+                let n = node.read().unwrap();
+                n.instances.get_ref().clone()
+            };
+            for instance in &instances
+            {
+                crate::notify_observable_arc!(instance, on_after_render);
+            }
+
+            crate::notify_observable_arc!(node, on_after_render);
         }
     }
 

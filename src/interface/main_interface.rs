@@ -91,7 +91,12 @@ impl MainInterface
 
                 wgpu,
                 window,
-                egui
+                egui,
+
+                on_before_render: crate::helper::observable::Observable::new(),
+                on_after_render: crate::helper::observable::Observable::new(),
+                on_resize: crate::helper::observable::Observable::new(),
+                on_exit: crate::helper::observable::Observable::new(),
             },
 
             app: None,
@@ -163,6 +168,8 @@ impl MainInterface
 
         self.context.wgpu.resize(width, height);
         self.context.egui.resize(width, height, scale_factor);
+
+        crate::notify_observable!(&mut self.context, on_resize);
 
         {
             let state = &mut *(self.context.state.borrow_mut());
@@ -430,6 +437,8 @@ impl MainInterface
 
 
         // ******************** render ********************
+        crate::notify_observable!(&mut self.context, on_before_render);
+
         let (output, view, msaa_view) = self.context.wgpu.start_render();
         let mut engine_encoder = self.context.wgpu.create_command_encoder();
         let mut egui_encoder = self.context.wgpu.create_command_encoder();
@@ -461,8 +470,12 @@ impl MainInterface
                     render_scene.frustum_culling = state.rendering.frustum_culling;
                     render_scene.occlusion_culling = state.rendering.occlusion_culling;
 
+                    scene.notify_before_render_all();
+
                     // render scene
                     let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+
+                    scene.notify_after_render_all();
 
                     // update visibility info for cameras
                     for (cam_index, cam) in scene.cameras.iter_mut().enumerate()
@@ -498,6 +511,8 @@ impl MainInterface
         }
         self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
         self.context.wgpu.end_render(output);
+
+        crate::notify_observable!(&mut self.context, on_after_render);
 
 
         // ******************** screenshot ********************
@@ -590,6 +605,8 @@ impl MainInterface
         {
             app.exit(&mut self.context);
         }
+
+        crate::notify_observable!(&mut self.context, on_exit);
     }
 
     pub fn check_exit(&mut self) -> bool

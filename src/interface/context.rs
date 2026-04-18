@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use winit::window::Window;
 
-use crate::{rendering::{egui::EGui, wgpu::WGpu}, state::state::StateItem};
+use crate::{helper::observable::Observable, rendering::{egui::EGui, wgpu::WGpu}, state::state::StateItem};
 
 pub struct Context
 {
@@ -14,6 +14,11 @@ pub struct Context
     pub wgpu: WGpu,
     pub window: Arc<Window>,
     pub egui: EGui,
+
+    pub on_before_render: Observable<Context>,
+    pub on_after_render: Observable<Context>,
+    pub on_resize: Observable<Context>,
+    pub on_exit: Observable<Context>,
 }
 
 impl Context

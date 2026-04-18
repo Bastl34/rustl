@@ -7,7 +7,7 @@ use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merg
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_and_add_new_components, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_and_add_new_components, scene::Scene}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -70,6 +70,11 @@ pub struct Node
     pub skeleton_render_item: RenderItemOption,
     pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
     // pub occlusion_render_item: RenderItemOption,
+
+    pub on_before_update: Observable<Node>,
+    pub on_after_update: Observable<Node>,
+    pub on_before_render: Observable<Node>,
+    pub on_after_render: Observable<Node>,
 
     delete_later_request: bool,
 }
@@ -260,6 +265,11 @@ impl Node
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
             // occlusion_render_item: None,
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
 
             delete_later_request: false
         }
@@ -1813,6 +1823,8 @@ impl Node
 
     pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
     {
+        crate::notify_observable_arc!(&node, on_before_update);
+
         // ***** copy all components *****
         let mut all_components;
         {
@@ -1921,16 +1933,20 @@ impl Node
         }
 
         // ***** update childs *****
-        let node_read = node.read().unwrap();
-        for child_node in &node_read.nodes
         {
-            let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame);
-
-            if update_result.delete_nodes.len() > 0
+            let node_read = node.read().unwrap();
+            for child_node in &node_read.nodes
             {
-                delete_nodes.append(&mut update_result.delete_nodes);
+                let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame);
+
+                if update_result.delete_nodes.len() > 0
+                {
+                    delete_nodes.append(&mut update_result.delete_nodes);
+                }
             }
         }
+
+        crate::notify_observable_arc!(&node, on_after_update);
 
         NodeUpdateResult { delete_nodes:  delete_nodes}
     }

@@ -229,6 +229,7 @@ mod helper
     pub(crate) mod asset_path_descriptor;
     pub(crate) mod option_or_id;
     pub(crate) mod console_log;
+    pub(crate) mod observable;
 }
 
 mod resources

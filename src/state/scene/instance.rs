@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -65,7 +65,19 @@ pub struct Instance
 
     force_update: bool,
 
-    data: ChangeTracker<InstanceData>
+    data: ChangeTracker<InstanceData>,
+
+    #[serde(skip, default)]
+    pub on_before_update: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_after_update: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_before_render: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_after_render: Observable<Instance>,
 }
 
 impl Instance
@@ -95,7 +107,12 @@ impl Instance
                 collision: true,
                 locked: false,
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            })
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance
@@ -126,7 +143,12 @@ impl Instance
                 collision: true,
                 locked: false,
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            })
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance
@@ -157,7 +179,12 @@ impl Instance
                 collision: true,
                 locked: false,
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            })
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance.add_component(Arc::new(RwLock::new(Box::new(transform))));
@@ -259,6 +286,8 @@ impl Instance
 
     pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> bool
     {
+        crate::notify_observable_arc!(instance, on_before_update);
+
         let node;
         {
             let instance = instance.read().unwrap();
@@ -362,6 +391,8 @@ impl Instance
             let mut instance = instance.write().unwrap();
             instance.force_update = false;
         }
+
+        crate::notify_observable_arc!(instance, on_after_update);
 
         has_changed_data
     }
