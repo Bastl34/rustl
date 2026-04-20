@@ -2,7 +2,7 @@ use std::{io::{Cursor, BufReader}, sync::{RwLock, Arc}, path::Path};
 
 use nalgebra::{Point3, Point2, Vector3};
 
-use crate::{console_error, console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::load_string, state::{resources::{mesh_resource::{MeshResource}, utilities::resource_utils::{load_texture}}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::Node, scene::Scene}}};
+use crate::{console_error, console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, file::get_stem, option_or_id::OptionOrId}, new_component, resources::resources::{load_binary, load_string}, state::{resources::{mesh_resource::{MeshResource}, texture::TextureItem, utilities::resource_utils::load_texture_byte}, scene::{components::{component::Component, material::{Material, MaterialItem, TextureType}, mesh::Mesh}, loader::{asset_container::AssetContainer, loader::LoaderOptions}, node::Node, scene::Scene}}};
 
 pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
 {
@@ -18,6 +18,30 @@ pub fn get_texture_path(tex_path: &String, mtl_path: &str) -> String
     }
 
     tex_path
+}
+
+fn load_texture_with_cache(options: &LoaderOptions, path: &str) -> anyhow::Result<TextureItem>
+{
+    let image_bytes = load_binary(path)?;
+    let hash = crate::helper::crypto::get_hash_from_byte_vec(&image_bytes);
+
+    if let Some(cache) = &options.texture_cache
+    {
+        if let Some(cached) = cache.read().unwrap().get(&hash).cloned()
+        {
+            console_log!("reusing cached texture {}", path);
+            return Ok(cached);
+        }
+    }
+
+    let name = helper::file::get_stem(path);
+    let tex = load_texture_byte(options.max_texture_resolution, options.create_mipmaps, &image_bytes, name.as_str(), path, None);
+
+    if let Some(cache) = &options.texture_cache
+    {
+        cache.write().unwrap().insert(hash, tex.clone());
+    }
+    Ok(tex)
 }
 
 pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
@@ -153,6 +177,24 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                     }
                 }
 
+                if reusing_material.is_none() && options.reuse_materials
+                {
+                    let material_name = &wavefront_materials[wavefront_mat_id].name;
+                    if !material_name.is_empty()
+                    {
+                        if let Some(cache) = &options.material_cache
+                        {
+                            if let Some(cached) = cache.read().unwrap().get(material_name).cloned()
+                            {
+                                console_log!("reusing cached material {}", material_name);
+                                asset_container.materials.push(cached.clone());
+                                double_check_materials.push((wavefront_mat_id, cached.clone()));
+                                reusing_material = Some(cached);
+                            }
+                        }
+                    }
+                }
+
                 if let Some(reusing_material) = reusing_material
                 {
                     material_arc = reusing_material.clone();
@@ -223,7 +265,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             console_log!("loading diffuse texture {}", mat.diffuse_texture.clone().unwrap());
                             let diffuse_texture = mat.diffuse_texture.clone().unwrap();
                             let tex_path = get_texture_path(&diffuse_texture, options.path.as_str());
-                            let tex = load_texture(options.max_texture_resolution, options.create_mipmaps, tex_path.as_str(), None)?;
+                            let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
                             material.set_texture(tex, TextureType::Base);
                         }
@@ -234,7 +276,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             console_log!("loading normal texture {}", mat.normal_texture.clone().unwrap());
                             let normal_texture = mat.normal_texture.clone().unwrap();
                             let tex_path = get_texture_path(&normal_texture, options.path.as_str());
-                            let tex = load_texture(options.max_texture_resolution, options.create_mipmaps, tex_path.as_str(), None)?;
+                            let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
                             material.set_texture(tex, TextureType::Normal);
                         }
@@ -245,7 +287,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             console_log!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
                             let ambient_texture = mat.ambient_texture.clone().unwrap();
                             let tex_path = get_texture_path(&ambient_texture, options.path.as_str());
-                            let tex = load_texture(options.max_texture_resolution, options.create_mipmaps, tex_path.as_str(), None)?;
+                            let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
                             material.set_texture(tex, TextureType::AmbientEmissive);
                         }
@@ -256,7 +298,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             console_log!("loading specular texture {}", mat.specular_texture.clone().unwrap());
                             let specular_texture = mat.specular_texture.clone().unwrap();
                             let tex_path: String = get_texture_path(&specular_texture, options.path.as_str());
-                            let tex = load_texture(options.max_texture_resolution, options.create_mipmaps, tex_path.as_str(), None)?;
+                            let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
                             material.set_texture(tex, TextureType::Specular);
                         }
@@ -267,7 +309,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             console_log!("loading dissolve texture {}", mat.dissolve_texture.clone().unwrap());
                             let dissolve_texture = mat.dissolve_texture.clone().unwrap();
                             let tex_path = get_texture_path(&dissolve_texture, options.path.as_str());
-                            let tex = load_texture(options.max_texture_resolution, options.create_mipmaps, tex_path.as_str(), None)?;
+                            let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
                             material.set_texture(tex, TextureType::Alpha);
                         }
@@ -278,7 +320,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             console_log!("loading shininess texture {}", mat.shininess_texture.clone().unwrap());
                             let shininess_texture = mat.shininess_texture.clone().unwrap();
                             let tex_path = get_texture_path(&shininess_texture, options.path.as_str());
-                            let tex = load_texture(options.max_texture_resolution, options.create_mipmaps, tex_path.as_str(), None)?;
+                            let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
                             material.set_texture(tex, TextureType::Shininess);
                         }
@@ -286,6 +328,18 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
 
                     asset_container.materials.push(material_arc.clone());
                     double_check_materials.push((wavefront_mat_id, material_arc.clone()));
+
+                    if options.reuse_materials
+                    {
+                        let name = material_arc.read().unwrap().get_base().name.clone();
+                        if !name.is_empty()
+                        {
+                            if let Some(cache) = &options.material_cache
+                            {
+                                cache.write().unwrap().insert(name, material_arc.clone());
+                            }
+                        }
+                    }
                 }
             }
             else

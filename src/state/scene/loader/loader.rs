@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex, RwLock}};
-use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::scene::{components::{animation::Animation, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}};
+use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
 
+pub type TextureCache = Arc<RwLock<HashMap<String, TextureItem>>>;
+pub type MaterialCache = Arc<RwLock<HashMap<String, MaterialItem>>>;
 
 #[derive(Clone)]
 pub struct LoaderOptions
@@ -16,6 +18,9 @@ pub struct LoaderOptions
     pub object_only: bool,
     pub create_mipmaps: bool,
     pub max_texture_resolution: u32,
+
+    pub texture_cache: Option<TextureCache>,
+    pub material_cache: Option<MaterialCache>,
 }
 
 pub fn load_asset(loader_options: &LoaderOptions) -> anyhow::Result<AssetContainer>
@@ -98,6 +103,8 @@ pub fn load_asset_and_add_to_scene(path: &str, scene_id: u32, parent_node_id: Op
         object_only,
         create_mipmaps,
         max_texture_resolution,
+        texture_cache: None,
+        material_cache: None,
     };
 
     let mut asset_container = load_asset(&loader_options)?;

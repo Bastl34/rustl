@@ -14,8 +14,11 @@ use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
 use crate::gui::editor::editor_state::{EditorState, LoadingGuard};
 use crate::resources::resources::load_string;
 use crate::state::scene::components::transformation::Transformation;
-use crate::state::scene::utilities::scene_utils::execute_on_scene_mut_and_wait;
-use crate::state::scene::loader::loader::load_asset_and_add_to_scene;
+use crate::state::scene::loader::loader::{load_asset, LoaderOptions, MaterialCache, TextureCache};
+use crate::state::scene::loader::asset_container::AssetContainer;
+use crate::state::scene::utilities::scene_utils::execute_on_state_mut_and_wait;
+use std::collections::HashMap;
+use std::path::Path;
 use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
 use crate::state::scene::exporter::serialization_helper::default_true;
 use crate::state::scene::exporter::serialization_helper::is_true;
@@ -441,120 +444,240 @@ pub fn load_editor_scene(path: &str) -> Option<EditorScene>
 
 // ******************** apply (EditorProject --> Runtime) ********************
 
-fn apply_editor_object(obj: &EditorObject, parent: Option<crate::state::scene::node::NodeItem>, scene_id: u32, main_queue: &crate::helper::concurrency::execution_queue::ExecutionQueueItem, base_path: &str, create_mipmaps: bool, max_tex_res: u32)
+/// A parsed editor object ready to be inserted into a scene.
+/// The heavy parsing/decoding is already done; only state-mutation remains.
+struct PreparedEditorObject
 {
-    let name = obj.name.clone();
-    let options = obj.options.clone();
-    let position = obj.position;
-    let rotation = obj.rotation;
-    let rotation_quat = obj.rotation_quat;
-    let scale = obj.scale;
-    let objects = obj.objects.clone();
+    name: String,
+    options: EditorObjectOptions,
+    position: [f32; 3],
+    rotation: [f32; 3],
+    rotation_quat: Option<[f32; 4]>,
+    scale: [f32; 3],
+    source: Option<String>,
+    container: Option<AssetContainer>,
+    children: Vec<PreparedEditorObject>,
+}
 
-    let node: Option<crate::state::scene::node::NodeItem> = match &obj.source
+fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &TextureCache, mat_cache: &MaterialCache, progress_cb: &dyn Fn()) -> PreparedEditorObject
+{
+    let container = match &obj.source
     {
         Some(source) =>
         {
             let path = resolve_relative_path(base_path, source);
-            let parent_id = parent.as_ref().map(|p| p.read().unwrap().id);
-            let loaded = load_asset_and_add_to_scene(&path, scene_id, parent_id, main_queue.clone(), true, options.reuse_materials_by_name.unwrap_or(false), true, true, create_mipmaps, max_tex_res);
-
-            if let Err(_) = loaded
+            let extension = Path::new(&path).extension().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy().to_string();
+            let loader_options = LoaderOptions
             {
-                console_error!("failed to load object: {}", source);
-                return;
-            }
+                path,
+                extension,
+                parent_node_id: None,
+                hide_root_nodes: true,
+                reuse_materials: obj.options.reuse_materials_by_name.unwrap_or(false),
+                clear_unused_textures: true,
+                object_only: true,
+                create_mipmaps,
+                max_texture_resolution: max_tex_res,
 
-            let loaded_assets = loaded.unwrap();
-            let result: Arc<RwLock<Option<crate::state::scene::node::NodeItem>>> = Arc::new(RwLock::new(None));
-            let result2 = result.clone();
+                texture_cache: Some(tex_cache.clone()),
+                material_cache: Some(mat_cache.clone()),
+            };
 
-            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+            match load_asset(&loader_options)
             {
-                for id in &loaded_assets.node_ids
+                Ok(c) => Some(c),
+                Err(e) =>
                 {
-                    if let Some(node) = scene.find_node_by_id(*id)
+                    console_error!("failed to load object '{}': {}", source, e);
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
+    progress_cb();
+
+    let children = obj.objects.iter()
+        .map(|c| load_editor_object(c, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_cb))
+        .collect();
+
+    PreparedEditorObject
+    {
+        name: obj.name.clone(),
+        options: obj.options.clone(),
+        position: obj.position,
+        rotation: obj.rotation,
+        rotation_quat: obj.rotation_quat,
+        scale: obj.scale,
+        source: obj.source.clone(),
+        container,
+        children,
+    }
+}
+
+fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, prepared: PreparedEditorObject)
+{
+    let PreparedEditorObject { name, options, position, rotation, rotation_quat, scale, source, container, children } = prepared;
+
+    let node: Option<crate::state::scene::node::NodeItem> = match container
+    {
+        Some(mut container) =>
+        {
+            container.loader_options.parent_node_id = parent.as_ref().map(|p| p.read().unwrap().id);
+            let result = container.apply_to_scene(state, scene_id);
+
+            let scene = match state.find_scene_by_id_mut(scene_id) { Some(s) => s, None => return };
+
+            let mut found = None;
+            for id in &result.node_ids
+            {
+                if let Some(n) = scene.find_node_by_id(*id)
+                {
+                    if n.read().unwrap().root_node
                     {
-                        if node.read().unwrap().root_node
                         {
+                            let mut nw = n.write().unwrap();
+                            nw.name = name.clone();
+                            nw.settings.visible = options.visible;
+                            nw.settings.locked = options.locked;
+                            nw.settings.transient = false;
+
+                            if let Some(reuse) = options.reuse_materials_by_name
                             {
-                                let mut n = node.write().unwrap();
-                                n.name = name.clone();
-                                n.settings.visible = options.visible;
-                                n.settings.locked = options.locked;
-                                n.settings.transient = false;
-
-                                if let Some(reuse) = options.reuse_materials_by_name
-                                {
-                                    if reuse { n.extras.insert(RESUSE_MATERIALS_TAG, reuse); }
-                                    else     { n.extras.remove(RESUSE_MATERIALS_TAG); }
-                                }
+                                if reuse { nw.extras.insert(RESUSE_MATERIALS_TAG, reuse); }
+                                else     { nw.extras.remove(RESUSE_MATERIALS_TAG); }
                             }
-
-                            let transform = Transformation::new
-                            (
-                                "Transform",
-                                Vector3::new(position[0], position[1], position[2]),
-                                Vector3::new(rotation[0], rotation[1], rotation[2]),
-                                Vector3::new(scale[0], scale[1], scale[2]),
-                            );
-                            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
-
-                            if let Some(quat) = rotation_quat
-                            {
-                                if let Some(tc) = node.read().unwrap().find_component::<Transformation>()
-                                {
-                                    component_downcast_mut!(tc, Transformation);
-                                    tc.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
-                                }
-                            }
-
-                            *result2.write().unwrap() = Some(node.clone());
-                            break;
                         }
+
+                        let transform = Transformation::new
+                        (
+                            "Transform",
+                            Vector3::new(position[0], position[1], position[2]),
+                            Vector3::new(rotation[0], rotation[1], rotation[2]),
+                            Vector3::new(scale[0], scale[1], scale[2]),
+                        );
+                        n.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+
+                        if let Some(quat) = rotation_quat
+                        {
+                            if let Some(tc) = n.read().unwrap().find_component::<Transformation>()
+                            {
+                                component_downcast_mut!(tc, Transformation);
+                                tc.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
+                            }
+                        }
+
+                        found = Some(n.clone());
+                        break;
                     }
                 }
-            }));
-
-            Arc::try_unwrap(result).ok().and_then(|rw| rw.into_inner().ok()).flatten()
+            }
+            found
         }
         None =>
         {
-            // editor-created empty node (no source asset)
-            let name2 = name.clone();
-            let parent2 = parent.clone();
-            let result: Arc<RwLock<Option<crate::state::scene::node::NodeItem>>> = Arc::new(RwLock::new(None));
-            let result2 = result.clone();
-
-            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+            // source-less object: either editor-created empty node, or a failed asset load
+            if source.is_some()
             {
-                let node = scene.add_empty_node(&name2, parent2.clone());
-                {
-                    let mut n = node.write().unwrap();
-                    n.settings.visible = options.visible;
-                    n.settings.locked = options.locked;
-                }
+                // parse failed earlier (already logged); skip this branch
+                return;
+            }
 
-                let transform = Transformation::new
-                (
-                    "Transform",
-                    Vector3::new(position[0], position[1], position[2]),
-                    Vector3::new(rotation[0], rotation[1], rotation[2]),
-                    Vector3::new(scale[0], scale[1], scale[2]),
-                );
-                node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
-                *result2.write().unwrap() = Some(node);
-            }));
+            let scene = match state.find_scene_by_id_mut(scene_id) { Some(s) => s, None => return };
+            let n = scene.add_empty_node(&name, parent.clone());
+            {
+                let mut nw = n.write().unwrap();
+                nw.settings.visible = options.visible;
+                nw.settings.locked = options.locked;
+            }
 
-            Arc::try_unwrap(result).ok().and_then(|rw| rw.into_inner().ok()).flatten()
+            let transform = Transformation::new
+            (
+                "Transform",
+                Vector3::new(position[0], position[1], position[2]),
+                Vector3::new(rotation[0], rotation[1], rotation[2]),
+                Vector3::new(scale[0], scale[1], scale[2]),
+            );
+            n.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+            Some(n)
         }
     };
 
-    // recursively apply objects
-    for child in &objects
+    for child in children
     {
-        apply_editor_object(child, node.clone(), scene_id, main_queue, base_path, create_mipmaps, max_tex_res);
+        apply_prepared_object(state, scene_id, node.clone(), child);
     }
+}
+
+fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorScene, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String)
+{
+    let mut scenes: Vec<(EditorScene, u32, String)> = Vec::new();
+
+    for (editor_scene, full_path, active) in editor_scenes
+    {
+        let id = state.add_scene(&editor_scene.name);
+        if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
+        {
+            scene.active = active;
+            scene.source = Some(AssetPathDesciptor::new_from_path(full_path.clone()));
+        }
+        scenes.push((editor_scene, id, full_path));
+    }
+
+    let main_queue = state.main_thread_execution_queue.clone();
+    let create_mipmaps = state.rendering.create_mipmaps;
+    let max_tex_res = state.max_texture_resolution();
+
+    fn count_objects(objects: &[EditorObject]) -> usize
+    {
+        objects.iter().map(|o| 1 + count_objects(&o.objects)).sum()
+    }
+    let total_objects: usize = scenes.iter().map(|(s, _, _)| count_objects(&s.objects)).sum();
+
+    *loading_state.write().unwrap() = true;
+    *loading_progress_state.write().unwrap() = 0.0;
+
+    spawn_thread(move ||
+    {
+        let _guard = LoadingGuard(loading_state);
+        console_log!("loading {} ({} scenes, {} objects)", log_label, scenes.len(), total_objects);
+
+        let loaded_count = Arc::new(RwLock::new(0usize));
+        let total = total_objects.max(1);
+
+        for (editor_scene, scene_id, base_path) in scenes
+        {
+            // parse pass: share caches across all objects in this scene
+            let tex_cache: TextureCache = Arc::new(RwLock::new(HashMap::new()));
+            let mat_cache: MaterialCache = Arc::new(RwLock::new(HashMap::new()));
+
+            let loaded_count_cb = loaded_count.clone();
+            let progress_cb_state = loading_progress_state.clone();
+            let progress_cb = move ||
+            {
+                let mut c = loaded_count_cb.write().unwrap();
+                *c += 1;
+                *progress_cb_state.write().unwrap() = *c as f32 / total as f32;
+            };
+
+            let prepared: Vec<PreparedEditorObject> = editor_scene.objects.iter()
+                .map(|o| load_editor_object(o, &base_path, create_mipmaps, max_tex_res, &tex_cache, &mat_cache, &progress_cb))
+                .collect();
+
+            // apply pass: single main-thread round-trip for all prepared objects of this scene
+            execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
+            {
+                for prep in prepared
+                {
+                    apply_prepared_object(state, scene_id, None, prep);
+                }
+            }));
+        }
+
+        *loading_progress_state.write().unwrap() = 0.0;
+        console_success!("{} loaded", log_label);
+    });
 }
 
 pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
@@ -565,12 +688,9 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
         return;
     }
 
-    // load scene files and sync state scenes
-    let mut editor_scenes: Vec<EditorScene> = Vec::new();
-    let mut scene_ids: Vec<u32> = Vec::new();
-
     state.delete_all_scenes(true);
 
+    let mut editor_scenes: Vec<(EditorScene, String, bool)> = Vec::new();
     for scene_ref in project.scenes
     {
         let full_path = resolve_relative_path(path, scene_ref.path.as_str());
@@ -579,48 +699,11 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
             Some(s) => s,
             None => continue,
         };
-
-        let id = state.add_scene(&editor_scene.name);
-        if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
-        {
-            // active state lives in the project, not the scene file
-            scene.active = scene_ref.active;
-            scene.source = Some(AssetPathDesciptor::new_from_path(full_path));
-        }
-        scene_ids.push(id);
-
-        editor_scenes.push(editor_scene);
+        editor_scenes.push((editor_scene, full_path, scene_ref.active));
     }
 
-    let main_queue = state.main_thread_execution_queue.clone();
-    let create_mipmaps = state.rendering.create_mipmaps;
-    let max_tex_res = state.max_texture_resolution();
-    let base_path = path.to_string();
-    let project_name = project.project.name.clone();
-    let total_objects: usize = editor_scenes.iter().map(|s| s.objects.len()).sum();
-
-    *loading_state.write().unwrap() = true;
-    *loading_progress_state.write().unwrap() = 0.0;
-
-    spawn_thread(move ||
-    {
-        let _guard = LoadingGuard(loading_state);
-        console_log!("loading editor project: {} ({} scenes, {} objects)", project_name, editor_scenes.len(), total_objects);
-
-        let mut loaded_count = 0;
-        for (editor_scene, scene_id) in editor_scenes.iter().zip(scene_ids.iter())
-        {
-            for obj in &editor_scene.objects
-            {
-                apply_editor_object(obj, None, *scene_id, &main_queue, &base_path, create_mipmaps, max_tex_res);
-                loaded_count += 1;
-                *loading_progress_state.write().unwrap() = loaded_count as f32 / total_objects as f32;
-            }
-        }
-
-        *loading_progress_state.write().unwrap() = 0.0;
-        console_success!("editor project loaded");
-    });
+    let log_label = format!("editor project: {}", project.project.name);
+    load_editor_scenes_into_state(state, editor_scenes, loading_state, loading_progress_state, log_label);
 }
 
 pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
@@ -631,36 +714,7 @@ pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Ar
         None => return,
     };
 
-    let scene_id = state.add_scene(&editor_scene.name);
-    if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == scene_id)
-    {
-        scene.active = editor_scene.active;
-        scene.source = Some(AssetPathDesciptor::new_from_path(scene_path.to_string()));
-    }
-
-    let main_queue = state.main_thread_execution_queue.clone();
-    let create_mipmaps = state.rendering.create_mipmaps;
-    let max_tex_res = state.max_texture_resolution();
-    let base_path = scene_path.to_string();
-    let total_objects: usize = editor_scene.objects.len();
-
-    *loading_state.write().unwrap() = true;
-    *loading_progress_state.write().unwrap() = 0.0;
-
-    spawn_thread(move ||
-    {
-        let _guard = LoadingGuard(loading_state);
-        console_log!("importing editor scene: {} ({} objects)", editor_scene.name, total_objects);
-
-        let mut loaded_count = 0;
-        for obj in &editor_scene.objects
-        {
-            apply_editor_object(obj, None, scene_id, &main_queue, &base_path, create_mipmaps, max_tex_res);
-            loaded_count += 1;
-            *loading_progress_state.write().unwrap() = loaded_count as f32 / total_objects as f32;
-        }
-
-        *loading_progress_state.write().unwrap() = 0.0;
-        console_success!("editor project loaded");
-    });
+    let log_label = format!("editor scene: {}", editor_scene.name);
+    let active = editor_scene.active;
+    load_editor_scenes_into_state(state, vec![(editor_scene, scene_path.to_string(), active)], loading_state, loading_progress_state, log_label);
 }

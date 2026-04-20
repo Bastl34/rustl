@@ -42,17 +42,34 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
     for gltf_texture in gltf.textures()
     {
         let (bytes, texture_path, extension) = load_texture(&options.path, &gltf_texture, &buffers);
+        let hash = crate::helper::crypto::get_hash_from_byte_vec(&bytes);
 
-        let tex = load_texture_byte(options.max_texture_resolution, options.create_mipmaps, &bytes, gltf_texture.name().unwrap_or("unknown"), &options.path, extension);
-        if let Some(source) = &mut tex.write().unwrap().source
+        let cached = options.texture_cache.as_ref().and_then(|c| c.read().unwrap().get(&hash).cloned());
+
+        let tex = if let Some(cached) = cached
         {
-            source.inner_path = texture_path.clone();
+            console_log!("reusing cached texture {}", gltf_texture.name().unwrap_or("unknown"));
+            cached
         }
-        // extras
+        else
         {
-            let mut tex = tex.write().unwrap();
-            read_extras(&mut tex.extras, gltf_texture.extras().as_ref());
-        }
+            let tex = load_texture_byte(options.max_texture_resolution, options.create_mipmaps, &bytes, gltf_texture.name().unwrap_or("unknown"), &options.path, extension);
+            if let Some(source) = &mut tex.write().unwrap().source
+            {
+                source.inner_path = texture_path.clone();
+            }
+            // extras
+            {
+                let mut tex = tex.write().unwrap();
+                read_extras(&mut tex.extras, gltf_texture.extras().as_ref());
+            }
+
+            if let Some(cache) = &options.texture_cache
+            {
+                cache.write().unwrap().insert(hash, tex.clone());
+            }
+            tex
+        };
 
         asset_container.textures.push(tex.clone());
         loaded_textures.push((tex, gltf_texture.index()));
@@ -69,8 +86,39 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
     for gltf_material in gltf.materials()
     {
         let gltf_material_index = gltf_material.index().unwrap();
-        let material = load_material(&gltf_material, &loaded_textures, &mut asset_container, &mut clear_textures, options.max_texture_resolution, resource_name.clone().clone());
-        let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+        let material_name = gltf_material.name().map(|s| s.to_string());
+
+        let cached = if options.reuse_materials
+        {
+            material_name.as_ref().and_then(|name|
+            {
+                options.material_cache.as_ref().and_then(|c| c.read().unwrap().get(name).cloned())
+            })
+        }
+        else
+        {
+            None
+        };
+
+        let material_arc: MaterialItem = if let Some(cached) = cached
+        {
+            console_log!("reusing cached material {}", material_name.clone().unwrap_or_default());
+            cached
+        }
+        else
+        {
+            let material = load_material(&gltf_material, &loaded_textures, &mut asset_container, &mut clear_textures, options.max_texture_resolution, resource_name.clone().clone());
+            let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+
+            if options.reuse_materials
+            {
+                if let (Some(name), Some(cache)) = (material_name, options.material_cache.as_ref())
+                {
+                    cache.write().unwrap().insert(name, material_arc.clone());
+                }
+            }
+            material_arc
+        };
 
         asset_container.materials.push(material_arc.clone());
         loaded_materials.insert(gltf_material_index, material_arc);
