@@ -44,7 +44,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
         let (bytes, texture_path, extension) = load_texture(&options.path, &gltf_texture, &buffers);
         let hash = crate::helper::crypto::get_hash_from_byte_vec(&bytes);
 
-        let cached = options.texture_cache.as_ref().and_then(|c| c.read().unwrap().get(&hash).cloned());
+        let cached = options.texture_cache.as_ref().and_then(|c| c.get(&hash).cloned());
 
         let tex = if let Some(cached) = cached
         {
@@ -64,10 +64,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                 read_extras(&mut tex.extras, gltf_texture.extras().as_ref());
             }
 
-            if let Some(cache) = &options.texture_cache
-            {
-                cache.write().unwrap().insert(hash, tex.clone());
-            }
+            let _ = hash;
             tex
         };
 
@@ -92,7 +89,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
         {
             material_name.as_ref().and_then(|name|
             {
-                options.material_cache.as_ref().and_then(|c| c.read().unwrap().get(name).cloned())
+                options.material_cache.as_ref().and_then(|c| c.get(name).cloned())
             })
         }
         else
@@ -109,14 +106,6 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
         {
             let material = load_material(&gltf_material, &loaded_textures, &mut asset_container, &mut clear_textures, options.max_texture_resolution, resource_name.clone().clone());
             let material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
-
-            if options.reuse_materials
-            {
-                if let (Some(name), Some(cache)) = (material_name, options.material_cache.as_ref())
-                {
-                    cache.write().unwrap().insert(name, material_arc.clone());
-                }
-            }
             material_arc
         };
 

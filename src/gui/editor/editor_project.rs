@@ -459,8 +459,10 @@ struct PreparedEditorObject
     children: Vec<PreparedEditorObject>,
 }
 
-fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &TextureCache, mat_cache: &MaterialCache, progress_cb: &dyn Fn()) -> PreparedEditorObject
+fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &mut TextureCache, mat_cache: &mut MaterialCache, progress_callback: &dyn Fn()) -> PreparedEditorObject
 {
+    let reuse_materials = obj.options.reuse_materials_by_name.unwrap_or(false);
+
     let container = match &obj.source
     {
         Some(source) =>
@@ -473,7 +475,7 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
                 extension,
                 parent_node_id: None,
                 hide_root_nodes: true,
-                reuse_materials: obj.options.reuse_materials_by_name.unwrap_or(false),
+                reuse_materials,
                 clear_unused_textures: true,
                 object_only: true,
                 create_mipmaps,
@@ -485,7 +487,32 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
 
             match load_asset(&loader_options)
             {
-                Ok(c) => Some(c),
+                Ok(asset_container) =>
+                {
+                    // populate caches from loaded assets
+                    for tex in &asset_container.textures
+                    {
+                        let hash = tex.read().unwrap().hash.clone();
+                        if !hash.is_empty()
+                        {
+                            tex_cache.entry(hash).or_insert_with(|| tex.clone());
+                        }
+                    }
+
+                    if reuse_materials
+                    {
+                        for material in &asset_container.materials
+                        {
+                            let name = material.read().unwrap().get_base().name.clone();
+                            if !name.is_empty()
+                            {
+                                mat_cache.entry(name).or_insert_with(|| material.clone());
+                            }
+                        }
+                    }
+
+                    Some(asset_container)
+                },
                 Err(e) =>
                 {
                     console_error!("failed to load object '{}': {}", source, e);
@@ -496,11 +523,13 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
         None => None,
     };
 
-    progress_cb();
+    progress_callback();
 
-    let children = obj.objects.iter()
-        .map(|c| load_editor_object(c, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_cb))
-        .collect();
+    let mut children = Vec::with_capacity(obj.objects.len());
+    for c in &obj.objects
+    {
+        children.push(load_editor_object(c, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_callback));
+    }
 
     PreparedEditorObject
     {
@@ -646,25 +675,27 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
         let loaded_count = Arc::new(RwLock::new(0usize));
         let total = total_objects.max(1);
 
-        let tex_cache: TextureCache = Arc::new(RwLock::new(HashMap::new()));
+        let mut tex_cache: TextureCache = HashMap::new();
 
         for (editor_scene, scene_id, base_path) in scenes
         {
             // parse pass: share caches across all objects in this scene
-            let mat_cache: MaterialCache = Arc::new(RwLock::new(HashMap::new()));
+            let mut mat_cache: MaterialCache = HashMap::new();
 
-            let loaded_count_cb = loaded_count.clone();
-            let progress_cb_state = loading_progress_state.clone();
-            let progress_cb = move ||
+            let loaded_count_callback = loaded_count.clone();
+            let progress_callback_state = loading_progress_state.clone();
+            let progress_callback = move ||
             {
-                let mut c = loaded_count_cb.write().unwrap();
-                *c += 1;
-                *progress_cb_state.write().unwrap() = *c as f32 / total as f32;
+                let mut count = loaded_count_callback.write().unwrap();
+                *count += 1;
+                *progress_callback_state.write().unwrap() = *count as f32 / total as f32;
             };
 
-            let loaded_objects: Vec<PreparedEditorObject> = editor_scene.objects.iter()
-                .map(|o| load_editor_object(o, &base_path, create_mipmaps, max_tex_res, &tex_cache, &mat_cache, &progress_cb))
-                .collect();
+            let mut loaded_objects: Vec<PreparedEditorObject> = Vec::with_capacity(editor_scene.objects.len());
+            for o in &editor_scene.objects
+            {
+                loaded_objects.push(load_editor_object(o, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
+            }
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|

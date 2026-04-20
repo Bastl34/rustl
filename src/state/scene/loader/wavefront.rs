@@ -27,7 +27,7 @@ fn load_texture_with_cache(options: &LoaderOptions, path: &str) -> anyhow::Resul
 
     if let Some(cache) = &options.texture_cache
     {
-        if let Some(cached) = cache.read().unwrap().get(&hash).cloned()
+        if let Some(cached) = cache.get(&hash).cloned()
         {
             console_log!("reusing cached texture {}", path);
             return Ok(cached);
@@ -36,11 +36,7 @@ fn load_texture_with_cache(options: &LoaderOptions, path: &str) -> anyhow::Resul
 
     let name = helper::file::get_stem(path);
     let tex = load_texture_byte(options.max_texture_resolution, options.create_mipmaps, &image_bytes, name.as_str(), path, None);
-
-    if let Some(cache) = &options.texture_cache
-    {
-        cache.write().unwrap().insert(hash, tex.clone());
-    }
+    let _ = hash;
     Ok(tex)
 }
 
@@ -184,7 +180,7 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                     {
                         if let Some(cache) = &options.material_cache
                         {
-                            if let Some(cached) = cache.read().unwrap().get(material_name).cloned()
+                            if let Some(cached) = cache.get(material_name).cloned()
                             {
                                 console_log!("reusing cached material {}", material_name);
                                 asset_container.materials.push(cached.clone());
@@ -328,18 +324,6 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
 
                     asset_container.materials.push(material_arc.clone());
                     double_check_materials.push((wavefront_mat_id, material_arc.clone()));
-
-                    if options.reuse_materials
-                    {
-                        let name = material_arc.read().unwrap().get_base().name.clone();
-                        if !name.is_empty()
-                        {
-                            if let Some(cache) = &options.material_cache
-                            {
-                                cache.write().unwrap().insert(name, material_arc.clone());
-                            }
-                        }
-                    }
                 }
             }
             else
