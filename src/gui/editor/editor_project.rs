@@ -186,8 +186,8 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
     // source path (optional — None for empty/editor-created nodes)
     let source = node.source.as_ref().map(|descriptor|
     {
-        let p = descriptor.origin_path.clone();
-        make_relative_path(path, &p).unwrap_or(p)
+        let target_path = descriptor.origin_path.clone();
+        make_relative_path(path, &target_path).unwrap_or(target_path)
     });
 
     let (position, rotation, rotation_quat, scale) = extract_transform(&node);
@@ -340,7 +340,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
             .add_filter("Rustl Project", &["json"])
             .set_file_name(&format!("{}.json", editor_state.project_data.name))
             .save_file()
-            .map(|p| p.to_string_lossy().into_owned())
+            .map(|path| path.to_string_lossy().into_owned())
     }
 
     if let Some(path) = path
@@ -526,9 +526,9 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
     progress_callback();
 
     let mut children = Vec::with_capacity(obj.objects.len());
-    for c in &obj.objects
+    for child_object in &obj.objects
     {
-        children.push(load_editor_object(c, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_callback));
+        children.push(load_editor_object(child_object, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_callback));
     }
 
     PreparedEditorObject
@@ -692,9 +692,9 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
             };
 
             let mut loaded_objects: Vec<PreparedEditorObject> = Vec::with_capacity(editor_scene.objects.len());
-            for o in &editor_scene.objects
+            for object in &editor_scene.objects
             {
-                loaded_objects.push(load_editor_object(o, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
+                loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
             }
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
@@ -728,7 +728,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
         let full_path = resolve_relative_path(path, scene_ref.path.as_str());
         let editor_scene = match load_editor_scene(&full_path)
         {
-            Some(s) => s,
+            Some(scene) => scene,
             None => continue,
         };
         editor_scenes.push((editor_scene, full_path, scene_ref.active));
@@ -742,7 +742,7 @@ pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Ar
 {
     let editor_scene = match load_editor_scene(&scene_path)
     {
-        Some(s) => s,
+        Some(scene) => scene,
         None => return,
     };
 
