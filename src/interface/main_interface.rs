@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 
 use std::cell::RefCell;
+use std::env;
 use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{vec, cmp};
+use std::{cmp, vec};
 
 use gilrs::Gilrs;
 use nalgebra::{Vector2, Point2};
@@ -14,6 +15,7 @@ use winit::event::ElementState;
 use winit::keyboard::ModifiersKeyState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
+use crate::gui::editor::editor_project::load_and_apply_project;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::platform::is_mac;
 use crate::input::input_point::PointState;
@@ -23,7 +25,7 @@ use crate::output::audio_device::AudioDevice;
 use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
-use crate::rendering::scene::{self, Scene};
+use crate::rendering::scene::Scene;
 use crate::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
@@ -41,7 +43,7 @@ pub struct MainInterface
     app: Option<Box<dyn App>>,
 
     gilrs: Option<Gilrs>,
-    editor_gui: Editor,
+    editor_gui: Option<Editor>,
 }
 
 impl MainInterface
@@ -71,7 +73,16 @@ impl MainInterface
 
         let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
-        let editor_gui = Editor::new();
+        let use_editor = !env::args().any(|a| a == "--no-editor");
+
+        let editor_gui = if use_editor
+        {
+            Some(Editor::new())
+        }
+        else
+        {
+            None
+        };
 
         let gilrs_res = Gilrs::new();
         let mut gilrs = None;
@@ -123,7 +134,10 @@ impl MainInterface
             }
 
             // init editor
-            self.editor_gui.init(state, &self.context.egui, scene_id);
+            if let Some(editor_gui) = &mut self.editor_gui
+            {
+                editor_gui.init(state, &self.context.egui, scene_id);
+            }
         }
 
         // create dummy app
@@ -289,10 +303,11 @@ impl MainInterface
 
 
         // ******************** editor/ui update ********************
+        if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
             let state = &mut *(self.context.state.borrow_mut());
-            self.editor_gui.update(state, &mut self.context.wgpu, &self.context.egui.ctx);
+            editor_gui.update(state, &mut self.context.wgpu, &self.context.egui.ctx);
 
             state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
@@ -344,16 +359,19 @@ impl MainInterface
         }
 
         // ******************** build ui ********************
-        if self.editor_gui.editor_state.visible
+        if let Some(editor_gui) = &mut self.editor_gui
         {
-            let now = Instant::now();
-            let state = &mut *(self.context.state.borrow_mut());
+            if editor_gui.editor_state.visible
+            {
+                let now = Instant::now();
+                let state = &mut *(self.context.state.borrow_mut());
 
-            let gui_output = self.editor_gui.build_gui(state, &self.context.window, &mut self.context.egui);
-            self.context.egui.output = Some(gui_output);
+                let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui);
+                self.context.egui.output = Some(gui_output);
 
-            //self.gui.request_repaint();
-            state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+                //self.gui.request_repaint();
+                state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
+            }
         }
 
 
@@ -501,12 +519,15 @@ impl MainInterface
             }
 
             // render egui
-            if self.editor_gui.editor_state.visible
+            if let Some(editor_gui) = &mut self.editor_gui
             {
-                let now = Instant::now();
-                self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
+                if editor_gui.editor_state.visible
+                {
+                    let now = Instant::now();
+                    self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
 
-                state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                    state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                }
             }
         }
         self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
@@ -626,7 +647,15 @@ impl MainInterface
 
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
-        let egui_consumed = self.editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone());
+        let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
+        {
+            editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
+        }
+        else
+        {
+            false
+        };
+
 
         // Always forward mouse button releases to the input manager, even if egui consumed the event.
         // Otherwise, if the user presses in the scene and releases over egui, the scene gets stuck
@@ -763,7 +792,11 @@ impl MainInterface
                 {
                     if let Some(path) = path.to_str()
                     {
-                        self.editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        if let Some(editor_gui) = &mut self.editor_gui
+                        {
+                            editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        }
+
                         self.context.window.request_redraw();
                     }
                 },

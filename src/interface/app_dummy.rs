@@ -1,7 +1,8 @@
-use std::sync::{Arc, RwLock};
+use std::{env, sync::{Arc, RwLock}};
+use gltf::json::extensions::scene;
 use nalgebra::Vector3;
 
-use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
+use crate::{console_debug, console_error, gui::editor::editor_project::load_and_apply_project, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 
@@ -22,8 +23,6 @@ impl App for AppDummy
 {
     fn init(&mut self, context: &mut Context)
     {
-        let scene_id = context.get_main_scene_id();
-
         // ********** observer examples (context level) **********
 
         // fires every frame right before rendering
@@ -57,15 +56,39 @@ impl App for AppDummy
         });
          */
 
-        let state = &mut *(context.state.borrow_mut());
 
+
+
+        // load project if needed
+        if let Some(project) = env::args().find(|a| a.ends_with(".json"))
+        {
+            let state = &mut *(context.state.borrow_mut());
+
+            load_and_apply_project(state, project.as_str(), Some(Box::new(|state|
+            {
+                let scene_id = state.get_active_scene_id();
+                if let Some(scene_id) = scene_id
+                {
+                    state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
+                }
+
+                for scene in &mut state.scenes
+                {
+                    scene.add_default_lights_and_cam();
+                }
+            })));
+        }
+
+        let scene_id = context.get_main_scene_id();
         if scene_id.is_none()
         {
             return;
         }
+
         let scene_id = scene_id.unwrap();
 
         //load default env texture
+        let state = &mut *(context.state.borrow_mut());
         state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
         // ********** cam **********

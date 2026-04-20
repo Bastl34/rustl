@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
 
-use nalgebra::Vector3;
+use nalgebra::{Vector2, Vector3};
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
@@ -635,6 +635,25 @@ impl Scene
         // post controller
         let controller = GenericController::default();
         self.post_controller.push(Box::new(controller));
+    }
+
+    pub fn add_default_lights_and_cam(&mut self)
+    {
+        // lights
+        self.add_light_point("Point", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0, 0.0);
+        self.add_light_hemisperical("Hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+
+        // cam
+        let mut cam = Camera::new("Cam".to_string());
+        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+
+        let cam_data = cam.get_data_mut().get_mut();
+        cam_data.fovy = 45.0f32.to_radians();
+        cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
+        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+        cam_data.clipping_near = 0.1;
+        cam_data.clipping_far = 1000.0;
+        self.cameras.push(Box::new(cam));
     }
 
     pub fn clear_empty_nodes(&mut self)

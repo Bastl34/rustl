@@ -26,6 +26,8 @@ use crate::state::scene::exporter::serialization_helper::is_false;
 
 const PROJECT_FILE_VERSION: &str = "1.0.0";
 
+pub type ProjectDoneCallback = Option<Box<dyn FnOnce(&mut State) + Send + Sync + 'static>>;
+
 // ******************** structs ********************
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -376,6 +378,18 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
     }
 }
 
+pub fn load_and_apply_project(state: &mut State, path: &str, done_callback: ProjectDoneCallback)
+{
+    if let Some(project) = load_editor_project(&path)
+    {
+        // TODO
+        let loading = Arc::new(RwLock::new(false));
+        let loading_progress = Arc::new(RwLock::new(0.0));
+
+        apply_editor_project(state, project, &path, loading, loading_progress, done_callback);
+    }
+}
+
 pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
 {
     let path = rfd::FileDialog::new()
@@ -390,7 +404,7 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
             editor_state.project_data = project.project.clone();
             editor_state.project_path = Some(path.clone());
             editor_state.project_session_start = web_time::Instant::now();
-            apply_editor_project(state, project, &path, loading_state, loading_progress_state);
+            apply_editor_project(state, project, &path, loading_state, loading_progress_state, None);
         }
     }
 }
@@ -662,7 +676,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
     }
 }
 
-fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorScene, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String)
+fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorScene, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback)
 {
     let mut scenes: Vec<(EditorScene, u32, String)> = Vec::new();
 
@@ -730,12 +744,20 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
             }));
         }
 
+        if let Some(done_callback) = done_callback
+        {
+            execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
+            {
+                done_callback(state);
+            }));
+        }
+
         *loading_progress_state.write().unwrap() = 0.0;
         console_success!("{} loaded", log_label);
     });
 }
 
-pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
+pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, done_callback: ProjectDoneCallback)
 {
     if project.scenes.is_empty()
     {
@@ -758,7 +780,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     }
 
     let log_label = format!("editor project: {}", project.project.name);
-    load_editor_scenes_into_state(state, editor_scenes, loading_state, loading_progress_state, log_label);
+    load_editor_scenes_into_state(state, editor_scenes, loading_state, loading_progress_state, log_label, done_callback);
 }
 
 pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
@@ -771,5 +793,5 @@ pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Ar
 
     let log_label = format!("editor scene: {}", editor_scene.name);
     let active = editor_scene.active;
-    load_editor_scenes_into_state(state, vec![(editor_scene, scene_path.to_string(), active)], loading_state, loading_progress_state, log_label);
+    load_editor_scenes_into_state(state, vec![(editor_scene, scene_path.to_string(), active)], loading_state, loading_progress_state, log_label, None);
 }
