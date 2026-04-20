@@ -12,7 +12,7 @@ use crate::helper::asset_path_descriptor::AssetPathDesciptor;
 use crate::helper::file::{get_dirname, get_stem, make_relative_path, resolve_relative_path, sanitize_filename, write_string_to_tile};
 use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, RESUSE_MATERIALS_TAG};
 use crate::gui::editor::editor_state::{EditorState, LoadingGuard};
-use crate::resources::resources::load_string;
+use crate::resources::resources::{self, RESOURCE_SCHEME, load_string};
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::loader::loader::{load_asset, LoaderOptions, MaterialCache, TextureCache};
 use crate::state::scene::loader::asset_container::AssetContainer;
@@ -184,10 +184,24 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
     }
 
     // source path (optional — None for empty/editor-created nodes)
+    // - filesystem assets: stored as project-relative path (e.g. "../resourcesLocal/foo.obj")
+    // - bundled `resources/` assets: stored with explicit "resources://" marker so the loader
+    //   can dispatch them through `get_path()` instead of resolving relative to the project file
     let source = node.source.as_ref().map(|descriptor|
     {
         let target_path = descriptor.origin_path.clone();
-        make_relative_path(path, &target_path).unwrap_or(target_path)
+        if let Some(rel) = make_relative_path(path, &target_path)
+        {
+            rel
+        }
+        else if resources::exists(&target_path)
+        {
+            format!("{}{}", RESOURCE_SCHEME, target_path)
+        }
+        else
+        {
+            target_path
+        }
     });
 
     let (position, rotation, rotation_quat, scale) = extract_transform(&node);
@@ -467,7 +481,16 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
     {
         Some(source) =>
         {
-            let path = resolve_relative_path(base_path, source);
+            // resources://... is a bundled asset; pass through so get_path() can resolve it
+            // against the resources root. Otherwise resolve relative to the project file.
+            let path = if let Some(stripped) = source.strip_prefix(RESOURCE_SCHEME)
+            {
+                stripped.to_string()
+            }
+            else
+            {
+                resolve_relative_path(base_path, source)
+            };
             let extension = Path::new(&path).extension().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy().to_string();
             let loader_options = LoaderOptions
             {
