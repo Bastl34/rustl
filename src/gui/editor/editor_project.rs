@@ -516,9 +516,9 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
     }
 }
 
-fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, prepared: PreparedEditorObject)
+fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedEditorObject)
 {
-    let PreparedEditorObject { name, options, position, rotation, rotation_quat, scale, source, container, children } = prepared;
+    let PreparedEditorObject { name, options, position, rotation, rotation_quat, scale, source, container, children } = object;
 
     let node: Option<crate::state::scene::node::NodeItem> = match container
     {
@@ -532,21 +532,21 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
             let mut found = None;
             for id in &result.node_ids
             {
-                if let Some(n) = scene.find_node_by_id(*id)
+                if let Some(node) = scene.find_node_by_id(*id)
                 {
-                    if n.read().unwrap().root_node
+                    if node.read().unwrap().root_node
                     {
                         {
-                            let mut nw = n.write().unwrap();
-                            nw.name = name.clone();
-                            nw.settings.visible = options.visible;
-                            nw.settings.locked = options.locked;
-                            nw.settings.transient = false;
+                            let mut node_write = node.write().unwrap();
+                            node_write.name = name.clone();
+                            node_write.settings.visible = options.visible;
+                            node_write.settings.locked = options.locked;
+                            node_write.settings.transient = false;
 
                             if let Some(reuse) = options.reuse_materials_by_name
                             {
-                                if reuse { nw.extras.insert(RESUSE_MATERIALS_TAG, reuse); }
-                                else     { nw.extras.remove(RESUSE_MATERIALS_TAG); }
+                                if reuse { node_write.extras.insert(RESUSE_MATERIALS_TAG, reuse); }
+                                else     { node_write.extras.remove(RESUSE_MATERIALS_TAG); }
                             }
                         }
 
@@ -557,18 +557,18 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                             Vector3::new(rotation[0], rotation[1], rotation[2]),
                             Vector3::new(scale[0], scale[1], scale[2]),
                         );
-                        n.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+                        node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
 
                         if let Some(quat) = rotation_quat
                         {
-                            if let Some(tc) = n.read().unwrap().find_component::<Transformation>()
+                            if let Some(transform_component) = node.read().unwrap().find_component::<Transformation>()
                             {
-                                component_downcast_mut!(tc, Transformation);
-                                tc.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
+                                component_downcast_mut!(transform_component, Transformation);
+                                transform_component.apply_rotation_quaternion(Vector4::new(quat[0], quat[1], quat[2], quat[3]), true);
                             }
                         }
 
-                        found = Some(n.clone());
+                        found = Some(node.clone());
                         break;
                     }
                 }
@@ -584,12 +584,12 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                 return;
             }
 
-            let scene = match state.find_scene_by_id_mut(scene_id) { Some(s) => s, None => return };
-            let n = scene.add_empty_node(&name, parent.clone());
+            let scene = match state.find_scene_by_id_mut(scene_id) { Some(scene) => scene, None => return };
+            let node = scene.add_empty_node(&name, parent.clone());
             {
-                let mut nw = n.write().unwrap();
-                nw.settings.visible = options.visible;
-                nw.settings.locked = options.locked;
+                let mut node_write = node.write().unwrap();
+                node_write.settings.visible = options.visible;
+                node_write.settings.locked = options.locked;
             }
 
             let transform = Transformation::new
@@ -599,8 +599,8 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                 Vector3::new(rotation[0], rotation[1], rotation[2]),
                 Vector3::new(scale[0], scale[1], scale[2]),
             );
-            n.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
-            Some(n)
+            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+            Some(node)
         }
     };
 
@@ -646,10 +646,11 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
         let loaded_count = Arc::new(RwLock::new(0usize));
         let total = total_objects.max(1);
 
+        let tex_cache: TextureCache = Arc::new(RwLock::new(HashMap::new()));
+
         for (editor_scene, scene_id, base_path) in scenes
         {
             // parse pass: share caches across all objects in this scene
-            let tex_cache: TextureCache = Arc::new(RwLock::new(HashMap::new()));
             let mat_cache: MaterialCache = Arc::new(RwLock::new(HashMap::new()));
 
             let loaded_count_cb = loaded_count.clone();
@@ -661,16 +662,16 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                 *progress_cb_state.write().unwrap() = *c as f32 / total as f32;
             };
 
-            let prepared: Vec<PreparedEditorObject> = editor_scene.objects.iter()
+            let loaded_objects: Vec<PreparedEditorObject> = editor_scene.objects.iter()
                 .map(|o| load_editor_object(o, &base_path, create_mipmaps, max_tex_res, &tex_cache, &mat_cache, &progress_cb))
                 .collect();
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
             {
-                for prep in prepared
+                for object in loaded_objects
                 {
-                    apply_prepared_object(state, scene_id, None, prep);
+                    apply_prepared_object(state, scene_id, None, object);
                 }
             }));
         }
