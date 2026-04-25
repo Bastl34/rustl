@@ -46,11 +46,19 @@ pub struct RenderingAdapterFeatures
     pub max_supported_texture_resolution: u32
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentModeSetting
+{
+    VSync,     // Fifo: vblank-paced, tear-free
+    FastVSync, // Mailbox: tear-free, no CPU stall on acquire
+    VSyncOff,  // Immediate: may tear, uncapped
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Rendering
 {
     pub clear_color: ChangeTracker<Vector3<f32>>,
-    pub v_sync: ChangeTracker<bool>,
+    pub present_mode: ChangeTracker<PresentModeSetting>,
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
@@ -290,14 +298,14 @@ impl State
             rendering: Rendering
             {
                 clear_color: ChangeTracker::new(Vector3::<f32>::new(0.0, 0.0, 0.0)),
-                v_sync: ChangeTracker::new(true),
+                present_mode: ChangeTracker::new(PresentModeSetting::VSync),
 
                 fullscreen: ChangeTracker::new(false),
                 msaa: ChangeTracker::new(8),
 
                 distance_sorting: true,
                 frustum_culling: true,
-                occlusion_culling: true,
+                occlusion_culling: false,
                 create_mipmaps: true,
                 max_texture_resolution: None,
 

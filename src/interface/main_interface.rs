@@ -341,11 +341,11 @@ impl MainInterface
         {
             let state = &mut *(self.context.state.borrow_mut());
 
-            // vsync
-            let (v_sync, vsync_changed) = state.rendering.v_sync.consume_clone();
-            if vsync_changed
+            // present mode
+            let (present_mode, present_mode_changed) = state.rendering.present_mode.consume_clone();
+            if present_mode_changed
             {
-                self.context.wgpu.set_vsync(v_sync);
+                self.context.wgpu.set_present_mode(present_mode);
             }
 
             // full screen

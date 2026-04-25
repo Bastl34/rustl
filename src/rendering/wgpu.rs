@@ -3,9 +3,22 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{console_error, console_log, helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
+use crate::{console_error, console_log, helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::{PresentModeSetting, State}};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
+
+fn resolve_present_mode(setting: PresentModeSetting, supports_mailbox: bool) -> wgpu::PresentMode
+{
+    match setting
+    {
+        PresentModeSetting::VSync => wgpu::PresentMode::AutoVsync,
+        PresentModeSetting::FastVSync =>
+        {
+            if supports_mailbox { wgpu::PresentMode::Mailbox } else { wgpu::PresentMode::AutoVsync }
+        },
+        PresentModeSetting::VSyncOff => wgpu::PresentMode::AutoNoVsync,
+    }
+}
 
 pub struct WGpu
 {
@@ -17,6 +30,7 @@ pub struct WGpu
     msaa_texture: Option<wgpu::Texture>,
 
     surface_config: SurfaceConfiguration,
+    supports_mailbox: bool,
 }
 
 impl WGpu
@@ -98,11 +112,9 @@ impl WGpu
 
         let surface_caps = surface.get_capabilities(&adapter);
 
-        let mut present_mode = wgpu::PresentMode::Fifo;
-        if !state.rendering.v_sync.get_ref()
-        {
-            present_mode = wgpu::PresentMode::Immediate;
-        }
+        let supports_mailbox = surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox);
+
+        let present_mode = resolve_present_mode(*state.rendering.present_mode.get_ref(), supports_mailbox);
 
         let surface_config = wgpu::SurfaceConfiguration
         {
@@ -168,7 +180,8 @@ impl WGpu
             msaa_samples,
             msaa_texture: None,
             queue,
-            surface_config
+            surface_config,
+            supports_mailbox,
         };
 
         wgpu.create_msaa_texture(1);
@@ -230,15 +243,9 @@ impl WGpu
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn set_vsync(&mut self, v_sync: bool)
+    pub fn set_present_mode(&mut self, setting: PresentModeSetting)
     {
-        let mut present_mode = wgpu::PresentMode::Fifo;
-        if !v_sync
-        {
-            present_mode = wgpu::PresentMode::Immediate;
-        }
-
-        self.surface_config.present_mode = present_mode;
+        self.surface_config.present_mode = resolve_present_mode(setting, self.supports_mailbox);
 
         self.surface.configure(&self.device, &self.surface_config);
         self.create_msaa_texture(self.msaa_samples);

@@ -1,7 +1,7 @@
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, state::{scene::{components::material::Material, scene::Scene}, state::State}};
+use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, state::{scene::{components::material::Material, scene::Scene}, state::{PresentModeSetting, State}}};
 
 use super::super::editor_state::EditorState;
 
@@ -146,11 +146,34 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         }
 
         {
-            let mut v_sync = state.rendering.v_sync.get_ref().clone();
-            if ui.checkbox(&mut v_sync, "vSync").changed()
+            let mut present_mode = state.rendering.present_mode.get_ref().clone();
+            let label = |m: PresentModeSetting| match m
             {
-                state.rendering.v_sync.set(v_sync);
-            }
+                PresentModeSetting::VSync     => "VSync",
+                PresentModeSetting::FastVSync => "Fast VSync",
+                PresentModeSetting::VSyncOff  => "VSync Off",
+            };
+            ui.horizontal(|ui|
+            {
+                ui.label("Present mode:");
+                egui::ComboBox::from_id_source("present_mode_combo")
+                    .selected_text(label(present_mode))
+                    .show_ui(ui, |ui|
+                    {
+                        let mut changed = false;
+                        for m in [PresentModeSetting::VSync, PresentModeSetting::FastVSync, PresentModeSetting::VSyncOff]
+                        {
+                            if ui.selectable_value(&mut present_mode, m, label(m)).changed()
+                            {
+                                changed = true;
+                            }
+                        }
+                        if changed
+                        {
+                            state.rendering.present_mode.set(present_mode);
+                        }
+                    });
+            });
         }
 
         ui.horizontal(|ui|
