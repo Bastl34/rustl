@@ -361,17 +361,17 @@ impl MainInterface
         // ******************** build ui ********************
         if let Some(editor_gui) = &mut self.editor_gui
         {
+            let now = Instant::now();
+            let state = &mut *(self.context.state.borrow_mut());
+
             if editor_gui.editor_state.visible
             {
-                let now = Instant::now();
-                let state = &mut *(self.context.state.borrow_mut());
-
                 let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui);
                 self.context.egui.output = Some(gui_output);
 
                 //self.gui.request_repaint();
-                state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
+            state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
 
@@ -521,13 +521,13 @@ impl MainInterface
             // render egui
             if let Some(editor_gui) = &mut self.editor_gui
             {
+                let now = Instant::now();
+
                 if editor_gui.editor_state.visible
                 {
-                    let now = Instant::now();
                     self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
-
-                    state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
                 }
+                state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
             }
         }
         self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
