@@ -228,6 +228,7 @@ pub struct EditorState
 
     pub dialog_help_shortcuts: bool,
     pub dialog_about: bool,
+    pub dialog_splash: bool,
 
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
@@ -337,6 +338,7 @@ impl EditorState
 
             dialog_help_shortcuts: false,
             dialog_about:false,
+            dialog_splash: true,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: true,

@@ -4,7 +4,11 @@ use super::super::editor_state::EditorState;
 
 pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
-    if editor_state.dialog_add_component
+    if editor_state.dialog_splash
+    {
+        create_modal_splash(editor_state, state, ctx);
+    }
+    else if editor_state.dialog_add_component
     {
         create_modal_component_add(editor_state, state, ctx);
     }
@@ -303,5 +307,153 @@ pub fn create_modal_about(editor_state: &mut EditorState, ctx: &egui::Context)
     if !dialog_about
     {
         editor_state.dialog_about = dialog_about;
+    }
+}
+
+pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    let screen_rect = ctx.content_rect();
+
+    // backdrop dimming the editor and catching outside clicks
+    egui::Area::new(egui::Id::new("splash_backdrop"))
+        .fixed_pos(screen_rect.min)
+        .order(egui::Order::Middle)
+        .interactable(true)
+        .show(ctx, |ui|
+        {
+            let response = ui.allocate_rect(screen_rect, egui::Sense::click());
+            ui.painter().rect_filled(screen_rect, 0.0, egui::Color32::from_black_alpha(180));
+
+            if response.clicked()
+            {
+                editor_state.dialog_splash = false;
+            }
+        });
+
+    // Esc closes splash too
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape))
+    {
+        editor_state.dialog_splash = false;
+    }
+
+    let frame = egui::Frame::window(&ctx.global_style())
+        .corner_radius(12.0)
+        .inner_margin(egui::Margin::same(0))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(20)))
+        .shadow(egui::Shadow
+        {
+            color: egui::Color32::from_black_alpha(180),
+            offset: [0, 12],
+            blur: 32,
+            spread: 0,
+        });
+
+    let mut close = false;
+
+    egui::Window::new("splash_window")
+        .title_bar(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .collapsible(false)
+        .resizable(false)
+        .movable(false)
+        .frame(frame)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui|
+        {
+            let splash_width = 520.0;
+            let header_height = 220.0;
+
+            ui.set_width(splash_width);
+
+            // header band with gradient + logo (click closes like Continue)
+            let (header_rect, header_response) = ui.allocate_exact_size(egui::vec2(splash_width, header_height), egui::Sense::click());
+            if header_response.clicked()
+            {
+                close = true;
+            }
+
+            let painter = ui.painter_at(header_rect);
+
+            // vertical gradient background
+            let top_color = egui::Color32::from_rgb(35, 38, 60);
+            let bottom_color = egui::Color32::from_rgb(80, 50, 110);
+            let steps = 64;
+            for i in 0..steps
+            {
+                let t0 = i as f32 / steps as f32;
+                let t1 = (i + 1) as f32 / steps as f32;
+                let y0 = header_rect.top() + header_rect.height() * t0;
+                let y1 = header_rect.top() + header_rect.height() * t1;
+
+                let r = (top_color.r() as f32 * (1.0 - t0) + bottom_color.r() as f32 * t0) as u8;
+                let g = (top_color.g() as f32 * (1.0 - t0) + bottom_color.g() as f32 * t0) as u8;
+                let b = (top_color.b() as f32 * (1.0 - t0) + bottom_color.b() as f32 * t0) as u8;
+                let color = egui::Color32::from_rgb(r, g, b);
+
+                let stripe = egui::Rect::from_min_max(egui::pos2(header_rect.left(), y0), egui::pos2(header_rect.right(), y1));
+                painter.rect_filled(stripe, 0.0, color);
+            }
+
+            // round only the top corners of the header by overdrawing the bottom
+            // (frame already rounds the outer rect, so we leave the bottom edge straight)
+
+            // subtle accent glow circles
+            painter.circle_filled(egui::pos2(header_rect.right() - 60.0, header_rect.top() + 40.0), 80.0, egui::Color32::from_rgba_unmultiplied(255, 130, 200, 22));
+            painter.circle_filled(egui::pos2(header_rect.left() + 40.0, header_rect.bottom() - 30.0), 100.0, egui::Color32::from_rgba_unmultiplied(120, 160, 255, 22));
+
+            // logo centered in header
+            let logo_size = 160.0;
+            let logo_rect = egui::Rect::from_center_size(header_rect.center(), egui::vec2(logo_size, logo_size));
+            egui::Image::new(egui::include_image!("../../../../resources/designs/logo/logo.svg")).paint_at(ui, logo_rect);
+
+            // body
+            ui.scope(|ui|
+            {
+                ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 6.0);
+
+                ui.add_space(18.0);
+
+                ui.vertical_centered(|ui|
+                {
+                    ui.label(egui::RichText::new("Rustl").size(34.0).strong());
+                    ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(13.0).weak());
+
+                    ui.add_space(10.0);
+
+                    ui.label(egui::RichText::new("Game Engine & 3D Scene Editor").size(14.0));
+                });
+
+                ui.separator();
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui|
+                {
+                    ui.add_space(20.0);
+
+                    if ui.button("Open Project...").clicked()
+                    {
+                        let loading_state = editor_state.loading.clone();
+                        let loading_progress_state = editor_state.loading_progress.clone();
+                        crate::gui::editor::editor_project::load_editor_project_with_dialog(editor_state, state, loading_state, loading_progress_state);
+                        close = true;
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                    {
+                        ui.add_space(20.0);
+                        if ui.button(egui::RichText::new("Continue").strong()).clicked()
+                        {
+                            close = true;
+                        }
+                    });
+                });
+
+                ui.add_space(14.0);
+            });
+        });
+
+    if close
+    {
+        editor_state.dialog_splash = false;
     }
 }

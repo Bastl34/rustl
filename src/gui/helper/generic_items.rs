@@ -65,6 +65,7 @@ pub fn collapse_with_title<R>(ui: &mut Ui, id: &str, open: bool, title: &str, bg
 pub fn modal_with_title<R>(ctx: &egui::Context, open: &mut bool, title: &str, movable: bool, resizable: bool, body: impl FnOnce(&mut Ui) -> R)
 {
     egui::Window::new(title)
+        .pivot(egui::Align2::CENTER_CENTER)
         .default_pos(ctx.content_rect().center())
         .collapsible(false)
         .resizable(resizable)

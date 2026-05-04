@@ -275,6 +275,11 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             editor_state.dialog_help_shortcuts = true;
         }
 
+        if ui.button("Splashscreen").clicked()
+        {
+            editor_state.dialog_splash = true;
+        }
+
         if ui.button("About").clicked()
         {
             editor_state.dialog_about = true;
