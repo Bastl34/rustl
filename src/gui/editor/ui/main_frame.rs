@@ -209,29 +209,62 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 {
     ui.menu_button("File", |ui|
     {
-        if ui.button("New").clicked()
+        let shortcut_new = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
+        if ui.add(egui::Button::new("New").shortcut_text(ui.ctx().format_shortcut(&shortcut_new))).clicked()
         {
             editor_state.reset_project();
             state.delete_all_scenes(true);
             state.add_scene("main scene");
         }
-        if ui.button("Load Project...").clicked()
+
+        let shortcut_open = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::O);
+        if ui.add(egui::Button::new("Load Project...").shortcut_text(ui.ctx().format_shortcut(&shortcut_open))).clicked()
         {
             let loading_state = editor_state.loading.clone();
             let loading_progress_state = editor_state.loading_progress.clone();
             crate::gui::editor::editor_project::load_editor_project_with_dialog(editor_state, state, loading_state, loading_progress_state);
         }
-        if ui.button("Save Project").clicked()
+
+        let shortcut_save = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S);
+        if ui.add(egui::Button::new("Save Project").shortcut_text(ui.ctx().format_shortcut(&shortcut_save))).clicked()
         {
             crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false);
         }
-        if ui.button("Save Project As...").clicked()
+
+        let shortcut_save_as = egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::S);
+        if ui.add(egui::Button::new("Save Project As...").shortcut_text(ui.ctx().format_shortcut(&shortcut_save_as))).clicked()
         {
             crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, true);
         }
-        if ui.button("Exit").clicked()
+
+        let shortcut_exit = match ui.ctx().os()
+        {
+            egui::os::OperatingSystem::Mac     => egui::KeyboardShortcut::new(egui::Modifiers::MAC_CMD, egui::Key::Q),
+            egui::os::OperatingSystem::Windows => egui::KeyboardShortcut::new(egui::Modifiers::ALT, egui::Key::F4),
+            _                                  => egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Q),
+        };
+        if ui.add(egui::Button::new("Exit").shortcut_text(ui.ctx().format_shortcut(&shortcut_exit))).clicked()
         {
             state.exit = true;
+        }
+    });
+
+    ui.menu_button("View", |ui|
+    {
+        if ui.add(egui::Button::new("Fullscreen").shortcut_text("F")).clicked()
+        {
+            state.rendering.fullscreen.set(!state.rendering.fullscreen.get_ref().clone());
+        }
+
+        if ui.add(egui::Button::new("Hide UI").shortcut_text("H")).clicked()
+        {
+            editor_state.visible = !editor_state.visible;
+        }
+
+        let shortcut_quad_view = egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::ALT, egui::Key::Q);
+        if ui.add(egui::Button::new("Quad View").shortcut_text(ui.ctx().format_shortcut(&shortcut_quad_view))).clicked()
+        {
+            editor_state.quad_view = !editor_state.quad_view;
         }
     });
 

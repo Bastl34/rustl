@@ -377,9 +377,11 @@ impl Editor
         // save project
         if state.io.input_manager.keyboard.is_holding(Key::S) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
         {
+            let as_new_project = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift);
+
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::S)
             {
-                crate::gui::editor::editor_project::save_editor_project_with_dialog(&mut self.editor_state, state, false);
+                crate::gui::editor::editor_project::save_editor_project_with_dialog(&mut self.editor_state, state, as_new_project);
 
                 // reset S key cooldown - blocking dialog consumes unknown time, preventing the next press
                 state.io.input_manager.keyboard.reset_key(Key::S);
