@@ -420,10 +420,17 @@ impl Editor
             state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
         }
 
-        // quad view toggle
-        if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Q) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
+        // quad view toggle (on windows its mapped to At)
+        if (state.io.input_manager.keyboard.is_holding(Key::Q) || state.io.input_manager.keyboard.is_holding(Key::At)) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
         {
-            self.editor_state.quad_view = !self.editor_state.quad_view;
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Q) || state.io.input_manager.keyboard.is_pressed_no_wait(Key::At)
+            {
+                self.editor_state.quad_view = !self.editor_state.quad_view;
+
+                // reset Q/At key cooldown - blocking dialog consumes unknown time, preventing the next press
+                state.io.input_manager.keyboard.reset_key(Key::Q);
+                state.io.input_manager.keyboard.reset_key(Key::At);
+            }
         }
     }
 
