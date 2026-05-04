@@ -429,16 +429,30 @@ impl Camera
     {
         let data = self.data.get_mut();
 
+        let viewport_w_px = (data.viewport.width  * data.resolution_width  as f32).max(1.0);
+        let viewport_h_px = (data.viewport.height * data.resolution_height as f32).max(1.0);
+        let viewport_aspect = viewport_w_px / viewport_h_px;
+
         if data.projection_type == CameraProjectionType::Perspective
         {
-            data.projection = Perspective3::new(data.resolution_aspect_ratio, data.fovy, data.clipping_near, data.clipping_far).to_homogeneous();
+            data.projection = Perspective3::new(viewport_aspect, data.fovy, data.clipping_near, data.clipping_far).to_homogeneous();
         }
         else
         {
-            data.projection = Orthographic3::new(data.left, data.right, data.bottom, data.top, data.clipping_near, data.clipping_far).to_homogeneous();
+            // keep vertical extent (top/bottom) as authored, scale horizontal to viewport aspect
+            let half_h = (data.top - data.bottom) * 0.5;
+            let center_y = (data.top + data.bottom) * 0.5;
+            let half_w = half_h * viewport_aspect;
+            let center_x = (data.left + data.right) * 0.5;
+
+            let left   = center_x - half_w;
+            let right  = center_x + half_w;
+            let bottom = center_y - half_h;
+            let top    = center_y + half_h;
+
+            data.projection = Orthographic3::new(left, right, bottom, top, data.clipping_near, data.clipping_far).to_homogeneous();
         }
 
-        //let target = Point3::<f32>::new(self.dir.x, self.dir.y, self.dir.z);
         let target = data.eye_pos + data.dir;
 
         data.view = Isometry3::look_at_rh(&data.eye_pos, &target, &data.up).to_homogeneous();
