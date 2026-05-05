@@ -1348,11 +1348,11 @@ impl Scene
 
         // render for each camera
         let mut i = 0;
-        for (cam_index, cam) in scene.cameras.iter().enumerate()
+        for (_cam_index, cam) in scene.cameras.iter().enumerate()
         {
             if !cam.enabled { continue; }
 
-            let render_result = &mut render_results[cam_index];
+            let render_result = &mut render_results[i];
 
             let cam_data = cam.get_data();
             let cam_pos = cam_data.eye_pos;

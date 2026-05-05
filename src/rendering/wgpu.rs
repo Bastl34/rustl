@@ -3,7 +3,7 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{console_error, console_log, helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::{PresentModeSetting, State}};
+use crate::{console_error, console_log, helper::{image::brga_to_rgba, platform::is_windows}, state::state::{PresentModeSetting, State}};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
 
@@ -251,32 +251,18 @@ impl WGpu
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>)
+    pub fn start_render(&mut self) -> Option<(SurfaceTexture, TextureView, Option<TextureView>)>
     {
-        // TODO: this can timeout
-        // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
-        //let output = self.surface.get_current_texture().unwrap();
-
-        let output: wgpu::SurfaceTexture;
-        loop
+        let output = match self.surface.get_current_texture()
         {
-            match self.surface.get_current_texture()
+            wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+            wgpu::CurrentSurfaceTexture::Occluded => return None,
+            other =>
             {
-                wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) =>
-                {
-                    output = texture;
-                    break;
-                }
-                other =>
-                {
-                    console_error!(format!("{:?}", other));
-
-                    // wait on error and retry
-                    sleep_millis(100);
-                    console_log!("retry get surface texture");
-                }
+                console_error!(format!("{:?}", other));
+                return None;
             }
-        }
+        };
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -286,7 +272,7 @@ impl WGpu
             msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
         }
 
-        (output, view, msaa_view)
+        Some((output, view, msaa_view))
     }
 
     pub fn create_command_encoder(&mut self) -> CommandEncoder

@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
+use std::{any::Any, cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::Camera, components::{mesh::Mesh, transformation::Transformation}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType}, components::{mesh::Mesh, transformation::Transformation}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -18,6 +18,7 @@ pub const MAX_NAME_LENGTH: usize = 24;
 pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
 pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
 pub const EDITOR_UTILS_NODE_NAME: &str = "editor utils";
+pub const QUAD_CAM: &str = "quad";
 
 pub struct Editor
 {
@@ -62,25 +63,123 @@ impl Editor
                 let hemi = scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
                 hemi.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
-                // add camera
+                // add cameras
                 if scene.cameras.len() == 0
                 {
-                    let mut cam = Camera::new("Editor Cam".to_string());
-                    cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                    // default cam
+                    {
+                        let mut cam = Camera::new("Editor Cam".to_string());
+                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
-                    cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
 
-                    let cam_data = cam.get_data_mut().get_mut();
-                    cam_data.fovy = 45.0f32.to_radians();
-                    cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
-                    cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                    cam_data.clipping_near = 0.1;
-                    cam_data.clipping_far = 1000.0;
-                    // cam_data.viewport_x = 0.25;
-                    // cam_data.viewport_y = 0.25;
-                    // cam_data.viewport_width = 0.5;
-                    // cam_data.viewport_height = 0.5;
-                    scene.cameras.push(Box::new(cam));
+                        let cam_data = cam.get_data_mut().get_mut();
+                        cam_data.fovy = 45.0f32.to_radians();
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
+                        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                        cam_data.clipping_near = 0.1;
+                        cam_data.clipping_far = 1000.0;
+                        // cam_data.viewport_x = 0.25;
+                        // cam_data.viewport_y = 0.25;
+                        // cam_data.viewport_width = 0.5;
+                        // cam_data.viewport_height = 0.5;
+                        scene.cameras.push(Box::new(cam));
+                    }
+
+                    let ortho_size = 10.0;
+
+                    // quad cam: Top (top left)
+                    {
+                        let mut cam = Camera::new("Quad Cam Top (top left)".to_string());
+                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.enabled = false;
+
+                        let cam_data = cam.get_data_mut().get_mut();
+                        cam_data.projection_type = CameraProjectionType::Orthogonal;
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, 50.0, 0.0);
+                        cam_data.dir = Vector3::<f32>::new(0.0, -1.0, 0.0);
+                        cam_data.up = Vector3::<f32>::new(0.0, 0.0, -1.0);
+                        cam_data.left = -ortho_size;
+                        cam_data.right = ortho_size;
+                        cam_data.top = ortho_size;
+                        cam_data.bottom = -ortho_size;
+                        cam_data.clipping_near = 0.1;
+                        cam_data.clipping_far = 1000.0;
+
+                        cam.update_viewport(0.0, 0.5, 0.5, 0.5);
+
+                        scene.cameras.push(Box::new(cam));
+                    }
+
+                    // quad cam: Front (bottom right)
+                    {
+                        let mut cam = Camera::new("Quad Cam Front (bottom right)".to_string());
+                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.enabled = false;
+
+                        let cam_data = cam.get_data_mut().get_mut();
+                        cam_data.projection_type = CameraProjectionType::Orthogonal;
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, 0.0, 50.0);
+                        cam_data.dir = Vector3::<f32>::new(0.0, 0.0, -1.0);
+                        cam_data.up = Vector3::<f32>::new(0.0, 1.0, 0.0);
+                        cam_data.left = -ortho_size;
+                        cam_data.right = ortho_size;
+                        cam_data.top = ortho_size;
+                        cam_data.bottom = -ortho_size;
+                        cam_data.clipping_near = 0.1;
+                        cam_data.clipping_far = 1000.0;
+
+                        cam.update_viewport(0.5, 0.0, 0.5, 0.5);
+
+                        scene.cameras.push(Box::new(cam));
+                    }
+
+                    // quad cam: Right (bottom left)
+                    {
+                        let mut cam = Camera::new("Quad Cam Right (bottom left)".to_string());
+                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.enabled = false;
+
+                        let cam_data = cam.get_data_mut().get_mut();
+                        cam_data.projection_type = CameraProjectionType::Orthogonal;
+                        cam_data.eye_pos = Point3::<f32>::new(50.0, 0.0, 0.0);
+                        cam_data.dir = Vector3::<f32>::new(-1.0, 0.0, 0.0);
+                        cam_data.up = Vector3::<f32>::new(0.0, 1.0, 0.0);
+                        cam_data.left = -ortho_size;
+                        cam_data.right = ortho_size;
+                        cam_data.top = ortho_size;
+                        cam_data.bottom = -ortho_size;
+                        cam_data.clipping_near = 0.1;
+                        cam_data.clipping_far = 1000.0;
+
+                        cam.update_viewport(0.0, 0.0, 0.5, 0.5);
+
+                        scene.cameras.push(Box::new(cam));
+                    }
+
+                    // quad cam: User / Perspective (top right)
+                    {
+                        let mut cam = Camera::new("Quad Cam User (top right)".to_string());
+                        cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
+                        cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
+                        cam.enabled = false;
+
+                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+
+                        let cam_data = cam.get_data_mut().get_mut();
+                        cam_data.fovy = 45.0f32.to_radians();
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
+                        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+                        cam_data.clipping_near = 0.1;
+                        cam_data.clipping_far = 1000.0;
+
+                        cam.update_viewport(0.5, 0.5, 0.5, 0.5);
+
+                        scene.cameras.push(Box::new(cam));
+                    }
                 }
             }));
         });
@@ -148,6 +247,9 @@ impl Editor
         // update modes
         self.update_modes(state);
 
+        // update cameras
+        self.update_cameras(state);
+
         // update grid based on camera pos and key inputs
         update_grid(&mut self.editor_state, state);
 
@@ -208,6 +310,48 @@ impl Editor
             }
 
             self.editor_state.de_select_current_item(state);
+        }
+    }
+
+    pub fn update_cameras(&mut self, state: &mut State)
+    {
+        let quad_view = self.editor_state.quad_view;
+
+        for scene in &mut state.scenes
+        {
+            for cam in &mut scene.cameras
+            {
+                if !cam.tags.contains(EDITOR_INTERNAL_TAG)
+                {
+                    continue;
+                }
+
+                let is_quad_cam = cam.tags.contains(QUAD_CAM);
+
+                if is_quad_cam
+                {
+                    if quad_view && !cam.enabled
+                    {
+                        cam.enabled = true;
+                    }
+                    else if !quad_view && cam.enabled
+                    {
+                        cam.enabled = false;
+                    }
+                }
+
+                if !is_quad_cam
+                {
+                    if quad_view && cam.enabled
+                    {
+                        cam.enabled = false;
+                    }
+                    else if !quad_view && !cam.enabled
+                    {
+                        cam.enabled = true;
+                    }
+                }
+            }
         }
     }
 
@@ -274,6 +418,12 @@ impl Editor
         if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
         {
             state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
+        }
+
+        // quad view toggle
+        if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Q) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
+        {
+            self.editor_state.quad_view = !self.editor_state.quad_view;
         }
     }
 

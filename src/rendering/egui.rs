@@ -16,7 +16,8 @@ pub struct EGui
     pub ui_state: egui_winit::State,
     pub screen_descriptor: egui_wgpu::ScreenDescriptor,
 
-    pub output: Option<FullOutput>
+    pub output: Option<FullOutput>,
+    pub pending_textures_delta: egui::TexturesDelta,
 }
 
 impl EGui
@@ -48,8 +49,18 @@ impl EGui
                 pixels_per_point: window.scale_factor() as f32,
                 size_in_pixels: [size.width, size.height],
             },
-            output: None
+            output: None,
+            pending_textures_delta: egui::TexturesDelta::default(),
         }
+    }
+
+    // accumulates the texture delta of the current frame so it survives a skipped render
+    // (e.g. when wgpu.start_render() returns None during resize/surface reconfigure)
+    pub fn set_output(&mut self, mut output: FullOutput)
+    {
+        let delta = std::mem::take(&mut output.textures_delta);
+        self.pending_textures_delta.append(delta);
+        self.output = Some(output);
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder) -> Vec<egui::ClippedPrimitive>
@@ -59,12 +70,14 @@ impl EGui
 
         self.renderer.update_buffers(device, queue, encoder, &clipped_primitives, &self.screen_descriptor);
 
-        for (tex_id, img_delta) in output.textures_delta.set
+        let textures_delta = std::mem::take(&mut self.pending_textures_delta);
+
+        for (tex_id, img_delta) in textures_delta.set
         {
             self.renderer.update_texture(&device, &queue, tex_id, &img_delta);
         }
 
-        for tex_id in output.textures_delta.free
+        for tex_id in textures_delta.free
         {
             self.renderer.free_texture(&tex_id);
         }

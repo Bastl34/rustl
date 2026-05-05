@@ -367,7 +367,7 @@ impl MainInterface
                 let state = &mut *(self.context.state.borrow_mut());
 
                 let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui);
-                self.context.egui.output = Some(gui_output);
+                self.context.egui.set_output(gui_output);
 
                 //self.gui.request_repaint();
                 state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
@@ -457,83 +457,88 @@ impl MainInterface
         // ******************** render ********************
         crate::notify_observable!(&mut self.context, on_before_render);
 
-        let (output, view, msaa_view) = self.context.wgpu.start_render();
-        let mut engine_encoder = self.context.wgpu.create_command_encoder();
-        let mut egui_encoder = self.context.wgpu.create_command_encoder();
+        if let Some((output, view, msaa_view)) = self.context.wgpu.start_render()
         {
-            let state = &mut *(self.context.state.borrow_mut());
-
-            // render scenes
+            let mut engine_encoder = self.context.wgpu.create_command_encoder();
+            let mut egui_encoder = self.context.wgpu.create_command_encoder();
             {
-                let engine_render_time = Instant::now();
+                let state = &mut *(self.context.state.borrow_mut());
 
-                state.stats.draw_calls = 0;
-
-                for scene in &mut state.scenes
+                // render scenes
                 {
-                    if !scene.visible || !scene.active
+                    let engine_render_time = Instant::now();
+
+                    state.stats.draw_calls = 0;
+
+                    for scene in &mut state.scenes
                     {
-                        continue;
+                        if !scene.visible || !scene.active
+                        {
+                            continue;
+                        }
+
+                        if scene.render_item.is_none()
+                        {
+                            continue;
+                        }
+
+                        let mut render_item = scene.render_item.take();
+
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.distance_sorting = state.rendering.distance_sorting;
+                        render_scene.frustum_culling = state.rendering.frustum_culling;
+                        render_scene.occlusion_culling = state.rendering.occlusion_culling;
+
+                        scene.notify_before_render_all();
+
+                        // render scene
+                        let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+
+                        scene.notify_after_render_all();
+
+                        // update visibility info for cameras
+                        let mut enabled_index = 0;
+                        for cam in scene.cameras.iter_mut()
+                        {
+                            if !cam.enabled { continue; }
+                            cam.visible_nodes_last_frame = render_results[enabled_index].objects_visible.clone();
+                            enabled_index += 1;
+                        }
+
+                        // all draw calls
+                        state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>();
+
+                        // debug highlight visible occlusions
+                        if state.debug.highlight_visible_occlusions
+                        {
+                            let all_highlighted = render_results.iter().flat_map(|r| r.objects_visible.iter()).cloned().collect();
+                            highlight_and_unhighlight_scene_meshes(scene, &all_highlighted);
+                            console_debug!("Highlighted {} visible occluded objects", all_highlighted.len());
+                        }
+
+                        scene.render_item = render_item;
                     }
 
-                    if scene.render_item.is_none()
-                    {
-                        continue;
-                    }
-
-                    let mut render_item = scene.render_item.take();
-
-                    let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                    render_scene.distance_sorting = state.rendering.distance_sorting;
-                    render_scene.frustum_culling = state.rendering.frustum_culling;
-                    render_scene.occlusion_culling = state.rendering.occlusion_culling;
-
-                    scene.notify_before_render_all();
-
-                    // render scene
-                    let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
-
-                    scene.notify_after_render_all();
-
-                    // update visibility info for cameras
-                    for (cam_index, cam) in scene.cameras.iter_mut().enumerate()
-                    {
-                        cam.visible_nodes_last_frame = render_results[cam_index].objects_visible.clone();
-                    }
-
-                    // all draw calls
-                    state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>();
-
-                    // debug highlight visible occlusions
-                    if state.debug.highlight_visible_occlusions
-                    {
-                        let all_highlighted = render_results.iter().flat_map(|r| r.objects_visible.iter()).cloned().collect();
-                        highlight_and_unhighlight_scene_meshes(scene, &all_highlighted);
-                        console_debug!("Highlighted {} visible occluded objects", all_highlighted.len());
-                    }
-
-                    scene.render_item = render_item;
+                    state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
                 }
 
-                state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
-            }
-
-            // render egui
-            if let Some(editor_gui) = &mut self.editor_gui
-            {
-                if editor_gui.editor_state.visible
+                // render egui
+                if let Some(editor_gui) = &mut self.editor_gui
                 {
-                    let now = Instant::now();
-                    self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
+                    if editor_gui.editor_state.visible
+                    {
+                        let now = Instant::now();
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
 
-                    state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                        state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                    }
                 }
             }
+            self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
+            self.context.wgpu.end_render(output);
+
+            crate::notify_observable!(&mut self.context, on_after_render);
         }
-        self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
-        self.context.wgpu.end_render(output);
-
-        crate::notify_observable!(&mut self.context, on_after_render);
 
 
         // ******************** screenshot ********************

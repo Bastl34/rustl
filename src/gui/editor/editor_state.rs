@@ -149,6 +149,8 @@ pub struct EditorState
     pub selectable: bool,
     pub fly_camera: bool,
 
+    pub quad_view: bool,
+
     pub project_data: EditorProjectData,
     pub project_path: Option<String>,
     pub project_session_start: Instant,
@@ -254,6 +256,8 @@ impl EditorState
             try_mode: false,
             selectable: true,
             fly_camera: true,
+
+            quad_view: false,
 
             project_data: EditorProjectData::default(),
             project_path: None,
