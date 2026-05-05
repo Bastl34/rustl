@@ -438,7 +438,7 @@ impl MaterialBuffer
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         })
     }
@@ -489,8 +489,8 @@ impl MaterialBuffer
         let mipmap_filter;
         match texture_state.sampler.mipmap_filter
         {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => mipmap_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => mipmap_filter = wgpu::FilterMode::Linear,
+            crate::state::scene::components::material::TextureFilterMode::Nearest => mipmap_filter = wgpu::MipmapFilterMode::Nearest,
+            crate::state::scene::components::material::TextureFilterMode::Linear => mipmap_filter = wgpu::MipmapFilterMode::Linear,
         }
 
         let sampler = wgpu.device().create_sampler(&wgpu::SamplerDescriptor

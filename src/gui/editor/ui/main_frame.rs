@@ -333,6 +333,17 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             ui.separator();
 
             {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/quad_view.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.quad_view).frame(true);
+                if ui.add(btn).on_hover_text("use quad view").clicked()
+                {
+                    editor_state.quad_view = !editor_state.quad_view;
+                }
+            }
+
+            ui.separator();
+
+            {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/highlight.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
                 let btn = egui::Button::image(img).selected(editor_state.use_highlight).frame(true);
                 if ui.add(btn).on_hover_text("highlight objects in the editor").clicked()

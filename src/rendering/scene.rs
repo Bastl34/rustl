@@ -1348,11 +1348,11 @@ impl Scene
 
         // render for each camera
         let mut i = 0;
-        for (cam_index, cam) in scene.cameras.iter().enumerate()
+        for (_cam_index, cam) in scene.cameras.iter().enumerate()
         {
             if !cam.enabled { continue; }
 
-            let render_result = &mut render_results[cam_index];
+            let render_result = &mut render_results[i];
 
             let cam_data = cam.get_data();
             let cam_pos = cam_data.eye_pos;
@@ -1542,6 +1542,7 @@ impl Scene
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
 
             let pipeline = self.render_pipelines[RenderPipelineType::DepthExport as usize].get();
@@ -1717,6 +1718,7 @@ impl Scene
                     }),
                     occlusion_query_set: Some(&query_set),
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
 
 
@@ -1854,6 +1856,7 @@ impl Scene
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         let viewport = cam_data.get_viewport();
@@ -1918,6 +1921,7 @@ impl Scene
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         let viewport = cam_data.get_viewport();

@@ -88,11 +88,12 @@ impl ComputePipeline
 
         let device = wgpu.device();
 
+        let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
-            bind_group_layouts: bind_group_layouts,
-            push_constant_ranges: &[],
+            bind_group_layouts: &bind_group_layouts,
             label: Some("HZB Downsample Pipeline Layout"),
+            ..Default::default()
         });
 
         let hzb_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor
@@ -121,11 +122,12 @@ impl ComputePipeline
 
         let device = wgpu.device();
 
+        let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
-            bind_group_layouts: bind_group_layouts,
-            push_constant_ranges: &[],
+            bind_group_layouts: &bind_group_layouts,
             label: Some("HZB Occlusion Check Pipeline Layout"),
+            ..Default::default()
         });
 
         let hzb_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor
