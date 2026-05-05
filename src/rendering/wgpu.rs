@@ -39,7 +39,7 @@ impl WGpu
     {
         let dimensions = window.inner_size();
 
-        let mut instance_desc = wgpu::InstanceDescriptor::default();
+        let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
 
         if is_windows()
         {
@@ -47,7 +47,7 @@ impl WGpu
             //instance_desc.backends = wgpu::Backends::DX12;
         }
 
-        let instance = wgpu::Instance::new(&instance_desc);
+        let instance = wgpu::Instance::new(instance_desc);
         //let surface = unsafe { instance.create_surface(window) }.unwrap();
         let surface = instance.create_surface(window.clone());
 
@@ -257,23 +257,26 @@ impl WGpu
         // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
         //let output = self.surface.get_current_texture().unwrap();
 
-        let mut output: Result<wgpu::SurfaceTexture, wgpu::SurfaceError>;
+        let output: wgpu::SurfaceTexture;
         loop
         {
-            output = self.surface.get_current_texture();
-
-            if output.is_ok()
+            match self.surface.get_current_texture()
             {
-                break;
+                wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) =>
+                {
+                    output = texture;
+                    break;
+                }
+                other =>
+                {
+                    console_error!(format!("{:?}", other));
+
+                    // wait on error and retry
+                    sleep_millis(100);
+                    console_log!("retry get surface texture");
+                }
             }
-
-            console_error!(output.err());
-
-            // wait on error and retry
-            sleep_millis(100);
-            console_log!("retry get surface texture");
         }
-        let output = output.unwrap();
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 

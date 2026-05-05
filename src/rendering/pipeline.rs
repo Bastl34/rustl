@@ -134,11 +134,12 @@ impl Pipeline
         let config = wgpu.surface_config();
 
         let layout_name = format!("{} Layout", self.name);
+        let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some(layout_name.as_str()),
-            bind_group_layouts: bind_group_layouts,
-            push_constant_ranges: &[],
+            bind_group_layouts: &bind_group_layouts,
+            ..Default::default()
         });
 
         // front to back is the default
@@ -150,8 +151,8 @@ impl Pipeline
             depth_stencil_state = Some(wgpu::DepthStencilState
             {
                 format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: depth_write,
-                depth_compare: depth_compare_func,
+                depth_write_enabled: Some(depth_write),
+                depth_compare: Some(depth_compare_func),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             });
@@ -234,7 +235,7 @@ impl Pipeline
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -322,11 +323,12 @@ impl Pipeline
 
         let layout_name = format!("{} Layout", self.name);
 
+        let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
         let depth_export_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some(layout_name.as_str()),
-            bind_group_layouts,
-            push_constant_ranges: &[],
+            bind_group_layouts: &bind_group_layouts,
+            ..Default::default()
         });
 
         let depth_export_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
@@ -366,7 +368,7 @@ impl Pipeline
 
             depth_stencil: None, // no depth test here
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
