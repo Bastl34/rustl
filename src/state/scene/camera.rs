@@ -587,8 +587,11 @@ impl Camera
 
     pub fn is_point_in_viewport(&self, point: &Point2<f32>) -> bool
     {
-        let data = self.get_data();
+        Self::is_point_in_viewport_data(self.get_data(), point)
+    }
 
+    pub fn is_point_in_viewport_data(data: &CameraData, point: &Point2<f32>) -> bool
+    {
         let x0 = data.viewport.x * data.resolution_width as f32;
         let y0 = data.viewport.y * data.resolution_height as f32;
 
