@@ -4,7 +4,7 @@ use nalgebra::{Vector2, Vector3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, keyboard::{Key, Modifier}}, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::InputOutput}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, keyboard::{Key, Modifier}}, state::{scene::{camera::{Camera, CameraData}, node::NodeItem, scene::Scene}, state::InputOutput}};
 
 use super::camera_controller::{CameraController, CameraControllerBase};
 
@@ -97,9 +97,19 @@ impl CameraController for FlyController
         // mouse
         if self.mouse_movement
         {
+            let mouse_pos = io.input_manager.mouse.point.pos;
+
             if
             (
-                io.input_manager.mouse.is_any_button_holding() && *io.input_manager.mouse.visible.get_ref()
+                io.input_manager.mouse.is_any_button_holding()
+                &&
+                *io.input_manager.mouse.visible.get_ref()
+                &&
+                (
+                    mouse_pos.is_some()
+                    &&
+                    Camera::is_point_in_viewport_data(cam_data.get_ref(), &mouse_pos.unwrap())
+                )
             )
             ||
                 !*io.input_manager.mouse.visible.get_ref()
