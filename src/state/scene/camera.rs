@@ -25,7 +25,7 @@ const DEFAULT_RIGHT_EAR_POS: Point3<f32> = Point3::<f32>::new(1.0, 0.0, 0.0);
 pub const DEFAULT_FOVY: f32 = 90.0f32;
 
 const DEFAULT_CLIPPING_NEAR: f32 = 0.1;
-const DEFAULT_CLIPPING_FAR: f32 = 1000.0;
+pub const DEFAULT_CLIPPING_FAR: f32 = 1000.0;
 
 const FRUSTUM_CULLING_EPSILON: f32 = 0.0001;
 

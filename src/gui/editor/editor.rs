@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType}, components::{mesh::Mesh, transformation::Transformation}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{mesh::Mesh, transformation::Transformation}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -77,16 +77,11 @@ impl Editor
                         cam_data.fovy = 45.0f32.to_radians();
                         cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
                         cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
-                        // cam_data.viewport_x = 0.25;
-                        // cam_data.viewport_y = 0.25;
-                        // cam_data.viewport_width = 0.5;
-                        // cam_data.viewport_height = 0.5;
                         scene.cameras.push(Box::new(cam));
                     }
 
                     let ortho_size = 10.0;
+                    let pos_offset = DEFAULT_CLIPPING_FAR / 2.0;
 
                     // quad cam: Top (top left)
                     {
@@ -97,15 +92,13 @@ impl Editor
 
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.projection_type = CameraProjectionType::Orthogonal;
-                        cam_data.eye_pos = Point3::<f32>::new(0.0, 50.0, 0.0);
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, pos_offset, 0.0);
                         cam_data.dir = Vector3::<f32>::new(0.0, -1.0, 0.0);
                         cam_data.up = Vector3::<f32>::new(0.0, 0.0, -1.0);
                         cam_data.left = -ortho_size;
                         cam_data.right = ortho_size;
                         cam_data.top = ortho_size;
                         cam_data.bottom = -ortho_size;
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
 
                         cam.update_viewport(0.0, 0.5, 0.5, 0.5);
 
@@ -121,15 +114,13 @@ impl Editor
 
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.projection_type = CameraProjectionType::Orthogonal;
-                        cam_data.eye_pos = Point3::<f32>::new(0.0, 0.0, 50.0);
+                        cam_data.eye_pos = Point3::<f32>::new(0.0, 0.0, pos_offset);
                         cam_data.dir = Vector3::<f32>::new(0.0, 0.0, -1.0);
                         cam_data.up = Vector3::<f32>::new(0.0, 1.0, 0.0);
                         cam_data.left = -ortho_size;
                         cam_data.right = ortho_size;
                         cam_data.top = ortho_size;
                         cam_data.bottom = -ortho_size;
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
 
                         cam.update_viewport(0.5, 0.0, 0.5, 0.5);
 
@@ -145,15 +136,13 @@ impl Editor
 
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.projection_type = CameraProjectionType::Orthogonal;
-                        cam_data.eye_pos = Point3::<f32>::new(50.0, 0.0, 0.0);
+                        cam_data.eye_pos = Point3::<f32>::new(pos_offset, 0.0, 0.0);
                         cam_data.dir = Vector3::<f32>::new(-1.0, 0.0, 0.0);
                         cam_data.up = Vector3::<f32>::new(0.0, 1.0, 0.0);
                         cam_data.left = -ortho_size;
                         cam_data.right = ortho_size;
                         cam_data.top = ortho_size;
                         cam_data.bottom = -ortho_size;
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
 
                         cam.update_viewport(0.0, 0.0, 0.5, 0.5);
 
@@ -173,8 +162,6 @@ impl Editor
                         cam_data.fovy = 45.0f32.to_radians();
                         cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
                         cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                        cam_data.clipping_near = 0.1;
-                        cam_data.clipping_far = 1000.0;
 
                         cam.update_viewport(0.5, 0.5, 0.5, 0.5);
 
