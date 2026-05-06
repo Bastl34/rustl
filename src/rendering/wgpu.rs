@@ -41,10 +41,16 @@ impl WGpu
 
         let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
 
+        // disable debug/validation flags — DX12 debug layer requires Windows "Graphics Tools"
+        // component to be installed, otherwise request_device fails with Device(Lost)
+        instance_desc.flags = wgpu::InstanceFlags::empty();
+
         if is_windows()
         {
-            instance_desc.backends = wgpu::Backends::VULKAN;
-            //instance_desc.backends = wgpu::Backends::DX12;
+            instance_desc.backends = wgpu::Backends::VULKAN | wgpu::Backends::DX12;
+            // FXC: ships with Windows, no extra DLLs needed. Switch to StaticDxc once MSVC >= 14.40
+            // TODO: check if this is still needed with newer MSVC versions
+            instance_desc.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::Fxc;
         }
 
         let instance = wgpu::Instance::new(instance_desc);
@@ -61,8 +67,9 @@ impl WGpu
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions
         {
+            power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
-            ..Default::default()
+            force_fallback_adapter: false,
         })
         .await
         .unwrap();
@@ -81,7 +88,7 @@ impl WGpu
         let polygon_mode_features = wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::POLYGON_MODE_POINT;
         let supported_polygon_mode_features = adapter_features & polygon_mode_features;
 
-        let (device, queue) = adapter.request_device
+        let device_result = adapter.request_device
         (
             &wgpu::DeviceDescriptor
             {
@@ -94,15 +101,39 @@ impl WGpu
                 }
                 else
                 {
-                    wgpu::Limits::default()
+                    adapter.limits()
                 },
                 memory_hints: Default::default(),
                 experimental_features: Default::default(),
                 trace: wgpu::Trace::Off,
             },
         )
-        .await
-        .unwrap();
+        .await;
+
+        let (device, queue) = match device_result
+        {
+            Ok(dq) => dq,
+            Err(err) =>
+            {
+                console_error!(format!("request_device failed: {:?}", err));
+                console_error!("retrying with minimal features and downlevel limits");
+
+                adapter.request_device
+                (
+                    &wgpu::DeviceDescriptor
+                    {
+                        label: None,
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::downlevel_defaults(),
+                        memory_hints: Default::default(),
+                        experimental_features: Default::default(),
+                        trace: wgpu::Trace::Off,
+                    },
+                )
+                .await
+                .expect("request_device failed even with minimal config")
+            }
+        };
 
         console_log!(" ********** features used **********");
         console_log!(device.features());
