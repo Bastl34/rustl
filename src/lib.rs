@@ -109,6 +109,7 @@ mod state
         pub(crate) mod camera;
         pub(crate) mod light;
         pub(crate) mod instance;
+        pub(crate) mod layers;
         pub(crate) mod node;
         pub(crate) mod scene;
     }

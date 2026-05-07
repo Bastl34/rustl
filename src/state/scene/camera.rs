@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
 
-use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
+use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, layers::LAYER_MASK_ALL, manager::id_manager, node::NodeItem};
 
 use crate::state::scene::exporter::serialization_helper;
 
@@ -152,6 +152,8 @@ pub struct CameraData
 
     pub projection_type: CameraProjectionType,
 
+    pub culling_mask: u32, // bitmask, matched against node layer_mask
+
     #[serde(skip)]
     pub projection: Matrix4<f32>,
     #[serde(skip)]
@@ -293,6 +295,8 @@ impl Camera
                 clipping_far: DEFAULT_CLIPPING_FAR,
 
                 projection_type: CameraProjectionType::Perspective,
+
+                culling_mask: LAYER_MASK_ALL,
 
                 projection: Perspective3::<f32>::new(1.0f32, 0.0f32, DEFAULT_CLIPPING_NEAR, DEFAULT_CLIPPING_FAR).to_homogeneous(),
                 projection_inverse: Matrix4::<f32>::identity(),

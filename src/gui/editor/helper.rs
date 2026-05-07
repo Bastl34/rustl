@@ -46,17 +46,40 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
         {
             let ray = camera.get_ray_from_viewport_coordinates(&pos);
 
+            // per-camera layer filter (matches Scene::render visibility)
+            let cam_culling_mask = camera.get_data().culling_mask;
+
+            let outer_pred = predicate.clone();
+            let grid_pick_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, instance_id: Option<u32>| -> bool
+            {
+                if let Some(p) = &outer_pred
+                {
+                    if !p(node_arc.clone(), instance_id) { return false; }
+                }
+                (node_arc.read().unwrap().settings.layer_mask & cam_culling_mask) != 0
+            });
+
+            let internal_pred = do_not_pick_internal_nodes_predicate.clone();
+            let scene_pick_predicate: PickPredicate = Arc::new(move |node_arc: NodeItem, instance_id: Option<u32>| -> bool
+            {
+                if let Some(p) = &internal_pred
+                {
+                    if !p(node_arc.clone(), instance_id) { return false; }
+                }
+                (node_arc.read().unwrap().settings.layer_mask & cam_culling_mask) != 0
+            });
+
             let mut grid_hit = None;
             if allow_grid_picking
             {
                 let grid = scene.find_mesh_node_by_name("grid");
                 if let Some(grid) = grid
                 {
-                    grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, predicate.clone());
+                    grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, Some(grid_pick_predicate));
                 }
             }
 
-            let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, do_not_pick_internal_nodes_predicate.clone());
+            let scene_hit = scene.pick(&ray, false, false, ignore_visible, ignore_pickable, Some(scene_pick_predicate));
 
             //dbg!(scene_hit.is_some());
             //dbg!(grid_hit.is_some());
