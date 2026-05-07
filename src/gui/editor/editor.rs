@@ -1440,7 +1440,7 @@ impl Editor
             for camera in &scene.cameras
             {
                 // check if click is insight
-                if camera.is_point_in_viewport(&pos_new) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                if camera.enabled && camera.is_point_in_viewport(&pos_new) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                 {
                     bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center));
 

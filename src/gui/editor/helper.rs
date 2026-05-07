@@ -42,7 +42,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     for camera in &scene.cameras
     {
         // check if click is insight
-        if camera.is_point_in_viewport(&pos)
+        if camera.enabled && camera.is_point_in_viewport(&pos)
         {
             let ray = camera.get_ray_from_viewport_coordinates(&pos);
 
@@ -129,7 +129,7 @@ pub fn pick_node(state: &State, node: NodeItem, pos: Point2::<f32>, ignore_visib
         for camera in &scene.cameras
         {
             // check if click is insight
-            if camera.is_point_in_viewport(&pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+            if camera.enabled && camera.is_point_in_viewport(&pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
             {
                 let ray = camera.get_ray_from_viewport_coordinates(&pos);
                 let hit = scene.pick_node(node.clone(), &ray, false, false, ignore_visible, ignore_pickable, None);
