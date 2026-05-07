@@ -80,7 +80,7 @@ impl Editor
                         scene.cameras.push(Box::new(cam));
                     }
 
-                    let ortho_size = 10.0;
+                    let ortho_size = 5.0;
                     let pos_offset = DEFAULT_CLIPPING_FAR / 2.0;
 
                     // quad cam: Top (top left)
