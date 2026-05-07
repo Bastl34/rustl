@@ -382,6 +382,11 @@ impl Camera
 
     pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
     {
+        if !self.enabled
+        {
+            return false;
+        }
+
         let mut changed = false;
         let mut controller: Option<CameraControllerBox> = None;
         swap(&mut self.controller, &mut controller);
