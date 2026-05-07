@@ -9,17 +9,17 @@ use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Dese
 
 use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::find_and_add_new_components, scene::Scene}, state::InputOutput}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct NodeSettings
 {
-    pub transient: bool,
+    pub transient: bool, // not saved
 
     pub visible: bool,
     pub locked: bool,
@@ -36,6 +36,31 @@ pub struct NodeSettings
 
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
+
+    pub layer_mask: u32, // bitmask, matched against camera culling_mask
+}
+
+impl Default for NodeSettings
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            transient: false,
+            visible: false,
+            locked: false,
+            pickable: false,
+            render_children_first: false,
+            alpha_index: 0,
+            render_group_id: 0,
+            depth_test: false,
+            depth_write: false,
+            pick_bbox_first: false,
+            frustum_culling: false,
+            occlusion_culling: false,
+            layer_mask: LAYER_DEFAULT,
+        }
+    }
 }
 
 pub struct NodeUpdateResult
@@ -247,6 +272,8 @@ impl Node
                 pick_bbox_first: true,
                 frustum_culling: true,
                 occlusion_culling: true,
+
+                layer_mask: LAYER_DEFAULT,
             },
 
             components: vec![],

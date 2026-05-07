@@ -1356,11 +1356,28 @@ impl Scene
 
             let cam_data = cam.get_data();
             let cam_pos = cam_data.eye_pos;
+            let cam_culling_mask = cam_data.culling_mask;
+
+            // ********** layer culling **********
+            // filter nodes whose layer_mask does not intersect with the camera's culling_mask
+            let render_groups_layer_filtered: Vec<_> = render_groups.iter().map(|(solid_objects, transparent_objects)|
+            {
+                let solid_culled: Vec<_> = solid_objects.iter().filter(|item|
+                {
+                    (item.node.settings.layer_mask & cam_culling_mask) != 0
+                }).copied().collect();
+                let transparent_culled: Vec<_> = transparent_objects.iter().filter(|item|
+                {
+                    (item.node.settings.layer_mask & cam_culling_mask) != 0
+                }).copied().collect();
+
+                (solid_culled, transparent_culled)
+            }).collect();
 
             // ********** frustum culling **********
             let mut render_groups_frustum_culled = if self.frustum_culling
             {
-                render_groups.iter().map(|(solid_objects, transparent_objects)|
+                render_groups_layer_filtered.iter().map(|(solid_objects, transparent_objects)|
                 {
                     let solid_culled: Vec<_> = solid_objects.iter().filter(|item|
                     {
@@ -1390,7 +1407,7 @@ impl Scene
             }
             else
             {
-                render_groups.clone()
+                render_groups_layer_filtered.clone()
             };
 
 

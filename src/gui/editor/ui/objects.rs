@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{component_downcast, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::{layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -1017,7 +1017,11 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut pick_bbox_first;
         let mut frustum_culling;
         let mut occlusion_culling;
+        let mut layer_mask;
         let mut name;
+
+        let has_mesh;
+
         {
             let node = node.read().unwrap();
             visible = node.settings.visible;
@@ -1032,7 +1036,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             pick_bbox_first = node.settings.pick_bbox_first;
             frustum_culling = node.settings.frustum_culling;
             occlusion_culling = node.settings.occlusion_culling;
+            layer_mask = node.settings.layer_mask;
             name = node.name.clone();
+
+            has_mesh = node.has_mesh();
         }
 
         ui.horizontal(|ui|
@@ -1067,6 +1074,14 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         changed = ui.checkbox(&mut frustum_culling, "frustum culling").changed() || changed;
         changed = ui.checkbox(&mut occlusion_culling, "occlusion culling").changed() || changed;
 
+        if has_mesh
+        {
+            ui.separator();
+
+            ui.label("layer mask:");
+            changed = layer_mask_user_checkboxes(ui, &mut layer_mask) || changed;
+        }
+
         if changed
         {
             let mut node = node.write().unwrap();
@@ -1081,6 +1096,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.pick_bbox_first = pick_bbox_first;
             node.settings.frustum_culling = frustum_culling;
             node.settings.occlusion_culling = occlusion_culling;
+            node.settings.layer_mask = layer_mask;
             node.name = name;
         }
 

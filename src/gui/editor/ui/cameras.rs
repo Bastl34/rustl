@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::{self, collapse_with_title}}, helper::{concurrency::execution_queue::ExecutionQueueItem, generic::cut_string_to_length}, state::{scene::{camera::CameraItem, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::{layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title}}, helper::{concurrency::execution_queue::ExecutionQueueItem, generic::cut_string_to_length}, state::{scene::{camera::CameraItem, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -169,6 +169,17 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
         collapse_with_title(ui, "camera_settings", true, "📷 Camera Settings", None, |ui|
         {
             camera.ui(ui);
+        });
+
+        collapse_with_title(ui, "camera_layers", true, "▦ Layers", None, |ui|
+        {
+            let mut culling_mask = camera.get_data().culling_mask;
+
+            ui.label("user layers:");
+            if layer_mask_user_checkboxes(ui, &mut culling_mask)
+            {
+                camera.get_data_mut().get_mut().culling_mask = culling_mask;
+            }
         });
 
         if let Some(controller) = &mut camera.controller
