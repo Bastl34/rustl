@@ -111,3 +111,39 @@ pub fn format_duration_secs(total_secs: u64) -> String
         format!("{:02}m {:02}s", minutes, secs)
     }
 }
+
+pub fn cargo_dependencies() -> &'static [String]
+{
+    static DEPS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    DEPS.get_or_init(||
+    {
+        let cargo_toml = include_str!("../../Cargo.toml");
+        let mut deps: Vec<String> = Vec::new();
+        let mut in_deps = false;
+
+        for raw in cargo_toml.lines()
+        {
+            let line = raw.trim();
+
+            if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+            {
+                in_deps = section == "dependencies" || (section.starts_with("target.") && section.ends_with(".dependencies"));
+                continue;
+            }
+
+            if !in_deps || line.is_empty() || line.starts_with('#') { continue; }
+
+            if let Some(eq) = line.find('=')
+            {
+                let name = line[..eq].trim();
+                if !name.is_empty() && !deps.iter().any(|d| d == name)
+                {
+                    deps.push(name.to_string());
+                }
+            }
+        }
+
+        deps.sort();
+        deps
+    })
+}

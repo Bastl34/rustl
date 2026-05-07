@@ -1,4 +1,4 @@
-use crate::{gui::{editor::ui::{help::create_modal_help_shortcuts, helper::ui_helper::fit_size}, helper::generic_items::modal_with_title}, state::state::State};
+use crate::{gui::{editor::ui::{help::create_modal_help_shortcuts, helper::ui_helper::fit_size}, helper::generic_items::modal_with_title}, helper::generic::cargo_dependencies, state::state::State};
 
 use super::super::editor_state::EditorState;
 
@@ -23,6 +23,10 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     else if editor_state.dialog_help_shortcuts
     {
         create_modal_help_shortcuts(editor_state, ctx);
+    }
+    else if editor_state.dialog_about
+    {
+        create_modal_about(editor_state, ctx);
     }
 }
 
@@ -231,5 +235,73 @@ pub fn create_modal_debug_image(editor_state: &mut EditorState, _state: &mut Sta
     if !dialog_debug_image
     {
         editor_state.dialog_debug_image = dialog_debug_image;
+    }
+}
+
+pub fn create_modal_about(editor_state: &mut EditorState, ctx: &egui::Context)
+{
+    let mut dialog_about = editor_state.dialog_about;
+
+    modal_with_title(ctx, &mut dialog_about, "About", true, false, |ui|
+    {
+        ui.set_min_width(360.0);
+
+        ui.vertical_centered(|ui|
+        {
+            ui.add_space(8.0);
+
+            let logo_size = 128.0;
+
+            let logo = egui::Image::new(egui::include_image!("../../../../resources/designs/logo/logo.svg")).fit_to_exact_size(egui::vec2(logo_size, logo_size));
+            ui.add(logo);
+
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Rustl").heading().strong());
+            ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).weak());
+
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(6.0);
+
+            ui.label("A 3D scene editor and game engine written in Rust,");
+            ui.label("powered by wgpu and egui.");
+
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(6.0);
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Author:");
+                ui.label(egui::RichText::new("Bastian Karge").strong());
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("Source:");
+                ui.hyperlink_to("github.com/Bastl34/rustl", "https://github.com/Bastl34/rustl");
+            });
+
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(6.0);
+
+            ui.label(egui::RichText::new("Built with").small().weak());
+            ui.add_space(2.0);
+
+            ui.scope(|ui|
+            {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                ui.label(egui::RichText::new(cargo_dependencies().join(", ")).small().weak());
+            });
+
+            ui.add_space(8.0);
+        });
+    });
+
+    if !dialog_about
+    {
+        editor_state.dialog_about = dialog_about;
     }
 }

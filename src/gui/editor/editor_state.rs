@@ -227,6 +227,7 @@ pub struct EditorState
     pub dialog_debug_image_id: Option<egui::TextureHandle>,
 
     pub dialog_help_shortcuts: bool,
+    pub dialog_about: bool,
 
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
@@ -335,6 +336,7 @@ impl EditorState
             dialog_debug_image_id: None,
 
             dialog_help_shortcuts: false,
+            dialog_about:false,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: true,

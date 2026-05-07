@@ -1082,6 +1082,8 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             changed = layer_mask_user_checkboxes(ui, &mut layer_mask) || changed;
         }
 
+        ui.separator();
+
         if changed
         {
             let mut node = node.write().unwrap();
