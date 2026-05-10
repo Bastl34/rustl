@@ -14,7 +14,9 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
 
     let mut frame = egui::Frame::group(ui.style()).fill(background_color).stroke(egui::Stroke::NONE);
     //let mut frame = egui::Frame::group(ui.style()).fill(background_color);
-    frame.inner_margin = egui::Margin::same(2);
+    // horizontal margin keeps content off the edges; vertical margin is 0 so the
+    // header bg can sit flush with the frame's top/bottom (no transparent strip showing through)
+    frame.inner_margin = egui::Margin::symmetric(2, 0);
     frame = frame.shadow(egui::Shadow
     {
         color: Color32::from_white_alpha(35),
@@ -29,8 +31,16 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
         {
             ui.style_mut().visuals.indent_has_left_vline = false;
 
+            // reserve a shape slot to paint the header background underneath the header content
+            let header_bg_idx = ui.painter().add(egui::Shape::Noop);
+            let header_bg_color = Color32::from_white_alpha(40);
+            let pading = 5.0;
+
+            let cursor_top = ui.cursor().min.y;
+            ui.add_space(pading);
+
             let ui_id = ui.make_persistent_id(id.clone());
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, open).show_header(ui, |ui|
+            let (_toggle_resp, header_inner, body_resp) = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui_id, open).show_header(ui, |ui|
             {
                 ui.horizontal(|ui|
                 {
@@ -38,8 +48,26 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
                 });
             }).body(|ui|
             {
+                ui.add_space(pading * 2.0);
+
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), body);
+
+                ui.add_space(pading);
             });
+
+            // expand the header bg to the full inner width and pad it vertically
+            let mut header_rect = header_inner.response.rect;
+            header_rect.min.x = ui.max_rect().left();
+            header_rect.max.x = ui.max_rect().right();
+            header_rect.min.y = cursor_top;
+            header_rect.max.y += pading;
+            ui.painter().set(header_bg_idx, egui::Shape::rect_filled(header_rect, 3.0, header_bg_color));
+
+            // when closed, push the cursor past the bg extension so siblings don't overlap
+            if body_resp.is_none()
+            {
+                ui.add_space(pading);
+            }
         });
     });
 }
