@@ -1,8 +1,101 @@
-use egui::RichText;
+use egui::{Color32, RichText};
 
 use crate::{gui::editor::editor_state::EditorState, state::scene::layers::{LAYER_USER_COUNT, LAYER_USER_FIRST_BIT}};
 
 const USER_LAYER_BITS_PER_ROW: u32 = 10;
+
+pub const HIERARCHY_BUTTON_SIZE: egui::Vec2 = egui::vec2(20.0, 18.0);
+pub const HIERARCHY_BUTTON_IMG_SIZE: egui::Vec2 = egui::vec2(18.0, 18.0);
+const HIERARCHY_TOGGLE_FRAME_PADDING: f32 = 16.0;
+const HIERARCHY_BUTTON_GAP: f32 = 4.0;
+
+/// Returns the pixel budget that should be reserved on the right side of a
+/// hierarchy row when `n_buttons` icon buttons (eye/lock/...) follow the heading.
+pub fn hierarchy_button_reserve(n_buttons: u32) -> f32
+{
+    if n_buttons == 0 { 0.0 }
+    else { HIERARCHY_BUTTON_SIZE.x * n_buttons as f32 + HIERARCHY_BUTTON_GAP }
+}
+
+/// Builds a heading string `"{prefix}{name}{suffix}"` and truncates `name`
+/// with `"..."` so the rendered width fits within `ui.available_width() - reserved_right`.
+/// `prefix` and `suffix` are always kept (e.g. icon glyph and lock indicator).
+pub fn fit_hierarchy_heading(ui: &egui::Ui, prefix: &str, name: &str, suffix: &str, reserved_right: f32) -> String
+{
+    let max_text_width = (ui.available_width() - reserved_right - HIERARCHY_TOGGLE_FRAME_PADDING).max(20.0);
+
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    let measure = |s: &str| -> f32
+    {
+        ui.painter().layout_no_wrap(s.to_string(), font_id.clone(), Color32::WHITE).size().x
+    };
+
+    let full = format!("{}{}{}", prefix, name, suffix);
+    if name.is_empty() || measure(&full) <= max_text_width
+    {
+        return full;
+    }
+
+    let chars: Vec<char> = name.chars().collect();
+    let mut lo: usize = 0;
+    let mut hi: usize = chars.len();
+    while lo < hi
+    {
+        let mid = (lo + hi + 1) / 2;
+        let truncated: String = chars.iter().take(mid).collect();
+        let candidate = format!("{}{}...{}", prefix, truncated, suffix);
+        if measure(&candidate) <= max_text_width
+        {
+            lo = mid;
+        }
+        else if mid == 0
+        {
+            break;
+        }
+        else
+        {
+            hi = mid - 1;
+        }
+    }
+    let truncated: String = chars.iter().take(lo).collect();
+    format!("{}{}...{}", prefix, truncated, suffix)
+}
+
+pub fn hierarchy_row_spacer(ui: &mut egui::Ui, reserved_right: f32)
+{
+    let space = ui.available_width() - reserved_right;
+    if space > 0.0 { ui.add_space(space); }
+}
+
+pub fn hierarchy_eye_button(ui: &mut egui::Ui, on: bool, hover_text: &str) -> bool
+{
+    let tint = if on { Color32::LIGHT_GRAY } else { Color32::DARK_GRAY };
+    let img = if on
+    {
+        egui::Image::new(egui::include_image!("../../../../../resources/icons/eye.svg"))
+    }
+    else
+    {
+        egui::Image::new(egui::include_image!("../../../../../resources/icons/eye_off.svg"))
+    }.fit_to_exact_size(HIERARCHY_BUTTON_IMG_SIZE).tint(tint);
+
+    ui.add(egui::Button::image(img).frame(false).min_size(HIERARCHY_BUTTON_SIZE)).on_hover_text(hover_text).clicked()
+}
+
+pub fn hierarchy_lock_button(ui: &mut egui::Ui, locked: bool) -> bool
+{
+    let tint = if locked { Color32::LIGHT_GRAY } else { Color32::DARK_GRAY };
+    let img = if locked
+    {
+        egui::Image::new(egui::include_image!("../../../../../resources/icons/lock_closed.svg"))
+    }
+    else
+    {
+        egui::Image::new(egui::include_image!("../../../../../resources/icons/lock_open.svg"))
+    }.fit_to_exact_size(HIERARCHY_BUTTON_IMG_SIZE).tint(tint);
+
+    ui.add(egui::Button::image(img).frame(false).min_size(HIERARCHY_BUTTON_SIZE)).on_hover_text("lock/unlock").clicked()
+}
 
 pub fn fit_size(availiable_size: egui::Vec2, requested_size: egui::Vec2) -> egui::Vec2
 {
@@ -15,12 +108,14 @@ pub fn fit_size(availiable_size: egui::Vec2, requested_size: egui::Vec2) -> egui
 }
 
 
-pub fn rename_hierarchy_item_or_toggle_selection(ui: &mut egui::Ui, toggle_title: RichText, toggle_selection: &mut bool, editor_state: &mut EditorState, item_id: u32, name: String, rename_fn: Box<dyn FnOnce(String)>) -> egui::Response
+pub fn rename_hierarchy_item_or_toggle_selection(ui: &mut egui::Ui, toggle_title: RichText, toggle_selection: &mut bool, editor_state: &mut EditorState, kind: &str, item_id: u32, name: String, rename_fn: Box<dyn FnOnce(String)>) -> egui::Response
 {
-    if editor_state.hierarchy_rename_id == Some(item_id)
+    let is_renaming = editor_state.hierarchy_rename_id.as_ref().map_or(false, |(k, i)| k == kind && *i == item_id);
+
+    if is_renaming
     {
         // *** inline rename input ***
-        let input_id = egui::Id::new(("rename_input", item_id));
+        let input_id = egui::Id::new(("rename_input", kind, item_id));
         let input_wdith = 140.0;
         let resp = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_rename_value).id(input_id).desired_width(input_wdith));
         if !resp.has_focus() && !resp.lost_focus()
@@ -53,7 +148,7 @@ pub fn rename_hierarchy_item_or_toggle_selection(ui: &mut egui::Ui, toggle_title
         let toggle = ui.toggle_value(toggle_selection, toggle_title);
         if toggle.double_clicked()
         {
-            editor_state.hierarchy_rename_id = Some(item_id);
+            editor_state.hierarchy_rename_id = Some((kind.to_string(), item_id));
             editor_state.hierarchy_rename_value = name.clone();
         }
         toggle

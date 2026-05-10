@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast_mut, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType, ui::{dialogs::load_texture_dialog, helper::ui_helper::rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, generic::cut_string_to_length}, state::{scene::{components::material::{ALL_TEXTURE_TYPES, Material, MaterialItem}, scene::Scene, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{component_downcast_mut, gui::{editor::{editor::EDITOR_INTERNAL_TAG, editor_state::PickType, ui::{dialogs::load_texture_dialog, helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}}, helper::{generic_items::{self, collapse_with_title}, info_box::info_box}}, helper::concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, state::{scene::{components::material::{ALL_TEXTURE_TYPES, Material, MaterialItem}, scene::Scene, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -13,7 +13,6 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
         for (material_id, material) in materials
         {
             let material = material.read().unwrap();
-            let headline_name = format!("⚫ {}", cut_string_to_length(&material.get_base().name, MAX_NAME_LENGTH));
 
             let is_internal = material.get_base().tags.contains(ENGINE_INTERNAL_TAG) || material.get_base().tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
@@ -26,6 +25,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
 
             let id = format!("material_{}", material_id);
 
+            let headline_name = fit_hierarchy_heading(ui, "⚫ ", &material.get_base().name, "", 0.0);
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::Material && editor_state.selected_object == id { selection = true; } else { selection = false; }
@@ -36,7 +36,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
             let material_id = *material_id;
 
 
-            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, material_id, name.clone(), Box::new(move |new_name|
+            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "material", material_id, name.clone(), Box::new(move |new_name|
             {
                 execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
                 {
@@ -72,7 +72,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
                 if ui.button("✏ Rename").clicked()
                 {
                     ui.close();
-                    editor_state.hierarchy_rename_id = Some(material_id);
+                    editor_state.hierarchy_rename_id = Some(("material".to_string(), material_id));
                     editor_state.hierarchy_rename_value = name.clone();
                 }
 

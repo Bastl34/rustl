@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use egui::{Ui, RichText};
 
-use crate::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::rename_hierarchy_item_or_toggle_selection}, helper::generic_items::collapse_with_title}, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem, generic::cut_string_to_length}, state::{scene::{light::{Light, LightItem}, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_row_spacer, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::collapse_with_title}, helper::{change_tracker::ChangeTracker, concurrency::execution_queue::ExecutionQueueItem}, state::{scene::{light::{Light, LightItem}, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -25,34 +25,56 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
                 continue;
             }
 
-            let headline_name = format!("⚫ {}", cut_string_to_length(&light.name, MAX_NAME_LENGTH));
-
             let id = format!("light_{}", light.id);
-
-            let mut heading = RichText::new(headline_name).strong();
-            if !light.enabled
-            {
-                heading = heading.strikethrough();
-            }
 
             let mut selection; if editor_state.selected_type == SelectionType::Light && editor_state.selected_object == id { selection = true; } else { selection = false; }
 
             let name = light.name.clone();
             let light_id = light.id;
-            let exec_queue_clone = exec_queue.clone();
+            let light_enabled = light.enabled;
 
-            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, light_id, name.clone(), Box::new(move |new_name|
+            let toggle = ui.horizontal(|ui|
             {
-                execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
-                {
-                    if let Some(light) = scene.get_light_by_id(light_id)
-                    {
-                        light.borrow_mut().get_mut().name = new_name.clone();
-                    }
-                }));
-            }));
+                ui.spacing_mut().item_spacing.x = 2.0;
 
-            toggle = toggle.on_hover_text(format!("Light ID: {}", light_id));
+                let reserved_right = hierarchy_button_reserve(1);
+                let headline_name = fit_hierarchy_heading(ui, "⚫ ", &name, "", reserved_right);
+
+                let mut heading = RichText::new(headline_name).strong();
+                if !light_enabled
+                {
+                    heading = heading.strikethrough();
+                }
+
+                let exec_queue_clone = exec_queue.clone();
+                let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "light", light_id, name.clone(), Box::new(move |new_name|
+                {
+                    execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
+                    {
+                        if let Some(light) = scene.get_light_by_id(light_id)
+                        {
+                            light.borrow_mut().get_mut().name = new_name.clone();
+                        }
+                    }));
+                }));
+
+                toggle = toggle.on_hover_text(format!("Light ID: {}", light_id));
+
+                hierarchy_row_spacer(ui, reserved_right);
+
+                if hierarchy_eye_button(ui, light_enabled, "enable/disable")
+                {
+                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        if let Some(light) = scene.get_light_by_id(light_id)
+                        {
+                            light.borrow_mut().get_mut().enabled = !light_enabled;
+                        }
+                    }));
+                }
+
+                toggle
+            }).inner;
 
             if toggle.clicked()
             {
@@ -75,7 +97,7 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
                 if ui.button("✏ Rename").clicked()
                 {
                     ui.close();
-                    editor_state.hierarchy_rename_id = Some(light_id);
+                    editor_state.hierarchy_rename_id = Some(("light".to_string(), light_id));
                     editor_state.hierarchy_rename_value = name.clone();
                 }
 

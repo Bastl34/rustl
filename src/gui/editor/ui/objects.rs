@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
 
-use crate::{component_downcast, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::{layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -55,51 +55,13 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let mut headline_name: String;
-                if node.source.is_some()
-                {
-                    headline_name = format!("📦 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
-                }
-                else if node.find_component::<Animation>().is_some()
-                {
-                    headline_name = format!("🎞 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
-                }
-                else if node.find_component::<Joint>().is_some()
-                {
-                    headline_name = format!("🕱 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
-                }
-                else if node.is_empty()
-                {
-                    headline_name = format!("👻 {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
-                }
-                else if node.get_mesh().is_some()
-                {
-                    headline_name = format!("◼ {}", cut_string_to_length(&name, MAX_NAME_LENGTH));
-                }
-                else
-                {
-                    headline_name = format!("◻ {}",  cut_string_to_length(&name, MAX_NAME_LENGTH));
-                }
-
-                if locked
-                {
-                    headline_name += " 🔒";
-                }
-
-                let mut heading;
-                if visible
-                {
-                    heading = RichText::new(headline_name).strong()
-                }
-                else
-                {
-                    heading = RichText::new(headline_name);
-                }
-
-                if locked
-                {
-                    heading = heading.color(Color32::LIGHT_RED);
-                }
+                let icon = if node.source.is_some() { "📦" }
+                    else if node.find_component::<Animation>().is_some() { "🎞" }
+                    else if node.find_component::<Joint>().is_some() { "🕱" }
+                    else if node.is_empty() { "👻" }
+                    else if node.get_mesh().is_some() { "◼" }
+                    else { "◻" };
+                let lock_suffix: &str = if locked { " 🔒" } else { "" };
 
                 let in_multi_select = editor_state.hierarchy_multi_select.contains(&node_id);
                 let mut selection = editor_state.selected_object == id || in_multi_select;
@@ -153,9 +115,16 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }
                     }
 
+                    let reserved_right = hierarchy_button_reserve(2);
+                    let prefix = format!("{} ", icon);
+                    let headline_name = fit_hierarchy_heading(ui, &prefix, &name, lock_suffix, reserved_right);
+
+                    let mut heading = if visible { RichText::new(headline_name).strong() } else { RichText::new(headline_name) };
+                    if locked { heading = heading.color(Color32::LIGHT_RED); }
+
                     let exec_queue_clone = exec_queue.clone();
                     let node_arc_clone = node_arc.clone();
-                    let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, node_id, name.clone(), Box::new(move |new_name|
+                    let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "node", node_id, name.clone(), Box::new(move |new_name|
                     {
                         let node_arc = node_arc_clone.clone();
                         execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |_|
@@ -166,57 +135,24 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                     toggle = toggle.on_hover_text(format!("Node ID: {}", node_id));
 
-                    let button_size = egui::vec2(20.0, 18.0);
-                    let img_size = egui::vec2(18.0, 18.0);
+                    hierarchy_row_spacer(ui, reserved_right);
 
-                    let total_btn_width = button_size.x * 2.0;
-                    let space = ui.available_width() - total_btn_width - 4.0;
-                    if space > 0.0 { ui.add_space(space); }
-
-                    // lock/unlock
+                    if hierarchy_lock_button(ui, node_locked)
                     {
-                        let tint = if node_locked { Color32::LIGHT_GRAY } else { Color32::DARK_GRAY };
-                        let img = if node_locked
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                         {
-                            egui::Image::new(egui::include_image!("../../../../resources/icons/lock_closed.svg"))
-                        }
-                        else
-                        {
-                            egui::Image::new(egui::include_image!("../../../../resources/icons/lock_open.svg"))
-                        }.fit_to_exact_size(img_size).tint(tint);
-
-                        let btn = ui.add(egui::Button::image(img).frame(false).min_size(button_size)).on_hover_text("lock/unlock");
-                        if btn.clicked()
-                        {
-                            let node_arc = node_arc.clone();
-                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
-                            {
-                                node_arc.write().unwrap().settings.locked = !node_locked;
-                            }));
-                        }
+                            node_arc.write().unwrap().settings.locked = !node_locked;
+                        }));
                     }
 
-                    // show/hide
+                    if hierarchy_eye_button(ui, node_visible, "show/hide")
                     {
-                        let tint = if node_visible { Color32::LIGHT_GRAY } else { Color32::DARK_GRAY };
-                        let img = if node_visible
+                        let node_arc = node_arc.clone();
+                        execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
                         {
-                            egui::Image::new(egui::include_image!("../../../../resources/icons/eye.svg"))
-                        }
-                        else
-                        {
-                            egui::Image::new(egui::include_image!("../../../../resources/icons/eye_off.svg"))
-                        }.fit_to_exact_size(img_size).tint(tint);
-
-                        let btn = ui.add(egui::Button::image(img).frame(false).min_size(button_size)).on_hover_text("show/hide");
-                        if btn.clicked()
-                        {
-                            let node_arc = node_arc.clone();
-                            execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_|
-                            {
-                                node_arc.write().unwrap().settings.visible = !node_visible;
-                            }));
-                        }
+                            node_arc.write().unwrap().settings.visible = !node_visible;
+                        }));
                     }
 
                     let row_rect = ui.min_rect();
@@ -454,7 +390,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     if ui.button("✏ Rename").clicked()
                     {
                         ui.close();
-                        editor_state.hierarchy_rename_id = Some(node_id);
+                        editor_state.hierarchy_rename_id = Some(("node".to_string(), node_id));
                         editor_state.hierarchy_rename_value = name.clone();
                     }
 

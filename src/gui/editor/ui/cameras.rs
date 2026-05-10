@@ -1,6 +1,6 @@
 use egui::{Ui, RichText, Color32};
 
-use crate::{gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, ui::helper::ui_helper::{layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title}}, helper::{concurrency::execution_queue::ExecutionQueueItem, generic::cut_string_to_length}, state::{scene::{camera::CameraItem, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::{gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title}}, helper::concurrency::execution_queue::ExecutionQueueItem, state::{scene::{camera::CameraItem, utilities::scene_utils::execute_on_scene_mut}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -10,8 +10,6 @@ pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQu
     {
         for camera in cameras
         {
-            let headline_name = format!("⚫ {}", cut_string_to_length(&camera.name, MAX_NAME_LENGTH));
-
             let id = format!("camera_{}", camera.id);
 
             let is_internal = camera.tags.contains(ENGINE_INTERNAL_TAG) || camera.tags.contains(EDITOR_INTERNAL_TAG);
@@ -23,30 +21,54 @@ pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQu
                 continue;
             }
 
-            let mut heading = RichText::new(headline_name).strong();
-            if !camera.enabled
-            {
-                heading = heading.strikethrough();
-            }
-
             let mut selection; if editor_state.selected_type == SelectionType::Camera && editor_state.selected_object == id { selection = true; } else { selection = false; }
 
             let name = camera.name.clone();
             let camera_id = camera.id;
-            let exec_queue_clone = exec_queue.clone();
+            let camera_enabled = camera.enabled;
 
-            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, camera_id, name.clone(), Box::new(move |new_name|
+            let toggle = ui.horizontal(|ui|
             {
-                execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
-                {
-                    if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
-                    {
-                        camera.name = new_name.clone();
-                    }
-                }));
-            }));
+                ui.spacing_mut().item_spacing.x = 2.0;
 
-            toggle = toggle.on_hover_text(format!("Camera ID: {}", camera_id));
+                let reserved_right = hierarchy_button_reserve(1);
+                let headline_name = fit_hierarchy_heading(ui, "⚫ ", &name, "", reserved_right);
+
+                let mut heading = RichText::new(headline_name).strong();
+                if !camera_enabled
+                {
+                    heading = heading.strikethrough();
+                }
+
+                let exec_queue_clone = exec_queue.clone();
+                let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "camera", camera_id, name.clone(), Box::new(move |new_name|
+                {
+                    execute_on_scene_mut(exec_queue_clone, scene_id, Box::new(move |scene|
+                    {
+                        if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
+                        {
+                            camera.name = new_name.clone();
+                        }
+                    }));
+                }));
+
+                toggle = toggle.on_hover_text(format!("Camera ID: {}", camera_id));
+
+                hierarchy_row_spacer(ui, reserved_right);
+
+                if hierarchy_eye_button(ui, camera_enabled, "enable/disable")
+                {
+                    execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                    {
+                        if let Some(camera) = scene.get_camera_by_id_mut(camera_id)
+                        {
+                            camera.enabled = !camera_enabled;
+                        }
+                    }));
+                }
+
+                toggle
+            }).inner;
 
             if toggle.clicked()
             {
@@ -69,7 +91,7 @@ pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQu
                 if ui.button("✏ Rename").clicked()
                 {
                     ui.close();
-                    editor_state.hierarchy_rename_id = Some(camera_id);
+                    editor_state.hierarchy_rename_id = Some(("camera".to_string(), camera_id));
                     editor_state.hierarchy_rename_value = name.clone();
                 }
 

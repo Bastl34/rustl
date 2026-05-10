@@ -2,7 +2,7 @@ use arboard::Clipboard;
 use egui::{Ui, RichText, Color32};
 use rfd::FileDialog;
 
-use crate::{component_downcast, component_downcast_mut, gui::{editor::{editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, editor_state::PickType}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::generic::cut_string_to_length, state::{scene::components::{component::Component, material::Material}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, component_downcast_mut, gui::{editor::{editor::EDITOR_INTERNAL_TAG, editor_state::PickType, ui::helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::collapse_with_title, info_box::info_box}}, state::{scene::components::{component::Component, material::Material}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
 
@@ -12,26 +12,37 @@ pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mu
     {
         for (_texture_hash, texture_arc) in &state.resources.textures
         {
-            let texture = texture_arc.read().unwrap();
-            let headline_name = format!("⚫ {}", cut_string_to_length(&texture.name, MAX_NAME_LENGTH));
+            let texture_id;
+            let texture_name;
+            let is_internal;
+            {
+                let texture = texture_arc.read().unwrap();
+                texture_id = texture.id;
+                texture_name = texture.name.clone();
+                is_internal = texture.tags.contains(ENGINE_INTERNAL_TAG) || texture.tags.contains(EDITOR_INTERNAL_TAG);
+            }
 
-            let is_internal = texture.tags.contains(ENGINE_INTERNAL_TAG) || texture.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
-
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !show_from_tags || !filter.is_empty() && texture.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && texture_name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }
 
-            let id = format!("texture_{}", texture.id);
+            let id = format!("texture_{}", texture_id);
 
+            let headline_name = fit_hierarchy_heading(ui, "⚫ ", &texture_name, "", 0.0);
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::Texture && editor_state.selected_object == id { selection = true; } else { selection = false; }
-            let mut toggle = ui.toggle_value(&mut selection, heading);
 
-            toggle = toggle.on_hover_text(format!("Texture ID: {}", texture.id));
+            let texture_arc_for_rename = texture_arc.clone();
+            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "texture", texture_id, texture_name.clone(), Box::new(move |new_name|
+            {
+                texture_arc_for_rename.write().unwrap().name = new_name;
+            }));
+
+            toggle = toggle.on_hover_text(format!("Texture ID: {}", texture_id));
 
             if toggle.clicked()
             {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use egui::{Color32, RichText, Ui};
 use rfd::FileDialog;
 
-use crate::{component_downcast, gui::{editor::editor::{EDITOR_INTERNAL_TAG, MAX_NAME_LENGTH}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::{concurrency::thread::spawn_thread, generic::cut_string_to_length}, state::{resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::concurrency::thread::spawn_thread, state::{resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use crate::gui::editor::ui::dialogs::load_sound_dialog;
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
@@ -12,28 +12,38 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
 {
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
     {
-        for (_sound_hash, sound) in sound_sources
+        for (_sound_hash, sound_arc) in sound_sources
         {
-            let sound = sound.read().unwrap();
-            let headline_name = format!("⚫ {}", cut_string_to_length(&sound.name, MAX_NAME_LENGTH));
+            let sound_id;
+            let sound_name;
+            let is_internal;
+            {
+                let sound = sound_arc.read().unwrap();
+                sound_id = sound.id;
+                sound_name = sound.name.clone();
+                is_internal = sound.tags.contains(ENGINE_INTERNAL_TAG) || sound.tags.contains(EDITOR_INTERNAL_TAG);
+            }
 
-            let is_internal = sound.tags.contains(ENGINE_INTERNAL_TAG) || sound.tags.contains(EDITOR_INTERNAL_TAG);
             let show_from_tags = !is_internal || (is_internal && editor_state.show_internal_entries);
-
             let filter = editor_state.hierarchy_filter.to_lowercase();
-            if !show_from_tags || !filter.is_empty() && sound.as_ref().name.to_lowercase().find(filter.as_str()).is_none()
+            if !show_from_tags || !filter.is_empty() && sound_name.to_lowercase().find(filter.as_str()).is_none()
             {
                 continue;
             }
 
-            let id = format!("sound-source_{}", sound.id);
+            let id = format!("sound-source_{}", sound_id);
 
+            let headline_name = fit_hierarchy_heading(ui, "⚫ ", &sound_name, "", 0.0);
             let heading = RichText::new(headline_name).strong();
 
             let mut selection; if editor_state.selected_type == SelectionType::SoundSource && editor_state.selected_object == id { selection = true; } else { selection = false; }
 
-            let mut toggle = ui.toggle_value(&mut selection, heading);
-            toggle = toggle.on_hover_text(format!("Sound Source ID: {}", sound.id));
+            let sound_arc_for_rename = sound_arc.clone();
+            let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "sound-source", sound_id, sound_name.clone(), Box::new(move |new_name|
+            {
+                sound_arc_for_rename.write().unwrap().name = new_name;
+            }));
+            toggle = toggle.on_hover_text(format!("Sound Source ID: {}", sound_id));
 
             if toggle.clicked()
             {
