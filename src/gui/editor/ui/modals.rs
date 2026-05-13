@@ -360,12 +360,12 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
         .order(egui::Order::Foreground)
         .show(ctx, |ui|
         {
-            let splash_width = 520.0;
+            let splash_width  = 520.0;
             let header_height = 220.0;
 
             ui.set_width(splash_width);
 
-            // header band with gradient + logo (click closes like Continue)
+            // header band with patterned background + logo + title (click closes like Continue)
             let (header_rect, header_response) = ui.allocate_exact_size(egui::vec2(splash_width, header_height), egui::Sense::click());
             if header_response.clicked()
             {
@@ -374,54 +374,106 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
 
             let painter = ui.painter_at(header_rect);
 
-            // vertical gradient background
-            let top_color = egui::Color32::from_rgb(35, 38, 60);
-            let bottom_color = egui::Color32::from_rgb(80, 50, 110);
-            let steps = 64;
-            for i in 0..steps
+            // solid dark base
+            let base_color = egui::Color32::from_rgb(13, 15, 26);
+            painter.rect_filled(header_rect, 0.0, base_color);
+
+            // aurora blobs — concentric circles with low alpha fake a soft blur
+            let blobs = [
+                (egui::pos2(header_rect.right() - 70.0, header_rect.top()    + 50.0),  180.0, (255u8,  90, 180)), // pink
+                (egui::pos2(header_rect.left()  + 80.0, header_rect.bottom() - 30.0),  200.0, ( 90u8, 140, 255)), // blue
+                (egui::pos2(header_rect.center().x - 40.0, header_rect.top() + 20.0),  140.0, (140u8,  80, 255)), // purple
+            ];
+
+            for (center, max_radius, (r, g, b)) in blobs
             {
-                let t0 = i as f32 / steps as f32;
-                let t1 = (i + 1) as f32 / steps as f32;
-                let y0 = header_rect.top() + header_rect.height() * t0;
-                let y1 = header_rect.top() + header_rect.height() * t1;
-
-                let r = (top_color.r() as f32 * (1.0 - t0) + bottom_color.r() as f32 * t0) as u8;
-                let g = (top_color.g() as f32 * (1.0 - t0) + bottom_color.g() as f32 * t0) as u8;
-                let b = (top_color.b() as f32 * (1.0 - t0) + bottom_color.b() as f32 * t0) as u8;
-                let color = egui::Color32::from_rgb(r, g, b);
-
-                let stripe = egui::Rect::from_min_max(egui::pos2(header_rect.left(), y0), egui::pos2(header_rect.right(), y1));
-                painter.rect_filled(stripe, 0.0, color);
+                let layers = 24;
+                for i in 0..layers
+                {
+                    let t = i as f32 / layers as f32;
+                    let radius = max_radius * (0.2 + t * 0.8);
+                    let alpha = ((1.0 - t).powf(2.0) * 26.0) as u8;
+                    if alpha > 0
+                    {
+                        painter.circle_filled(center, radius, egui::Color32::from_rgba_unmultiplied(r, g, b, alpha));
+                    }
+                }
             }
 
-            // round only the top corners of the header by overdrawing the bottom
-            // (frame already rounds the outer rect, so we leave the bottom edge straight)
+            // dotted grid overlay
+            let dot_spacing = 14.0;
+            let dot_radius  = 1.0;
+            let dot_color   = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+            let cols = (header_rect.width()  / dot_spacing).ceil() as i32;
+            let rows = (header_rect.height() / dot_spacing).ceil() as i32;
+            for col in 0..=cols
+            {
+                for row in 0..=rows
+                {
+                    let x = header_rect.left() + col as f32 * dot_spacing;
+                    let y = header_rect.top()  + row as f32 * dot_spacing;
+                    painter.circle_filled(egui::pos2(x, y), dot_radius, dot_color);
+                }
+            }
 
-            // subtle accent glow circles
-            painter.circle_filled(egui::pos2(header_rect.right() - 60.0, header_rect.top() + 40.0), 80.0, egui::Color32::from_rgba_unmultiplied(255, 130, 200, 22));
-            painter.circle_filled(egui::pos2(header_rect.left() + 40.0, header_rect.bottom() - 30.0), 100.0, egui::Color32::from_rgba_unmultiplied(120, 160, 255, 22));
-
-            // logo centered in header
-            let logo_size = 160.0;
+            // logo centered in the header
+            let logo_size = 130.0;
             let logo_rect = egui::Rect::from_center_size(header_rect.center(), egui::vec2(logo_size, logo_size));
             egui::Image::new(egui::include_image!("../../../../resources/designs/logo/logo.svg")).paint_at(ui, logo_rect);
+
+            // top-left: title + subtitle
+            let inset = 12.0;
+            painter.text(
+                egui::pos2(header_rect.left() + inset, header_rect.top() + inset),
+                egui::Align2::LEFT_TOP,
+                "Rustl",
+                egui::FontId::proportional(28.0),
+                egui::Color32::WHITE,
+            );
+            /*
+            painter.text(
+                egui::pos2(header_rect.left() + inset, header_rect.top() + inset + 34.0),
+                egui::Align2::LEFT_TOP,
+                "Game Engine & 3D Scene Editor",
+                egui::FontId::proportional(12.0),
+                egui::Color32::from_white_alpha(180),
+            );
+             */
+
+            // top-right: version
+            painter.text(
+                egui::pos2(header_rect.right() - inset, header_rect.top() + inset),
+                egui::Align2::RIGHT_TOP,
+                format!("{}", env!("CARGO_PKG_VERSION")),
+                egui::FontId::proportional(13.0),
+                egui::Color32::from_white_alpha(180),
+            );
+
+            // bottom-left: clickable github repo link (read from Cargo.toml)
+            let repo_url     = env!("CARGO_PKG_REPOSITORY");
+            let repo_display = repo_url.trim_start_matches("https://").trim_start_matches("http://");
+            let link_size    = egui::vec2(260.0, 18.0);
+            let link_rect    = egui::Rect::from_min_size(
+                egui::pos2(header_rect.left() + inset, header_rect.bottom() - inset - link_size.y),
+                link_size,
+            );
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(link_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                |ui|
+                {
+                    ui.hyperlink_to(
+                        egui::RichText::new(repo_display).size(12.0).color(egui::Color32::from_white_alpha(180)),
+                        repo_url,
+                    );
+                },
+            );
 
             // body
             ui.scope(|ui|
             {
                 ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 6.0);
-
-                ui.add_space(18.0);
-
-                ui.vertical_centered(|ui|
-                {
-                    ui.label(egui::RichText::new("Rustl").size(34.0).strong());
-                    ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(13.0).weak());
-
-                    ui.add_space(10.0);
-
-                    ui.label(egui::RichText::new("Game Engine & 3D Scene Editor").size(14.0));
-                });
 
                 ui.separator();
                 ui.add_space(10.0);

@@ -2,6 +2,7 @@
 name = "rustl"
 version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/Bastl34/rustl"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
