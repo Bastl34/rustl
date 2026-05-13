@@ -33,6 +33,8 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
     {
         ui.horizontal(|ui|
         {
+            ui.spacing_mut().item_spacing.x = 2.0;
+
             let mut tab_to_close: Option<u32> = None;
             let mut scene_to_activate: Option<u32> = None;
 
@@ -145,9 +147,97 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                         }
                     }
 
-                    ui.add_space(2.0);
                 });
             }
+
+            // + button to add a new scene
+            ui.scope(|ui|
+            {
+                ui.spacing_mut().item_spacing.x = 4.0;
+
+                let plus_galley = ui.painter().layout_no_wrap
+                (
+                    "+".to_string(),
+                    egui::FontId::proportional(16.0),
+                    ui.visuals().text_color(),
+                );
+
+                let h_pad = 10.0;
+                let v_pad = 5.0;
+                // match tab height (label uses size 13.0)
+                let label_galley = ui.painter().layout_no_wrap
+                (
+                    "🎬".to_string(),
+                    egui::FontId::proportional(13.0),
+                    ui.visuals().text_color(),
+                );
+                let plus_w = h_pad * 2.0 + plus_galley.size().x;
+                let plus_h = label_galley.size().y + v_pad * 2.0;
+
+                let (plus_rect, plus_response) = ui.allocate_exact_size
+                (
+                    egui::vec2(plus_w, plus_h),
+                    egui::Sense::click(),
+                );
+
+                let bg_color = if plus_response.hovered()
+                {
+                    ui.visuals().widgets.hovered.bg_fill
+                }
+                else
+                {
+                    ui.visuals().widgets.inactive.bg_fill
+                };
+                let rounding = egui::CornerRadius { nw: 4_u8, ne: 4_u8, sw: 0_u8, se: 0_u8 };
+                ui.painter().rect_filled(plus_rect, rounding, bg_color);
+
+                let plus_pos = egui::pos2
+                (
+                    plus_rect.center().x - plus_galley.size().x / 2.0,
+                    plus_rect.center().y - plus_galley.size().y / 2.0,
+                );
+                ui.painter().galley(plus_pos, plus_galley, ui.visuals().text_color());
+
+                let plus_response = plus_response.on_hover_text("Add scene");
+
+                egui::Popup::menu(&plus_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
+                {
+                    ui.set_min_width(140.0);
+                    if ui.button("⊞ Add Scene").clicked()
+                    {
+                        let new_scene_id = state.add_scene("Scene");
+                        if !editor_state.open_scene_tabs.contains(&new_scene_id)
+                        {
+                            editor_state.open_scene_tabs.push(new_scene_id);
+                        }
+                        editor_state.selected_scene_id = Some(new_scene_id);
+                        editor_state.selected_object.clear();
+                        editor_state.selected_type = SelectionType::None;
+                        editor_state.settings = SettingsPanel::Scene;
+                        state.set_active_scene(new_scene_id);
+                        egui::Popup::close_all(ui.ctx());
+                    }
+
+                    if ui.button("⬇ Import Scene").clicked()
+                    {
+                        let loading_state = editor_state.loading.clone();
+                        let loading_progress_state = editor_state.loading_progress.clone();
+                        if let Some(new_scene_id) = crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state)
+                        {
+                            if !editor_state.open_scene_tabs.contains(&new_scene_id)
+                            {
+                                editor_state.open_scene_tabs.push(new_scene_id);
+                            }
+                            editor_state.selected_scene_id = Some(new_scene_id);
+                            editor_state.selected_object.clear();
+                            editor_state.selected_type = SelectionType::None;
+                            editor_state.settings = SettingsPanel::Scene;
+                            state.set_active_scene(new_scene_id);
+                        }
+                        egui::Popup::close_all(ui.ctx());
+                    }
+                });
+            });
 
             if let Some(id) = scene_to_activate
             {

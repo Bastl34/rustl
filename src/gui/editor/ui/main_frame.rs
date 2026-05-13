@@ -562,7 +562,18 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
                             {
                                 let loading_state = editor_state.loading.clone();
                                 let loading_progress_state = editor_state.loading_progress.clone();
-                                crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state);
+                                if let Some(new_scene_id) = crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state)
+                                {
+                                    if !editor_state.open_scene_tabs.contains(&new_scene_id)
+                                    {
+                                        editor_state.open_scene_tabs.push(new_scene_id);
+                                    }
+                                    editor_state.selected_scene_id = Some(new_scene_id);
+                                    editor_state.selected_object.clear();
+                                    editor_state.selected_type = SelectionType::None;
+                                    editor_state.settings = SettingsPanel::Scene;
+                                    state.set_active_scene(new_scene_id);
+                                }
 
                                 egui::Popup::close_all(ui.ctx());
                             }

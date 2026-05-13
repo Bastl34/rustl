@@ -409,7 +409,7 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
     }
 }
 
-pub fn import_editor_scene_with_dialog(state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
+pub fn import_editor_scene_with_dialog(state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>) -> Option<u32>
 {
     let path = rfd::FileDialog::new()
         .add_filter("Rustl Scene", &["scene"])
@@ -418,7 +418,11 @@ pub fn import_editor_scene_with_dialog(state: &mut State, loading_state: Arc<RwL
 
     if let Some(path) = path
     {
-        apply_editor_scene(state, &path, loading_state, loading_progress_state);
+        apply_editor_scene(state, &path, loading_state, loading_progress_state)
+    }
+    else
+    {
+        None
     }
 }
 
@@ -676,9 +680,10 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
     }
 }
 
-fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorScene, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback)
+fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorScene, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback) -> Vec<u32>
 {
     let mut scenes: Vec<(EditorScene, u32, String)> = Vec::new();
+    let mut added_ids: Vec<u32> = Vec::new();
 
     for (editor_scene, full_path, active) in editor_scenes
     {
@@ -689,6 +694,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
             scene.source = Some(AssetPathDesciptor::new_from_path(full_path.clone()));
         }
         scenes.push((editor_scene, id, full_path));
+        added_ids.push(id);
     }
 
     let main_queue = state.main_thread_execution_queue.clone();
@@ -755,6 +761,8 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
         *loading_progress_state.write().unwrap() = 0.0;
         console_success!("{} loaded", log_label);
     });
+
+    added_ids
 }
 
 pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, done_callback: ProjectDoneCallback)
@@ -783,15 +791,16 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     load_editor_scenes_into_state(state, editor_scenes, loading_state, loading_progress_state, log_label, done_callback);
 }
 
-pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,)
+pub fn apply_editor_scene(state: &mut State, scene_path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>,) -> Option<u32>
 {
     let editor_scene = match load_editor_scene(&scene_path)
     {
         Some(scene) => scene,
-        None => return,
+        None => return None,
     };
 
     let log_label = format!("editor scene: {}", editor_scene.name);
     let active = editor_scene.active;
-    load_editor_scenes_into_state(state, vec![(editor_scene, scene_path.to_string(), active)], loading_state, loading_progress_state, log_label, None);
+    let added_ids = load_editor_scenes_into_state(state, vec![(editor_scene, scene_path.to_string(), active)], loading_state, loading_progress_state, log_label, None);
+    added_ids.first().copied()
 }
