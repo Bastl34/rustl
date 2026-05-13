@@ -192,9 +192,9 @@ impl Editor
         // ensure egui always knows the window has focus so text cursor blinks correctly
         raw_input.focused = true;
 
-        let full_output = egui.ctx.run(raw_input, |ctx|
+        let full_output = egui.ctx.run_ui(raw_input, |ui|
         {
-            main_frame::create_frame(ctx, &mut self.editor_state, state);
+            main_frame::create_frame(ui, &mut self.editor_state, state);
         });
 
         self.apply_internal_asset_drag(state, &egui.ctx);

@@ -38,7 +38,7 @@ use super::sound::{build_sound_sources_list, create_sound_settings, create_sound
 use super::statistics::{create_chart, create_statistic};
 use super::textures::{create_texture_settings, build_texture_list};
 
-pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: &mut State)
+pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &mut State)
 {
     let mut visual = Visuals::dark();
     visual.panel_fill[3] = 253;
@@ -55,7 +55,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
 
     let frame = egui::Frame::side_top_panel(&style);
 
-    egui::TopBottomPanel::top("top_panel").frame(frame).show(ctx, |ui|
+    egui::Panel::top("top_panel").frame(frame).show_inside(ui, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -64,7 +64,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     //bottom
-    egui::TopBottomPanel::bottom("bottom_panel").resizable(true).frame(frame).show(ctx, |ui|
+    egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show_inside(ui, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -162,7 +162,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     //left
-    egui::SidePanel::left("left_panel").frame(frame).min_width(300.0).show(ctx, |ui|
+    egui::Panel::left("left_panel").frame(frame).min_size(300.0).show_inside(ui, |ui|
     {
         ui.set_max_width(ui.available_width());
 
@@ -173,7 +173,7 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     //right
-    egui::SidePanel::right("right_panel").frame(frame).show(ctx, |ui|
+    egui::Panel::right("right_panel").frame(frame).show_inside(ui, |ui|
     {
         ui.set_min_width(300.0);
 
@@ -184,13 +184,13 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     // scene tabs
-    egui::TopBottomPanel::top("scene_tabs_panel").frame(frame).show(ctx, |ui|
+    egui::Panel::top("scene_tabs_panel").frame(frame).show_inside(ui, |ui|
     {
         create_scene_tabs(editor_state, state, ui);
     });
 
     //top
-    egui::TopBottomPanel::top("top_panel_main").frame(frame).show(ctx, |ui|
+    egui::Panel::top("top_panel_main").frame(frame).show_inside(ui, |ui|
     {
         //ui.add_enabled_ui(!loading, |ui|
         //{
@@ -202,11 +202,13 @@ pub fn create_frame(ctx: &egui::Context, editor_state: &mut EditorState, state: 
     });
 
     // modals
-    create_modals(editor_state, state, ctx);
+    create_modals(editor_state, state, ui.ctx());
 }
 
 fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
+    ui.style_mut().visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+
     ui.menu_button("File", |ui|
     {
         let shortcut_new = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
@@ -275,7 +277,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             editor_state.dialog_help_shortcuts = true;
         }
 
-        if ui.button("Splashscreen").clicked()
+        if ui.button("Splash Screen").clicked()
         {
             editor_state.dialog_splash = true;
         }
