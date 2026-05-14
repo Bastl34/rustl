@@ -41,10 +41,6 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
                 let headline_name = fit_hierarchy_heading(ui, "⚫ ", &name, "", reserved_right);
 
                 let mut heading = RichText::new(headline_name).strong();
-                if !light_enabled
-                {
-                    heading = heading.strikethrough();
-                }
 
                 let exec_queue_clone = exec_queue.clone();
                 let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "light", light_id, name.clone(), Box::new(move |new_name|

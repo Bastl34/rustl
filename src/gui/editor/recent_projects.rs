@@ -1,7 +1,5 @@
 use std::fs::File;
-
 use serde::{Deserialize, Serialize};
-
 use crate::helper::file::normalize_path_separators;
 
 const RECENT_PROJECTS_FILE: &str = "data/recent_projects.json";

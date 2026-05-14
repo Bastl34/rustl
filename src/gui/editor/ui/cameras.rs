@@ -35,10 +35,6 @@ pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQu
                 let headline_name = fit_hierarchy_heading(ui, "⚫ ", &name, "", reserved_right);
 
                 let mut heading = RichText::new(headline_name).strong();
-                if !camera_enabled
-                {
-                    heading = heading.strikethrough();
-                }
 
                 let exec_queue_clone = exec_queue.clone();
                 let mut toggle = rename_hierarchy_item_or_toggle_selection(ui, heading, &mut selection, editor_state, "camera", camera_id, name.clone(), Box::new(move |new_name|
