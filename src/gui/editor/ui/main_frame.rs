@@ -9,8 +9,8 @@ use crate::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::gui::editor::ui::console::create_console_section;
 use crate::gui::editor::ui::debug::create_debug_settings;
 use crate::gui::editor::ui::dialogs::load_texture_dialog;
+use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
-use crate::helper::math::approx_zero;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
@@ -86,21 +86,6 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
-                if loading
-                {
-                    ui.separator();
-
-                    if !approx_zero(loading_progress)
-                    {
-                        let progress_text = format!("{:.0}%", loading_progress * 100.0);
-                        ui.add(egui::ProgressBar::new(loading_progress as f32).desired_width(120.0).text(progress_text));
-                    }
-                    else
-                    {
-                        ui.spinner();
-                    }
-                }
-
                 // just refresh if mouse was moved
                 if state.io.input_manager.get_pointer_input().velocity.magnitude() > 0.0
                 {
@@ -200,6 +185,12 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
             });
         //});
     });
+
+    // slim loading progress bar directly above the viewport
+    if loading
+    {
+        loading_progress_bar(ui, loading_progress);
+    }
 
     // modals
     create_modals(editor_state, state, ui.ctx());

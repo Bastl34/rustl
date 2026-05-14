@@ -1,6 +1,6 @@
 use egui::{Color32, RichText};
 
-use crate::{gui::editor::editor_state::EditorState, state::scene::layers::{LAYER_USER_COUNT, LAYER_USER_FIRST_BIT}};
+use crate::{gui::editor::editor_state::EditorState, helper::math::approx_zero, state::scene::layers::{LAYER_USER_COUNT, LAYER_USER_FIRST_BIT}};
 
 const USER_LAYER_BITS_PER_ROW: u32 = 10;
 
@@ -95,6 +95,37 @@ pub fn hierarchy_lock_button(ui: &mut egui::Ui, locked: bool) -> bool
     }.fit_to_exact_size(HIERARCHY_BUTTON_IMG_SIZE).tint(tint);
 
     ui.add(egui::Button::image(img).frame(false).min_size(HIERARCHY_BUTTON_SIZE)).on_hover_text("lock/unlock").clicked()
+}
+
+pub fn loading_progress_bar(ui: &mut egui::Ui, progress: f32)
+{
+    let progress_color = Color32::from_rgb(0, 180, 255);
+    let track_color = Color32::from_rgb(20, 30, 40);
+    let bar_height = 4.0;
+
+    let progress_frame = egui::Frame::NONE.inner_margin(0.0).outer_margin(0.0).fill(track_color);
+    egui::Panel::top("loading_progress_panel")
+        .frame(progress_frame)
+        .show_separator_line(false)
+        .resizable(false)
+        .min_height(0.0)
+        .max_height(bar_height)
+        .exact_height(bar_height)
+        .show_inside(ui, |ui|
+    {
+        ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        ui.style_mut().visuals.selection.bg_fill = progress_color;
+
+        let bar = if approx_zero(progress)
+        {
+            egui::ProgressBar::new(0.0).animate(true).desired_height(bar_height).corner_radius(0).fill(progress_color)
+        }
+        else
+        {
+            egui::ProgressBar::new(progress).desired_height(bar_height).corner_radius(0).fill(progress_color)
+        };
+        ui.add(bar);
+    });
 }
 
 pub fn fit_size(availiable_size: egui::Vec2, requested_size: egui::Vec2) -> egui::Vec2
