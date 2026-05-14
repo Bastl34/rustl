@@ -73,7 +73,7 @@ pub fn build_camera_list(editor_state: &mut EditorState, exec_queue: ExecutionQu
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Camera;
-                    editor_state.settings = SettingsPanel::Camera;
+                    editor_state.settings_panel = SettingsPanel::Camera;
                 }
                 else
                 {
@@ -172,7 +172,7 @@ pub fn create_camera_settings(editor_state: &mut EditorState, state: &mut State,
                     editor_state.selected_object = format!("objects_{}", node.read().unwrap().id);
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Object;
-                    editor_state.settings = SettingsPanel::Object;
+                    editor_state.settings_panel = SettingsPanel::Object;
                 }
 
                 if camera.node.is_some() && ui.button(RichText::new("🗑").color(Color32::LIGHT_RED)).on_hover_text("remove target").clicked()

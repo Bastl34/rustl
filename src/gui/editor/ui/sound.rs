@@ -52,7 +52,7 @@ pub fn build_sound_sources_list(editor_state: &mut EditorState, sound_sources: &
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::SoundSource;
-                    editor_state.settings = SettingsPanel::SoundSource;
+                    editor_state.settings_panel = SettingsPanel::SoundSource;
                 }
                 else
                 {
@@ -139,7 +139,7 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
                                         editor_state.selected_object = format!("sound_{}", sound.id());
                                         editor_state.selected_scene_id = Some(scene.id);
                                         editor_state.selected_type = SelectionType::Sound;
-                                        editor_state.settings = SettingsPanel::Sound;
+                                        editor_state.settings_panel = SettingsPanel::Sound;
                                     }
                                 });
 

@@ -110,7 +110,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
                         editor_state.selected_type = SelectionType::None;
-                        editor_state.settings = SettingsPanel::Scene;
+                        editor_state.settings_panel = SettingsPanel::Scene;
                         scene_to_activate = Some(scene_id);
                     }
 
@@ -213,7 +213,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                         editor_state.selected_scene_id = Some(new_scene_id);
                         editor_state.selected_object.clear();
                         editor_state.selected_type = SelectionType::None;
-                        editor_state.settings = SettingsPanel::Scene;
+                        editor_state.settings_panel = SettingsPanel::Scene;
                         state.set_active_scene(new_scene_id);
                         egui::Popup::close_all(ui.ctx());
                     }
@@ -231,7 +231,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                             editor_state.selected_scene_id = Some(new_scene_id);
                             editor_state.selected_object.clear();
                             editor_state.selected_type = SelectionType::None;
-                            editor_state.settings = SettingsPanel::Scene;
+                            editor_state.settings_panel = SettingsPanel::Scene;
                             state.set_active_scene(new_scene_id);
                         }
                         egui::Popup::close_all(ui.ctx());
@@ -252,7 +252,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                     editor_state.selected_scene_id = editor_state.open_scene_tabs.first().copied();
                     if editor_state.selected_scene_id.is_none()
                     {
-                        editor_state.settings = SettingsPanel::General;
+                        editor_state.settings_panel = SettingsPanel::General;
                     }
                 }
             }

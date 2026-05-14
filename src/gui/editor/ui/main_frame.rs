@@ -303,6 +303,14 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         }
     });
 
+    ui.menu_button("Settings", |ui|
+    {
+        if ui.add(egui::Button::new("Settings")).clicked()
+        {
+            editor_state.dialog_settings = true;
+        }
+    });
+
     ui.menu_button("Help", |ui|
     {
         if ui.button("Shortcuts").clicked()
@@ -606,7 +614,7 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
                                     editor_state.selected_scene_id = Some(new_scene_id);
                                     editor_state.selected_object.clear();
                                     editor_state.selected_type = SelectionType::None;
-                                    editor_state.settings = SettingsPanel::Scene;
+                                    editor_state.settings_panel = SettingsPanel::Scene;
                                     state.set_active_scene(new_scene_id);
                                 }
 
@@ -656,74 +664,74 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
     {
         if editor_state.selected_type == SelectionType::Object && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Components, " Components");
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Object, "◼ Object");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Components, " Components");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Object, "◼ Object");
 
             object_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Camera && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Camera, "📷 Camera");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Camera, "📷 Camera");
 
             camera_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Light && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Light, "💡 Light");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Light, "💡 Light");
 
             light_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Material && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Material, "🎨 Material");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Material, "🎨 Material");
 
             material_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Sound && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Sound, "🔊 Sound");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Sound, "🔊 Sound");
 
             sound_settings = true;
         }
 
         if editor_state.selected_scene_id.is_some()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Scene, "🎬 Scene");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Scene, "🎬 Scene");
         }
 
         if editor_state.selected_type == SelectionType::Texture && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::Texture, "🖼 Texture");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Texture, "🖼 Texture");
 
             texture_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::SoundSource && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::SoundSource, "🔊 Sound Source");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::SoundSource, "🔊 Sound Source");
 
             sound_source_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::MeshResource && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings, SettingsPanel::MeshResource, "🔷 Mesh Resource");
+            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::MeshResource, "🔷 Mesh Resource");
 
             mesh_resource_settings = true;
         }
 
-        ui.selectable_value(&mut editor_state.settings, SettingsPanel::General, "⛭ General");
-        ui.selectable_value(&mut editor_state.settings, SettingsPanel::Project, "📋 Project");
+        ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::General, "⛭ General");
+        ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Project, "📋 Project");
     });
     ui.separator();
 
     ScrollArea::vertical().show(ui, |ui|
     {
-        match editor_state.settings
+        match editor_state.settings_panel
         {
             SettingsPanel::Components => if object_settings
             {
@@ -784,7 +792,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_object.clear();
                         editor_state.selected_type = SelectionType::None;
-                        editor_state.settings = SettingsPanel::Scene;
+                        editor_state.settings_panel = SettingsPanel::Scene;
                         if !editor_state.open_scene_tabs.contains(&scene_id)
                         {
                             editor_state.open_scene_tabs.push(scene_id);
@@ -793,7 +801,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     else
                     {
                         editor_state.selected_scene_id = None;
-                        editor_state.settings = SettingsPanel::General;
+                        editor_state.settings_panel = SettingsPanel::General;
                     }
                 }
 
@@ -872,7 +880,7 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     {
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
         {
-            let mut selection; if editor_state.selected_scene_id == None && editor_state.settings == SettingsPanel::Resources && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
+            let mut selection; if editor_state.selected_scene_id == None && editor_state.settings_panel == SettingsPanel::Resources && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None { selection = true; } else { selection = false; }
             let toggle = ui.toggle_value(&mut selection, RichText::new("🗄 Resources").strong());
 
             if toggle.clicked()
@@ -882,12 +890,12 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     editor_state.selected_scene_id = None;
                     editor_state.selected_object.clear();
                     editor_state.selected_type = SelectionType::None;
-                    editor_state.settings = SettingsPanel::Resources;
+                    editor_state.settings_panel = SettingsPanel::Resources;
                 }
                 else
                 {
                     editor_state.selected_scene_id = None;
-                    editor_state.settings = SettingsPanel::General;
+                    editor_state.settings_panel = SettingsPanel::General;
                 }
             }
         });

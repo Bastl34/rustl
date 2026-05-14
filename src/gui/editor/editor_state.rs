@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -152,6 +152,7 @@ pub struct EditorState
     pub quad_view: bool,
 
     pub recent_projects: RecentProjectsData,
+    pub settings: EditorSettings,
 
     pub project_data: EditorProjectData,
     pub project_path: Option<String>,
@@ -180,7 +181,7 @@ pub struct EditorState
     pub debug_panel: DebugPanel,
     pub log_type: LogType,
 
-    pub settings: SettingsPanel,
+    pub settings_panel: SettingsPanel,
 
     pub hierarchy_filter: String,
 
@@ -228,6 +229,8 @@ pub struct EditorState
     pub dialog_debug_image: bool,
     pub dialog_debug_image_id: Option<egui::TextureHandle>,
 
+    pub dialog_settings: bool,
+
     pub dialog_help_shortcuts: bool,
     pub dialog_about: bool,
     pub dialog_splash: bool,
@@ -264,6 +267,7 @@ impl EditorState
             quad_view: false,
 
             recent_projects: RecentProjectsData::new(),
+            settings: EditorSettings::new(),
 
             project_data: EditorProjectData::default(),
             project_path: None,
@@ -292,7 +296,7 @@ impl EditorState
             debug_panel: DebugPanel::SceneDebugging,
             log_type: LogType::All,
 
-            settings: SettingsPanel::General,
+            settings_panel: SettingsPanel::General,
 
             hierarchy_filter: String::new(),
 
@@ -340,9 +344,11 @@ impl EditorState
             dialog_debug_image: false,
             dialog_debug_image_id: None,
 
+            dialog_settings: false,
+
             dialog_help_shortcuts: false,
             dialog_about:false,
-            dialog_splash: true,
+            dialog_splash: false,
 
             asset_filter: "".to_string(),
             reuse_materials_by_name: true,

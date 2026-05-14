@@ -40,6 +40,21 @@ impl Editor
         self.editor_state.load_all_asset_entries(state, &egui.ctx);
 
         self.create_internal_nodes(state, scene_id);
+
+        // load initial project if setting is enabled
+        if self.editor_state.settings.load_last_recent
+        {
+            if let Some(latest_project) = self.editor_state.recent_projects.get_latest_items(1).first().cloned()
+            {
+                let loading_state = self.editor_state.loading.clone();
+                let loading_progress_state = self.editor_state.loading_progress.clone();
+                crate::gui::editor::editor_project::load_editor_project_from_path(&mut self.editor_state, state, latest_project, loading_state, loading_progress_state);
+            }
+        }
+        else
+        {
+            self.editor_state.dialog_splash = true;
+        }
     }
 
     pub fn create_internal_nodes(&mut self, state: &mut State, scene_id: u32)
@@ -743,7 +758,7 @@ impl Editor
                                 if node.read().unwrap().id != target_animation_node.read().unwrap().id
                                 {
                                     self.editor_state.selected_object = format!("objects_{}", target_animation_node.read().unwrap().id);
-                                    self.editor_state.settings = SettingsPanel::Components;
+                                    self.editor_state.settings_panel = SettingsPanel::Components;
 
                                     scene_utils::clone_all_animations(node, target_animation_node);
                                 }
@@ -806,9 +821,9 @@ impl Editor
                                     let start_pos = pos.unwrap();
                                     self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
 
-                                    if self.editor_state.settings != SettingsPanel::Object && self.editor_state.settings != SettingsPanel::Components
+                                    if self.editor_state.settings_panel != SettingsPanel::Object && self.editor_state.settings_panel != SettingsPanel::Components
                                     {
-                                        self.editor_state.settings = SettingsPanel::Object;
+                                        self.editor_state.settings_panel = SettingsPanel::Object;
                                     }
                                 }
                             }

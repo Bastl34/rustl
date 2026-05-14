@@ -325,7 +325,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }
 
                         editor_state.selected_object = id;
-                        editor_state.settings = SettingsPanel::Components;
+                        editor_state.settings_panel = SettingsPanel::Components;
 
                         editor_state.pick_mode = PickType::None;
                     }
@@ -337,9 +337,9 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             editor_state.selected_scene_id = Some(scene_id);
                             editor_state.selected_type = SelectionType::Object;
 
-                            if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                            if editor_state.settings_panel != SettingsPanel::Components && editor_state.settings_panel != SettingsPanel::Object
                             {
-                                editor_state.settings = SettingsPanel::Components;
+                                editor_state.settings_panel = SettingsPanel::Components;
                             }
 
                             // highlight
@@ -647,9 +647,9 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Object;
 
-                    if editor_state.settings != SettingsPanel::Components && editor_state.settings != SettingsPanel::Object
+                    if editor_state.settings_panel != SettingsPanel::Components && editor_state.settings_panel != SettingsPanel::Object
                     {
-                        editor_state.settings = SettingsPanel::Components;
+                        editor_state.settings_panel = SettingsPanel::Components;
                     }
                 }
                 else
@@ -1371,7 +1371,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         editor_state.selected_object = format!("material_{}", component_id);
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_type = SelectionType::Material;
-                        editor_state.settings = SettingsPanel::Material;
+                        editor_state.settings_panel = SettingsPanel::Material;
                     }
 
                     // link to the sound setting
@@ -1382,7 +1382,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                         editor_state.selected_object = format!("sound_{}", component_id);
                         editor_state.selected_scene_id = Some(scene_id);
                         editor_state.selected_type = SelectionType::Sound;
-                        editor_state.settings = SettingsPanel::Sound;
+                        editor_state.settings_panel = SettingsPanel::Sound;
                     }
 
                     if let Some(info) = &component.read().unwrap().get_base().info
@@ -1658,7 +1658,7 @@ pub fn create_component_settings(editor_state: &mut EditorState, state: &mut Sta
                 editor_state.selected_object = format!("sound_{}", sound_component_id);
                 editor_state.selected_scene_id = Some(scene_id);
                 editor_state.selected_type = SelectionType::Sound;
-                editor_state.settings = SettingsPanel::Sound;
+                editor_state.settings_panel = SettingsPanel::Sound;
             }
         }
     }

@@ -58,7 +58,7 @@ pub fn build_material_list(editor_state: &mut EditorState, exec_queue: Execution
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Material;
-                    editor_state.settings = SettingsPanel::Material;
+                    editor_state.settings_panel = SettingsPanel::Material;
                 }
                 else
                 {
@@ -149,7 +149,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                             editor_state.selected_object = format!("objects_{}", node.id);
                             editor_state.selected_scene_id = Some(scene_id);
                             editor_state.selected_type = SelectionType::Object;
-                            editor_state.settings = SettingsPanel::Components;
+                            editor_state.settings_panel = SettingsPanel::Components;
                         }
                     });
 
@@ -211,7 +211,7 @@ pub fn create_material_settings(editor_state: &mut EditorState, state: &mut Stat
                                     editor_state.selected_object = format!("texture_{}", texture_id);
                                     editor_state.selected_scene_id = Some(scene_id);
                                     editor_state.selected_type = SelectionType::Texture;
-                                    editor_state.settings = SettingsPanel::Texture;
+                                    editor_state.settings_panel = SettingsPanel::Texture;
                                 }
                             });
                         },

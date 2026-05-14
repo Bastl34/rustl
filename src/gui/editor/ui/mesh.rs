@@ -59,7 +59,7 @@ pub fn build_mesh_resources_list(editor_state: &mut EditorState, mesh_resources:
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::MeshResource;
-                    editor_state.settings = SettingsPanel::MeshResource;
+                    editor_state.settings_panel = SettingsPanel::MeshResource;
                 }
                 else
                 {

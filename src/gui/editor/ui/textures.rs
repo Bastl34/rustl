@@ -77,7 +77,7 @@ pub fn build_texture_list(editor_state: &mut EditorState, state: &State, ui: &mu
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = None;
                     editor_state.selected_type = SelectionType::Texture;
-                    editor_state.settings = SettingsPanel::Texture;
+                    editor_state.settings_panel = SettingsPanel::Texture;
                 }
                 else
                 {
@@ -157,7 +157,7 @@ pub fn create_texture_settings(editor_state: &mut EditorState, state: &mut State
                                 editor_state.selected_object = format!("material_{}", material_id);
                                 editor_state.selected_scene_id = Some(scene.id);
                                 editor_state.selected_type = SelectionType::Material;
-                                editor_state.settings = SettingsPanel::Material;
+                                editor_state.settings_panel = SettingsPanel::Material;
                             }
                         });
 

@@ -79,7 +79,7 @@ pub fn build_light_list(editor_state: &mut EditorState, exec_queue: ExecutionQue
                     editor_state.selected_object = id;
                     editor_state.selected_scene_id = Some(scene_id);
                     editor_state.selected_type = SelectionType::Light;
-                    editor_state.settings = SettingsPanel::Light;
+                    editor_state.settings_panel = SettingsPanel::Light;
                 }
                 else
                 {

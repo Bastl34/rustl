@@ -24,6 +24,10 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     {
         create_modal_debug_image(editor_state, state, ctx);
     }
+    else if editor_state.dialog_settings
+    {
+        create_modal_settings(editor_state, state, ctx);
+    }
     else if editor_state.dialog_help_shortcuts
     {
         create_modal_help_shortcuts(editor_state, ctx);
@@ -239,6 +243,23 @@ pub fn create_modal_debug_image(editor_state: &mut EditorState, _state: &mut Sta
     if !dialog_debug_image
     {
         editor_state.dialog_debug_image = dialog_debug_image;
+    }
+}
+
+pub fn create_modal_settings(editor_state: &mut EditorState, _state: &mut State, ctx: &egui::Context)
+{
+    let mut dialog_settings = editor_state.dialog_settings;
+
+    modal_with_title(ctx, &mut dialog_settings, "Settings", false, false, |ui|
+    {
+        ui.set_min_width(360.0);
+
+        editor_state.settings.ui(ui);
+    });
+
+    if !dialog_settings
+    {
+        editor_state.dialog_settings = dialog_settings;
     }
 }
 
