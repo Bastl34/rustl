@@ -884,7 +884,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
                 let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive(show_internal))).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
 
                 // *** drop onto root: make nodes top-level (no parent) ***
-                let drop_resp = ui.interact(toggle.rect, egui::Id::new("objects_root_drop"), egui::Sense::hover());
+                let drop_resp = ui.interact(toggle.rect, egui::Id::new(("objects_root_drop", scene_id)), egui::Sense::hover());
                 if drop_resp.dnd_hover_payload::<u32>().is_some()
                 {
                     ui.painter().rect_stroke(toggle.rect, 2.0, egui::Stroke::new(2.0, egui::Color32::YELLOW), egui::StrokeKind::Outside);
@@ -943,6 +943,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
             editor_state.hierarchy_flat_nodes_order = flat_order;
         });
     }
+
 
     // cameras
     {

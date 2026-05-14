@@ -192,6 +192,10 @@ impl Editor
         // ensure egui always knows the window has focus so text cursor blinks correctly
         raw_input.focused = true;
 
+        // remove when fixed: https://github.com/emilk/egui/issues/8092
+        //#[cfg(debug_assertions)]
+        //egui.ctx.global_style_mut(|s| { s.debug.warn_if_rect_changes_id = false; });
+
         let full_output = egui.ctx.run_ui(raw_input, |ui|
         {
             main_frame::create_frame(ui, &mut self.editor_state, state);
@@ -1675,3 +1679,4 @@ impl Editor
         });
     }
 }
+
