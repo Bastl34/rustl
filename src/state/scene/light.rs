@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{console_log, helper::{change_tracker::ChangeTracker, math::approx_zero}, state::scene::utilities::tags::Tags};
+use crate::{console_log, helper::{change_tracker::ChangeTracker}, state::scene::utilities::tags::Tags};
 
 use super::manager::id_manager;
 

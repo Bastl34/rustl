@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{any::Any, cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
+use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
 
 use egui::FullOutput;
 
@@ -937,7 +937,7 @@ impl Editor
         {
             if ctx.dragged_id().is_none()
             {
-                if !ctx.wants_pointer_input()
+                if !ctx.egui_wants_pointer_input()
                 {
                     let pos = ctx.input(|i| i.pointer.interact_pos());
 

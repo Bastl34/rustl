@@ -15,7 +15,6 @@ use winit::event::ElementState;
 use winit::keyboard::ModifiersKeyState;
 use winit::window::{Window, Fullscreen, CursorGrabMode};
 
-use crate::gui::editor::editor_project::load_and_apply_project;
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::platform::is_mac;
 use crate::input::input_point::PointState;

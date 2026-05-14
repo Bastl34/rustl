@@ -156,7 +156,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.horizontal(|ui|
             {
                 ui.label("Present mode:");
-                egui::ComboBox::from_id_source("present_mode_combo")
+                egui::ComboBox::from_id_salt("present_mode_combo")
                     .selected_text(label(present_mode))
                     .show_ui(ui, |ui|
                     {
