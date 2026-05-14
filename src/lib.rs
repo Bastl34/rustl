@@ -142,6 +142,7 @@ mod gui
         pub(crate) mod editor;
         pub(crate) mod editor_state;
         pub(crate) mod editor_project;
+        pub(crate) mod recent_projects;
         pub(crate) mod helper;
         pub(crate) mod gizmo;
         pub(crate) mod grid;

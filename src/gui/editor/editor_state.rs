@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -151,6 +151,8 @@ pub struct EditorState
 
     pub quad_view: bool,
 
+    pub recent_projects: RecentProjectsData,
+
     pub project_data: EditorProjectData,
     pub project_path: Option<String>,
     pub project_session_start: Instant,
@@ -260,6 +262,8 @@ impl EditorState
             fly_camera: true,
 
             quad_view: false,
+
+            recent_projects: RecentProjectsData::new(),
 
             project_data: EditorProjectData::default(),
             project_path: None,

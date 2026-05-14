@@ -347,7 +347,7 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
     }
 }
 
-pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &State, force_new_path: bool)
+pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &State, force_new_path: bool) -> Option<String>
 {
     let mut path = editor_state.project_path.clone();
     if editor_state.project_path.is_none() || force_new_path
@@ -359,7 +359,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
             .map(|path| path.to_string_lossy().into_owned())
     }
 
-    if let Some(path) = path
+    if let Some(path) = &path
     {
         // save_editor_project appends .json, so strip it if already present
         let base = path.strip_suffix(".json").unwrap_or(&path).to_string();
@@ -376,6 +376,8 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
             editor_state.project_path = Some(format!("{}.json", base));
         }
     }
+
+    path
 }
 
 pub fn load_and_apply_project(state: &mut State, path: &str, done_callback: ProjectDoneCallback)
@@ -399,13 +401,19 @@ pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &m
 
     if let Some(path) = path
     {
-        if let Some(project) = load_editor_project(&path)
-        {
-            editor_state.project_data = project.project.clone();
-            editor_state.project_path = Some(path.clone());
-            editor_state.project_session_start = web_time::Instant::now();
-            apply_editor_project(state, project, &path, loading_state, loading_progress_state, None);
-        }
+        load_editor_project_from_path(editor_state, state, path, loading_state, loading_progress_state);
+    }
+}
+
+pub fn load_editor_project_from_path(editor_state: &mut EditorState, state: &mut State, path: String, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
+{
+    if let Some(project) = load_editor_project(&path)
+    {
+        editor_state.project_data = project.project.clone();
+        editor_state.project_path = Some(path.clone());
+        editor_state.project_session_start = web_time::Instant::now();
+        editor_state.recent_projects.add_and_save(path.clone());
+        apply_editor_project(state, project, &path, loading_state, loading_progress_state, None);
     }
 }
 

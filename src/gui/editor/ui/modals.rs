@@ -379,7 +379,8 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
             painter.rect_filled(header_rect, 0.0, base_color);
 
             // aurora blobs — concentric circles with low alpha fake a soft blur
-            let blobs = [
+            let blobs =
+            [
                 (egui::pos2(header_rect.right() - 70.0, header_rect.top()    + 50.0),  180.0, (255u8,  90, 180)), // pink
                 (egui::pos2(header_rect.left()  + 80.0, header_rect.bottom() - 30.0),  200.0, ( 90u8, 140, 255)), // blue
                 (egui::pos2(header_rect.center().x - 40.0, header_rect.top() + 20.0),  140.0, (140u8,  80, 255)), // purple
@@ -423,25 +424,18 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
 
             // top-left: title + subtitle
             let inset = 12.0;
-            painter.text(
+            painter.text
+            (
                 egui::pos2(header_rect.left() + inset, header_rect.top() + inset),
                 egui::Align2::LEFT_TOP,
                 "Rustl",
                 egui::FontId::proportional(28.0),
                 egui::Color32::WHITE,
             );
-            /*
-            painter.text(
-                egui::pos2(header_rect.left() + inset, header_rect.top() + inset + 34.0),
-                egui::Align2::LEFT_TOP,
-                "Game Engine & 3D Scene Editor",
-                egui::FontId::proportional(12.0),
-                egui::Color32::from_white_alpha(180),
-            );
-             */
 
             // top-right: version
-            painter.text(
+            painter.text
+            (
                 egui::pos2(header_rect.right() - inset, header_rect.top() + inset),
                 egui::Align2::RIGHT_TOP,
                 format!("{}", env!("CARGO_PKG_VERSION")),
@@ -457,13 +451,15 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
                 egui::pos2(header_rect.left() + inset, header_rect.bottom() - inset - link_size.y),
                 link_size,
             );
-            ui.scope_builder(
+            ui.scope_builder
+            (
                 egui::UiBuilder::new()
                     .max_rect(link_rect)
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |ui|
                 {
-                    ui.hyperlink_to(
+                    ui.hyperlink_to
+                    (
                         egui::RichText::new(repo_display).size(12.0).color(egui::Color32::from_white_alpha(180)),
                         repo_url,
                     );
@@ -476,11 +472,97 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
                 ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 6.0);
 
                 ui.separator();
+
+                let recents = editor_state.recent_projects.get_latest_items(10);
+                let inset = 20.0;
+                let row_height = 38.0;
+                let row_width = splash_width - inset * 2.0;
+
+                if !recents.is_empty()
+                {
+                    ui.add_space(12.0);
+
+                    ui.horizontal(|ui|
+                    {
+                        ui.add_space(inset);
+                        ui.label(egui::RichText::new("Recent Projects").size(12.0).color(egui::Color32::from_white_alpha(150)).strong());
+                    });
+                    ui.add_space(4.0);
+
+                    let mut chosen: Option<String> = None;
+
+                    egui::ScrollArea::vertical().max_height(130.0).id_salt("splash_recent_scroll").show(ui, |ui|
+                    {
+                        for path in &recents
+                        {
+                            let stem = crate::helper::file::get_stem(path);
+                            let display_name = if stem.is_empty() { path.clone() } else { stem };
+
+                            ui.horizontal(|ui|
+                            {
+                                ui.add_space(inset);
+
+                                let (rect, response) = ui.allocate_exact_size
+                                (
+                                    egui::vec2(row_width, row_height),
+                                    egui::Sense::click(),
+                                );
+
+                                let bg = if response.hovered()
+                                {
+                                    egui::Color32::from_white_alpha(22)
+                                }
+                                else
+                                {
+                                    egui::Color32::from_white_alpha(6)
+                                };
+                                ui.painter().rect_filled(rect, 6.0, bg);
+
+                                let row_painter = ui.painter_at(rect);
+                                let text_inset = 12.0;
+                                row_painter.text
+                                (
+                                    egui::pos2(rect.left() + text_inset, rect.top() + 7.0),
+                                    egui::Align2::LEFT_TOP,
+                                    &display_name,
+                                    egui::FontId::proportional(13.0),
+                                    egui::Color32::WHITE,
+                                );
+                                row_painter.text
+                                (
+                                    egui::pos2(rect.left() + text_inset, rect.bottom() - 7.0),
+                                    egui::Align2::LEFT_BOTTOM,
+                                    path,
+                                    egui::FontId::proportional(10.0),
+                                    egui::Color32::from_white_alpha(140),
+                                );
+
+                                let response = response.on_hover_text(path);
+                                if response.clicked()
+                                {
+                                    chosen = Some(path.clone());
+                                }
+                            });
+                        }
+                    });
+
+                    if let Some(path) = chosen
+                    {
+                        let loading_state = editor_state.loading.clone();
+                        let loading_progress_state = editor_state.loading_progress.clone();
+                        crate::gui::editor::editor_project::load_editor_project_from_path(editor_state, state, path, loading_state, loading_progress_state);
+                        close = true;
+                    }
+
+                    ui.add_space(10.0);
+                    ui.separator();
+                }
+
                 ui.add_space(10.0);
 
                 ui.horizontal(|ui|
                 {
-                    ui.add_space(20.0);
+                    ui.add_space(inset);
 
                     if ui.button("Open Project...").clicked()
                     {
@@ -492,7 +574,7 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                     {
-                        ui.add_space(20.0);
+                        ui.add_space(inset);
                         if ui.button(egui::RichText::new("Continue").strong()).clicked()
                         {
                             close = true;

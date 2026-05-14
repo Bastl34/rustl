@@ -227,16 +227,49 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             crate::gui::editor::editor_project::load_editor_project_with_dialog(editor_state, state, loading_state, loading_progress_state);
         }
 
+        ui.menu_button("Open Recent", |ui|
+        {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.set_min_width(160.0);
+
+            let recents = editor_state.recent_projects.get_latest_items(10);
+            if recents.is_empty()
+            {
+                ui.add_enabled(false, egui::Button::new("(no recent projects)"));
+            }
+            else
+            {
+                for path in &recents
+                {
+                    let stem = crate::helper::file::get_stem(path);
+                    let label = if stem.is_empty() { path.clone() } else { stem };
+                    if ui.button(label).on_hover_text(path).clicked()
+                    {
+                        ui.close();
+                        let loading_state = editor_state.loading.clone();
+                        let loading_progress_state = editor_state.loading_progress.clone();
+                        crate::gui::editor::editor_project::load_editor_project_from_path(editor_state, state, path.clone(), loading_state, loading_progress_state);
+                    }
+                }
+            }
+        });
+
         let shortcut_save = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S);
         if ui.add(egui::Button::new("Save Project").shortcut_text(ui.ctx().format_shortcut(&shortcut_save))).clicked()
         {
-            crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false);
+            if let Some(path) = crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false)
+            {
+                editor_state.recent_projects.add_and_save(path);
+            }
         }
 
         let shortcut_save_as = egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::S);
         if ui.add(egui::Button::new("Save Project As...").shortcut_text(ui.ctx().format_shortcut(&shortcut_save_as))).clicked()
         {
-            crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, true);
+            if let Some(path) = crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, true)
+            {
+                editor_state.recent_projects.add_and_save(path);
+            }
         }
 
         let shortcut_exit = match ui.ctx().os()
