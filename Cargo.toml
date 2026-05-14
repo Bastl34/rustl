@@ -38,7 +38,7 @@ uuid = {version = "1.23.1", features = ["v4"] }
 
 xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
 
-parry3d = "0.26.0"
+parry3d = "0.26.1"
 
 arboard = "3.6.1"
 
