@@ -64,8 +64,10 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     });
 
     //bottom
-    egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show_inside(ui, |ui|
+    if editor_state.bottom_panel_open
     {
+        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show_inside(ui, |ui|
+        {
         ui.horizontal(|ui|
         {
             ui.selectable_value(&mut editor_state.bottom, BottomPanel::None, "⏷");
@@ -144,29 +146,36 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         {
             create_debug_settings(editor_state, state, ui);
         }
-    });
+        });
+    }
 
     //left
-    egui::Panel::left("left_panel").frame(frame).min_size(300.0).show_inside(ui, |ui|
+    if editor_state.left_panel_open
     {
-        ui.set_max_width(ui.available_width());
+        egui::Panel::left("left_panel").frame(frame).min_size(300.0).show_inside(ui, |ui|
+        {
+            ui.set_max_width(ui.available_width());
 
-        //ui.add_enabled_ui(!loading, |ui|
-        //{
-            create_left_sidebar(editor_state, state, ui);
-        //});
-    });
+            //ui.add_enabled_ui(!loading, |ui|
+            //{
+                create_left_sidebar(editor_state, state, ui);
+            //});
+        });
+    }
 
     //right
-    egui::Panel::right("right_panel").frame(frame).show_inside(ui, |ui|
+    if editor_state.right_panel_open
     {
-        ui.set_min_width(300.0);
+        egui::Panel::right("right_panel").frame(frame).show_inside(ui, |ui|
+        {
+            ui.set_min_width(300.0);
 
-        //ui.add_enabled_ui(!loading, |ui|
-        //{
-            create_right_sidebar(editor_state, state, ui);
-        //});
-    });
+            //ui.add_enabled_ui(!loading, |ui|
+            //{
+                create_right_sidebar(editor_state, state, ui);
+            //});
+        });
+    }
 
     // scene tabs
     egui::Panel::top("scene_tabs_panel").frame(frame).show_inside(ui, |ui|
@@ -317,6 +326,42 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         if ui.button("About").clicked()
         {
             editor_state.dialog_about = true;
+        }
+    });
+
+    // sidebar toggles (top-right, VS Code style)
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+    {
+        let icon_size = 16.0;
+
+        // right sidebar
+        {
+            let img = egui::Image::new(egui::include_image!("../../../../resources/icons/sidebar_right.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+            let btn = egui::Button::image(img).selected(editor_state.right_panel_open).frame(true);
+            if ui.add(btn).on_hover_text("Toggle right sidebar (Ctrl+Alt+B)").clicked()
+            {
+                editor_state.right_panel_open = !editor_state.right_panel_open;
+            }
+        }
+
+        // left sidebar
+        {
+            let img = egui::Image::new(egui::include_image!("../../../../resources/icons/sidebar_left.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+            let btn = egui::Button::image(img).selected(editor_state.left_panel_open).frame(true);
+            if ui.add(btn).on_hover_text("Toggle left sidebar (Ctrl+B)").clicked()
+            {
+                editor_state.left_panel_open = !editor_state.left_panel_open;
+            }
+        }
+
+        // bottom panel
+        {
+            let img = egui::Image::new(egui::include_image!("../../../../resources/icons/panel_bottom.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+            let btn = egui::Button::image(img).selected(editor_state.bottom_panel_open).frame(true);
+            if ui.add(btn).on_hover_text("Toggle bottom panel (Ctrl+J)").clicked()
+            {
+                editor_state.bottom_panel_open = !editor_state.bottom_panel_open;
+            }
         }
     });
 }

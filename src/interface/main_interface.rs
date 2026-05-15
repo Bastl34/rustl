@@ -18,7 +18,7 @@ use winit::window::{Window, Fullscreen, CursorGrabMode};
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::platform::is_mac;
 use crate::input::input_point::PointState;
-use crate::input::keyboard::Modifier;
+use crate::input::keyboard::{Key, Modifier};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
 use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
@@ -33,7 +33,7 @@ use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 use super::app::App;
 use super::context::Context;
 use super::gilrs::{gilrs_event, gilrs_initialize};
-use super::winit::winit_map_key;
+use super::winit::{winit_map_key, winit_map_physical_key};
 
 pub struct MainInterface
 {
@@ -688,7 +688,13 @@ impl MainInterface
             {
                 winit::event::WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } =>
                 {
-                    let key = winit_map_key(&event.logical_key, event.location);
+                    let mut key = winit_map_key(&event.logical_key, event.location);
+
+                    // fall back to the physical (layout-independent) key when the logical key is mangled by the layout - e.g. ctrl+alt is treated as altgr on windows, breaking shortcuts like ctrl+alt+b
+                    if key == Key::Unknown
+                    {
+                        key = winit_map_physical_key(&event.physical_key);
+                    }
 
                     if event.state == ElementState::Pressed
                     {

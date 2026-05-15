@@ -307,6 +307,25 @@ impl Editor
             state.rendering.fullscreen.set(!*state.rendering.fullscreen.get_ref());
         }
 
+        // toggle sidebars (Ctrl+B = left, Ctrl+Alt+B = right)
+        if state.io.input_manager.keyboard.is_pressed(Key::B) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        {
+            if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
+            {
+                self.editor_state.right_panel_open = !self.editor_state.right_panel_open;
+            }
+            else
+            {
+                self.editor_state.left_panel_open = !self.editor_state.left_panel_open;
+            }
+        }
+
+        // toggle bottom panel (Ctrl+J)
+        if state.io.input_manager.keyboard.is_pressed(Key::J) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        {
+            self.editor_state.bottom_panel_open = !self.editor_state.bottom_panel_open;
+        }
+
         // escape
         if state.io.input_manager.keyboard.is_pressed(Key::Escape)
         {

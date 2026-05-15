@@ -119,6 +119,9 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             binding_row(ui, &["H"],   "Hide / show UI");
             binding_row(ui, &["F"],   "Toggle fullscreen");
             binding_row(ui, &["Ctrl", "Alt", "Q"], "Quad view");
+            binding_row(ui, &["Ctrl", "B"],        "Toggle left sidebar");
+            binding_row(ui, &["Ctrl", "Alt", "B"], "Toggle right sidebar");
+            binding_row(ui, &["Ctrl", "J"],        "Toggle bottom panel");
 
             // try mode
             category_header(ui, "  Try Mode");

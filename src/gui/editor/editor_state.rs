@@ -151,6 +151,10 @@ pub struct EditorState
 
     pub quad_view: bool,
 
+    pub left_panel_open: bool,
+    pub right_panel_open: bool,
+    pub bottom_panel_open: bool,
+
     pub recent_projects: RecentProjectsData,
     pub settings: EditorSettings,
 
@@ -265,6 +269,10 @@ impl EditorState
             fly_camera: true,
 
             quad_view: false,
+
+            left_panel_open: true,
+            right_panel_open: true,
+            bottom_panel_open: true,
 
             recent_projects: RecentProjectsData::new(),
             settings: EditorSettings::new(),
