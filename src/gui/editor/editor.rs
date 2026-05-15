@@ -431,6 +431,12 @@ impl Editor
             state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
         }
 
+        // x-ray mode toggle
+        if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
+        {
+            state.rendering.xray_mode = !state.rendering.xray_mode;
+        }
+
         // quad view toggle (on windows its mapped to At)
         if (state.io.input_manager.keyboard.is_holding(Key::Q) || state.io.input_manager.keyboard.is_holding(Key::At)) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
         {

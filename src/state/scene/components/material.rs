@@ -211,7 +211,9 @@ pub struct MaterialData
     pub smooth_shading: bool,
 
     pub reflection_only: bool,
-    pub backface_culling: bool
+    pub backface_culling: bool,
+
+    pub allow_xray: bool, // when false, this material is excluded from x-ray mode (gizmos, grid, etc.)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,6 +274,8 @@ impl Material
 
             reflection_only: false,
             backface_culling: true,
+
+            allow_xray: true,
         };
 
         Material

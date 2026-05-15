@@ -442,6 +442,11 @@ impl MainInterface
                     render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.wireframe_mode);
                 }
 
+                if state.rendering.xray_mode != render_scene.xray_mode || (state.rendering.xray_mode && state.rendering.xray_alpha != render_scene.xray_alpha)
+                {
+                    render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.xray_mode, state.rendering.xray_alpha);
+                }
+
                 render_scene.update(&mut self.context.wgpu, state, scene);
 
                 scene.render_item = render_item;

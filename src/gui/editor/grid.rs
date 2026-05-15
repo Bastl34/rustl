@@ -177,6 +177,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                         component_downcast_mut!(material, Material);
                         material.get_base_mut().name = "grid material".to_string();
                         material.get_data_mut().get_mut().unlit_shading = true;
+                        material.get_data_mut().get_mut().allow_xray = false;
                         material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.0, 0.0, 0.0);
                     }
                 }
@@ -213,6 +214,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                         component_downcast_mut!(material, Material);
                         material.get_base_mut().name = "grid origin material".to_string();
                         material.get_data_mut().get_mut().unlit_shading = true;
+                        material.get_data_mut().get_mut().allow_xray = false;
                         material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
                         material.get_data_mut().get_mut().alpha = 0.7;
                     }
@@ -278,6 +280,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                         component_downcast_mut!(material, Material);
                         material.get_base_mut().name = "grid origin material".to_string();
                         material.get_data_mut().get_mut().unlit_shading = true;
+                        material.get_data_mut().get_mut().allow_xray = false;
                         material.get_data_mut().get_mut().alpha = 0.8;
                         material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
                     }
@@ -304,6 +307,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             plane_material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.9, 0.9, 1.0);
             plane_material.get_data_mut().get_mut().alpha = 0.7;
             plane_material.get_data_mut().get_mut().unlit_shading = true;
+            plane_material.get_data_mut().get_mut().allow_xray = false;
 
             let plane_material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(plane_material)));
 

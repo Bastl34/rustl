@@ -16,6 +16,8 @@ pub const FPS_CHART_VALUES: usize = 100;
 pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
 pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 
+pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
+
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
 pub const ENGINE_INTERNAL_TAG_PREFX: &str = "__internal_";
@@ -70,6 +72,9 @@ pub struct Rendering
     pub max_texture_resolution: Option<u32>,
 
     pub wireframe_mode: bool,
+
+    pub xray_mode: bool,
+    pub xray_alpha: f32,
 }
 
 pub struct SupportedFileTypes
@@ -310,6 +315,9 @@ impl State
                 max_texture_resolution: None,
 
                 wireframe_mode: false,
+
+                xray_mode: false,
+                xray_alpha: DEFAULT_XRAY_ALPHA,
             },
 
             io: InputOutput

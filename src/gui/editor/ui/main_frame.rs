@@ -418,6 +418,32 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // wireframe mode
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/wireframe.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let mut btn = egui::Button::image(img).selected(state.rendering.wireframe_mode).frame(true);
+                let supported = state.rendering_adapter.wireframe_mode_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle wireframe mode" } else { "wireframe mode not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
+                }
+            }
+
+            // x-ray mode (Blender-style see-through)
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/xray.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(state.rendering.xray_mode).frame(true);
+                if ui.add(btn).on_hover_text("toggle x-ray mode (see through objects)").clicked()
+                {
+                    state.rendering.xray_mode = !state.rendering.xray_mode;
+                }
+            }
+
             ui.separator();
 
             {

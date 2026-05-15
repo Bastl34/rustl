@@ -104,8 +104,7 @@ pub struct MaterialUniform
 
     pub ibl_diffuse_intensity: f32,
 
-    //pub _padding1: [u32; 2],
-    pub _padding1: u32,
+    pub allow_xray: u32,
 
     pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
@@ -199,11 +198,11 @@ impl MaterialUniform
             unlit: material_data.unlit_shading as u32,
             ibl_diffuse_intensity: material_data.ibl_diffuse_intensity,
 
+            allow_xray: material_data.allow_xray as u32,
+
             texture_transforms,
             textures_used: textures_used,
 
-            //_padding1: [0, 0],
-            _padding1: 0,
             _padding2: [0, 0, 0],
         }
     }

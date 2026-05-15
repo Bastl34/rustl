@@ -7,6 +7,6 @@
     <path d="M12,3L12,21" style="fill:none;stroke:white;stroke-width:2px;"/>
     <!-- horizontal divider -->
     <path d="M3,12L21,12" style="fill:none;stroke:white;stroke-width:2px;"/>
-    <!-- active viewport marker (top-left) -->
-    <rect x="5.5" y="5.5" width="4" height="4" rx="0.5" ry="0.5" style="fill:white;"/>
+    <!-- active viewport marker (top-right) -->
+    <rect x="14.5" y="5.5" width="4" height="4" rx="0.5" ry="0.5" style="fill:white;"/>
 </svg>

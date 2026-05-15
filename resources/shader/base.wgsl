@@ -38,6 +38,7 @@ struct SceneUniform
     gamma: f32,
     exposure: f32,
     ibl_diffuse_intensity: f32,
+    xray_alpha: f32,
 };
 
 struct SkeletonUniform
@@ -347,8 +348,7 @@ struct MaterialUniform
 
     ibl_diffuse_intensity: f32,
 
-    //_padding1: vec2<u32>,
-    _padding1: u32,
+    allow_xray: u32,
 
     texture_transforms: array<TextureTransform, TEXTURE_AMOUNT>,
     textures_used: u32
@@ -837,6 +837,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     alpha *= distance_fading_factor;
         */
+
+    // x-ray mode: clamp alpha to xray_alpha so opaque objects become see-through
+    // materials with allow_xray=0 (gizmos, grid, etc.) are excluded
+    if (material.allow_xray != 0u)
+    {
+        alpha = min(alpha, scene.xray_alpha);
+    }
 
     if (alpha < 0.000001)
     {

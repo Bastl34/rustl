@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -77,11 +77,12 @@ pub struct SceneUniform
     pub gamma: f32,
     pub exposure: f32,
     pub ibl_diffuse_intensity: f32,
+    pub xray_alpha: f32,
 }
 
 impl SceneUniform
 {
-    pub fn new(scene_data: &SceneData) -> Self
+    pub fn new(scene_data: &SceneData, xray_alpha: f32) -> Self
     {
         let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
         let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
@@ -92,6 +93,7 @@ impl SceneUniform
             gamma: gamma,
             exposure: exposure,
             ibl_diffuse_intensity: ibl_diffuse_intensity,
+            xray_alpha: xray_alpha,
         }
     }
 }
@@ -135,6 +137,8 @@ pub struct Scene
 
     samples: u32,
     pub wireframe_mode: bool,
+    pub xray_mode: bool,
+    pub xray_alpha: f32,
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
@@ -226,6 +230,8 @@ impl Scene
 
             samples,
             wireframe_mode: false,
+            xray_mode: false,
+            xray_alpha: DEFAULT_XRAY_ALPHA,
             distance_sorting: true,
             frustum_culling: true,
             occlusion_culling: true,
@@ -267,7 +273,8 @@ impl Scene
     {
         let data = scene.get_data();
 
-        let scene_uniform = SceneUniform::new(data);
+        let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -284,7 +291,8 @@ impl Scene
     {
         let data = scene.get_data();
 
-        let scene_uniform = SceneUniform::new(data);
+        let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
     }
@@ -1146,6 +1154,13 @@ impl Scene
         self.create_pipelines(wgpu, scene, true);
     }
 
+    pub fn xray_mode_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, xray_mode: bool, xray_alpha: f32)
+    {
+        self.xray_mode = xray_mode;
+        self.xray_alpha = xray_alpha;
+        self.update_buffer(wgpu, scene);
+    }
+
     pub fn msaa_sample_size_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, samples: u32)
     {
         self.samples = samples;
@@ -1979,6 +1994,8 @@ impl Scene
             let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
             let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
 
+            let material_allow_xray = mat.as_any().downcast_ref::<MaterialComponent>().map(|m| m.get_data().allow_xray).unwrap_or(true);
+
             for mesh in meshes
             {
                 let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
@@ -1998,11 +2015,16 @@ impl Scene
                     {
                         let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
+                        // x-ray mode forces no depth-write on the color pass so back faces / occluded objects remain visible
+                        // materials with allow_xray=false (gizmos, grid, etc.) keep their normal pipeline so they stay on top
+                        let xray_color = color_pipeline && self.xray_mode && material_allow_xray;
+
                         if node.settings.depth_test && node.settings.depth_write
                         {
                             if color_pipeline
                             {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Color as usize].get());
+                                let pipe = if xray_color { RenderPipelineType::ColorNoWrite } else { RenderPipelineType::Color };
+                                pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
                             }
                             else
                             {
@@ -2013,7 +2035,8 @@ impl Scene
                         {
                             if color_pipeline
                             {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoCompare as usize].get());
+                                let pipe = if xray_color { RenderPipelineType::ColorNoWriteNoCompare } else { RenderPipelineType::ColorNoCompare };
+                                pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
                             }
                             else
                             {

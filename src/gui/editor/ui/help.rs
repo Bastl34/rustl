@@ -149,6 +149,8 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             // rendering
             category_header(ui, "  Rendering");
             binding_row(ui, &["Shift", "Z"],  "Toggle wireframe mode");
+            binding_row(ui, &["Alt", "Z"],    "Toggle x-ray mode");
+            binding_row(ui, &["Ctrl", "Alt", "Q"], "Toggle quad view");
 
             // grid
             category_header(ui, "  Grid");
