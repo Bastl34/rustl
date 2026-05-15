@@ -89,6 +89,11 @@ pub struct LightBuffer
 impl RenderItem for LightBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.lights_amount.size() + self.lights_buffer.size()
+    }
 }
 
 impl LightBuffer

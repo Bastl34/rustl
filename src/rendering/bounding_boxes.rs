@@ -37,6 +37,11 @@ pub struct BoundingBoxesBuffer
 impl RenderItem for BoundingBoxesBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl BoundingBoxesBuffer

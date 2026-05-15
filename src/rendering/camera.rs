@@ -51,6 +51,11 @@ pub struct CameraBuffer
 impl RenderItem for CameraBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl CameraBuffer

@@ -1,7 +1,7 @@
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, state::{scene::{components::material::Material, scene::Scene}, state::{PresentModeSetting, State}}};
+use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, state::{helper::render_item::render_item_gpu_usage, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::{PresentModeSetting, State}}};
 
 use super::super::editor_state::EditorState;
 
@@ -27,6 +27,8 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
     let mut vertices_amout = 0;
     let mut indices_amout = 0;
 
+    let mut buffer_gpu_memory_usage: u64 = 0;
+
     for scene in &state.scenes
     {
         let all_nodes = Scene::list_all_child_nodes(&scene.nodes);
@@ -48,6 +50,17 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
                     nodes_solid_amout += 1;
                 }
             }
+
+            // per-node buffers (instances, skeleton, morph target bind group)
+            buffer_gpu_memory_usage += render_item_gpu_usage(&node.instance_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&node.skeleton_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&node.skeleton_morph_target_bind_group_render_item);
+
+            if let Some(mesh) = node.find_component::<Mesh>()
+            {
+                component_downcast!(mesh, Mesh);
+                buffer_gpu_memory_usage += render_item_gpu_usage(&mesh.morph_target_render_item);
+            }
         }
 
         nodes_amount += all_nodes.len();
@@ -55,6 +68,28 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         materials_amout += scene.materials.len();
         cameras_amout += scene.cameras.len();
         lights_amout += scene.lights.get_ref().len();
+
+        // scene level buffers (rendering scene internals + lights)
+        buffer_gpu_memory_usage += render_item_gpu_usage(&scene.render_item);
+        buffer_gpu_memory_usage += render_item_gpu_usage(&scene.lights_render_item);
+
+        // camera buffers
+        for camera in &scene.cameras
+        {
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.bind_group_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.hzb_texture_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.hzb_downsample_bind_group_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.visibility_buffer_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.hzb_occlusion_bind_group_render_item);
+        }
+
+        // material buffers
+        for material in scene.materials.values()
+        {
+            let material = material.read().unwrap();
+            buffer_gpu_memory_usage += render_item_gpu_usage(&material.get_base().render_item);
+        }
     }
 
     meshes_amout += state.resources.mesh_resources.len();
@@ -63,7 +98,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         let mesh_resource = mesh_resource.1.read().unwrap();
         vertices_amout += mesh_resource.get_data().vertices.len();
         indices_amout += mesh_resource.get_data().indices.len();
+
+        // vertex / index buffers
+        buffer_gpu_memory_usage += render_item_gpu_usage(&mesh_resource.render_item);
     }
+
+    let buffer_gpu_memory_usage = buffer_gpu_memory_usage as f32 / 1024.0 / 1024.0;
 
     let mut tex_memory_usage = 0.0;
     let mut tex_gpu_memory_usage = 0.0;
@@ -110,7 +150,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.label(RichText::new("🖵 GPU memory usage").strong());
         ui.label(format!(" ⚫ textures: {:.2} MB", tex_gpu_memory_usage));
-        ui.label(format!(" ⚫ buffers: TODO"));
+        ui.label(format!(" ⚫ buffers: {:.2} MB", buffer_gpu_memory_usage));
     });
 
     // general rendering settings

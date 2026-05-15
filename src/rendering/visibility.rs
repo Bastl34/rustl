@@ -21,6 +21,11 @@ pub struct VisibilityBuffer
 impl RenderItem for VisibilityBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.storage_buffer.size() + self.readback_buffer.size()
+    }
 }
 
 impl VisibilityBuffer

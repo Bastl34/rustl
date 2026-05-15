@@ -104,6 +104,11 @@ pub struct InstanceBuffer
 impl RenderItem for InstanceBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl InstanceBuffer

@@ -7,6 +7,7 @@ pub trait RenderItem: Any
 {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn gpu_usage(&self) -> u64 { 0 }
 }
 
 #[macro_export]
@@ -36,4 +37,13 @@ pub fn get_render_item_mut<T>(render_item: &mut RenderItemType) -> Box<&mut T> w
 {
     let any = render_item.as_any_mut();
     Box::new(any.downcast_mut::<T>().unwrap())
+}
+
+pub fn render_item_gpu_usage(render_item: &RenderItemOption) -> u64
+{
+    match render_item
+    {
+        Some(item) => item.gpu_usage(),
+        None => 0,
+    }
 }

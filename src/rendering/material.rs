@@ -225,6 +225,11 @@ pub struct MaterialBuffer
 impl RenderItem for MaterialBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl MaterialBuffer

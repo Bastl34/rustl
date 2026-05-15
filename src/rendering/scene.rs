@@ -172,6 +172,15 @@ pub struct Scene
 impl RenderItem for Scene
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+        + self.bounding_boxes_buffer.gpu_usage()
+        + self.hzb_cull_buffer.gpu_usage()
+        + self.empty_skeleton.gpu_usage()
+        + self.empty_morph_target.gpu_usage()
+    }
 }
 
 impl Scene

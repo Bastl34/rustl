@@ -23,6 +23,11 @@ pub struct HZBCullBuffer
 impl RenderItem for HZBCullBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl HZBCullBuffer
