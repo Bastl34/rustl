@@ -1,7 +1,7 @@
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, state::{helper::render_item::render_item_gpu_usage, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::{PresentModeSetting, State}}};
+use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, rendering::morph_target::MorphTarget, state::{helper::render_item::{get_render_item, render_item_gpu_usage}, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::{PresentModeSetting, State}}};
 
 use super::super::editor_state::EditorState;
 
@@ -28,6 +28,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
     let mut indices_amout = 0;
 
     let mut buffer_gpu_memory_usage: u64 = 0;
+    let mut morph_target_tex_gpu_memory_usage: u64 = 0;
 
     for scene in &state.scenes
     {
@@ -60,6 +61,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             {
                 component_downcast!(mesh, Mesh);
                 buffer_gpu_memory_usage += render_item_gpu_usage(&mesh.morph_target_render_item);
+
+                if let Some(render_item) = mesh.morph_target_render_item.as_ref()
+                {
+                    let morph_target = get_render_item::<MorphTarget>(render_item);
+                    morph_target_tex_gpu_memory_usage += morph_target.texture_gpu_usage();
+                }
             }
         }
 
@@ -114,6 +121,9 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         tex_memory_usage += texture.memory_usage() as f32;
         tex_gpu_memory_usage += texture.gpu_usage() as f32;
     }
+
+    // morph target textures are GPU textures too
+    tex_gpu_memory_usage += morph_target_tex_gpu_memory_usage as f32;
 
     tex_memory_usage = tex_memory_usage / 1024.0 / 1024.0;
     tex_gpu_memory_usage = tex_gpu_memory_usage / 1024.0 / 1024.0;
