@@ -1635,6 +1635,7 @@ impl Editor
 
         let editor_state = self.editor_state.loading.clone();
         *editor_state.write().unwrap() = true;
+        *self.editor_state.loading_progress.write().unwrap() = 0.5;
 
         spawn_thread(move ||
         {
