@@ -139,6 +139,14 @@ impl Drop for LoadingGuard
     }
 }
 
+// generic "are you sure?" dialog - shown while present in EditorState, hidden when None
+pub struct ConfirmDialog
+{
+    pub title: String,
+    pub message: String,
+    pub callback: Box<dyn FnOnce(&mut EditorState, &mut State)>,
+}
+
 pub struct EditorState
 {
     pub visible: bool,
@@ -238,6 +246,8 @@ pub struct EditorState
     pub dialog_help_shortcuts: bool,
     pub dialog_about: bool,
     pub dialog_splash: bool,
+
+    pub confirm_dialog: Option<ConfirmDialog>,
 
     pub asset_filter: String,
     pub reuse_materials_by_name: bool,
@@ -358,6 +368,8 @@ impl EditorState
             dialog_about:false,
             dialog_splash: false,
 
+            confirm_dialog: None,
+
             asset_filter: "".to_string(),
             reuse_materials_by_name: true,
             assets_objects: vec![],
@@ -386,6 +398,17 @@ impl EditorState
         self.project_data = EditorProjectData::default();
         self.project_path = None;
         self.project_session_start = Instant::now();
+    }
+
+    // shows a generic confirm modal - the callback runs when the user clicks "Yes"
+    pub fn show_confirm_dialog(&mut self, title: &str, message: &str, callback: impl FnOnce(&mut EditorState, &mut State) + 'static)
+    {
+        self.confirm_dialog = Some(ConfirmDialog
+        {
+            title: title.to_string(),
+            message: message.to_string(),
+            callback: Box::new(callback),
+        });
     }
 
     pub fn accumulate_editing_time(&mut self)

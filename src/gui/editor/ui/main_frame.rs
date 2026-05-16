@@ -214,9 +214,17 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         let shortcut_new = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
         if ui.add(egui::Button::new("New").shortcut_text(ui.ctx().format_shortcut(&shortcut_new))).clicked()
         {
-            editor_state.reset_project();
-            state.delete_all_scenes(true);
-            state.add_scene("main scene");
+            editor_state.show_confirm_dialog
+            (
+                "New Project",
+                "Do you really want to create a new project?\nUnsaved changes will be lost.",
+                |editor_state, state|
+                {
+                    editor_state.reset_project();
+                    state.delete_all_scenes(true);
+                    state.add_scene("main scene");
+                }
+            );
         }
 
         let shortcut_open = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::O);

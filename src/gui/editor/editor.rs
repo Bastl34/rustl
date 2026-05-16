@@ -435,9 +435,17 @@ impl Editor
         {
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::N)
             {
-                self.editor_state.reset_project();
-                state.delete_all_scenes(true);
-                state.add_scene("main scene");
+                self.editor_state.show_confirm_dialog
+                (
+                    "New Project",
+                    "Do you really want to create a new project?\nUnsaved changes will be lost.",
+                    |editor_state, state|
+                    {
+                        editor_state.reset_project();
+                        state.delete_all_scenes(true);
+                        state.add_scene("main scene");
+                    }
+                );
 
                 // reset N key cooldown - blocking dialog consumes unknown time, preventing the next press
                 state.io.input_manager.keyboard.reset_key(Key::N);

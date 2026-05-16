@@ -4,7 +4,11 @@ use super::super::editor_state::EditorState;
 
 pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
-    if editor_state.dialog_splash
+    if editor_state.confirm_dialog.is_some()
+    {
+        create_modal_confirm(editor_state, state, ctx);
+    }
+    else if editor_state.dialog_splash
     {
         create_modal_splash(editor_state, state, ctx);
     }
@@ -35,6 +39,100 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     else if editor_state.dialog_about
     {
         create_modal_about(editor_state, ctx);
+    }
+}
+
+pub fn create_modal_confirm(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+{
+    let (title, message) = match &editor_state.confirm_dialog
+    {
+        Some(dialog) => (dialog.title.clone(), dialog.message.clone()),
+        None => return,
+    };
+
+    let mut open = true;
+    let mut confirmed = false;
+    let mut cancelled = false;
+
+    // own window with .anchor() instead of modal_with_title:
+    // modal_with_title uses .pivot() + .default_pos(), which together with auto-sizing
+    // makes the window grow a little every frame. anchoring pins it and keeps it stable.
+    egui::Window::new(&title)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .collapsible(false)
+        .resizable(false)
+        .movable(false)
+        .open(&mut open)
+        .show(ctx, |ui|
+    {
+        ui.set_width(360.0);
+        ui.add_space(8.0);
+
+        // icon + message row
+        ui.horizontal(|ui|
+        {
+            ui.add_space(4.0);
+
+            let icon_size = 44.0;
+            let icon = egui::Image::new(egui::include_image!("../../../../resources/icons/info.svg"))
+                .fit_to_exact_size(egui::vec2(icon_size, icon_size))
+                .tint(egui::Color32::from_rgb(120, 170, 235));
+            ui.add(icon);
+
+            ui.add_space(12.0);
+
+            ui.vertical(|ui|
+            {
+                ui.add_space(2.0);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                ui.label(egui::RichText::new(&message).size(13.5));
+            });
+        });
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        // buttons, right aligned
+        // the inner right_to_left layout must be wrapped in a horizontal row, otherwise it
+        // grabs all remaining height (for vertical centering) and the window grows every frame
+        ui.horizontal(|ui|
+        {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                let button_size = egui::vec2(78.0, 28.0);
+
+                let yes = egui::Button::new(egui::RichText::new("Yes").strong().color(egui::Color32::WHITE))
+                    .fill(egui::Color32::from_rgb(80, 120, 200))
+                    .min_size(button_size);
+                if ui.add(yes).clicked()
+                {
+                    confirmed = true;
+                }
+
+                ui.add_space(8.0);
+
+                if ui.add(egui::Button::new("No").min_size(button_size)).clicked()
+                {
+                    cancelled = true;
+                }
+            });
+        });
+
+        ui.add_space(4.0);
+    });
+
+    if confirmed
+    {
+        // take the dialog out first, so the callback can freely borrow editor_state
+        if let Some(dialog) = editor_state.confirm_dialog.take()
+        {
+            (dialog.callback)(editor_state, state);
+        }
+    }
+    else if cancelled || !open
+    {
+        editor_state.confirm_dialog = None;
     }
 }
 
