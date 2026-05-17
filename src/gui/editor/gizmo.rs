@@ -344,16 +344,23 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                     {
                         ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
                         ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
+                        let ray_dir = Vector3::new(ray_now.unwrap().dir.x, ray_now.unwrap().dir.y, ray_now.unwrap().dir.z);
 
                         let xy_plane = Vector3::new(0.0, 0.0, 1.0);
                         let xz_plane = Vector3::new(0.0, 1.0, 0.0);
                         let yz_plane = Vector3::new(1.0, 0.0, 0.0);
 
+                        // find best plane to move on based on camera direction and selected axis
+                        let best_plane = |a: Vector3<f32>, b: Vector3<f32>|
+                        {
+                            if ray_dir.dot(&a).abs() >= ray_dir.dot(&b).abs() { a } else { b }
+                        };
+
                         plane_normal = match selected_gizmo
                         {
-                            Some(GizmoTypeAndAxis::TranslateX) => Some(xy_plane),
-                            Some(GizmoTypeAndAxis::TranslateY) => Some(xy_plane),
-                            Some(GizmoTypeAndAxis::TranslateZ) => Some(xz_plane),
+                            Some(GizmoTypeAndAxis::TranslateX) => Some(best_plane(xy_plane, xz_plane)),
+                            Some(GizmoTypeAndAxis::TranslateY) => Some(best_plane(xy_plane, yz_plane)),
+                            Some(GizmoTypeAndAxis::TranslateZ) => Some(best_plane(xz_plane, yz_plane)),
                             Some(GizmoTypeAndAxis::TranslateXY) => Some(xy_plane),
                             Some(GizmoTypeAndAxis::TranslateXZ) => Some(xz_plane),
                             Some(GizmoTypeAndAxis::TranslateYZ) => Some(yz_plane),
