@@ -15,7 +15,7 @@ use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_
 use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
-use crate::gui::helper::generic_items::collapse_with_title;
+use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator};
 use crate::state::scene::components::component::ComponentItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::state::State;
@@ -63,29 +63,11 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    //bottom
-    if editor_state.bottom_panel_open
+    // status bar — just a single row at the bottom of the screen, separate from the bottom panel
+    egui::Panel::bottom("bottom_status_panel").resizable(true).frame(frame).show_inside(ui, |ui|
     {
-        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show_inside(ui, |ui|
-        {
         ui.horizontal(|ui|
         {
-            ui.selectable_value(&mut editor_state.bottom, BottomPanel::None, "⏷");
-            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Assets, "📦 Assets");
-
-            let console_log_amount = console_log::get_amount();
-            let console_errors = console_log::get_error_amount();
-            if console_errors > 0
-            {
-                ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)).on_hover_text(format!("there are {} errors in the console log", console_errors));
-            }
-            else
-            {
-                ui.selectable_value(&mut editor_state.bottom, BottomPanel::Console, format!("📝 Console ({})", console_log_amount));
-            }
-
-            ui.selectable_value(&mut editor_state.bottom, BottomPanel::Debug, "🐛 Debug");
-
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
                 // just refresh if mouse was moved
@@ -132,24 +114,65 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
                 }
             });
         });
-        ui.separator();
+    });
 
-        if editor_state.bottom == BottomPanel::Assets
+    // bottom panel
+    if editor_state.bottom_panel_open
+    {
+        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show_inside(ui, |ui|
         {
-            create_asset_section(editor_state, state, ui);
-        }
-        else if editor_state.bottom == BottomPanel::Console
-        {
-            create_console_section(editor_state, state, ui);
-        }
-        else if editor_state.bottom == BottomPanel::Debug
-        {
-            create_debug_settings(editor_state, state, ui);
-        }
+            ui.horizontal(|ui|
+            {
+                ui.spacing_mut().item_spacing.x = 2.0;
+
+                if tab(ui, "📦 Assets", editor_state.bottom == BottomPanel::Assets, false).clicked
+                {
+                    editor_state.bottom = BottomPanel::Assets;
+                }
+
+                let console_log_amount = console_log::get_amount();
+                let console_errors = console_log::get_error_amount();
+                let console_label = if console_errors > 0
+                {
+                    egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)
+                }
+                else
+                {
+                    egui::RichText::new(format!("📝 Console ({})", console_log_amount))
+                };
+                let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
+                if console_errors > 0
+                {
+                    console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
+                }
+                if console_tab.clicked
+                {
+                    editor_state.bottom = BottomPanel::Console;
+                }
+
+                if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
+                {
+                    editor_state.bottom = BottomPanel::Debug;
+                }
+            });
+            tab_separator(ui);
+
+            if editor_state.bottom == BottomPanel::Assets
+            {
+                create_asset_section(editor_state, state, ui);
+            }
+            else if editor_state.bottom == BottomPanel::Console
+            {
+                create_console_section(editor_state, state, ui);
+            }
+            else if editor_state.bottom == BottomPanel::Debug
+            {
+                create_debug_settings(editor_state, state, ui);
+            }
         });
     }
 
-    //left
+    // left panel
     if editor_state.left_panel_open
     {
         egui::Panel::left("left_panel").frame(frame).min_size(300.0).show_inside(ui, |ui|
@@ -163,7 +186,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     }
 
-    //right
+    // right panel
     if editor_state.right_panel_open
     {
         egui::Panel::right("right_panel").frame(frame).show_inside(ui, |ui|
@@ -177,8 +200,9 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     }
 
-    // scene tabs
-    egui::Panel::top("scene_tabs_panel").frame(frame).show_inside(ui, |ui|
+    // scene tabs — no bottom inner margin so the tabs sit flush on the panel separator
+    let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 2, bottom: 0 });
+    egui::Panel::top("scene_tabs_panel").frame(scene_tabs_frame).show_inside(ui, |ui|
     {
         create_scene_tabs(editor_state, state, ui);
     });
@@ -186,16 +210,13 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     //top
     egui::Panel::top("top_panel_main").frame(frame).show_inside(ui, |ui|
     {
-        //ui.add_enabled_ui(!loading, |ui|
-        //{
-            ui.horizontal(|ui|
-            {
-                create_tool_menu(editor_state, state, ui);
-            });
-        //});
+        ui.horizontal(|ui|
+        {
+            create_tool_menu(editor_state, state, ui);
+        });
     });
 
-    // slim loading progress bar directly above the viewport
+    // loading progress bar
     if loading
     {
         loading_progress_bar(ui, loading_progress);
@@ -352,16 +373,6 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             }
         }
 
-        // left sidebar
-        {
-            let img = egui::Image::new(egui::include_image!("../../../../resources/icons/sidebar_left.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-            let btn = egui::Button::image(img).selected(editor_state.left_panel_open).frame(true);
-            if ui.add(btn).on_hover_text("Toggle left sidebar (Ctrl+B)").clicked()
-            {
-                editor_state.left_panel_open = !editor_state.left_panel_open;
-            }
-        }
-
         // bottom panel
         {
             let img = egui::Image::new(egui::include_image!("../../../../resources/icons/panel_bottom.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
@@ -369,6 +380,16 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             if ui.add(btn).on_hover_text("Toggle bottom panel (Ctrl+J)").clicked()
             {
                 editor_state.bottom_panel_open = !editor_state.bottom_panel_open;
+            }
+        }
+
+        // left sidebar
+        {
+            let img = egui::Image::new(egui::include_image!("../../../../resources/icons/sidebar_left.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+            let btn = egui::Button::image(img).selected(editor_state.left_panel_open).frame(true);
+            if ui.add(btn).on_hover_text("Toggle left sidebar (Ctrl+B)").clicked()
+            {
+                editor_state.left_panel_open = !editor_state.left_panel_open;
             }
         }
     });
@@ -381,6 +402,10 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
     ui.horizontal(|ui|
     {
+        // fix the row height up front so every widget is centered against the
+        // same height (otherwise the grid menu, added first, sticks to the top)
+        ui.set_min_height(icon_size + padding * 2.0);
+
         let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
         let mut try_out = editor_state.try_mode;
 
@@ -732,72 +757,83 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
 
     ui.horizontal(|ui|
     {
+        ui.spacing_mut().item_spacing.x = 2.0;
+
+        // selects `panel` when its tab is clicked
+        let mut settings_tab = |ui: &mut Ui, panel: SettingsPanel, label: &str|
+        {
+            if tab(ui, label, editor_state.settings_panel == panel, false).clicked
+            {
+                editor_state.settings_panel = panel;
+            }
+        };
+
         if editor_state.selected_type == SelectionType::Object && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Components, " Components");
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Object, "◼ Object");
+            settings_tab(ui, SettingsPanel::Components, " Components");
+            settings_tab(ui, SettingsPanel::Object, "◼ Object");
 
             object_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Camera && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Camera, "📷 Camera");
+            settings_tab(ui, SettingsPanel::Camera, "📷 Camera");
 
             camera_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Light && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Light, "💡 Light");
+            settings_tab(ui, SettingsPanel::Light, "💡 Light");
 
             light_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Material && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Material, "🎨 Material");
+            settings_tab(ui, SettingsPanel::Material, "🎨 Material");
 
             material_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::Sound && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Sound, "🔊 Sound");
+            settings_tab(ui, SettingsPanel::Sound, "🔊 Sound");
 
             sound_settings = true;
         }
 
         if editor_state.selected_scene_id.is_some()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Scene, "🎬 Scene");
+            settings_tab(ui, SettingsPanel::Scene, "🎬 Scene");
         }
 
         if editor_state.selected_type == SelectionType::Texture && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Texture, "🖼 Texture");
+            settings_tab(ui, SettingsPanel::Texture, "🖼 Texture");
 
             texture_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::SoundSource && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::SoundSource, "🔊 Sound Source");
+            settings_tab(ui, SettingsPanel::SoundSource, "🔊 Sound Source");
 
             sound_source_settings = true;
         }
 
         if editor_state.selected_type == SelectionType::MeshResource && !editor_state.selected_object.is_empty()
         {
-            ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::MeshResource, "🔷 Mesh Resource");
+            settings_tab(ui, SettingsPanel::MeshResource, "🔷 Mesh Resource");
 
             mesh_resource_settings = true;
         }
 
-        ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::General, "⛭ General");
-        ui.selectable_value(&mut editor_state.settings_panel, SettingsPanel::Project, "📋 Project");
+        settings_tab(ui, SettingsPanel::General, "⛭ General");
+        settings_tab(ui, SettingsPanel::Project, "📋 Project");
     });
-    ui.separator();
+    tab_separator(ui);
 
     ScrollArea::vertical().show(ui, |ui|
     {

@@ -70,8 +70,6 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
             });
         });
 
-        ui.separator();
-
         ScrollArea::vertical().show(ui, |ui|
         {
             ui.set_min_width(ui.available_width());

@@ -1,6 +1,6 @@
 use egui::{Color32, ScrollArea, Ui};
 
-use crate::{gui::editor::editor_state::{EditorState, SelectionType, SettingsPanel}, state::state::State};
+use crate::{gui::{editor::editor_state::{EditorState, SelectionType, SettingsPanel}, helper::generic_items::tab}, state::state::State};
 
 pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
@@ -54,150 +54,33 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                     && editor_state.selected_object.is_empty()
                     && editor_state.selected_type == SelectionType::None;
 
-                let tab_color = if is_active { Color32::LIGHT_BLUE } else { ui.visuals().text_color() };
-
-                ui.scope(|ui|
+                let mut label = egui::RichText::new(format!("🎬  {}", scene_name)).size(13.0);
+                if is_active
                 {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
+                    // brighter blue + bold so the active scene clearly stands out
+                    label = label.color(Color32::from_rgb(170, 230, 255)).strong();
+                }
 
-                    // allocate the full tab area manually so we can paint a background
-                    let label_galley = ui.painter().layout_no_wrap(
-                        format!("🎬  {}", scene_name),
-                        egui::FontId::proportional(13.0),
-                        tab_color,
-                    );
-                    let close_galley = ui.painter().layout_no_wrap
-                    (
-                        "🗙".to_string(),
-                        egui::FontId::proportional(11.0),
-                        ui.visuals().text_color(),
-                    );
+                let result = tab(ui, label, is_selected, can_close);
 
-                    let h_pad = 10.0;
-                    let v_pad = 5.0;
-                    let gap = 6.0;
-                    let tab_w = h_pad + label_galley.size().x + gap + close_galley.size().x + h_pad;
-                    let tab_h = label_galley.size().y + v_pad * 2.0;
+                if result.clicked
+                {
+                    editor_state.selected_scene_id = Some(scene_id);
+                    editor_state.selected_object.clear();
+                    editor_state.selected_type = SelectionType::None;
+                    editor_state.settings_panel = SettingsPanel::Scene;
+                    scene_to_activate = Some(scene_id);
+                }
 
-                    let (tab_rect, tab_response) = ui.allocate_exact_size(
-                        egui::vec2(if can_close { tab_w } else { h_pad + label_galley.size().x + h_pad }, tab_h),
-                        egui::Sense::click(),
-                    );
-
-                    // background
-                    let bg_color = if is_selected
-                    {
-                        ui.visuals().selection.bg_fill
-                    }
-                    else if tab_response.hovered()
-                    {
-                        ui.visuals().widgets.hovered.bg_fill
-                    }
-                    else
-                    {
-                        ui.visuals().widgets.inactive.bg_fill
-                    };
-                    let rounding = egui::CornerRadius { nw: 4_u8, ne: 4_u8, sw: 0_u8, se: 0_u8 };
-                    ui.painter().rect_filled(tab_rect, rounding, bg_color);
-
-                    // label
-                    let label_pos = egui::pos2(tab_rect.left() + h_pad, tab_rect.center().y - label_galley.size().y / 2.0);
-                    ui.painter().galley(label_pos, label_galley, tab_color);
-
-                    if tab_response.clicked()
-                    {
-                        editor_state.selected_scene_id = Some(scene_id);
-                        editor_state.selected_object.clear();
-                        editor_state.selected_type = SelectionType::None;
-                        editor_state.settings_panel = SettingsPanel::Scene;
-                        scene_to_activate = Some(scene_id);
-                    }
-
-                    // close button (only when more than one tab open)
-                    if can_close
-                    {
-                        let close_x = tab_rect.right() - h_pad - close_galley.size().x;
-                        let close_y = tab_rect.center().y - close_galley.size().y / 2.0;
-                        let close_rect = egui::Rect::from_min_size(
-                            egui::pos2(close_x - 3.0, close_y - 2.0),
-                            egui::vec2(close_galley.size().x + 6.0, close_galley.size().y + 4.0),
-                        );
-                        let close_response = ui.allocate_rect(close_rect, egui::Sense::click());
-
-                        let close_color = if close_response.hovered()
-                        {
-                            Color32::WHITE
-                        }
-                        else
-                        {
-                            ui.visuals().weak_text_color()
-                        };
-
-                        if close_response.hovered()
-                        {
-                            ui.painter().rect_filled(close_rect, 3.0, egui::Color32::from_rgba_unmultiplied(180, 50, 50, 200));
-                        }
-
-                        ui.painter().galley(egui::pos2(close_x, close_y), close_galley, close_color);
-
-                        if close_response.clicked()
-                        {
-                            tab_to_close = Some(scene_id);
-                        }
-                    }
-
-                });
+                if result.close_clicked
+                {
+                    tab_to_close = Some(scene_id);
+                }
             }
 
             // + button to add a new scene
-            ui.scope(|ui|
             {
-                ui.spacing_mut().item_spacing.x = 4.0;
-
-                let plus_galley = ui.painter().layout_no_wrap
-                (
-                    "+".to_string(),
-                    egui::FontId::proportional(16.0),
-                    ui.visuals().text_color(),
-                );
-
-                let h_pad = 10.0;
-                let v_pad = 5.0;
-                // match tab height (label uses size 13.0)
-                let label_galley = ui.painter().layout_no_wrap
-                (
-                    "🎬".to_string(),
-                    egui::FontId::proportional(13.0),
-                    ui.visuals().text_color(),
-                );
-                let plus_w = h_pad * 2.0 + plus_galley.size().x;
-                let plus_h = label_galley.size().y + v_pad * 2.0;
-
-                let (plus_rect, plus_response) = ui.allocate_exact_size
-                (
-                    egui::vec2(plus_w, plus_h),
-                    egui::Sense::click(),
-                );
-
-                let bg_color = if plus_response.hovered()
-                {
-                    ui.visuals().widgets.hovered.bg_fill
-                }
-                else
-                {
-                    ui.visuals().widgets.inactive.bg_fill
-                };
-                let rounding = egui::CornerRadius { nw: 4_u8, ne: 4_u8, sw: 0_u8, se: 0_u8 };
-                ui.painter().rect_filled(plus_rect, rounding, bg_color);
-
-                let plus_pos = egui::pos2
-                (
-                    plus_rect.center().x - plus_galley.size().x / 2.0,
-                    plus_rect.center().y - plus_galley.size().y / 2.0,
-                );
-                ui.painter().galley(plus_pos, plus_galley, ui.visuals().text_color());
-
+                let plus_response = tab(ui, egui::RichText::new("+").size(13.0).strong(), false, false).response;
                 let plus_response = plus_response.on_hover_text("Add scene");
 
                 egui::Popup::menu(&plus_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
@@ -237,7 +120,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                         egui::Popup::close_all(ui.ctx());
                     }
                 });
-            });
+            }
 
             if let Some(id) = scene_to_activate
             {

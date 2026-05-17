@@ -1,5 +1,98 @@
 use egui::{Color32, Frame, RichText, Ui};
 
+pub const TAB_CORNER_RADIUS: egui::CornerRadius = egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 };
+
+pub const TAB_BG_SELECTED: Color32 = Color32::from_rgba_premultiplied(60, 60, 60, 60);
+pub const TAB_BG_HOVER: Color32        = Color32::from_rgba_premultiplied(22, 22, 22, 22);
+pub const TAB_BG_INACTIVE: Color32     = Color32::from_rgba_premultiplied(8, 8, 8, 8);
+
+pub struct TabResponse
+{
+    pub response: egui::Response,
+    pub clicked: bool,
+    pub close_clicked: bool,
+}
+
+pub fn tab_separator(ui: &mut Ui)
+{
+    let prev_spacing = ui.spacing().item_spacing.y;
+    ui.spacing_mut().item_spacing.y = 0.0;
+    ui.add(egui::Separator::default().spacing(2.0));
+    ui.spacing_mut().item_spacing.y = prev_spacing;
+}
+
+pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, closable: bool) -> TabResponse
+{
+    let h_pad = 10.0;
+    let v_pad = 5.0;
+    let gap = 6.0;
+
+    let label_galley = label.into().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+
+    let close_galley = if closable
+    {
+        Some(ui.painter().layout_no_wrap("🗙".to_string(), egui::FontId::proportional(11.0), ui.visuals().text_color()))
+    }
+    else
+    {
+        None
+    };
+
+    let mut tab_w = h_pad + label_galley.size().x + h_pad;
+    if let Some(close) = &close_galley
+    {
+        tab_w += gap + close.size().x;
+    }
+    let tab_h = label_galley.size().y + v_pad * 2.0;
+
+    let (tab_rect, tab_response) = ui.allocate_exact_size(egui::vec2(tab_w, tab_h), egui::Sense::click());
+
+    let bg_color = if selected
+    {
+        TAB_BG_SELECTED
+    }
+    else if tab_response.hovered()
+    {
+        TAB_BG_HOVER
+    }
+    else
+    {
+        TAB_BG_INACTIVE
+    };
+    ui.painter().rect_filled(tab_rect, TAB_CORNER_RADIUS, bg_color);
+
+    // label, vertically centered
+    let label_pos = egui::pos2(tab_rect.left() + h_pad, tab_rect.center().y - label_galley.size().y / 2.0);
+    ui.painter().galley(label_pos, label_galley, ui.visuals().text_color());
+
+    // close button
+    let mut close_clicked = false;
+    if let Some(close_galley) = close_galley
+    {
+        let close_x = tab_rect.right() - h_pad - close_galley.size().x;
+        let close_y = tab_rect.center().y - close_galley.size().y / 2.0;
+        let close_rect = egui::Rect::from_min_size
+        (
+            egui::pos2(close_x - 3.0, close_y - 2.0),
+            egui::vec2(close_galley.size().x + 6.0, close_galley.size().y + 4.0),
+        );
+        let close_response = ui.allocate_rect(close_rect, egui::Sense::click());
+
+        let close_color = if close_response.hovered() { Color32::WHITE } else { ui.visuals().weak_text_color() };
+        if close_response.hovered()
+        {
+            ui.painter().rect_filled(close_rect, 3.0, Color32::from_rgba_unmultiplied(180, 50, 50, 200));
+        }
+        ui.painter().galley(egui::pos2(close_x, close_y), close_galley, close_color);
+
+        close_clicked = close_response.clicked();
+    }
+
+    let clicked = tab_response.clicked() && !close_clicked;
+
+    TabResponse { response: tab_response, clicked, close_clicked }
+}
+
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
 {
     let background_color;
@@ -33,7 +126,7 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
 
             // reserve a shape slot to paint the header background underneath the header content
             let header_bg_idx = ui.painter().add(egui::Shape::Noop);
-            let header_bg_color = Color32::from_white_alpha(40);
+            let header_bg_color = TAB_BG_SELECTED;
             let pading = 5.0;
 
             let cursor_top = ui.cursor().min.y;
@@ -61,7 +154,7 @@ pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32
             header_rect.max.x = ui.max_rect().right();
             header_rect.min.y = cursor_top;
             header_rect.max.y += pading;
-            ui.painter().set(header_bg_idx, egui::Shape::rect_filled(header_rect, 3.0, header_bg_color));
+            ui.painter().set(header_bg_idx, egui::Shape::rect_filled(header_rect, TAB_CORNER_RADIUS, header_bg_color));
 
             // when closed, push the cursor past the bg extension so siblings don't overlap
             if body_resp.is_none()

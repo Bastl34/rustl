@@ -85,8 +85,7 @@ pub enum BottomPanel
 {
     Assets,
     Console,
-    Debug,
-    None
+    Debug
 }
 
 #[derive(PartialEq, Eq)]
