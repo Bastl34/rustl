@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::State}};
 
 use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
@@ -14,7 +14,7 @@ const GIZMO_SCALE_STEP: f32 = 0.1;
 const GIZMO_ROTATION_STEP: f32 = PI / 16.0;
 const GIZMO_ROTATION_SLOW_FACTOR: f32 = 0.1;
 
-const GIZMO_SCALE_DISTANCE_FACTOR: f32 = 0.1;
+const GIZMO_SCALE_FACTOR: f32 = 0.12; // gizmo size as a fraction of the visible viewport height
 
 pub fn create_grid_and_gizmo_objects(editor_state: &mut EditorState, state: &mut State, scene_id: u32, editor_utils_id: u32)
 {
@@ -181,7 +181,7 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
     updated = update_rotation_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
     updated = update_scale_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
 
-    move_gizmos(editor_state, state);
+    update_gizmo_transforms(editor_state, state);
 
     hover_gizmos(pointer_pos, editor_state, state, updated);
 }
@@ -885,8 +885,18 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
     updated
 }
 
-pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
+pub fn update_gizmo_transforms(editor_state: &mut EditorState, state: &mut State)
 {
+    let pointer_input = state.io.input_manager.get_pointer_input();
+    let pointer_pos = if state.io.input_manager.is_main_pointer_action_active()
+    {
+        pointer_input.start_pos
+    }
+    else
+    {
+        pointer_input.pos
+    };
+
     let world_transform = get_world_transform_from_selected_node(editor_state, state);
     let world_rotatio_only = extract_rotation_as_euler_vec(&world_transform);
 
@@ -899,15 +909,71 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
     // get pos from transform
     let pos = world_transform.column(3).xyz();
 
-    // calculate gizmo scaling (use the perspective cam — in quad view the ortho cams sit far away and would blow the scale up)
-    let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();
-    let cam_pos = camera.get_data().eye_pos;
-    let distance = distance(&pos.into(), &cam_pos);
+    // pick the active camera (the one the pointer is over), fallback to the perspective cam
+    let mut camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();
+    if let Some(pointer_pos) = pointer_pos
+    {
+        camera = scene.cameras.iter().find(|c| c.enabled && c.is_point_in_viewport(&pointer_pos)).unwrap_or(camera);
+    }
 
-    let scale = distance * GIZMO_SCALE_DISTANCE_FACTOR;
+    // calculate gizmo scaling from the visible viewport height at the gizmo position
+    // -> same screen-space size for ortho and perspective
+    let cam_data = camera.get_data();
+    let viewport_world_height = match cam_data.projection_type
+    {
+        CameraProjectionType::Perspective =>
+        {
+            let dist = distance(&pos.into(), &cam_data.eye_pos);
+            2.0 * dist * (cam_data.fovy / 2.0).tan()
+        },
+        CameraProjectionType::Orthogonal =>
+        {
+            cam_data.top - cam_data.bottom
+        },
+    };
+
+    let scale = viewport_world_height * GIZMO_SCALE_FACTOR;
+
+    let gizmo_translation = scene.find_node_by_name("gizmo_position");
+    let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
+    let gizmo_scale = scene.find_node_by_name("gizmo_scale");
+
+    // collect all mesh nodes from the gizmos in one list
+    let gizmo_root_nodes: Vec<_> = [gizmo_translation.clone(), gizmo_rotation.clone(), gizmo_scale.clone()]
+        .into_iter()
+        .flatten()
+        .collect();
+    let gizmo_mesh_nodes = Scene::list_all_child_nodes_with_mesh(&gizmo_root_nodes);
+
+    for gizmo_mesh_node in gizmo_mesh_nodes
+    {
+        let mut gizmo_mesh_node = gizmo_mesh_node.write().unwrap();
+
+        gizmo_mesh_node.settings.layer_mask = 0;
+
+        if camera.get_data().culling_mask & LAYER_QUAD_VIEW_TOP != 0
+        {
+            gizmo_mesh_node.settings.layer_mask |= LAYER_QUAD_VIEW_TOP;
+        }
+        else if camera.get_data().culling_mask & LAYER_QUAD_VIEW_FRONT != 0
+        {
+            gizmo_mesh_node.settings.layer_mask |= LAYER_QUAD_VIEW_FRONT;
+        }
+        else if camera.get_data().culling_mask & LAYER_QUAD_VIEW_RIGHT != 0
+        {
+            gizmo_mesh_node.settings.layer_mask |= LAYER_QUAD_VIEW_RIGHT;
+        }
+        else if camera.get_data().culling_mask & LAYER_QUAD_VIEW_3D != 0
+        {
+            gizmo_mesh_node.settings.layer_mask |= LAYER_QUAD_VIEW_3D;
+        }
+        else
+        {
+            gizmo_mesh_node.settings.layer_mask |= LAYER_EDITOR;
+        }
+    }
 
     // position gizmo
-    let gizmo_translation = scene.find_node_by_name("gizmo_position");
     if let Some(gizmo_translation) = gizmo_translation
     {
         let gizmo_translation = gizmo_translation.write().unwrap();
@@ -930,7 +996,6 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
     }
 
     // rotation gizmo
-    let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
     if let Some(gizmo_rotation) = gizmo_rotation
     {
         let gizmo_rotation = gizmo_rotation.write().unwrap();
@@ -955,7 +1020,6 @@ pub fn move_gizmos(editor_state: &mut EditorState, state: &mut State)
     }
 
     // scale gizmo
-    let gizmo_scale = scene.find_node_by_name("gizmo_scale");
     if let Some(gizmo_scale) = gizmo_scale
     {
         let gizmo_scale = gizmo_scale.write().unwrap();
