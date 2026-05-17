@@ -382,6 +382,8 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
 
     for scene in &mut state.scenes
     {
+        if !scene.active { continue; }
+
         let scene_id = scene.id;
 
         let grid = scene.find_node_by_name(GRID_ROOT_NAME);

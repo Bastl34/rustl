@@ -181,7 +181,7 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
     updated = update_rotation_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
     updated = update_scale_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
 
-    update_gizmo_transforms(editor_state, state);
+    update_gizmo_transforms_and_visibility(editor_state, state);
 
     hover_gizmos(pointer_pos, editor_state, state, updated);
 }
@@ -885,7 +885,7 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
     updated
 }
 
-pub fn update_gizmo_transforms(editor_state: &mut EditorState, state: &mut State)
+pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, state: &mut State)
 {
     let pointer_input = state.io.input_manager.get_pointer_input();
     let pointer_pos = if state.io.input_manager.is_main_pointer_action_active()

@@ -8,6 +8,7 @@ todo:
  * action management
  * dynamic shader pipelines (backface culling, depth test/write, blending)
  * move editor to extra crate
+ * physics
 
 done:
  * winit + wgpu update
