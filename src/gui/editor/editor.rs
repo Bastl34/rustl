@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -92,7 +92,7 @@ impl Editor
                         cam_data.fovy = 45.0f32.to_radians();
                         cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
                         cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
-                        cam_data.culling_mask = LAYER_MASK_USER | LAYER_EDITOR;
+                        cam_data.culling_mask = LAYER_MASK_USER | LAYER_EDITOR | LAYER_SINGLE_VIEW;
 
                         scene.cameras.push(Box::new(cam));
                     }

@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{camera::DEFAULT_CLIPPING_FAR, components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, layers::{LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::State}};
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
@@ -13,9 +13,8 @@ pub const GRID_ROOT_NAME_XY: &str = "grid root xy";
 pub const GRID_ROOT_NAME_YZ: &str = "grid root yz";
 pub const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
 
-// layer mask of the default X-Z grid: visible in the single view + 3d quad camera
-// (the top quad gets its own copy so it can be panned independently)
-const GRID_XZ_LAYER_MASK: u32 = LAYER_EDITOR | LAYER_QUAD_VIEW_3D;
+const GRID_XZ_LAYER_MASK: u32 = LAYER_SINGLE_VIEW | LAYER_QUAD_VIEW_3D;
+const GRID_2D_DEPTH: f32 = DEFAULT_CLIPPING_FAR / 2.0 - 1.0;
 
 pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
@@ -389,18 +388,21 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
 
                 let extra_grids =
                 [
-                    (GRID_ROOT_NAME_XZ, Vector3::<f32>::new(0.0, 0.0, 0.0), LAYER_QUAD_VIEW_TOP),
-                    (GRID_ROOT_NAME_XY, Vector3::<f32>::new(PI / 2.0, 0.0, 0.0), LAYER_QUAD_VIEW_FRONT),
-                    (GRID_ROOT_NAME_YZ, Vector3::<f32>::new(0.0, 0.0, -PI / 2.0), LAYER_QUAD_VIEW_RIGHT),
+                    // root name, root rotation, quad-view layer, initial root translation
+                    // (the X-Y/Y-Z grids are pushed back along their cam-look axis so scene objects naturally depth-win over the plane)
+                    (GRID_ROOT_NAME_XZ, Vector3::<f32>::new(0.0, 0.0, 0.0), LAYER_QUAD_VIEW_TOP, Vector3::<f32>::new(0.0, -GRID_2D_DEPTH, 0.0)),
+                    (GRID_ROOT_NAME_XY, Vector3::<f32>::new(PI / 2.0, 0.0, 0.0), LAYER_QUAD_VIEW_FRONT, Vector3::<f32>::new(0.0, 0.0, -GRID_2D_DEPTH)),
+                    (GRID_ROOT_NAME_YZ, Vector3::<f32>::new(0.0, 0.0, -PI / 2.0), LAYER_QUAD_VIEW_RIGHT, Vector3::<f32>::new(-GRID_2D_DEPTH, 0.0, 0.0)),
                 ];
 
-                for (root_name, rotation, layer_mask) in extra_grids
+                for (root_name, rotation, layer_mask, initial_translation) in extra_grids
                 {
-                    // root node carrying the plane rotation
+                    // root node carrying the plane rotation + initial backdrop offset
                     let root = Node::new(root_name);
                     {
                         let mut transform = Transformation::identity("Transform");
                         transform.apply_rotation(rotation);
+                        transform.apply_translation(initial_translation);
                         root.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
                     }
 
