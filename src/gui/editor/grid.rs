@@ -2,13 +2,20 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::State}};
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
-pub const GRID_ROOT_NAME: &str = "grid root";
+pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid root main";         // single view + 3d quad
+pub const GRID_ROOT_NAME_XZ: &str = "grid root xz"; // top quad — same orientation, independent transform
+pub const GRID_ROOT_NAME_XY: &str = "grid root xy";
+pub const GRID_ROOT_NAME_YZ: &str = "grid root yz";
 pub const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
+
+// layer mask of the default X-Z grid: visible in the single view + 3d quad camera
+// (the top quad gets its own copy so it can be panned independently)
+const GRID_XZ_LAYER_MASK: u32 = LAYER_EDITOR | LAYER_QUAD_VIEW_3D;
 
 pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, spacing: f32)
 {
@@ -45,7 +52,10 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
     {
         scene.delete_node_by_name(GRID_ORIGIN_ROOT_NAME, true, true, true, true);
-        scene.delete_node_by_name(GRID_ROOT_NAME, true, true, true, true);
+        scene.delete_node_by_name(GRID_ROOT_NAME_XZ_MAIN, true, true, true, true);
+        scene.delete_node_by_name(GRID_ROOT_NAME_XZ, true, true, true, true);
+        scene.delete_node_by_name(GRID_ROOT_NAME_XY, true, true, true, true);
+        scene.delete_node_by_name(GRID_ROOT_NAME_YZ, true, true, true, true);
     }));
 
     let loaded_assets_grid = load_asset_and_add_to_scene("objects/grid/grid_line.gltf", scene_id, editor_utils_node_id, main_queue.clone(), false, true, true, true, false, 0).unwrap();
@@ -102,7 +112,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
                     grid_root = Some(root_node.clone());
-                    root_node.write().unwrap().name = GRID_ROOT_NAME.to_string();
+                    root_node.write().unwrap().name = GRID_ROOT_NAME_XZ_MAIN.to_string();
 
                     // move to front
                     if let Some(parent) = root_node.read().unwrap().parent.as_ref()
@@ -332,6 +342,105 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             Node::add_node_front(grid_root, plane_node);
         }
 
+        // ********** extra grid planes (quad view) **********
+        {
+            let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+
+            let editor_utils = scene.find_node_by_name(EDITOR_UTILS_NODE_NAME);
+
+            // scope the lookups to the editor utils subtree so a user-scene node named "grid" or "plane" can't collide
+            let (line_src, plane_src) = if let Some(editor_utils) = editor_utils.as_ref()
+            {
+                let utils = editor_utils.read().unwrap();
+                (
+                    Node::find_mesh_node_by_name(&utils.nodes, "grid"),
+                    Node::find_node_by_name(&utils.nodes, "plane"),
+                )
+            }
+            else
+            {
+                (None, None)
+            };
+
+            if let (Some(editor_utils), Some(line_src), Some(plane_src)) = (editor_utils, line_src, plane_src)
+            {
+                // restrict the existing X-Z grid to the single view + top + 3d quad cameras
+                line_src.write().unwrap().settings.layer_mask = GRID_XZ_LAYER_MASK;
+                plane_src.write().unwrap().settings.layer_mask = GRID_XZ_LAYER_MASK;
+
+                // grab the (shared) mesh resources + materials from the X-Z grid
+                let (line_mesh_res, line_material);
+                {
+                    let line_src = line_src.read().unwrap();
+                    let mesh = line_src.find_component::<Mesh>().unwrap();
+                    component_downcast!(mesh, Mesh);
+                    line_mesh_res = mesh.mesh_resource.clone();
+                    line_material = line_src.find_component::<Material>().unwrap();
+                }
+
+                let (plane_mesh_res, plane_material);
+                {
+                    let plane_src = plane_src.read().unwrap();
+                    let mesh = plane_src.find_component::<Mesh>().unwrap();
+                    component_downcast!(mesh, Mesh);
+                    plane_mesh_res = mesh.mesh_resource.clone();
+                    plane_material = plane_src.find_component::<Material>().unwrap();
+                }
+
+                let extra_grids =
+                [
+                    (GRID_ROOT_NAME_XZ, Vector3::<f32>::new(0.0, 0.0, 0.0), LAYER_QUAD_VIEW_TOP),
+                    (GRID_ROOT_NAME_XY, Vector3::<f32>::new(PI / 2.0, 0.0, 0.0), LAYER_QUAD_VIEW_FRONT),
+                    (GRID_ROOT_NAME_YZ, Vector3::<f32>::new(0.0, 0.0, -PI / 2.0), LAYER_QUAD_VIEW_RIGHT),
+                ];
+
+                for (root_name, rotation, layer_mask) in extra_grids
+                {
+                    // root node carrying the plane rotation
+                    let root = Node::new(root_name);
+                    {
+                        let mut transform = Transformation::identity("Transform");
+                        transform.apply_rotation(rotation);
+                        root.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+                    }
+
+                    // grid lines (reuses the baked X-Z line geometry)
+                    let lines_node = Node::new("grid");
+                    {
+                        let mut mesh = Mesh::new("grid");
+                        mesh.mesh_resource = line_mesh_res.clone();
+
+                        let mut node = lines_node.write().unwrap();
+                        node.add_component(Arc::new(RwLock::new(Box::new(mesh))));
+                        node.add_component(line_material.clone());
+                        node.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX - 1;
+                        node.settings.layer_mask = layer_mask;
+                        node.settings.pickable = false;
+                    }
+                    lines_node.write().unwrap().create_default_instance(lines_node.clone());
+
+                    // filled plane
+                    let plane_node = Node::new("plane");
+                    {
+                        let mut mesh = Mesh::new("grid plane mesh");
+                        mesh.mesh_resource = plane_mesh_res.clone();
+
+                        let mut node = plane_node.write().unwrap();
+                        node.add_component(Arc::new(RwLock::new(Box::new(mesh))));
+                        node.add_component(plane_material.clone());
+                        node.settings.alpha_index = GRID_DEFAULT_ALPHA_INDEX;
+                        node.settings.layer_mask = layer_mask;
+                        node.settings.pickable = false;
+                    }
+                    plane_node.write().unwrap().create_default_instance(plane_node.clone());
+
+                    Node::add_node(root.clone(), lines_node);
+                    Node::add_node(root.clone(), plane_node);
+                    Node::add_node(editor_utils.clone(), root);
+                }
+            }
+        }
+
         // run internal tagging
         {
             let scene = state.find_scene_by_id_mut(scene_id).unwrap();
@@ -386,14 +495,17 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
 
         let scene_id = scene.id;
 
-        let grid = scene.find_node_by_name(GRID_ROOT_NAME);
+        let grid = scene.find_node_by_name(GRID_ROOT_NAME_XZ_MAIN);
 
         // recreate grid
         if grid.is_some() && editor_state.grid_recreate
         {
             // delete first
-            scene.delete_node_by_name("grid origin", true, true, true, true);
-            scene.delete_node_by_name("grid", true, true, true, true);
+            scene.delete_node_by_name(GRID_ORIGIN_ROOT_NAME, true, true, true, true);
+            scene.delete_node_by_name(GRID_ROOT_NAME_XZ_MAIN, true, true, true, true);
+            scene.delete_node_by_name(GRID_ROOT_NAME_XZ, true, true, true, true);
+            scene.delete_node_by_name(GRID_ROOT_NAME_XY, true, true, true, true);
+            scene.delete_node_by_name(GRID_ROOT_NAME_YZ, true, true, true, true);
 
             let grid_size = editor_state.grid_size;
             let grid_amount = editor_state.grid_amount;
@@ -407,7 +519,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             editor_state.grid_recreate = false;
         }
 
-        // update grid position
+        // update grid position (x-z)
         if let Some(grid) = grid
         {
             let mut grid = grid.write().unwrap();
@@ -419,7 +531,9 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
                 transformation = grid.find_component::<Transformation>();
             }
 
-            let camera = scene.get_active_camera();
+            // follow the 3d quad cam (in quad view) or fall back to the active editor cam (in single view)
+            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_3D != 0);
+            let camera = if camera.is_some() { camera } else { scene.get_active_camera() };
             if let Some(camera) = camera
             {
                 let camera_data = camera.get_data();
@@ -440,6 +554,75 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
                 if !approx_equal_vec(&pos, &transformation.get_data().position)
                 {
                     transformation.set_translation(Vector3::<f32>::new(pos.x, pos.y, pos.z));
+                }
+            }
+        }
+
+        // update X-Z grid for the top quad view — follows the top quad cam on x/z (independent of the 3d/editor X-Z grid)
+        if let Some(grid_xz_top) = scene.find_node_by_name(GRID_ROOT_NAME_XZ)
+        {
+            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_TOP != 0);
+            if let Some(camera) = camera
+            {
+                let grid_xz_top = grid_xz_top.write().unwrap();
+                if let Some(transformation) = grid_xz_top.find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
+
+                    let eye = camera.get_data().eye_pos;
+                    let mut pos = snap_to_grid_vec3(Vector3::<f32>::new(eye.x.round(), 0.0, eye.z.round()), grid_size);
+                    pos.y = transformation.get_data().position.y;
+
+                    if !approx_equal_vec(&pos, &transformation.get_data().position)
+                    {
+                        transformation.set_translation(pos);
+                    }
+                }
+            }
+        }
+
+        // update X-Y grid (front view) — follows the front quad camera on x/y
+        if let Some(grid_xy) = scene.find_node_by_name(GRID_ROOT_NAME_XY)
+        {
+            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_FRONT != 0);
+            if let Some(camera) = camera
+            {
+                let grid_xy = grid_xy.write().unwrap();
+                if let Some(transformation) = grid_xy.find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
+
+                    let eye = camera.get_data().eye_pos;
+                    let mut pos = snap_to_grid_vec3(Vector3::<f32>::new(eye.x.round(), eye.y.round(), 0.0), grid_size);
+                    pos.z = transformation.get_data().position.z;
+
+                    if !approx_equal_vec(&pos, &transformation.get_data().position)
+                    {
+                        transformation.set_translation(pos);
+                    }
+                }
+            }
+        }
+
+        // Y-Z grid (right view) — follows the right quad camera on y/z
+        if let Some(grid_yz) = scene.find_node_by_name(GRID_ROOT_NAME_YZ)
+        {
+            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_RIGHT != 0);
+            if let Some(camera) = camera
+            {
+                let grid_yz = grid_yz.write().unwrap();
+                if let Some(transformation) = grid_yz.find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
+
+                    let eye = camera.get_data().eye_pos;
+                    let mut pos = snap_to_grid_vec3(Vector3::<f32>::new(0.0, eye.y.round(), eye.z.round()), grid_size);
+                    pos.x = transformation.get_data().position.x;
+
+                    if !approx_equal_vec(&pos, &transformation.get_data().position)
+                    {
+                        transformation.set_translation(pos);
+                    }
                 }
             }
         }
