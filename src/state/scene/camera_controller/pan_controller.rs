@@ -1,7 +1,7 @@
 use nalgebra::{Point2, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{approx_zero, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, keyboard::{Key, Modifier}}, state::{scene::{camera::{Camera, CameraData, CameraProjectionType}, node::NodeItem, scene::Scene}, state::InputOutput}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, math::{approx_zero, approx_zero_vec2, approx_zero_vec3}}, input::{gamepad::{GamepadAxis, GamepadButton}, keyboard::{Key, Modifier}, mouse::MouseButton}, state::{scene::{camera::{Camera, CameraData, CameraProjectionType}, node::NodeItem, scene::Scene}, state::InputOutput}};
 
 use super::camera_controller::{gesture_owns_viewport, CameraController, CameraControllerBase};
 
@@ -181,6 +181,30 @@ impl CameraController for PanController
             }
         }
 
+        // middle mouse button drag
+        if io.input_manager.mouse.is_holding(MouseButton::Middle) && !io.input_manager.mouse.is_holding(MouseButton::Right)
+        {
+            let velocity = io.input_manager.mouse.point.velocity;
+
+            if let Some(pos) = io.input_manager.mouse.point.pos
+            {
+                if !approx_zero_vec2(&velocity)
+                {
+                    // world position under the cursor this frame vs. last frame (current matrices)
+                    let delta =
+                    {
+                        let data = cam_data.get_ref();
+                        let prev = Point2::new(pos.x - velocity.x, pos.y - velocity.y);
+                        Camera::screen_to_world_data(data, &pos) - Camera::screen_to_world_data(data, &prev)
+                    };
+
+                    // move the camera opposite to the drag so the grabbed point stays under the cursor
+                    cam_data.get_mut().eye_pos -= delta;
+                    change = true;
+                }
+            }
+        }
+
         // update movement
         let mut movement_vec = Vector3::<f32>::zeros();
 
@@ -215,12 +239,8 @@ impl CameraController for PanController
         }
 
         // ******************** zoom (orthographic) ********************
-        // a parallel projection ignores depth, so moving along `dir` does nothing visible.
-        // zoom instead resizes the visible window (top/bottom; width follows via aspect in
-        // init_matrices). the world point under the cursor is kept fixed by shifting eye_pos.
         if !approx_zero(movement.z) && cam_data.get_ref().projection_type == CameraProjectionType::Orthogonal
         {
-            // read everything we need before mutating (uses the current, pre-zoom matrices)
             let (old_half_h, center_x, center_y, half_w_old, cursor_offset) =
             {
                 let data = cam_data.get_ref();
@@ -230,7 +250,6 @@ impl CameraController for PanController
                 let center_y = (data.top + data.bottom) * 0.5;
                 let half_w_old = (data.right - data.left) * 0.5;
 
-                // offset (in world space) of the cursor from the viewport center; zero when no cursor
                 let cursor_offset = if let Some(cursor) = io.input_manager.mouse.point.pos
                 {
                     let viewport = data.get_viewport();
