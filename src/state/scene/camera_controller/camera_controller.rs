@@ -2,7 +2,8 @@ use std::any::Any;
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{scene::node::NodeItem, state::InputOutput};
+use crate::input::mouse::Mouse;
+use crate::state::{scene::{camera::{Camera, CameraData}, node::NodeItem}, state::InputOutput};
 
 //pub type CameraControllerBox = Box<dyn SerializableCameraController + Send + Sync>;
 pub type CameraControllerBox = Box<dyn CameraController>;
@@ -41,6 +42,25 @@ impl CameraControllerBase
             icon,
             is_enabled: true
         }
+    }
+}
+
+// ******************** shared helpers ********************
+pub fn gesture_owns_viewport(cam_data: &CameraData, mouse: &Mouse) -> bool
+{
+    let point = if mouse.is_any_button_holding()
+    {
+        mouse.point.start_pos
+    }
+    else
+    {
+        mouse.point.pos
+    };
+
+    match point
+    {
+        Some(point) => Camera::is_point_in_viewport_data(cam_data, &point),
+        None => false,
     }
 }
 

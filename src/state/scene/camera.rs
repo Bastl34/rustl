@@ -6,7 +6,7 @@ use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, 
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{camera_controller::pan_controller::PanController, utilities::tags::Tags}, state::InputOutput}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, layers::LAYER_MASK_ALL, manager::id_manager, node::NodeItem};
 
@@ -523,9 +523,14 @@ impl Camera
         };
     }
 
-    pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
+    pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32, viewport_only: bool)
     {
-        self.controller = Some(Box::new(FlyController::new(collision, mouse_sensitivity, move_speed, move_speed_shift)));
+        self.controller = Some(Box::new(FlyController::new(collision, mouse_sensitivity, move_speed, move_speed_shift, viewport_only)));
+    }
+
+    pub fn add_controller_pan(&mut self, mouse_wheel_sensitivity: f32, move_speed: f32, move_speed_shift: f32, viewport_only: bool)
+    {
+        self.controller = Some(Box::new(PanController::new(mouse_wheel_sensitivity, move_speed, move_speed_shift, viewport_only)));
     }
 
     pub fn add_controller_target_rotation(&mut self, radius: f32, mouse_sensitivity: Vector2::<f32>, mouse_wheel_sensitivity: f32)
@@ -639,6 +644,11 @@ impl Camera
     {
         let data = self.get_data();
 
+        Self::screen_to_world_data(data, point)
+    }
+
+    pub fn screen_to_world_data(data: &CameraData, point: &Point2<f32>) -> Vector3<f32>
+    {
         let x_f = point.x as f32 - (data.viewport.x * data.resolution_width as f32);
         let y_f = point.y as f32 - (data.viewport.y * data.resolution_height as f32);
 

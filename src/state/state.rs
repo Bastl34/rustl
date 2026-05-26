@@ -275,6 +275,7 @@ impl State
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
+        cam_controller.push(("Pan Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::pan_controller::PanController::default()) }));
         cam_controller.push(("Target Rotation Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController::default()) }));
 
         let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];

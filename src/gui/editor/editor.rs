@@ -86,7 +86,7 @@ impl Editor
                         let mut cam = Camera::new("Editor Cam".to_string());
                         cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
-                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2, false);
 
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.fovy = 45.0f32.to_radians();
@@ -100,12 +100,18 @@ impl Editor
                     let ortho_size = 5.0;
                     let pos_offset = DEFAULT_CLIPPING_FAR / 2.0;
 
+                    const MOUSE_WHEEL_SENSIVITY: f32 = 1.5;
+                    const MOVE_SPEED: f32 = 0.1;
+                    const MOVE_SPEED_SHIFT: f32 = 0.2;
+
                     // quad cam: Top (top left)
                     {
                         let mut cam = Camera::new("Quad Cam Top (top left)".to_string());
                         cam.tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
                         cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
                         cam.enabled = false;
+
+                        cam.add_controller_pan(MOUSE_WHEEL_SENSIVITY, MOVE_SPEED, MOVE_SPEED_SHIFT, true);
 
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.projection_type = CameraProjectionType::Orthogonal;
@@ -130,6 +136,8 @@ impl Editor
                         cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
                         cam.enabled = false;
 
+                        cam.add_controller_pan(MOUSE_WHEEL_SENSIVITY, MOVE_SPEED, MOVE_SPEED_SHIFT, true);
+
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.projection_type = CameraProjectionType::Orthogonal;
                         cam_data.eye_pos = Point3::<f32>::new(0.0, 0.0, pos_offset);
@@ -153,6 +161,8 @@ impl Editor
                         cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
                         cam.enabled = false;
 
+                        cam.add_controller_pan(MOUSE_WHEEL_SENSIVITY, MOVE_SPEED, MOVE_SPEED_SHIFT, true);
+
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.projection_type = CameraProjectionType::Orthogonal;
                         cam_data.eye_pos = Point3::<f32>::new(pos_offset, 0.0, 0.0);
@@ -175,7 +185,7 @@ impl Editor
                         cam.tags.insert_with_color_locked(QUAD_CAM, tags::DEFAULT_RED_COLOR, true);
                         cam.enabled = false;
 
-                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+                        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2, true);
 
                         let cam_data = cam.get_data_mut().get_mut();
                         cam_data.fovy = 45.0f32.to_radians();

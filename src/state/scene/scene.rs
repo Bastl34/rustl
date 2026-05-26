@@ -645,7 +645,7 @@ impl Scene
 
         // cam
         let mut cam = Camera::new("Cam".to_string());
-        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2);
+        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2, false);
 
         let cam_data = cam.get_data_mut().get_mut();
         cam_data.fovy = 45.0f32.to_radians();
