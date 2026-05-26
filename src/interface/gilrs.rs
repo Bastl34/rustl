@@ -36,6 +36,17 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
     while let Some(gilrs::Event { id, event, time: _ , .. }) = gilrs.next_event()
     {
         let id: usize = id.into();
+
+        match event
+        {
+            gilrs::EventType::Connected | gilrs::EventType::Disconnected =>
+            {
+                re_init = true;
+                continue;
+            },
+            _ => {},
+        }
+
         let gamepad = state.io.input_manager.gamepads.get_mut(&id);
 
         if gamepad.is_none()
@@ -67,8 +78,6 @@ pub fn gilrs_event(state: &mut State, gilrs: &mut Gilrs, engine_frame: u64)
             {
                 gamepad.set_axis(gilrs_map_axis(axis), value, engine_frame);
             },
-            gilrs::EventType::Connected => re_init = true,
-            gilrs::EventType::Disconnected => re_init = true,
             gilrs::EventType::Dropped => {},
             gilrs::EventType::ForceFeedbackEffectCompleted => {},
             _ => {},
