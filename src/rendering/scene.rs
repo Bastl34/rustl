@@ -219,8 +219,9 @@ impl Scene
         });
         */
 
-        let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples);
-        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
+        let (depth_width, depth_height) = { let config = wgpu.surface_config(); (config.width, config.height) };
+        let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples, depth_width, depth_height);
+        let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, depth_width, depth_height);
         // let hzb_texture = Texture::new_hzb_texture(wgpu);
 
         let depth_export_bind_group = DepthExportBindGroup::new(wgpu, "depth export", &depth_pass_buffer_texture);
@@ -1174,16 +1175,17 @@ impl Scene
     {
         self.samples = samples;
 
-        self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
+        let (depth_width, depth_height) = (self.depth_buffer_texture.width, self.depth_buffer_texture.height);
+        self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples, depth_width, depth_height);
 
         //self.update_materials(wgpu, scene, true);
         self.create_pipelines(wgpu, scene, true);
     }
 
-    pub fn resize(&mut self, wgpu: &mut WGpu, _scene: &mut Box<crate::state::scene::scene::Scene>)
+    pub fn resize(&mut self, wgpu: &mut WGpu, _scene: &mut Box<crate::state::scene::scene::Scene>, width: u32, height: u32)
     {
-        self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples);
-        self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1);
+        self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples, width, height);
+        self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, width, height);
         // self.hzb_texture = Texture::new_hzb_texture(wgpu);
 
         // self.depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &self.depth_pass_buffer_texture);

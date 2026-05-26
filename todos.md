@@ -3,12 +3,12 @@ todo:
  * TODOs
  * flickering on windows (amd)
  * update of gamma and exposure somehow encapsulate of "complete" scene settings
- * dead lock while loading an object/scene (just sometimes)
  * optimize shader - do not use empty morph targets or animation weights
  * action management
  * dynamic shader pipelines (backface culling, depth test/write, blending)
  * move editor to extra crate
  * physics
+ * null engine
 
 done:
  * winit + wgpu update
@@ -44,3 +44,5 @@ done:
  * alpha cutoff (https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/AlphaBlendModeTest/README.md)
  * deadlock while asset loading
  * better scene statistics graph
+ * dead lock while loading an object/scene (just sometimes)
+ * offscreen rendering

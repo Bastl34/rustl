@@ -198,7 +198,7 @@ impl MainInterface
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.resize(&mut self.context.wgpu, scene);
+                render_scene.resize(&mut self.context.wgpu, scene, width, height);
 
                 scene.render_item = render_item;
             }
@@ -365,7 +365,7 @@ impl MainInterface
 
             if editor_gui.editor_state.visible
             {
-                let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui);
+                let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, None);
                 self.context.egui.set_output(gui_output);
 
                 //self.gui.request_repaint();
@@ -551,7 +551,45 @@ impl MainInterface
 
             if state.debug.save_screenshot
             {
-                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_screenshot_render();
+                //let target_size: Option<(u32, u32)> = Some((256, 256));
+                let target_size: Option<(u32, u32)> = None;
+
+                let original_size = (state.width, state.height);
+                let render_size = target_size.unwrap_or(original_size);
+
+                // resize all scenes (depth buffer, cameras, hzb) to the given resolution
+                let resize_scenes = |wgpu: &mut WGpu, state: &mut State, width: u32, height: u32|
+                {
+                    // move scenes out of state to avoid multiple mut borrows during update
+                    let mut scenes = vec![];
+                    swap(&mut state.scenes, &mut scenes);
+
+                    for scene in &mut scenes
+                    {
+                        if scene.render_item.is_none()
+                        {
+                            continue;
+                        }
+
+                        scene.update_resolution(width, height);
+
+                        let mut render_item = scene.render_item.take();
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.resize(wgpu, scene, width, height);
+                        render_scene.update(wgpu, state, scene);
+                        scene.render_item = render_item;
+                    }
+
+                    swap(&mut scenes, &mut state.scenes);
+                };
+
+                // switch to the custom render resolution
+                if target_size.is_some()
+                {
+                    resize_scenes(&mut self.context.wgpu, state, render_size.0, render_size.1);
+                }
+
+                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_offscreen_render(target_size);
                 let mut encoder = self.context.wgpu.create_command_encoder();
                 {
                     for scene in &mut state.scenes
@@ -567,11 +605,36 @@ impl MainInterface
                         scene.render_item = render_item;
                     }
 
-                    self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+                    // egui overlay
+                    if let Some(editor_gui) = &mut self.editor_gui
+                    {
+                        // when rendering off-screen at a custom size, the egui layout and its scissor rects
+                        // must match the render target, so temporarily switch the screen descriptor size.
+                        let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
+                        if target_size.is_some()
+                        {
+                            self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+                        }
+
+                        // re-create the GUI output for the new render target size and render
+                        let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, target_size);
+                        self.context.egui.set_output(gui_output);
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+
+                        // restore the window size for the normal frames
+                        self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
+                    }
                 }
-                let img_data = self.context.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, encoder);
+                let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
+
+                // restore the original (window) resolution
+                if target_size.is_some()
+                {
+                    resize_scenes(&mut self.context.wgpu, state, original_size.0, original_size.1);
+                }
+
                 state.debug.save_screenshot = false;
             }
         }

@@ -220,18 +220,17 @@ impl Texture
         }
     }
 
-    pub fn new_depth_texture(wgpu: &mut WGpu, samples: u32) -> Texture
+    pub fn new_depth_texture(wgpu: &mut WGpu, samples: u32, width: u32, height: u32) -> Texture
     {
         // shadow
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/shader.wgsl
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/main.rs
-        let config = wgpu.surface_config();
         let device = wgpu.device();
 
         let size = wgpu::Extent3d
         {
-            width: config.width,
-            height: config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor
@@ -253,8 +252,8 @@ impl Texture
         {
             name: "depth texture".to_string(),
 
-            width: config.width,
-            height: config.height,
+            width,
+            height,
 
             format: TextureFormat::Depth,
             is_depth_texture: true,

@@ -327,9 +327,12 @@ impl WGpu
     }
 
 
-    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
+    pub fn start_offscreen_render(&mut self, resolution: Option<(u32, u32)>) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
     {
-        let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
+        // when a custom resolution is given the scene must be rendered natively at that size
+        // (the caller is responsible for resizing the scene's depth buffer / camera / hzb accordingly).
+        let (width, height) = resolution.unwrap_or((self.surface_config.width, self.surface_config.height));
+        let buffer_dimensions = BufferDimensions::new(width as usize, height as usize);
 
         // The output buffer lets us retrieve the data as an array
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor
@@ -388,7 +391,7 @@ impl WGpu
         (buffer_dimensions, output_buffer, texture, view, msaa_texture_view)
     }
 
-    pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
+    pub fn end_offscreen_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
     {
         let texture_extent = wgpu::Extent3d
         {

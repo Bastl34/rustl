@@ -215,12 +215,27 @@ impl Editor
         create_grid_and_gizmo_objects(&mut self.editor_state, state, scene_id, editor_utils_id);
     }
 
-    pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui) -> FullOutput
+    pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui, render_size: Option<(u32, u32)>) -> FullOutput
     {
         let mut raw_input = egui.ui_state.take_egui_input(window);
 
         // ensure egui always knows the window has focus so text cursor blinks correctly
         raw_input.focused = true;
+
+        // when rendering into an off-screen target of a different size, lay the ui out at that size
+        // (otherwise the paint/clip rects would reference the window size and overflow the target)
+        if let Some((width, height)) = render_size
+        {
+            let pixels_per_point = egui.screen_descriptor.pixels_per_point;
+            raw_input.screen_rect = Some
+            (
+                ::egui::Rect::from_min_size
+                (
+                    ::egui::pos2(0.0, 0.0),
+                    ::egui::vec2(width as f32 / pixels_per_point, height as f32 / pixels_per_point),
+                )
+            );
+        }
 
         // remove when fixed: https://github.com/emilk/egui/issues/8092
         //#[cfg(debug_assertions)]
