@@ -1142,12 +1142,14 @@ impl Editor
         // get camera transform
         let (scene, _, _) = self.editor_state.get_selected_node(state);
         let mut cam_inverse = Matrix4::<f32>::identity();
+        let mut cam_culling_mask = 0;
         for camera in &scene.unwrap().cameras
         {
             if camera.enabled && camera.is_point_in_viewport(&start_pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
             {
                 let cam_data = camera.get_data();
                 cam_inverse = cam_data.view_inverse.clone();
+                cam_culling_mask = cam_data.culling_mask;
                 break;
             }
         }
@@ -1175,7 +1177,19 @@ impl Editor
         {
             let delta = state.io.input_manager.mouse.wheel_delta_y.signum() * PI / 16.0;
             let movement = Vector3::<f32>::new(delta, delta, delta);
-            self.rotate_object(state, movement, false, true, false, false);
+
+            if cam_culling_mask & LAYER_QUAD_VIEW_FRONT != 0
+            {
+                self.rotate_object(state, movement, false, false, true, false);
+            }
+            else if cam_culling_mask & LAYER_QUAD_VIEW_RIGHT != 0
+            {
+                self.rotate_object(state, movement, true, false, false, false);
+            }
+            else
+            {
+                self.rotate_object(state, movement, false, true, false, false);
+            }
 
             // "consume" mouse wheel
             state.io.input_manager.mouse.wheel_delta_y = 0.0;
@@ -1494,6 +1508,8 @@ impl Editor
             let bottom_center = Point3::<f32>::new(bounding_center.x, bounding_min.y, bounding_center.z);
 
             let mut bottom_center_screen_space = None;
+            let mut cam_is_ortho = false;
+            let mut cam_dir = Vector3::<f32>::zeros();
 
             let (scene, _node, _instance) = self.editor_state.get_selected_node(state);
             let scene = scene.unwrap();
@@ -1502,7 +1518,10 @@ impl Editor
                 // check if click is insight
                 if camera.enabled && camera.is_point_in_viewport(&pos_new) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                 {
+                    let cam_data = camera.get_data();
                     bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center));
+                    cam_is_ortho = cam_data.projection_type == CameraProjectionType::Orthogonal;
+                    cam_dir = cam_data.dir;
 
                     break;
                 }
@@ -1525,7 +1544,17 @@ impl Editor
 
             if let Some(pick_res) = pick_res
             {
-                pick_pos = Some(pick_res.1.point);
+                let mut p = pick_res.1.point;
+
+                // ortho cams: project pick point onto the screen-parallel plane through bottom_center
+                if cam_is_ortho
+                {
+                    let n = cam_dir.normalize();
+                    let proj_distance = (p - bottom_center).dot(&n);
+                    p = p - n * proj_distance;
+                }
+
+                pick_pos = Some(p);
                 pick_distance = Some(pick_res.1.time_of_impact);
             }
         }

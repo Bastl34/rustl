@@ -69,13 +69,40 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
                 (node_arc.read().unwrap().settings.layer_mask & cam_culling_mask) != 0
             });
 
-            let mut grid_hit = None;
+            let mut grid_hit: Option<ScenePickRes> = None;
             if allow_grid_picking
             {
-                let grid = scene.find_mesh_node_by_name("grid");
-                if let Some(grid) = grid
+                // there's one grid mesh node per quad-view plane (named "grid" under editor utils).
+                // pick against each — the layer predicate filters to the grid matching this cam.
+                let grid_meshes: Vec<NodeItem> = if let Some(editor_utils) = scene.find_node_by_name(EDITOR_UTILS_NODE_NAME)
                 {
-                    grid_hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, Some(grid_pick_predicate));
+                    let utils = editor_utils.read().unwrap();
+                    Scene::list_all_child_nodes(&utils.nodes)
+                        .into_iter()
+                        .filter(|n|
+                        {
+                            let n_r = n.read().unwrap();
+                            n_r.name == "grid" && n_r.find_component::<Mesh>().is_some()
+                        })
+                        .collect()
+                }
+                else
+                {
+                    vec![]
+                };
+
+                for grid in grid_meshes
+                {
+                    let hit = scene.pick_node(grid, &ray, false, true, ignore_visible, true, Some(grid_pick_predicate.clone()));
+                    if let Some(h) = hit
+                    {
+                        let take = match grid_hit.as_ref()
+                        {
+                            Some(best) => h.time_of_impact < best.time_of_impact,
+                            None => true,
+                        };
+                        if take { grid_hit = Some(h); }
+                    }
                 }
             }
 
