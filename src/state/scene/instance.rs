@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components, remove_components_by_type}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -235,6 +235,14 @@ impl Instance
     pub fn remove_component_by_type<T>(&mut self) where T: 'static
     {
         if remove_component_by_type::<T>(&mut self.components)
+        {
+            self.force_update = true;
+        }
+    }
+
+    pub fn remove_components_by_type<T>(&mut self) where T: 'static
+    {
+        if remove_components_by_type::<T>(&mut self.components)
         {
             self.force_update = true;
         }

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex, RwLock}};
-use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
+use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::{Node, NodeItem}, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
 
 pub type TextureCache = HashMap<String, TextureItem>;
 pub type MaterialCache = HashMap<String, MaterialItem>;
@@ -119,6 +119,60 @@ pub fn load_asset_and_add_to_scene(path: &str, scene_id: u32, parent_node_id: Op
     }));
 
     Ok(Arc::try_unwrap(result_slot).unwrap().into_inner().unwrap())
+}
+
+pub fn load_material_and_add_to_scene(path: &str, scene_id: u32, main_queue: ExecutionQueueItem, reuse_materials: bool) -> Option<MaterialItem>
+{
+    // load file as bytes
+    let bytes = match load_binary(path)
+    {
+        Ok(bytes) => bytes,
+        Err(e) =>
+        {
+            console_error!("can not load material {}: {}", path, e);
+            return None;
+        }
+    };
+
+    // parse the material data (the .mat file is the serialized MaterialData)
+    let material_data = match serde_json::from_slice::<MaterialData>(bytes.as_slice())
+    {
+        Ok(material_data) => material_data,
+        Err(e) =>
+        {
+            console_error!("can not parse material {}: {}", path, e);
+            return None;
+        }
+    };
+
+    // build the material component (named after the file)
+    let name = get_stem(path);
+    let mut material = Material::new(name.as_str());
+    material.get_data_mut().set(material_data);
+
+    let material: MaterialItem = Arc::new(RwLock::new(Box::new(material)));
+
+    // add it to the scene — or, if reuse is enabled, reuse an existing material with the same name
+    let result_slot: Arc<Mutex<Option<MaterialItem>>> = Arc::new(Mutex::new(None));
+    let result_slot_clone = result_slot.clone();
+    let material_clone = material.clone();
+
+    execute_on_scene_mut_and_wait(main_queue, scene_id, Box::new(move |scene|
+    {
+        if reuse_materials
+        {
+            if let Some(existing) = scene.get_material_by_name(&name)
+            {
+                *result_slot_clone.lock().unwrap() = Some(existing);
+                return;
+            }
+        }
+
+        scene.add_material(&material_clone);
+        *result_slot_clone.lock().unwrap() = Some(material_clone.clone());
+    }));
+
+    result_slot.lock().unwrap().take()
 }
 
 pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u32>, material_id: Option<u32>, mipmapping: bool, max_tex_res: u32)

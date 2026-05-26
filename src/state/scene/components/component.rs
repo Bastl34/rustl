@@ -379,6 +379,22 @@ pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) -> bool 
     false
 }
 
+pub fn remove_components_by_type<T>(components: &mut Vec<ComponentItem>) -> bool where T: 'static
+{
+    let prev_len = components.len();
+    components.retain
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            let component_item = component.as_any();
+            !component_item.is::<T>()
+        }
+    );
+
+    components.len() != prev_len
+}
+
 pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u32) -> bool
 {
     let index = components.iter().position

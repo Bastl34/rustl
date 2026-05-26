@@ -24,10 +24,10 @@ pub fn create_asset_tree(editor_state: &mut EditorState, _state: &mut State, ui:
 
         ui.vertical(|ui|
         {
-            ui.selectable_value(&mut editor_state.asset_type, AssetType::Scene, "🎬 Scene");
-            ui.selectable_value(&mut editor_state.asset_type, AssetType::Object, "📦 Object");
-            ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Texture");
-            ui.selectable_value(&mut editor_state.asset_type, AssetType::Material, "🎨 Material");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Scene, "🎬 Scenes");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Object, "📦 Objects");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Textures");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Material, "🎨 Materials");
         });
     });
 }
@@ -38,7 +38,8 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
     {
         AssetType::Scene => Some(&editor_state.assets_scenes),
         AssetType::Object => Some(&editor_state.assets_objects),
-        _ => None
+        AssetType::Texture => None,
+        AssetType::Material => Some(&editor_state.assets_materials),
     };
 
     if items.is_none() { return; }
@@ -50,13 +51,10 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
     {
         ui.horizontal(|ui|
         {
-            if editor_state.asset_type == AssetType::Object || editor_state.asset_type == AssetType::Scene
-            {
-                ui.label("🔍");
-                ui.add(egui::TextEdit::singleline(&mut editor_state.asset_filter).desired_width(100.0));
-            }
+            ui.label("🔍");
+            ui.add(egui::TextEdit::singleline(&mut editor_state.asset_filter).desired_width(100.0));
 
-            if editor_state.asset_type == AssetType::Object
+            if editor_state.asset_type == AssetType::Object || editor_state.asset_type == AssetType::Material
             {
                 ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
             }
@@ -172,9 +170,21 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                                                     {
                                                         ui.image((egui_preview.id(), egui::Vec2::new(ui.available_width(), ui.available_height())));
                                                     }
-                                                    else
+                                                    else if asset.asset_type == AssetType::Scene
+                                                    {
+                                                        ui.label(RichText::new("🎬").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Object
                                                     {
                                                         ui.label(RichText::new("📦").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Texture
+                                                    {
+                                                        ui.label(RichText::new("🖼").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Material
+                                                    {
+                                                        ui.label(RichText::new("🎨").size(60.0));
                                                     }
                                                 });
                                             });

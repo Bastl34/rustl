@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 
-use crate::{component_downcast_mut, gui::editor::editor::{EDITOR_INTERNAL_TAG, EDITOR_UTILS_NODE_NAME}, state::{scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast_mut, gui::editor::{editor::{EDITOR_INTERNAL_TAG, EDITOR_UTILS_NODE_NAME}, editor_state::AssetType}, state::{scene::{camera_controller::fly_controller::FlyController, components::{component::{Component, ComponentItem}, material::Material, mesh::Mesh, sound::Sound, transformation::Transformation}, node::NodeItem, scene::{PickPredicate, Scene, ScenePickRes}, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State, SupportedFileTypes}}};
 
 use super::editor_state::EditorState;
 
@@ -426,4 +426,33 @@ pub fn set_internal_tag_for_utils_nodes(scene: &mut Scene)
             }
         }
     }
+}
+
+pub fn get_asset_type_by_supported_files(supported_file_types: &SupportedFileTypes, path: &str) -> Option<AssetType>
+{
+    let extensions = path.split('.').last();
+
+    let is_object = supported_file_types.objects.contains(&extensions.unwrap_or("").to_lowercase());
+    let is_material = supported_file_types.materials.contains(&extensions.unwrap_or("").to_lowercase());
+    let is_scene = supported_file_types.scenes.contains(&extensions.unwrap_or("").to_lowercase());
+    let is_texture = supported_file_types.textures.contains(&extensions.unwrap_or("").to_lowercase());
+
+    if is_object
+    {
+        return Some(AssetType::Object);
+    }
+    else if is_material
+    {
+        return Some(AssetType::Material);
+    }
+    else if is_scene
+    {
+        return Some(AssetType::Scene);
+    }
+    else if is_texture
+    {
+        return Some(AssetType::Texture);
+    }
+
+    None
 }

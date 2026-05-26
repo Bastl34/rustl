@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::transform_vec_to_parent_local, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::load_asset_and_add_to_scene, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -615,7 +615,7 @@ impl Editor
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
                     let copy_node_name = self.editor_state.copy_node_name.clone();
 
-                    self.load_asset(state, copy_asset.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                    self.load_asset(state, copy_asset.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                     {
                         // copy over transformation
                         if let Some(transform_data) = copy_asset_transform.clone()
@@ -667,7 +667,7 @@ impl Editor
                 let copy_node_id = self.editor_state.copy_node_id.clone();
                 let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
 
-                self.load_asset(state, source.origin_path.clone(), Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                self.load_asset(state, source.origin_path.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                 {
                     // copy over transformation
                     if let Some(transform_data) = copy_asset_transform.clone()
@@ -1009,8 +1009,8 @@ impl Editor
                         let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
-                            let reuse_materials = if self.editor_state.asset_type == AssetType::Object && self.editor_state.reuse_materials_by_name  { true } else { false };
-                            self.load_asset(state, drag_id.clone(), Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None);
+                            let reuse_materials = if (self.editor_state.asset_type == AssetType::Object || self.editor_state.asset_type == AssetType::Material) && self.editor_state.reuse_materials_by_name  { true } else { false };
+                            self.load_asset(state, drag_id.clone(), self.editor_state.asset_type, Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None);
                         }
                     }
                 }
@@ -1024,7 +1024,15 @@ impl Editor
     {
         let pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
         let reuse_materials = false;
-        self.load_asset(state, path, pos, reuse_materials, None);
+        let asset_type = get_asset_type_by_supported_files(&state.supported_file_types, &path.clone());
+        if let Some(asset_type) = asset_type
+        {
+            self.load_asset(state, path, asset_type, pos, reuse_materials, None);
+        }
+        else
+        {
+            console_error!("Unsupported file type: {}", path);
+        }
     }
 
     pub fn set_edit_mode(&mut self, state: &mut State)
@@ -1642,7 +1650,7 @@ impl Editor
         }
     }
 
-    pub fn load_asset(&mut self, state: &mut State, path: String, pos: Point2::<f32>, reuse_material: bool, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
+    pub fn load_asset(&mut self, state: &mut State, path: String, asset_type: AssetType, pos: Point2::<f32>, reuse_material: bool, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
     {
         if self.editor_state.loading.read().unwrap().clone()
         {
@@ -1660,119 +1668,155 @@ impl Editor
 
         let scene_id = scene_id.unwrap();
 
-        let grid_size = self.editor_state.grid_size;
-        let grid_amount = self.editor_state.grid_amount;
-
-        let main_queue_clone = main_queue.clone();
-        if self.editor_state.asset_type == AssetType::Scene
-        {
-            spawn_thread(move ||
-            {
-                create_grid(scene_id, main_queue_clone.clone(), grid_amount, grid_size);
-            });
-        };
 
         // pick
         let pick_res = pick(state, pos, true, false, false, None);
 
         let mut pos = None;
+        let mut node = None;
         if let Some(pick_res) = pick_res
         {
             pos = Some(pick_res.1.point);
+            node = Some(pick_res.1.node.clone());
         }
-
-        let create_mipmaps = state.rendering.create_mipmaps;
-        let max_tex_res = state.max_texture_resolution();
-        let object_only = if self.editor_state.asset_type == AssetType::Object { true } else { false };
 
         let editor_state = self.editor_state.loading.clone();
         *editor_state.write().unwrap() = true;
         *self.editor_state.loading_progress.write().unwrap() = 0.5;
 
-        spawn_thread(move ||
+        // ******************** object *********************
+        if asset_type == AssetType::Object
         {
-            let _guard = LoadingGuard(editor_state);
+            let create_mipmaps = state.rendering.create_mipmaps;
+            let max_tex_res = state.max_texture_resolution();
+            let object_only = if asset_type == AssetType::Object { true } else { false };
 
-            console_log!("loading ...");
-
-            let loaded = load_asset_and_add_to_scene(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, true, object_only, create_mipmaps, max_tex_res);
-
-            if loaded.is_err()
+            spawn_thread(move ||
             {
-                console_error!("loading failed");
-                console_error!(loaded.err());
+                let _guard = LoadingGuard(editor_state);
+
+                console_log!("object loading ...");
+
+                let loaded = load_asset_and_add_to_scene(path.as_str(), scene_id, None, main_queue.clone(), true, reuse_material, true, object_only, create_mipmaps, max_tex_res);
+
+                if loaded.is_err()
+                {
+                    console_error!("loading failed");
+                    console_error!(loaded.err());
+                    return;
+                }
+
+                let loaded_assets = loaded.unwrap();
+
+                let on_done = on_done.clone();
+                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+                {
+                    //scene.clear_empty_nodes();
+
+                    let mut root_node = None;
+
+                    for id in &loaded_assets.node_ids
+                    {
+                        if let Some(node) = scene.find_node_by_id(*id)
+                        {
+                            if node.read().unwrap().root_node
+                            {
+                                root_node = Some(node.clone());
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(root_node) = &root_node
+                    {
+                        let mut root_node = root_node.write().unwrap();
+                        root_node.settings.transient = false;
+
+                        if reuse_material
+                        {
+                            root_node.extras.insert(RESUSE_MATERIALS_TAG, reuse_material);
+                        }
+                    }
+
+                    if let Some(pos) = pos
+                    {
+                        if let Some(root_node) = &root_node
+                        {
+                            // find offset based on bounding box
+                            let mut offset = 0.0;
+                            {
+                                let root_node = root_node.read().unwrap();
+                                let bounding_info = root_node.get_world_bounding_info(None, true, None);
+
+                                if let Some(bounding_info) = bounding_info
+                                {
+                                    //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
+                                    offset = -bounding_info.0.y;
+                                }
+                            }
+
+                            let mut transform = Transformation::identity("Transform");
+                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
+
+                            root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
+
+                            root_node.write().unwrap().settings.visible = true;
+                        }
+                    }
+
+                    if let Some(on_done) = &on_done
+                    {
+                        if let Some(root_node) = root_node
+                        {
+                            on_done(scene, root_node.clone());
+                        }
+                    }
+                }));
+
+                console_success!("object loading DONE");
+            });
+        }
+        // ******************** material *********************
+        else if asset_type == AssetType::Material
+        {
+            if node.is_none()
+            {
+                console_error!("no node found at drop position");
                 return;
             }
 
-            let loaded_assets = loaded.unwrap();
-
-            let on_done = on_done.clone();
-            execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+            spawn_thread(move ||
             {
-                //scene.clear_empty_nodes();
+                let _guard = LoadingGuard(editor_state);
 
-                let mut root_node = None;
+                console_log!("material loading ...");
 
-                for id in &loaded_assets.node_ids
+                let loaded_material = load_material_and_add_to_scene(path.as_str(), scene_id, main_queue.clone(), reuse_material);
+
+                if loaded_material.is_none()
                 {
-                    if let Some(node) = scene.find_node_by_id(*id)
-                    {
-                        if node.read().unwrap().root_node
-                        {
-                            root_node = Some(node.clone());
-                            break;
-                        }
-                    }
+                    console_error!("material loading failed");
+                    return;
                 }
 
-                if let Some(root_node) = &root_node
+                let loaded_material = loaded_material.unwrap();
+
+                let on_done = on_done.clone();
+                let node = node.unwrap();
+                execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
                 {
-                    let mut root_node = root_node.write().unwrap();
-                    root_node.settings.transient = false;
+                    node.write().unwrap().remove_components_by_type::<Material>();
+                    node.write().unwrap().add_component(loaded_material.clone());
 
-                    if reuse_material
+                    if let Some(on_done) = &on_done
                     {
-                        root_node.extras.insert(RESUSE_MATERIALS_TAG, reuse_material);
+                        on_done(scene, node.clone());
                     }
-                }
+                }));
 
-                if let Some(pos) = pos
-                {
-                    if let Some(root_node) = &root_node
-                    {
-                        // find offset based on bounding box
-                        let mut offset = 0.0;
-                        {
-                            let root_node = root_node.read().unwrap();
-                            let bounding_info = root_node.get_world_bounding_info(None, true, None);
-
-                            if let Some(bounding_info) = bounding_info
-                            {
-                                //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
-                                offset = -bounding_info.0.y;
-                            }
-                        }
-
-                        let mut transform = Transformation::identity("Transform");
-                        transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
-
-                        root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
-
-                        root_node.write().unwrap().settings.visible = true;
-                    }
-                }
-
-                if let Some(on_done) = &on_done
-                {
-                    if let Some(root_node) = root_node
-                    {
-                        on_done(scene, root_node.clone());
-                    }
-                }
-            }));
-
-            console_success!("loading DONE");
-        });
+                console_success!("material loading DONE");
+            });
+        }
     }
 }
 

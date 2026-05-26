@@ -827,7 +827,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     // distance based blending out
     /*
-    let max_distance: f32 = 50.0;
+    let max_distance: f32 = 100.0;
     let view_dir = camera.view_pos.xyz - in.position;
 
     let distance = length(view_dir);
@@ -836,7 +836,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let distance_fading_factor = 1.0 - easeInQuint(dist_scaled);
 
     alpha *= distance_fading_factor;
-        */
+    */
 
     // x-ray mode: clamp alpha to xray_alpha so opaque objects become see-through
     // materials with allow_xray=0 (gizmos, grid, etc.) are excluded

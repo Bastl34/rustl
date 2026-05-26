@@ -80,7 +80,23 @@ pub struct Rendering
 pub struct SupportedFileTypes
 {
     pub objects: Vec<String>,
-    pub textures: Vec<String>
+    pub scenes: Vec<String>,
+    pub textures: Vec<String>,
+    pub materials: Vec<String>,
+}
+
+impl Default for SupportedFileTypes
+{
+    fn default() -> Self
+    {
+        Self
+        {
+             objects: vec![String::from("obj"), String::from("gltf"), String::from("glb")],
+             scenes: vec![String::from("scene")],
+             textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png"), String::from("webp")],
+             materials: vec![String::from("mat")],
+        }
+    }
 }
 
 pub struct Statistics
@@ -346,11 +362,7 @@ impl State
             registered_camera_controller: cam_controller,
             registered_scene_controller: scene_controller,
 
-            supported_file_types: SupportedFileTypes
-            {
-                objects: vec![String::from("obj"), String::from("gltf"), String::from("glb")],
-                textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png")],
-            },
+            supported_file_types: SupportedFileTypes::default(),
 
             in_focus: true,
 

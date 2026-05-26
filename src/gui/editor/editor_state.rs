@@ -6,16 +6,18 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{console_debug, console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
+const MATERIALS_DIR: &str = "materials/";
 
 const LOCAL_OBJECTS_DIR: &str = "resourcesLocal/objects/";
 const LOCAL_SCENES_DIR: &str = "resourcesLocal/scenes/";
+const LOCAL_MATERIALS_DIR: &str = "resourcesLocal/materials/";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
@@ -97,7 +99,7 @@ pub enum DebugPanel
     HzbImage,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum AssetType
 {
     Scene,
@@ -117,6 +119,7 @@ pub struct Asset
 {
     pub name: String,
     pub path: String,
+    pub asset_type: AssetType,
     pub preview: Option<String>,
     pub egui_preview: Option<egui::TextureHandle>,
 }
@@ -252,6 +255,7 @@ pub struct EditorState
     pub reuse_materials_by_name: bool,
     pub assets_objects: Vec<Asset>,
     pub assets_scenes: Vec<Asset>,
+    pub assets_materials: Vec<Asset>,
 
     pub log_filter: String,
     pub log_auto_scroll: bool,
@@ -373,7 +377,7 @@ impl EditorState
             reuse_materials_by_name: true,
             assets_objects: vec![],
             assets_scenes: vec![],
-
+            assets_materials: vec![],
             log_filter: "".to_string(),
             log_auto_scroll: true,
 
@@ -954,6 +958,7 @@ impl EditorState
         // project
         self.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui_context, false);
         self.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui_context, false);
+        self.load_asset_entries(MATERIALS_DIR, state, AssetType::Material, egui_context, false);
 
         // local
         let local_objects_dir = env::current_dir().unwrap().join(LOCAL_OBJECTS_DIR);
@@ -962,8 +967,12 @@ impl EditorState
         let local_scenes_dir = env::current_dir().unwrap().join(LOCAL_SCENES_DIR);
         let local_scenes_dir = local_scenes_dir.to_string_lossy().to_string();
 
+        let local_materials_dir = env::current_dir().unwrap().join(LOCAL_MATERIALS_DIR);
+        let local_materials_dir = local_materials_dir.to_string_lossy().to_string();
+
         self.load_asset_entries(local_objects_dir.as_str(), state, AssetType::Object, egui_context, true);
         self.load_asset_entries(local_scenes_dir.as_str(), state, AssetType::Scene, egui_context, true);
+        self.load_asset_entries(local_materials_dir.as_str(), state, AssetType::Material, egui_context, true);
     }
 
     pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui_context: &egui::Context, append: bool)
@@ -976,9 +985,15 @@ impl EditorState
         let files: Vec<String> = files.iter().filter(|item|
         {
             let extension = get_extension(item.as_str());
-            state.supported_file_types.objects.contains(&extension)
-        }).map(|s| s.to_string()).collect();
 
+            match asset_type
+            {
+                AssetType::Scene => state.supported_file_types.scenes.contains(&extension),
+                AssetType::Object => state.supported_file_types.objects.contains(&extension),
+                AssetType::Material => state.supported_file_types.materials.contains(&extension),
+                AssetType::Texture => state.supported_file_types.textures.contains(&extension),
+            }
+        }).map(|s| s.to_string()).collect();
 
         let mut assets = vec![];
 
@@ -1012,6 +1027,7 @@ impl EditorState
             {
                 name: get_stem(file),
                 path: file.to_string(),
+                asset_type: asset_type,
                 preview: thumb,
                 egui_preview: egui_preview,
             };
@@ -1040,6 +1056,19 @@ impl EditorState
             {
                 self.assets_objects = assets;
             }
+        }
+        else if asset_type == AssetType::Material
+        {
+            if append
+            {
+                self.assets_materials.extend(assets);
+            }
+            else
+            {
+                self.assets_materials = assets;
+            }
+
+            console_debug!("lol, {}", self.assets_materials.len());
         }
     }
 }
