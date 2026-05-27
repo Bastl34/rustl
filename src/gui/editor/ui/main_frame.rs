@@ -1,6 +1,7 @@
 
 use std::mem::swap;
 
+use crate::gui::editor::editor::EDITOR_INTERNAL_TAG;
 use crate::gui::editor::grid::GRID_ROOT_NAME_XZ_MAIN;
 use crate::gui::editor::ui::scene_tabs::create_scene_tabs;
 use crate::helper::concurrency::thread::spawn_thread;
@@ -12,7 +13,7 @@ use crate::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
-use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
+use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator};
@@ -904,6 +905,14 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
     swap(&mut state.scenes, &mut scenes);
     for scene in &mut scenes
     {
+        let is_internal_node = scene.has_tag(ENGINE_INTERNAL_TAG) || scene.has_tag(EDITOR_INTERNAL_TAG);
+        let show_from_tags = !is_internal_node || (is_internal_node && editor_state.show_internal_entries);
+
+        if !show_from_tags
+        {
+            continue;
+        }
+
         let scene_id = scene.id;
         let id = format!("scene_{}", scene_id);
         let ui_id = ui.make_persistent_id(id.clone());

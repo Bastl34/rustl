@@ -2,7 +2,7 @@ use std::mem::swap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene}, state::State}};
+use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene}, state::State}};
 
 use super::dialogs::load_texture_dialog;
 
@@ -83,6 +83,77 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         ui.label(RichText::new("◼ geometry").strong());
         ui.label(format!(" ⚫ meshes: {}", meshes_amout));
+    });
+
+    // Extras
+    collapse_with_title(ui, "scene_extras", true, "⊞ Extras", None, |ui|
+    {
+        ui.scope(|ui|
+        {
+            for (key, value) in scene.extras.iter()
+            {
+                ui.label(format!("⚫ {}: {:?}", key, value));
+            }
+        });
+    });
+
+    // Tags
+    collapse_with_title(ui, "scene_tags", true, "🔖 Tags", None, |ui|
+    {
+        ui.scope(|ui|
+        {
+            ui.vertical( |ui|
+            {
+                let mut delete_tag = "".to_string();
+
+                // list all tags
+                {
+                    for (tag, data) in scene.tags.iter()
+                    {
+                        ui.horizontal(|ui|
+                        {
+                            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+
+                            let color_u8 = Color32::from_rgb((data.color.x * 255.0) as u8, (data.color.y * 255.0) as u8,(data.color.z * 255.0) as u8);
+                            label_with_background(ui, tag, color_u8, None);
+
+                            ui.add_enabled_ui(!data.locked, |ui|
+                            {
+                                let hover_text = if data.locked { "locked - can not be deleted via ui" } else { "delete tag" };
+
+                                if ui.button(RichText::new("✖").size(16.0).color(Color32::WHITE)).on_hover_text(hover_text).clicked()
+                                {
+                                    delete_tag = tag.clone();
+                                }
+                            });
+                        });
+                    }
+                }
+
+                // delete tag
+                if delete_tag.len() > 0
+                {
+                    scene.tags.remove(delete_tag.as_str());
+                }
+
+                // add new tag
+                ui.horizontal(|ui|
+                {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+
+                    ui.set_max_width(150.0);
+                    ui.text_edit_singleline(&mut editor_state.tag_input);
+                    if ui.button(RichText::new("➕").size(16.0).color(Color32::WHITE)).clicked()
+                    {
+                        if !editor_state.tag_input.is_empty()
+                        {
+                            scene.tags.insert(editor_state.tag_input.as_str());
+                            editor_state.tag_input.clear();
+                        }
+                    }
+                });
+            });
+        });
     });
 
     // Settings

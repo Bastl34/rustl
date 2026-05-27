@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
 
@@ -63,6 +63,9 @@ pub struct Scene
     pub visible: bool,
     pub active: bool,
 
+    pub extras: Extras,
+    pub tags: Tags,
+
     data: ChangeTracker<SceneData>,
 
     pub nodes: Vec<NodeItem>,
@@ -102,6 +105,10 @@ impl Serialize for Scene
         map.serialize_entry("source", &self.source)?;
         map.serialize_entry("visible", &self.visible)?;
         map.serialize_entry("main", &self.active)?;
+
+        map.serialize_entry("extras", &self.extras)?;
+        map.serialize_entry("tags", &self.tags)?;
+
         map.serialize_entry("data", &self.data)?;
 
         let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
@@ -158,6 +165,8 @@ impl<'de> Deserialize<'de> for Scene
                         "visible" => scene.visible = map.next_value()?,
                         "main" => scene.active = map.next_value()?,
                         "data" => scene.data = map.next_value()?,
+                        "extras" => scene.extras = map.next_value()?,
+                        "tags" => scene.tags = map.next_value()?,
                         "nodes" =>
                         {
                             scene.nodes = map.next_value().into_iter().map(|node| Arc::new(RwLock::new(Box::new(node)))).collect()
@@ -215,6 +224,9 @@ impl Scene
             visible: true,
             active: false,
 
+            extras: Extras::new(),
+            tags: Tags::new(),
+
             data: ChangeTracker::new(SceneData
             {
                 max_lights: 10,
@@ -260,6 +272,11 @@ impl Scene
         }
 
         all_nodes.len()
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool
+    {
+        self.tags.contains(tag)
     }
 
     pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
