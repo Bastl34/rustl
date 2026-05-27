@@ -108,8 +108,6 @@ pub struct EditorScene
 {
     pub name: String,
 
-    /// Legacy field: read from old scene.json files but never written anymore.
-    /// The active state is stored in the project.json instead.
     #[serde(default, skip_serializing)]
     pub active: bool,
 
@@ -353,16 +351,16 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
     if editor_state.project_path.is_none() || force_new_path
     {
         path = rfd::FileDialog::new()
-            .add_filter("Rustl Project", &["json"])
-            .set_file_name(&format!("{}.json", editor_state.project_data.name))
+            .add_filter("Rustl Project", &["project"])
+            .set_file_name(&format!("{}.project", editor_state.project_data.name))
             .save_file()
             .map(|path| path.to_string_lossy().into_owned())
     }
 
     if let Some(path) = &path
     {
-        // save_editor_project appends .json, so strip it if already present
-        let base = path.strip_suffix(".json").unwrap_or(&path).to_string();
+        // save_editor_project appends .project, so strip it if already present
+        let base = path.strip_suffix(".project").unwrap_or(&path).to_string();
 
         // derive project name from filename if a new path was chosen
         let stem = get_stem(&base);
@@ -373,7 +371,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
 
         if save_editor_project(state, editor_state, &base)
         {
-            editor_state.project_path = Some(format!("{}.json", base));
+            editor_state.project_path = Some(format!("{}.project", base));
         }
     }
 
@@ -395,7 +393,7 @@ pub fn load_and_apply_project(state: &mut State, path: &str, done_callback: Proj
 pub fn load_editor_project_with_dialog(editor_state: &mut EditorState, state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>)
 {
     let path = rfd::FileDialog::new()
-        .add_filter("Rustl Project", &["json"])
+        .add_filter("Rustl Project", &["project"])
         .pick_file()
         .map(|p| p.to_string_lossy().into_owned());
 
