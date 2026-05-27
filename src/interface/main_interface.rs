@@ -242,6 +242,16 @@ impl MainInterface
 
         let frame_time = Instant::now();
 
+        // ******************** key bindings ********************
+        {
+            // screenshot
+            let state = &mut *(self.context.state.borrow_mut());
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::F12)
+            {
+                state.debug.save_screenshot = true;
+            }
+        }
+
         // ******************** update game controller ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
@@ -608,21 +618,24 @@ impl MainInterface
                     // egui overlay
                     if let Some(editor_gui) = &mut self.editor_gui
                     {
-                        // when rendering off-screen at a custom size, the egui layout and its scissor rects
-                        // must match the render target, so temporarily switch the screen descriptor size.
-                        let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
-                        if target_size.is_some()
+                        if editor_gui.editor_state.visible
                         {
-                            self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+                            // when rendering off-screen at a custom size, the egui layout and its scissor rects
+                            // must match the render target, so temporarily switch the screen descriptor size.
+                            let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
+                            if target_size.is_some()
+                            {
+                                self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+                            }
+
+                            // re-create the GUI output for the new render target size and render
+                            let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, target_size);
+                            self.context.egui.set_output(gui_output);
+                            self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+
+                            // restore the window size for the normal frames
+                            self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
                         }
-
-                        // re-create the GUI output for the new render target size and render
-                        let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, target_size);
-                        self.context.egui.set_output(gui_output);
-                        self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
-
-                        // restore the window size for the normal frames
-                        self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
                     }
                 }
                 let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
