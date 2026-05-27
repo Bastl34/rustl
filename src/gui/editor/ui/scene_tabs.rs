@@ -1,17 +1,22 @@
 use egui::{Color32, ScrollArea, Ui};
 
-use crate::{gui::{editor::editor_state::{EditorState, SelectionType, SettingsPanel}, helper::generic_items::tab}, state::state::State};
+use crate::{gui::{editor::{editor::EDITOR_INTERNAL_TAG, editor_state::{EditorState, SelectionType, SettingsPanel}}, helper::generic_items::tab}, state::state::{ENGINE_INTERNAL_TAG, State}};
+
+fn is_internal_scene(scene: &crate::state::scene::scene::Scene) -> bool
+{
+    scene.has_tag(ENGINE_INTERNAL_TAG) || scene.has_tag(EDITOR_INTERNAL_TAG)
+}
 
 pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    // remove tabs for scenes that no longer exist
-    let valid_ids: Vec<u32> = state.scenes.iter().map(|s| s.id).collect();
+    // remove tabs for scenes that no longer exist (or that became internal, e.g. the preview scene)
+    let valid_ids: Vec<u32> = state.scenes.iter().filter(|s| !is_internal_scene(s)).map(|s| s.id).collect();
     editor_state.open_scene_tabs.retain(|id| valid_ids.contains(id));
 
-    // auto-open first scene if no tabs are open yet
+    // auto-open first user (non-internal) scene if no tabs are open yet
     if editor_state.open_scene_tabs.is_empty()
     {
-        if let Some(first) = state.scenes.first()
+        if let Some(first) = state.scenes.iter().find(|s| !is_internal_scene(s))
         {
             editor_state.open_scene_tabs.push(first.id);
         }

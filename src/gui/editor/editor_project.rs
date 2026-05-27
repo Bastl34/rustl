@@ -268,8 +268,9 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
 
     for scene in &state.scenes
     {
+        // skip engine/editor-internal scenes (e.g. the preview scene) — they are not part of the project
         let is_internal = scene.has_tag(ENGINE_INTERNAL_TAG) || scene.has_tag(EDITOR_INTERNAL_TAG);
-        if !is_internal
+        if is_internal
         {
             continue;
         }
