@@ -553,6 +553,38 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // frame scene (fit the editor camera to the whole scene)
+            {
+                use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, QUAD_CAM};
+                use crate::state::scene::node::NodeItem;
+                use std::sync::Arc;
+
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/frame_scene.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).frame(true);
+                if ui.add(btn).on_hover_text("focus scene (fit camera to the whole scene)").clicked()
+                {
+                    if let Some(scene_id) = state.get_active_scene_id()
+                    {
+                        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+                        {
+                            // the main editor camera (perspective, single view)
+                            let cam_index = scene.cameras.iter().position(|cam| cam.tags.contains(EDITOR_INTERNAL_TAG) && !cam.tags.contains(QUAD_CAM));
+
+                            if let Some(cam_index) = cam_index
+                            {
+                                // exclude editor helpers (grid, gizmo, ...) from the bounding box
+                                let predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>> = Some(Arc::new(|node: NodeItem|
+                                {
+                                    !node.read().unwrap().tags.contains(EDITOR_INTERNAL_TAG)
+                                }));
+
+                                crate::state::scene::utilities::scene_utils::align_camera_to_scene(scene, cam_index, None, None, predicate);
+                            }
+                        }
+                    }
+                }
+            }
+
             // selectable
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/select.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));

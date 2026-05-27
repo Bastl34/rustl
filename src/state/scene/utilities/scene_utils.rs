@@ -2,7 +2,14 @@
 
 use std::sync::{Arc, Mutex};
 
+use nalgebra::{Point3, Vector3};
+
+use crate::helper::math::yaw_pitch_to_direction;
+use crate::state::scene::camera::{Camera, CameraProjectionType};
 use crate::{helper::{concurrency::execution_queue::ExecutionQueueItem, option_or_id::OptionOrId}, state::{scene::{components::component::ComponentItem, node::{Node, NodeItem}, scene::Scene}, state::State}};
+
+const DEFAULT_ALIGN_ALPHA: f32 = std::f32::consts::PI / 6.0; // 30° yaw
+const DEFAULT_ALIGN_BETA: f32 = std::f32::consts::PI / 8.0;  // 22.5° pitch
 
 pub fn clone_all_animations(from: NodeItem, to: NodeItem) -> Vec<ComponentItem>
 {
@@ -184,4 +191,114 @@ pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene_id: u32, source_ids: 
             }
         }
     }));
+}
+
+pub fn get_scene_world_bounding_info(scene: &Scene, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+{
+    let mut min = Point3::<f32>::new(f32::MAX, f32::MAX, f32::MAX);
+    let mut max = Point3::<f32>::new(f32::MIN, f32::MIN, f32::MIN);
+    let mut found = false;
+
+    for node in &scene.nodes
+    {
+        if let Some(predicate) = &predicate
+        {
+            if !predicate(node.clone())
+            {
+                continue;
+            }
+        }
+
+        let bounds = node.read().unwrap().get_world_bounding_info(None, true, predicate.clone());
+
+        if let Some((node_min, node_max)) = bounds
+        {
+            min.x = min.x.min(node_min.x);
+            min.y = min.y.min(node_min.y);
+            min.z = min.z.min(node_min.z);
+
+            max.x = max.x.max(node_max.x);
+            max.y = max.y.max(node_max.y);
+            max.z = max.z.max(node_max.z);
+
+            found = true;
+        }
+    }
+
+    if found { Some((min, max)) } else { None }
+}
+
+
+pub fn align_camera_to_bounds(cam: &mut Camera, min: Point3<f32>, max: Point3<f32>, alpha: Option<f32>, beta: Option<f32>) -> bool
+{
+    // look at the center of the bounding box; the bounding sphere radius drives the distance
+    let center = Point3::<f32>::from((min.coords + max.coords) * 0.5);
+    let radius = (max - min).norm() * 0.5;
+
+    if radius <= 0.0
+    {
+        return false;
+    }
+
+    let alpha = alpha.unwrap_or(DEFAULT_ALIGN_ALPHA);
+    let beta = beta.unwrap_or(DEFAULT_ALIGN_BETA);
+
+    // direction from the center towards the camera (alpha = yaw, beta = pitch)
+    let dir = yaw_pitch_to_direction(alpha, beta).normalize();
+
+    let cam_data = cam.get_data_mut().get_mut();
+
+    // viewport aspect ratio (matches what init_matrices uses to build the projection)
+    let viewport = cam_data.get_viewport();
+    let aspect = (viewport.width * cam_data.resolution_width as f32).max(1.0)
+               / (viewport.height * cam_data.resolution_height as f32).max(1.0);
+
+    let distance;
+
+    if cam_data.projection_type == CameraProjectionType::Perspective
+    {
+        // back off far enough that the bounding sphere fits — the narrower of the two half-fovs binds
+        let half_fovy = cam_data.fovy * 0.5;
+        let half_fovx = (half_fovy.tan() * aspect).atan();
+        let half_fov = half_fovy.min(half_fovx);
+
+        distance = radius / (half_fov.sin());
+    }
+    else
+    {
+        // ortho: fit the sphere into the (aspect-corrected) extent
+        let half = radius / (1.0_f32).max(1.0 / aspect);
+        cam_data.top = half;
+        cam_data.bottom = -half;
+        cam_data.left = -half * aspect;
+        cam_data.right = half * aspect;
+
+        distance = radius * 2.0;
+    }
+
+    cam_data.eye_pos = center + dir * distance;
+    cam_data.dir = -dir;
+    cam_data.up = Vector3::<f32>::new(0.0, 1.0, 0.0);
+    cam_data.clipping_far = cam_data.clipping_far.max(distance + radius * 2.0);
+
+    cam.init_matrices();
+
+    true
+}
+
+pub fn align_camera_to_scene(scene: &mut Scene, cam_index: usize, alpha: Option<f32>, beta: Option<f32>, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> bool
+{
+    let Some((min, max)) = get_scene_world_bounding_info(scene, predicate) else
+    {
+        crate::console_warning!("align_camera_to_scene: no bounding info found (empty scene / nothing with a mesh?)");
+        return false;
+    };
+
+    let Some(cam) = scene.cameras.get_mut(cam_index) else
+    {
+        crate::console_warning!("align_camera_to_scene: camera index {} not found", cam_index);
+        return false;
+    };
+
+    align_camera_to_bounds(cam, min, max, alpha, beta)
 }
