@@ -88,7 +88,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                     ui.set_min_width(140.0);
                     if ui.button("⊞ Add Scene").clicked()
                     {
-                        let new_scene_id = state.add_scene("Scene");
+                        let new_scene_id = state.add_scene("Scene").id;
                         if !editor_state.open_scene_tabs.contains(&new_scene_id)
                         {
                             editor_state.open_scene_tabs.push(new_scene_id);

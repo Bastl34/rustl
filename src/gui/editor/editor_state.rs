@@ -1067,8 +1067,6 @@ impl EditorState
             {
                 self.assets_materials = assets;
             }
-
-            console_debug!("lol, {}", self.assets_materials.len());
         }
     }
 }

@@ -10,7 +10,7 @@ use crate::{component_downcast, component_downcast_mut, console_error, console_l
 
 use self::math::approx_zero;
 
-use super::{editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{create_grid, update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
+use super::{editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
 
 pub const MAX_NAME_LENGTH: usize = 24;

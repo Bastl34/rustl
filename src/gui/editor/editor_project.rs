@@ -19,7 +19,7 @@ use crate::state::scene::loader::asset_container::AssetContainer;
 use crate::state::scene::utilities::scene_utils::execute_on_state_mut_and_wait;
 use std::collections::HashMap;
 use std::path::Path;
-use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
+use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State};
 use crate::state::scene::exporter::serialization_helper::default_true;
 use crate::state::scene::exporter::serialization_helper::is_true;
 use crate::state::scene::exporter::serialization_helper::is_false;
@@ -268,6 +268,12 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
 
     for scene in &state.scenes
     {
+        let is_internal = scene.has_tag(ENGINE_INTERNAL_TAG) || scene.has_tag(EDITOR_INTERNAL_TAG);
+        if !is_internal
+        {
+            continue;
+        }
+
         let editor_scene = extract_editor_scene(scene, path);
         total_objects += editor_scene.objects.len();
 
@@ -693,7 +699,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
 
     for (editor_scene, full_path, active) in editor_scenes
     {
-        let id = state.add_scene(&editor_scene.name);
+        let id = state.add_scene(&editor_scene.name).id;
         if let Some(scene) = state.scenes.iter_mut().find(|s| s.id == id)
         {
             scene.active = active;

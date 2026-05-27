@@ -708,7 +708,7 @@ impl State
         });
     }
 
-    pub fn add_scene(&mut self, name: &str) -> u32
+    pub fn add_scene(&mut self, name: &str) -> &mut SceneItem
     {
         let scenes_amount = self.scenes.len();
 
@@ -720,12 +720,9 @@ impl State
         }
 
         scene.add_defaults();
-
-        let scene_id = scene.id;
-
         self.scenes.push(Box::new(scene));
 
-        scene_id
+        self.scenes.last_mut().unwrap()
     }
 
     pub fn get_active_scene(&self) -> Option<&SceneItem>

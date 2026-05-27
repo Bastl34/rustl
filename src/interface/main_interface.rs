@@ -218,7 +218,7 @@ impl MainInterface
         //init scene
         let state = &mut *(self.context.state.borrow_mut());
 
-        let scene_id = state.add_scene("main scene");
+        let scene_id = state.add_scene("main scene").id;
         state.set_active_scene(scene_id);
 
         scene_id
