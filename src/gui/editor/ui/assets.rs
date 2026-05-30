@@ -81,7 +81,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
             ui.set_min_width(ui.available_width());
             ui.set_max_width(ui.available_width());
 
-            ui.horizontal_wrapped(|ui|
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui|
             {
                 ui.spacing_mut().item_spacing = egui::Vec2::new(2.0, 2.0);
                 for asset in items
