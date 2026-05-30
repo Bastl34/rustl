@@ -26,7 +26,7 @@ pub const PREVIEW_SPHERE_NODE_NAME: &str = "preview sphere";
 pub const PREVIEW_MATERIAL_NAME: &str = "preview material";
 
 const PREVIEW_ENV_MAP: &str = "textures/environment/footprint_court.jpg";
-const PREVIEW_SPHERE_ASSET: &str = "objects/sphere/sphere.gltf";
+const MATERIAL_PREVIEW_SPHERE_ASSET: &str = "objects/sphere/sphere.gltf";
 
 pub fn get_preview_scene_id(state: &State) -> Option<u32>
 {
@@ -90,10 +90,10 @@ fn create_preview_scene(state: &mut State)
     // load sphere
     spawn_thread(move ||
     {
-        let loaded = load_asset_and_add_to_scene(PREVIEW_SPHERE_ASSET, scene_id, None, main_queue.clone(), false, false, true, true, create_mipmaps, max_tex_res);
+        let loaded = load_asset_and_add_to_scene(MATERIAL_PREVIEW_SPHERE_ASSET, scene_id, None, main_queue.clone(), false, false, true, true, create_mipmaps, max_tex_res);
         if let Err(err) = &loaded
         {
-            console_error!("preview scene: failed to load sphere '{}': {}", PREVIEW_SPHERE_ASSET, err);
+            console_error!("preview scene: failed to load sphere '{}': {}", MATERIAL_PREVIEW_SPHERE_ASSET, err);
         }
 
         // tag the loaded sphere internal and frame it with the preview camera
@@ -187,7 +187,8 @@ pub fn get_thumbnail_path(material_resolved_path: &str) -> Option<String>
     Some(parent.join(format!("{}_thumb.png", stem)).to_string_lossy().to_string())
 }
 
-pub fn generate_material_thumbnails(editor_state: &mut EditorState, state: &mut State, wgpu: &mut WGpu, size: u32, force_regeneration: bool)
+pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut State, wgpu: &mut WGpu, size: u32, force_regeneration: bool, on_complete: F)
+    where F: FnOnce() + Send + 'static
 {
     let offscreen_render_jobs: Vec<(String, String)> = editor_state.assets_materials.iter().filter_map(|asset|
     {
@@ -242,7 +243,8 @@ pub fn generate_material_thumbnails(editor_state: &mut EditorState, state: &mut 
         }
     };
 
-    let mut saved = 0;
+    // render every material into an in-memory image (the gpu work has to stay on the main thread)
+    let mut rendered: Vec<(String, image::DynamicImage)> = Vec::with_capacity(offscreen_render_jobs.len());
     for (material_path, thumb_path) in &offscreen_render_jobs
     {
         if !apply_material_data(&material, material_path)
@@ -251,15 +253,31 @@ pub fn generate_material_thumbnails(editor_state: &mut EditorState, state: &mut 
         }
 
         let img = render_scene_offscreen_to_image(wgpu, state, &mut scene, size, size);
-
-        match img.save(thumb_path)
-        {
-            Ok(_) => { saved += 1; }
-            Err(err) => { console_error!("material thumbnails: failed to save '{}': {}", thumb_path, err); }
-        }
+        rendered.push((thumb_path.clone(), img));
     }
 
     state.scenes.insert(scene_index, scene);
 
-    console_success!("material thumbnails: {} generated", saved);
+    if rendered.is_empty()
+    {
+        return;
+    }
+
+    // write the pngs on a worker thread, then notify the caller so it can reload the asset list
+    spawn_thread(move ||
+    {
+        let mut saved = 0;
+        for (thumb_path, img) in rendered
+        {
+            match img.save(&thumb_path)
+            {
+                Ok(_) => { saved += 1; }
+                Err(err) => { console_error!("material thumbnails: failed to save '{}': {}", thumb_path, err); }
+            }
+        }
+
+        console_success!("material thumbnails: {} generated", saved);
+
+        on_complete();
+    });
 }

@@ -286,9 +286,18 @@ impl Editor
         if self.editor_state.generate_material_thumbnails
         {
             self.editor_state.generate_material_thumbnails = false;
-            crate::gui::editor::preview_scene::generate_material_thumbnails(&mut self.editor_state, state, wgpu, THUMBNAIL_SIZE, true);
 
-            // reload the asset list so the freshly rendered thumbnails show up in the browser
+            let reload = self.editor_state.reload_assets_requested.clone();
+            crate::gui::editor::preview_scene::generate_material_thumbnails(&self.editor_state, state, wgpu, THUMBNAIL_SIZE, true, move ||
+            {
+                *reload.write().unwrap() = true;
+            });
+        }
+
+        // reload the asset list once the worker thread finished writing the thumbnails
+        if *self.editor_state.reload_assets_requested.read().unwrap()
+        {
+            *self.editor_state.reload_assets_requested.write().unwrap() = false;
             self.editor_state.load_all_asset_entries(state, egui_ctx);
         }
 

@@ -258,6 +258,7 @@ pub struct EditorState
     pub assets_materials: Vec<Asset>,
 
     pub generate_material_thumbnails: bool,
+    pub reload_assets_requested: Arc<RwLock<bool>>,
 
     pub log_filter: String,
     pub log_auto_scroll: bool,
@@ -381,6 +382,7 @@ impl EditorState
             assets_scenes: vec![],
             assets_materials: vec![],
             generate_material_thumbnails: false,
+            reload_assets_requested: Arc::new(RwLock::new(false)),
             log_filter: "".to_string(),
             log_auto_scroll: true,
 
