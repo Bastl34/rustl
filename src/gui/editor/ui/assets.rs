@@ -65,6 +65,14 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                 {
                     reload_assets = true;
                 }
+
+                if editor_state.asset_type == AssetType::Material
+                {
+                    if ui.button("🖼 Create Thumbnails").on_hover_text("render preview thumbnails for materials without one").clicked()
+                    {
+                        editor_state.generate_material_thumbnails = true;
+                    }
+                }
             });
         });
 

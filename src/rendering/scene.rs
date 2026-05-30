@@ -2109,3 +2109,48 @@ impl Scene
         draw_calls
     }
 }
+
+pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene: &mut Box<crate::state::scene::scene::Scene>, width: u32, height: u32) -> image::DynamicImage
+{
+    // ensure a render item exists
+    if scene.render_item.is_none()
+    {
+        let samples = *(state.rendering.msaa.get_ref());
+        let render_item = Scene::new(wgpu, state, scene, samples);
+        scene.render_item = Some(Box::new(render_item));
+    }
+
+    // update first (before resizing) to ensure render item is up-to-date and can handle resizing properly
+    {
+        let mut render_item = scene.render_item.take();
+        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+        render_scene.update(wgpu, state, scene);
+        scene.render_item = render_item;
+    }
+
+    // switch depth buffer / camera / hzb to the target resolution
+    scene.update_resolution(width, height);
+    {
+        let mut render_item = scene.render_item.take();
+        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+        render_scene.resize(wgpu, scene, width, height);
+        scene.render_item = render_item;
+    }
+
+    // update + render off-screen
+    let mut render_item = scene.render_item.take();
+    let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+    render_scene.distance_sorting = state.rendering.distance_sorting;
+    render_scene.frustum_culling = state.rendering.frustum_culling;
+    render_scene.occlusion_culling = false;
+    render_scene.update(wgpu, state, scene);
+
+    let (buffer_dimensions, output_buffer, texture, view, msaa_view) = wgpu.start_offscreen_render(Some((width, height)));
+    let mut encoder = wgpu.create_command_encoder();
+    render_scene.render(wgpu, &view, &msaa_view, &mut encoder, scene);
+    let img = wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
+
+    scene.render_item = render_item;
+
+    img
+}

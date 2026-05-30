@@ -257,6 +257,8 @@ pub struct EditorState
     pub assets_scenes: Vec<Asset>,
     pub assets_materials: Vec<Asset>,
 
+    pub generate_material_thumbnails: bool,
+
     pub log_filter: String,
     pub log_auto_scroll: bool,
 
@@ -378,6 +380,7 @@ impl EditorState
             assets_objects: vec![],
             assets_scenes: vec![],
             assets_materials: vec![],
+            generate_material_thumbnails: false,
             log_filter: "".to_string(),
             log_auto_scroll: true,
 

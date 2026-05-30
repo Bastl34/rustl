@@ -20,6 +20,8 @@ pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
 pub const EDITOR_UTILS_NODE_NAME: &str = "editor utils";
 pub const QUAD_CAM: &str = "quad";
 
+pub const THUMBNAIL_SIZE: u32 = 256;
+
 pub struct Editor
 {
     pub editor_state: EditorState,
@@ -279,6 +281,16 @@ impl Editor
 
         // (re)create the engine-internal preview scene if needed
         ensure_preview_scene(state);
+
+        // render material thumbnails on request (uses the engine's off-screen render capability)
+        if self.editor_state.generate_material_thumbnails
+        {
+            self.editor_state.generate_material_thumbnails = false;
+            crate::gui::editor::preview_scene::generate_material_thumbnails(&mut self.editor_state, state, wgpu, THUMBNAIL_SIZE, true);
+
+            // reload the asset list so the freshly rendered thumbnails show up in the browser
+            self.editor_state.load_all_asset_entries(state, egui_ctx);
+        }
 
         // update debug images
         self.editor_state.update_debug_images(state, wgpu, egui_ctx);
