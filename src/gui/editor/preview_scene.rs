@@ -187,7 +187,7 @@ pub fn get_thumbnail_path(material_resolved_path: &str) -> Option<String>
     Some(parent.join(format!("{}_thumb.png", stem)).to_string_lossy().to_string())
 }
 
-pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut State, wgpu: &mut WGpu, size: u32, force_regeneration: bool, on_complete: F)
+pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut State, wgpu: &mut WGpu, size: u32, force_regeneration: bool, on_complete: F) -> bool
     where F: FnOnce() + Send + 'static
 {
     let offscreen_render_jobs: Vec<(String, String)> = editor_state.assets_materials.iter().filter_map(|asset|
@@ -207,7 +207,7 @@ pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut S
     if offscreen_render_jobs.is_empty()
     {
         console_log!("material thumbnails: nothing to generate (all present)");
-        return;
+        return false;
     }
 
     console_log!("material thumbnails: generating {} ...", offscreen_render_jobs.len());
@@ -215,13 +215,13 @@ pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut S
     let scene_id = match get_preview_scene_id(state)
     {
         Some(id) => id,
-        None => { console_warning!("material thumbnails: no preview scene present"); return; }
+        None => { console_warning!("material thumbnails: no preview scene present"); return false; }
     };
 
     let scene_index = match state.scenes.iter().position(|scene| scene.id == scene_id)
     {
         Some(index) => index,
-        None => return,
+        None => return false,
     };
     let mut scene = state.scenes.remove(scene_index);
 
@@ -230,7 +230,7 @@ pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut S
     {
         console_warning!("material thumbnails: preview sphere not loaded yet, try again in a moment");
         state.scenes.insert(scene_index, scene);
-        return;
+        return false;
     }
 
     let material = match create_and_assign_preview_material(&mut scene)
@@ -239,7 +239,7 @@ pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut S
         None =>
         {
             state.scenes.insert(scene_index, scene);
-            return;
+            return false;
         }
     };
 
@@ -260,10 +260,10 @@ pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut S
 
     if rendered.is_empty()
     {
-        return;
+        return false;
     }
 
-    // write the pngs on a worker thread, then notify the caller so it can reload the asset list
+    // write the pngs on a worker thread, then notify the caller (which clears the running lock + requests the reload)
     spawn_thread(move ||
     {
         let mut saved = 0;
@@ -280,4 +280,6 @@ pub fn generate_material_thumbnails<F>(editor_state: &EditorState, state: &mut S
 
         on_complete();
     });
+
+    true
 }

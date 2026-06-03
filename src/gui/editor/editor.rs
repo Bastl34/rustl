@@ -279,27 +279,8 @@ impl Editor
             }
         }
 
-        // (re)create the engine-internal preview scene if needed
-        ensure_preview_scene(state);
-
-        // render material thumbnails on request (uses the engine's off-screen render capability)
-        if self.editor_state.generate_material_thumbnails
-        {
-            self.editor_state.generate_material_thumbnails = false;
-
-            let reload = self.editor_state.reload_assets_requested.clone();
-            crate::gui::editor::preview_scene::generate_material_thumbnails(&self.editor_state, state, wgpu, THUMBNAIL_SIZE, true, move ||
-            {
-                *reload.write().unwrap() = true;
-            });
-        }
-
-        // reload the asset list once the worker thread finished writing the thumbnails
-        if *self.editor_state.reload_assets_requested.read().unwrap()
-        {
-            *self.editor_state.reload_assets_requested.write().unwrap() = false;
-            self.editor_state.load_all_asset_entries(state, egui_ctx);
-        }
+        // preview scene + material thumbnail rendering / reloading
+        self.update_material_thumbnails(state, wgpu, egui_ctx);
 
         // update debug images
         self.editor_state.update_debug_images(state, wgpu, egui_ctx);
@@ -332,6 +313,44 @@ impl Editor
 
             // edit mode
             self.move_object(state);
+        }
+    }
+
+    fn update_material_thumbnails(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
+    {
+        // (re)create the engine-internal preview scene if needed
+        ensure_preview_scene(state);
+
+        // reload the asset list once the worker thread finished writing the thumbnails
+        // (handled before a new generation run so we never read files while a fresh run is writing them)
+        if *self.editor_state.reload_assets_requested.read().unwrap()
+        {
+            *self.editor_state.reload_assets_requested.write().unwrap() = false;
+            self.editor_state.load_all_asset_entries(state, egui_ctx);
+        }
+
+        // render material thumbnails on request (uses the engine's off-screen render capability)
+        // ignore the request while a previous run is still saving (prevents overlapping worker threads writing the same files)
+        if self.editor_state.generate_material_thumbnails && !*self.editor_state.material_thumbnails_running.read().unwrap()
+        {
+            self.editor_state.generate_material_thumbnails = false;
+
+            // block further requests until the worker is done; the callback releases the lock again
+            *self.editor_state.material_thumbnails_running.write().unwrap() = true;
+
+            let reload = self.editor_state.reload_assets_requested.clone();
+            let running = self.editor_state.material_thumbnails_running.clone();
+            let started = crate::gui::editor::preview_scene::generate_material_thumbnails(&self.editor_state, state, wgpu, THUMBNAIL_SIZE, true, move ||
+            {
+                *running.write().unwrap() = false;
+                *reload.write().unwrap() = true;
+            });
+
+            // nothing was rendered (e.g. preview sphere not ready) -> release the lock right away
+            if !started
+            {
+                *self.editor_state.material_thumbnails_running.write().unwrap() = false;
+            }
         }
     }
 

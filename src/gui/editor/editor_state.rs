@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_debug, console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -258,6 +258,7 @@ pub struct EditorState
     pub assets_materials: Vec<Asset>,
 
     pub generate_material_thumbnails: bool,
+    pub material_thumbnails_running: Arc<RwLock<bool>>,
     pub reload_assets_requested: Arc<RwLock<bool>>,
 
     pub log_filter: String,
@@ -382,6 +383,7 @@ impl EditorState
             assets_scenes: vec![],
             assets_materials: vec![],
             generate_material_thumbnails: false,
+            material_thumbnails_running: Arc::new(RwLock::new(false)),
             reload_assets_requested: Arc::new(RwLock::new(false)),
             log_filter: "".to_string(),
             log_auto_scroll: true,
@@ -1014,18 +1016,25 @@ impl EditorState
 
             if exists(thumb_path.as_str())
             {
-                let image_bytes = load_binary(thumb_path.as_str()).unwrap();
-
                 let format = ImageFormat::from_extension(THUMB_EXTENSION).unwrap();
-                let image: image::DynamicImage = image::load_from_memory_with_format(image_bytes.as_slice(), format).unwrap();
-                let image = image.to_rgba8();
 
-                let image = egui::ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize],image.as_bytes());
+                // a thumbnail might still be mid-write (or corrupt) -> skip it instead of crashing
+                let decoded = load_binary(thumb_path.as_str()).ok().and_then(|bytes| image::load_from_memory_with_format(bytes.as_slice(), format).ok());
 
-                let handle = egui_context.load_texture(thumb_path.clone(), image, Default::default());
+                match decoded
+                {
+                    Some(image) =>
+                    {
+                        let image = image.to_rgba8();
+                        let image = egui::ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize], image.as_bytes());
 
-                thumb = Some(thumb_path);
-                egui_preview = Some(handle);
+                        let handle = egui_context.load_texture(thumb_path.clone(), image, Default::default());
+
+                        thumb = Some(thumb_path);
+                        egui_preview = Some(handle);
+                    },
+                    None => { console_log!("skipping unreadable thumbnail '{}'", thumb_path); }
+                }
             }
 
             let asset = Asset
