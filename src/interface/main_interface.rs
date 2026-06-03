@@ -21,6 +21,7 @@ use crate::input::input_point::PointState;
 use crate::input::keyboard::{Key, Modifier};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
+use crate::state::scene::loader::loader::play_and_forget_sound;
 use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
@@ -248,6 +249,7 @@ impl MainInterface
             let state = &mut *(self.context.state.borrow_mut());
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::F12)
             {
+                play_and_forget_sound("resources/sounds/screenshot.ogg", state.main_thread_execution_queue.clone());
                 state.debug.save_screenshot = true;
             }
         }

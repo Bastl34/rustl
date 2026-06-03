@@ -255,6 +255,8 @@ pub struct State
 
     pub scenes: Vec<SceneItem>,
 
+    pub oneshot_sounds: Vec<Sound>,
+
     pub registered_components: Vec<(String, bool, fn(&str) -> ComponentItem)>,
     pub registered_camera_controller: Vec<(String, fn() -> CameraControllerBox)>,
     pub registered_scene_controller: Vec<(String, fn() -> SceneControllerBox)>,
@@ -357,6 +359,8 @@ impl State
             exit: false,
 
             scenes: vec![],
+
+            oneshot_sounds: vec![],
 
             registered_components: components,
             registered_camera_controller: cam_controller,
@@ -930,11 +934,35 @@ impl State
             }
             true
         });
+
+        // ********** fire-and-forget sounds **********
+        let mut finished_sound_sources: HashMap<u32, SoundSourceItem> = HashMap::new();
+        self.oneshot_sounds.retain(|sound|
+        {
+            if sound.stopped()
+            {
+                if let Some(sound_source) = sound.sound_source.as_ref()
+                {
+                    finished_sound_sources.insert(sound_source.read().unwrap().id, sound_source.clone());
+                }
+                return false;
+            }
+            true
+        });
+
+        for (_, sound_source) in finished_sound_sources
+        {
+            if Arc::strong_count(&sound_source) == 2
+            {
+                sound_source.write().unwrap().delete_later();
+            }
+        }
     }
 
     pub fn clear(&mut self)
     {
         self.resources.textures.clear();
+        self.oneshot_sounds.clear();
     }
 
     pub fn print(&self)

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex, RwLock}};
-use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::{Node, NodeItem}, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}}};
+use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::{Node, NodeItem}, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, execute_on_state_mut_and_wait}}}};
 
 pub type TextureCache = HashMap<String, TextureItem>;
 pub type MaterialCache = HashMap<String, MaterialItem>;
@@ -296,6 +296,46 @@ pub fn load_sound_to_node(path: &str, node_name: &str, spund_type: SoundType, ma
                     }
                 }
             }
+        }));
+    });
+}
+
+pub fn play_and_forget_sound(path: &str, main_queue: ExecutionQueueItem)
+{
+    let path: String = path.to_string();
+
+    let filename;
+    let extension;
+    {
+        let path = Path::new(&path);
+        filename = String::from(path.file_name().unwrap().to_string_lossy());
+        extension = String::from(path.extension().unwrap().to_string_lossy());
+    }
+
+    spawn_thread(move ||
+    {
+        let path = path.clone();
+        let filename = filename.clone();
+        let extension = extension.clone();
+
+        let sound_source_bytes = load_binary(path.as_str());
+
+        if sound_source_bytes.is_err()
+        {
+            console_error!("can not load sound '{}': {}", path, sound_source_bytes.err().unwrap());
+            return;
+        }
+
+        let sound_source_bytes = sound_source_bytes.unwrap();
+
+        execute_on_state_mut(main_queue.clone(), Box::new(move |state|
+        {
+            let sound_source = state.load_sound_source_byte_or_reuse(&sound_source_bytes, filename.as_str(), Some(extension.clone()));
+
+            let mut sound = Sound::new(filename.as_str(), sound_source.clone(), SoundType::Stereo, false);
+            sound.start();
+
+            state.oneshot_sounds.push(sound);
         }));
     });
 }
