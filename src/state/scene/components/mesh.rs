@@ -453,6 +453,8 @@ impl Component for Mesh
             {
                 ui.label(format!(" ⚫ b sphere skin: [{:.3}, {:.3}, {:.3}] radius: {:.3}", b_sphere_skin.center.x, b_sphere_skin.center.y, b_sphere_skin.center.z, b_sphere_skin.radius));
             }
+
+            mesh_resource.write().unwrap().ui(ui);
         }
 
         ui.separator();

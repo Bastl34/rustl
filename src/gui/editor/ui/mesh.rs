@@ -112,12 +112,10 @@ pub fn create_mesh_resource_settings(editor_state: &mut EditorState, state: &mut
                 mesh_resource.name = name;
             }
 
-            /*
             {
                 let mut mesh_resource = mesh_resource.write().unwrap();
                 mesh_resource.ui(ui);
             }
-            */
         });
 
         collapse_with_title(ui, "mesh_resource_usage", true, "👆 Used by Components", None, |ui|

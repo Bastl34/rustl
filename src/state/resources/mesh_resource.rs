@@ -338,6 +338,38 @@ impl MeshResource
         }
     }
 
+    pub fn flip_faces(&mut self)
+    {
+        {
+            let data = self.get_data_mut().get_mut();
+
+            // reverse the winding order [i0, i1, i2] --> [i0, i2, i1]
+            for face in &mut data.indices         { face.swap(1, 2); }
+            for face in &mut data.normals_indices { face.swap(1, 2); }
+            for face in &mut data.uv_indices      { face.swap(1, 2); }
+
+            // invert normals
+            for n in &mut data.normals { *n = -*n; }
+
+            // morph targets store deltas relative to the base data -> invert them too
+            for morph in &mut data.morph_target_normals
+            {
+                for n in morph { *n = -*n; }
+            }
+
+            for morph in &mut data.morph_target_tangents
+            {
+                for t in morph { *t = -*t; }
+            }
+
+            // rebuild trimesh
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+            data.mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
+        }
+
+        self.calc_bounding_volumes();
+    }
+
     pub fn calc_hash(&mut self)
     {
         let mesh_data = self.get_data();
@@ -713,5 +745,16 @@ impl MeshResource
         ui.label(format!(" ⚫ bbox max: [{:.3}, {:.3}, {:.3}]", data.b_box.maxs.x, data.b_box.maxs.z, data.b_box.maxs.z));
 
         ui.label(format!(" ⚫ b sphere: [{:.3}, {:.3}, {:.3}] r={:.3}", data.b_sphere.center.x, data.b_sphere.center.y, data.b_sphere.center.z, data.b_sphere.radius));
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        ui.horizontal(|ui|
+        {
+            if ui.button("Flip Faces").on_hover_text("Flip all faces ot the mesh").clicked()
+            {
+                self.flip_faces();
+            };
+        });
     }
 }
