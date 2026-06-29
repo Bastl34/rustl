@@ -1,6 +1,12 @@
 # History
 Here are some screenshots which are showing the development progress.
 
+# 2026-06-29
+* Triplanar Texture Mapping
+
+<img src="history/2026-06-29.webp" width="720">
+<br><br>
+
 # 2025-06-21
 * Easy to use Editor
 
