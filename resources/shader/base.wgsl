@@ -99,6 +99,7 @@ struct VertexOutput
 
     @location(11) object_position: vec3<f32>, // object/local space (pre model matrix) - for object space triplanar
     @location(12) object_normal: vec3<f32>,   // object/local space geometric normal - for object space triplanar
+    @location(13) model_rotation: vec4<f32>,  // object -> world rotation (quaternion) - for object space triplanar normals
 };
 
 // ****************************** inputs / bindings ******************************
@@ -136,6 +137,53 @@ fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, text
     let y = pos / dimensions.x;
 
     return textureLoad(texture, vec2<u32>(x, y), tex_id, 0);
+}
+
+// converts an orthonormal rotation (given as its 3 column vectors) to a quaternion (x, y, z, w)
+// assumes a proper rotation (uniform scale, no reflection) - same assumption as the normal matrix handling
+fn rotation_to_quat(c0: vec3<f32>, c1: vec3<f32>, c2: vec3<f32>) -> vec4<f32>
+{
+    let m00 = c0.x; let m10 = c0.y; let m20 = c0.z;
+    let m01 = c1.x; let m11 = c1.y; let m21 = c1.z;
+    let m02 = c2.x; let m12 = c2.y; let m22 = c2.z;
+
+    let trace = m00 + m11 + m22;
+
+    var q: vec4<f32>;
+    if (trace > 0.0)
+    {
+        let s = sqrt(trace + 1.0) * 2.0; // s = 4 * w
+        q.w = 0.25 * s;
+        q.x = (m21 - m12) / s;
+        q.y = (m02 - m20) / s;
+        q.z = (m10 - m01) / s;
+    }
+    else if (m00 > m11 && m00 > m22)
+    {
+        let s = sqrt(1.0 + m00 - m11 - m22) * 2.0; // s = 4 * x
+        q.w = (m21 - m12) / s;
+        q.x = 0.25 * s;
+        q.y = (m01 + m10) / s;
+        q.z = (m02 + m20) / s;
+    }
+    else if (m11 > m22)
+    {
+        let s = sqrt(1.0 + m11 - m00 - m22) * 2.0; // s = 4 * y
+        q.w = (m02 - m20) / s;
+        q.x = (m01 + m10) / s;
+        q.y = 0.25 * s;
+        q.z = (m12 + m21) / s;
+    }
+    else
+    {
+        let s = sqrt(1.0 + m22 - m00 - m11) * 2.0; // s = 4 * z
+        q.w = (m10 - m01) / s;
+        q.x = (m02 + m20) / s;
+        q.y = (m12 + m21) / s;
+        q.z = 0.25 * s;
+    }
+
+    return normalize(q);
 }
 
 // ****************************** vertex ******************************
@@ -317,6 +365,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the triplanar blend)
     out.object_position = object_position.xyz;
     out.object_normal = object_normal.xyz;
+
+    // object -> world rotation (scale removed) as a quaternion - brings object space triplanar normals into world space
+    out.model_rotation = rotation_to_quat(normalize(model_matrix[0].xyz), normalize(model_matrix[1].xyz), normalize(model_matrix[2].xyz));
 
     out.color = instance.color;
     out.highlight = instance.highlight;
@@ -553,6 +604,13 @@ fn triplanar_blend(n: vec3<f32>, sharpness: f32) -> vec3<f32>
     return blend / max(sum, 0.0001);
 }
 
+// rotates a vector by a (unit) quaternion (x, y, z, w)
+fn rotate_by_quat(q: vec4<f32>, v: vec3<f32>) -> vec3<f32>
+{
+    let u = q.xyz;
+    return v + 2.0 * cross(u, cross(u, v) + q.w * v);
+}
+
 // triplanar color sample (p / n in the chosen projection space - world or object)
 fn sample_triplanar(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32) -> vec4<f32>
 {
@@ -639,9 +697,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         }
         else if (material.triplanar_mode == 2u) // object space triplanar normal mapping
         {
-            // NOTE: result is an object space normal used directly for (world space) lighting.
-            // correct for identity-rotation objects; on rotated objects the normal map detail lighting is approximate.
-            normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, in.object_position, in.object_normal, material.triplanar_scale, material.triplanar_sharpness, material.normal_map_strength);
+            let obj_normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, in.object_position, in.object_normal, material.triplanar_scale, material.triplanar_sharpness, material.normal_map_strength);
+            // bring the object space normal into world space (handles object rotation incl. twist) for correct lighting
+            normal = normalize(rotate_by_quat(normalize(in.model_rotation), obj_normal));
         }
         else // UV normal mapping
         {

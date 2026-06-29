@@ -40,6 +40,11 @@ pub struct TextureData
     pub mipmap_sampling_type: MipmapSamplingFilterType,
 
     pub has_transparency: bool, // if there is a pixel with a alpha value < 1.0
+
+    // true = sample as linear (data textures: normal / roughness / ao / ...); false = sRGB (color textures: base / emissive / ...)
+    // set by the material based on the texture slot it is assigned to
+    #[serde(default)]
+    pub linear: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,6 +91,7 @@ impl Texture
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,
 
             has_transparency: false,
+            linear: false,
         };
 
         Texture
@@ -151,6 +157,7 @@ impl Texture
             // transform: TextureTransform::default(),
 
             has_transparency: has_transparency,
+            linear: false,
 
             preview: None,
             image: image,
@@ -213,6 +220,7 @@ impl Texture
             height: image.height(),
 
             has_transparency: false,
+            linear: false,
 
             mipmapping: false,
             mipmap_sampling_type: MipmapSamplingFilterType::Triangle,

@@ -44,6 +44,32 @@ pub enum TextureType
     Custom3
 }
 
+impl TextureType
+{
+    // color textures are sampled as sRGB, data textures (normal, roughness, ao, ...) must be sampled linearly
+    pub fn is_srgb(&self) -> bool
+    {
+        match self
+        {
+            TextureType::Base
+            | TextureType::AmbientEmissive
+            | TextureType::Specular
+            | TextureType::Environment
+            | TextureType::Custom0
+            | TextureType::Custom1
+            | TextureType::Custom2
+            | TextureType::Custom3 => true,
+
+            TextureType::Normal
+            | TextureType::Roughness
+            | TextureType::AmbientOcclusion
+            | TextureType::Reflectivity
+            | TextureType::Shininess
+            | TextureType::Alpha => false,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
 pub enum TriplanarMode
 {
@@ -516,6 +542,16 @@ impl Material
 
     pub fn set_texture(&mut self, tex: TextureItem, tex_type: TextureType)
     {
+        // mark the texture as linear (data) or sRGB (color) depending on the slot it is assigned to
+        {
+            let linear = !tex_type.is_srgb();
+            let mut texture = tex.write().unwrap();
+            if texture.get_data().linear != linear
+            {
+                texture.get_data_mut().get_mut().linear = linear;
+            }
+        }
+
         let data = self.data.get_mut();
 
         match tex_type
@@ -1004,6 +1040,16 @@ impl Component for Material
                     let texture_found = context.textures.iter().find(|tex| tex.read().unwrap().uuid == texture.item.id().unwrap());
                     if let Some(tex) = texture_found
                     {
+                        // ensure the correct color space for the slot (also fixes textures from saves made before the linear flag existed)
+                        let linear = !texture_type.is_srgb();
+                        {
+                            let mut t = tex.write().unwrap();
+                            if t.get_data().linear != linear
+                            {
+                                t.get_data_mut().get_mut().linear = linear;
+                            }
+                        }
+
                         texture.item = OptionOrId::Some(tex.clone());
                     }
                     else

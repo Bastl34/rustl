@@ -1567,6 +1567,13 @@ fn set_texture_name(texture: Arc<RwLock<Box<Texture>>>, material_name: String, r
 
         texture.name = format!("{} {}", texture.name, texture_type.to_string());
     }
+
+    // mark the texture as linear (data) or sRGB (color) depending on the slot it is assigned to
+    let linear = !texture_type.is_srgb();
+    if texture.get_data().linear != linear
+    {
+        texture.get_data_mut().get_mut().linear = linear;
+    }
 }
 
 pub fn load_buffer(gltf_path: &str, blob: &mut Option<Vec<u8>>, buffer: &gltf::Buffer<'_>) -> Vec<u8>
