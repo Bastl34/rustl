@@ -2,7 +2,7 @@ use std::{mem::swap, collections::HashMap};
 
 use wgpu::{BindGroup, BindGroupLayout, Sampler, util::DeviceExt};
 
-use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
+use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, TriplanarMode, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
 use super::{texture::{Texture, TextureFormat}, wgpu::WGpu};
 
@@ -109,7 +109,9 @@ pub struct MaterialUniform
     pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
 
-    pub _padding2: [u32; 3]
+    pub triplanar_mode: u32,
+    pub triplanar_scale: f32,
+    pub triplanar_sharpness: f32,
 }
 
 impl MaterialUniform
@@ -203,7 +205,9 @@ impl MaterialUniform
             texture_transforms,
             textures_used: textures_used,
 
-            _padding2: [0, 0, 0],
+            triplanar_mode: material_data.triplanar_mode as u32,
+            triplanar_scale: material_data.triplanar_scale,
+            triplanar_sharpness: material_data.triplanar_sharpness,
         }
     }
 }
@@ -313,6 +317,9 @@ impl MaterialBuffer
         let mut texture_render_items: HashMap<u32, (RenderItemType, TextureItem, wgpu::Sampler)> = HashMap::new();
         let mut texture_render_items_dir = vec![];
 
+        // triplanar samples outside the [0,1] uv range -> force a tiling (repeat) address mode when active
+        let force_repeat = material.get_data().triplanar_mode != TriplanarMode::Off;
+
         for texture_type in ALL_TEXTURE_TYPES
         {
             let mut texture = None;
@@ -341,7 +348,7 @@ impl MaterialBuffer
                             let mut render_item: Option<Box<dyn RenderItem + Send + Sync>> = None;
                             swap(&mut texture.render_item, &mut render_item);
 
-                            let sampler = Self::create_sampler(wgpu, &texture_state);
+                            let sampler = Self::create_sampler(wgpu, &texture_state, force_repeat);
 
                             texture_render_items.insert(texture.id, (render_item.unwrap(), texture_arc.clone(), sampler));
                         }
@@ -447,7 +454,7 @@ impl MaterialBuffer
         })
     }
 
-    pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState) -> Sampler
+    pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState, force_repeat: bool) -> Sampler
     {
         let address_mode_u;
         match texture_state.sampler.address_mode_u
@@ -475,6 +482,16 @@ impl MaterialBuffer
             crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_w = wgpu::AddressMode::MirrorRepeat,
             crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
         }
+
+        // triplanar sampling reads outside the [0,1] uv range -> override with a tiling address mode
+        let (address_mode_u, address_mode_v, address_mode_w) = if force_repeat
+        {
+            (wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat)
+        }
+        else
+        {
+            (address_mode_u, address_mode_v, address_mode_w)
+        };
 
         let mag_filter;
         match texture_state.sampler.mag_filter

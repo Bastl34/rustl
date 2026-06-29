@@ -96,6 +96,9 @@ struct VertexOutput
     @location(9) locked: f32,
 
     @location(10) weights: vec4<f32>, // just for debugging
+
+    @location(11) object_position: vec3<f32>, // object/local space (pre model matrix) - for object space triplanar
+    @location(12) object_normal: vec3<f32>,   // object/local space geometric normal - for object space triplanar
 };
 
 // ****************************** inputs / bindings ******************************
@@ -201,6 +204,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     var world_tangent = vec4<f32>(0.0);
     var world_bitangent = vec4<f32>(0.0);
 
+    // object/local space position and normal (pre model matrix) - used for object space triplanar mapping
+    var object_position = vec4<f32>(0.0);
+    var object_normal = vec4<f32>(0.0);
+
     if (skeleton.joints_amount > 0u)
     {
         for (var i: u32 = 0u; i < JOINTS_LIMIT; i = i + 1u)
@@ -219,6 +226,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
             world_bitangent += bitangent * model.weights[i];
         }
 
+        // skinned position/normal in object space (before model matrix is applied)
+        object_position = world_position;
+        object_normal = world_normal;
+
         world_position = model_matrix * world_position;
     }
     else
@@ -228,6 +239,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         world_normal = model_normal;
         world_tangent = model_tangent;
         world_bitangent = model_bitangent;
+
+        object_position = model_pos;
+        object_normal = model_normal;
     }
 
 
@@ -300,6 +314,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.bitangent = bitangent;
     out.view_dir = camera.view_pos.xyz - out.position;
 
+    // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the triplanar blend)
+    out.object_position = object_position.xyz;
+    out.object_normal = object_normal.xyz;
+
     out.color = instance.color;
     out.highlight = instance.highlight;
     out.locked = instance.locked;
@@ -351,7 +369,11 @@ struct MaterialUniform
     allow_xray: u32,
 
     texture_transforms: array<TextureTransform, TEXTURE_AMOUNT>,
-    textures_used: u32
+    textures_used: u32,
+
+    triplanar_mode: u32,
+    triplanar_scale: f32,
+    triplanar_sharpness: f32,
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -521,6 +543,69 @@ fn transform_uv(uv: vec2<f32>, texture_index: u32) -> vec2<f32>
 }
 
 
+// ****************************** triplanar mapping ******************************
+
+// blend weights from a geometric normal (in the chosen projection space)
+fn triplanar_blend(n: vec3<f32>, sharpness: f32) -> vec3<f32>
+{
+    var blend = pow(abs(normalize(n)), vec3<f32>(sharpness));
+    let sum = blend.x + blend.y + blend.z;
+    return blend / max(sum, 0.0001);
+}
+
+// triplanar color sample (p / n in the chosen projection space - world or object)
+fn sample_triplanar(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32) -> vec4<f32>
+{
+    let blend = triplanar_blend(n, sharpness);
+
+    let cx = textureSample(tex, samp, p.zy * scale);
+    let cy = textureSample(tex, samp, p.xz * scale);
+    let cz = textureSample(tex, samp, p.xy * scale);
+
+    return cx * blend.x + cy * blend.y + cz * blend.z;
+}
+
+// samples a material texture: UV mapping when triplanar is off, otherwise triplanar (mode 1 = world, mode 2 = object space)
+fn sample_material_texture(tex: texture_2d<f32>, samp: sampler, in: VertexOutput, texture_index: u32) -> vec4<f32>
+{
+    if (material.triplanar_mode == 1u)
+    {
+        return sample_triplanar(tex, samp, in.position, in.normal, material.triplanar_scale, material.triplanar_sharpness);
+    }
+    if (material.triplanar_mode == 2u)
+    {
+        return sample_triplanar(tex, samp, in.object_position, in.object_normal, material.triplanar_scale, material.triplanar_sharpness);
+    }
+
+    return textureSample(tex, samp, get_uv(in, texture_index));
+}
+
+// triplanar normal mapping (whiteout blend). p / n in the chosen projection space; result is a normal in that same space.
+fn sample_triplanar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32, strength: f32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let blend = triplanar_blend(gn, sharpness);
+
+    var tnx = textureSample(tex, samp, p.zy * scale).xyz * 2.0 - 1.0;
+    var tny = textureSample(tex, samp, p.xz * scale).xyz * 2.0 - 1.0;
+    var tnz = textureSample(tex, samp, p.xy * scale).xyz * 2.0 - 1.0;
+
+    // normal map strength (tangent space xy)
+    tnx = vec3<f32>(tnx.xy * strength, tnx.z);
+    tny = vec3<f32>(tny.xy * strength, tny.z);
+    tnz = vec3<f32>(tnz.xy * strength, tnz.z);
+
+    // whiteout blend - reorient each projected normal by the geometric normal
+    tnx = vec3<f32>(tnx.xy + gn.zy, gn.x);
+    tny = vec3<f32>(tny.xy + gn.xz, gn.y);
+    tnz = vec3<f32>(tnz.xy + gn.xy, gn.z);
+
+    // swizzle to world/object orientation and blend
+    let result = tnx.zyx * blend.x + tny.xzy * blend.y + tnz.xyz * blend.z;
+    return normalize(result);
+}
+
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
@@ -528,8 +613,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var object_color = material.base_color * in.color;
     if (has_base_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_BASE);
-        let tex_color = textureSample(tex_base, tex_base_sampler, uv);
+        let tex_color = sample_material_texture(tex_base, tex_base_sampler, in, TEXTURE_INDEX_BASE);
         object_color *= tex_color;
     }
 
@@ -537,8 +621,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var ambient_color = material.ambient_color;
     if (has_ambient_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_AMBIENT);
-        let tex_color = textureSample(tex_ambient, tex_ambient_sampler, uv);
+        let tex_color = sample_material_texture(tex_ambient, tex_ambient_sampler, in, TEXTURE_INDEX_AMBIENT);
         ambient_color *= tex_color;
     }
 
@@ -550,20 +633,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // normal mapping
     if (has_normal_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_NORMAL);
-        var normal_map = textureSample(tex_normal, tex_normal_Sampler, uv).xyz;
-        normal_map = normal_map * 2.0 - 1.0;
+        if (material.triplanar_mode == 1u) // world space triplanar normal mapping
+        {
+            normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, in.position, in.normal, material.triplanar_scale, material.triplanar_sharpness, material.normal_map_strength);
+        }
+        else if (material.triplanar_mode == 2u) // object space triplanar normal mapping
+        {
+            // NOTE: result is an object space normal used directly for (world space) lighting.
+            // correct for identity-rotation objects; on rotated objects the normal map detail lighting is approximate.
+            normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, in.object_position, in.object_normal, material.triplanar_scale, material.triplanar_sharpness, material.normal_map_strength);
+        }
+        else // UV normal mapping
+        {
+            let uv = get_uv(in, TEXTURE_INDEX_NORMAL);
+            var normal_map = textureSample(tex_normal, tex_normal_Sampler, uv).xyz;
+            normal_map = normal_map * 2.0 - 1.0;
 
-        normal_map.x *= material.normal_map_strength;
-        normal_map.y *= material.normal_map_strength;
+            normal_map.x *= material.normal_map_strength;
+            normal_map.y *= material.normal_map_strength;
 
-        let T = tangent;
-        let B = bitangent;
-        let N = normal;
+            let T = tangent;
+            let B = bitangent;
+            let N = normal;
 
-        // https://lettier.github.io/3d-game-shaders-for-beginners/normal-mapping.html
-        normal = normalize(T * normal_map.x + B * normal_map.y + N * normal_map.z);
-        //normal = normalize(mat3x3<f32>(T, B, N) * normal_map);
+            // https://lettier.github.io/3d-game-shaders-for-beginners/normal-mapping.html
+            normal = normalize(T * normal_map.x + B * normal_map.y + N * normal_map.z);
+            //normal = normalize(mat3x3<f32>(T, B, N) * normal_map);
+        }
     }
     else
     {
@@ -583,8 +679,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         var specular = material.specular_color;
         if (has_specular_texture())
         {
-            let uv = get_uv(in, TEXTURE_INDEX_SPECULAR);
-            let tex_color = textureSample(tex_specular, tex_specular_sampler, uv);
+            let tex_color = sample_material_texture(tex_specular, tex_specular_sampler, in, TEXTURE_INDEX_SPECULAR);
             specular *= tex_color;
         }
 
@@ -709,8 +804,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         // ambient occlusion
         if (has_ambient_occlusion_texture())
         {
-            let uv = get_uv(in, TEXTURE_INDEX_AMBIENT_OCCLUSION);
-            let ambient_occlusion = textureSample(tex_ambient_occlusion, tex_ambient_occlusion_sampler, uv);
+            let ambient_occlusion = sample_material_texture(tex_ambient_occlusion, tex_ambient_occlusion_sampler, in, TEXTURE_INDEX_AMBIENT_OCCLUSION);
             color.x *= ambient_occlusion.x;
             color.y *= ambient_occlusion.x;
             color.z *= ambient_occlusion.x;
@@ -722,16 +816,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             var reflectivity = material.reflectivity;
             if (has_reflectivity_texture())
             {
-                let uv = get_uv(in, TEXTURE_INDEX_REFLECTIVITY);
-                let reflectivity_value = textureSample(tex_reflectivity, tex_reflectivity_sampler, uv);
+                let reflectivity_value = sample_material_texture(tex_reflectivity, tex_reflectivity_sampler, in, TEXTURE_INDEX_REFLECTIVITY);
                 reflectivity *= reflectivity_value.x;
             }
 
             var roughness = material.roughness;
             if (has_roughness_texture())
             {
-                let uv = get_uv(in, TEXTURE_INDEX_ROUGHNESS);
-                let roughness_value = textureSample(tex_roughness, tex_roughness_sampler, uv);
+                let roughness_value = sample_material_texture(tex_roughness, tex_roughness_sampler, in, TEXTURE_INDEX_ROUGHNESS);
                 roughness *= roughness_value.x;
             }
 
@@ -804,8 +896,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var alpha = in.color.a * object_color.a * material.alpha;
     if (has_alpha_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_ALPHA);
-        let tex_color = textureSample(tex_alpha, tex_alpha_sampler, uv);
+        let tex_color = sample_material_texture(tex_alpha, tex_alpha_sampler, in, TEXTURE_INDEX_ALPHA);
         alpha *= tex_color.x;
     }
 

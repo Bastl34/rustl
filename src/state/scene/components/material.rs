@@ -13,6 +13,7 @@ use crate::{component_impl_default, component_impl_no_cleanup_node, component_im
 use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
 use crate::state::scene::exporter::serialization_helper;
+use crate::gui::helper::info_box::info_box;
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -41,6 +42,15 @@ pub enum TextureType
     Custom1,
     Custom2,
     Custom3
+}
+
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum TriplanarMode
+{
+    #[default]
+    Off,
+    WorldSpace,
+    ObjectSpace
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, Serialize, Deserialize)]
@@ -164,6 +174,10 @@ impl TextureState
     }
 }
 
+// serde defaults so material files saved before triplanar was added still load
+fn default_triplanar_scale() -> f32 { 1.0 }
+fn default_triplanar_sharpness() -> f32 { 4.0 }
+
 #[derive(Serialize, Deserialize)]
 pub struct MaterialData
 {
@@ -212,6 +226,10 @@ pub struct MaterialData
 
     pub reflection_only: bool,
     pub backface_culling: bool,
+
+    #[serde(default)] pub triplanar_mode: TriplanarMode,
+    #[serde(default = "default_triplanar_scale")] pub triplanar_scale: f32,
+    #[serde(default = "default_triplanar_sharpness")] pub triplanar_sharpness: f32,
 
     pub allow_xray: bool, // when false, this material is excluded from x-ray mode (gizmos, grid, etc.)
 }
@@ -274,6 +292,10 @@ impl Material
 
             reflection_only: false,
             backface_culling: true,
+
+            triplanar_mode: TriplanarMode::Off,
+            triplanar_scale: 1.0,
+            triplanar_sharpness: 4.0,
 
             allow_xray: true,
         };
@@ -358,6 +380,10 @@ impl Material
 
         if default_material_data.reflection_only != new_mat_data.reflection_only { data.reflection_only = new_mat_data.reflection_only; }
         if default_material_data.backface_culling != new_mat_data.backface_culling { data.backface_culling = new_mat_data.backface_culling; }
+
+        if default_material_data.triplanar_mode != new_mat_data.triplanar_mode { data.triplanar_mode = new_mat_data.triplanar_mode; }
+        if !helper::math::approx_equal(default_material_data.triplanar_scale, new_mat_data.triplanar_scale) { data.triplanar_scale = new_mat_data.triplanar_scale; }
+        if !helper::math::approx_equal(default_material_data.triplanar_sharpness, new_mat_data.triplanar_sharpness) { data.triplanar_sharpness = new_mat_data.triplanar_sharpness; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -450,6 +476,10 @@ impl Material
 
         console_log!("reflection_only: {:?}", data.reflection_only);
         console_log!("backface_culling: {:?}", data.backface_culling);
+
+        console_log!("triplanar_mode: {:?}", data.triplanar_mode);
+        console_log!("triplanar_scale: {:?}", data.triplanar_scale);
+        console_log!("triplanar_sharpness: {:?}", data.triplanar_sharpness);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -1030,6 +1060,10 @@ impl Component for Material
         let mut highlight_color;
         let mut locked_color;
 
+        let mut triplanar_mode;
+        let mut triplanar_scale;
+        let mut triplanar_sharpness;
+
         {
             let data = self.data.get_ref();
 
@@ -1077,6 +1111,10 @@ impl Component for Material
             let g = (data.locked_color.y * 255.0) as u8;
             let b = (data.locked_color.z * 255.0) as u8;
             locked_color = egui::Color32::from_rgb(r, g, b);
+
+            triplanar_mode = data.triplanar_mode;
+            triplanar_scale = data.triplanar_scale;
+            triplanar_sharpness = data.triplanar_sharpness;
         }
 
         let mut apply_settings = false;
@@ -1143,6 +1181,21 @@ impl Component for Material
             apply_settings = ui.color_edit_button_srgba(&mut locked_color).changed() || apply_settings;
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("Triplanar Mode:");
+            apply_settings = ui.selectable_value(& mut triplanar_mode, TriplanarMode::Off, "Off").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut triplanar_mode, TriplanarMode::WorldSpace, "World").changed() || apply_settings;
+            apply_settings = ui.selectable_value(& mut triplanar_mode, TriplanarMode::ObjectSpace, "Object").changed() || apply_settings;
+        });
+        apply_settings = ui.add(egui::Slider::new(&mut triplanar_scale, 0.01..=100.0).logarithmic(true).text("Triplanar Scale")).changed() || apply_settings;
+        apply_settings = ui.add(egui::Slider::new(&mut triplanar_sharpness, 1.0..=32.0).text("Triplanar Sharpness")).changed() || apply_settings;
+
+        if triplanar_mode != TriplanarMode::Off
+        {
+            info_box(ui, "Triplanar mapping is active: the Address Mode is automatically forced to 'Repeat' for all textures of this material.");
+        }
+
         if apply_settings
         {
             let data = self.get_data_mut().get_mut();
@@ -1194,6 +1247,10 @@ impl Component for Material
             let g = ((highlight_color.g() as f32) / 255.0).clamp(0.0, 1.0);
             let b = ((highlight_color.b() as f32) / 255.0).clamp(0.0, 1.0);
             data.highlight_color = Vector3::<f32>::new(r, g, b);
+
+            data.triplanar_mode = triplanar_mode;
+            data.triplanar_scale = triplanar_scale;
+            data.triplanar_sharpness = triplanar_sharpness;
         }
     }
 }
