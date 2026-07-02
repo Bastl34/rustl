@@ -97,9 +97,9 @@ struct VertexOutput
 
     @location(10) weights: vec4<f32>, // just for debugging
 
-    @location(11) object_position: vec3<f32>, // object/local space (pre model matrix) - for object space triplanar
-    @location(12) object_normal: vec3<f32>,   // object/local space geometric normal - for object space triplanar
-    @location(13) model_rotation: vec4<f32>,  // object -> world rotation (quaternion) - for object space triplanar normals
+    @location(11) object_position: vec3<f32>, // object/local space (pre model matrix) - for object space texture mapping
+    @location(12) object_normal: vec3<f32>,   // object/local space geometric normal - for object space texture mapping
+    @location(13) model_rotation: vec4<f32>,  // object -> world rotation (quaternion) - for object space mapped normals
 };
 
 // ****************************** inputs / bindings ******************************
@@ -252,7 +252,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     var world_tangent = vec4<f32>(0.0);
     var world_bitangent = vec4<f32>(0.0);
 
-    // object/local space position and normal (pre model matrix) - used for object space triplanar mapping
+    // object/local space position and normal (pre model matrix) - used for object space texture mapping
     var object_position = vec4<f32>(0.0);
     var object_normal = vec4<f32>(0.0);
 
@@ -362,11 +362,11 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.bitangent = bitangent;
     out.view_dir = camera.view_pos.xyz - out.position;
 
-    // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the triplanar blend)
+    // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the mapping projection)
     out.object_position = object_position.xyz;
     out.object_normal = object_normal.xyz;
 
-    // object -> world rotation (scale removed) as a quaternion - brings object space triplanar normals into world space
+    // object -> world rotation (scale removed) as a quaternion - brings object space mapped normals into world space
     out.model_rotation = rotation_to_quat(normalize(model_matrix[0].xyz), normalize(model_matrix[1].xyz), normalize(model_matrix[2].xyz));
 
     out.color = instance.color;
@@ -422,9 +422,11 @@ struct MaterialUniform
     texture_transforms: array<TextureTransform, TEXTURE_AMOUNT>,
     textures_used: u32,
 
-    triplanar_mode: u32,
-    triplanar_scale: f32,
-    triplanar_sharpness: f32,
+    mapping_mode: u32,
+    mapping_space: u32,
+    mapping_axis: u32,
+    mapping_scale: f32,
+    mapping_sharpness: f32,
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -594,7 +596,53 @@ fn transform_uv(uv: vec2<f32>, texture_index: u32) -> vec2<f32>
 }
 
 
-// ****************************** triplanar mapping ******************************
+// ****************************** texture mapping (triplanar / cube / planar / cylindrical / spherical) ******************************
+
+const MAPPING_MODE_UV: u32 = 0u;
+const MAPPING_MODE_TRIPLANAR: u32 = 1u;
+const MAPPING_MODE_CUBE: u32 = 2u;
+const MAPPING_MODE_PLANAR: u32 = 3u;
+const MAPPING_MODE_CYLINDRICAL: u32 = 4u;
+const MAPPING_MODE_SPHERICAL: u32 = 5u;
+
+const MAPPING_SPACE_OBJECT: u32 = 0u;
+const MAPPING_SPACE_WORLD: u32 = 1u;
+
+// position in the chosen projection space (object or world)
+fn mapping_position(in: VertexOutput) -> vec3<f32>
+{
+    if (material.mapping_space == MAPPING_SPACE_WORLD)
+    {
+        return in.position;
+    }
+    return in.object_position;
+}
+
+// geometric normal in the chosen projection space (object or world)
+fn mapping_normal(in: VertexOutput) -> vec3<f32>
+{
+    if (material.mapping_space == MAPPING_SPACE_WORLD)
+    {
+        return in.normal;
+    }
+    return in.object_normal;
+}
+
+// swizzles p so that the configured mapping axis becomes the y ("up") axis
+fn axis_align(p: vec3<f32>) -> vec3<f32>
+{
+    if (material.mapping_axis == 0u) { return vec3<f32>(p.z, p.x, p.y); } // x
+    if (material.mapping_axis == 2u) { return vec3<f32>(p.x, p.z, p.y); } // z
+    return p; // y (default)
+}
+
+// inverse of axis_align - brings an axis aligned vector back into the projection space
+fn axis_unalign(p: vec3<f32>) -> vec3<f32>
+{
+    if (material.mapping_axis == 0u) { return vec3<f32>(p.y, p.z, p.x); } // x
+    if (material.mapping_axis == 2u) { return vec3<f32>(p.x, p.z, p.y); } // z
+    return p; // y (default)
+}
 
 // blend weights from a geometric normal (in the chosen projection space)
 fn triplanar_blend(n: vec3<f32>, sharpness: f32) -> vec3<f32>
@@ -611,47 +659,132 @@ fn rotate_by_quat(q: vec4<f32>, v: vec3<f32>) -> vec3<f32>
     return v + 2.0 * cross(u, cross(u, v) + q.w * v);
 }
 
+// linear part (rotation * scale) of the texture transform - used to bring uv gradients into the transformed uv space
+fn transform_uv_dir(v: vec2<f32>, texture_index: u32) -> vec2<f32>
+{
+    let transform = material.texture_transforms[texture_index];
+    let scaled = v * transform.scale;
+    let c = cos(transform.rotation);
+    let s = sin(transform.rotation);
+    return vec2<f32>(c * scaled.x - s * scaled.y, s * scaled.x + c * scaled.y);
+}
+
+// unscaled projected uv for cube / planar / cylindrical / spherical mapping (p / n in the chosen projection space).
+// the angle based u of cylindrical/spherical is in [0,1] - its seam jump is exactly 1 (see sample_projected)
+fn projected_uv(p: vec3<f32>, n: vec3<f32>) -> vec2<f32>
+{
+    if (material.mapping_mode == MAPPING_MODE_CUBE)
+    {
+        // dominant axis of the normal picks the projection plane (like triplanar without blending)
+        let an = abs(n);
+        if (an.x >= an.y && an.x >= an.z) { return p.zy; }
+        if (an.y >= an.z) { return p.xz; }
+        return p.xy;
+    }
+
+    let pa = axis_align(p);
+
+    if (material.mapping_mode == MAPPING_MODE_CYLINDRICAL)
+    {
+        let u = atan2(pa.x, pa.z) / (2.0 * PI) + 0.5;
+        return vec2<f32>(u, pa.y);
+    }
+
+    if (material.mapping_mode == MAPPING_MODE_SPHERICAL)
+    {
+        let dir = normalize(pa);
+        let u = atan2(dir.x, dir.z) / (2.0 * PI) + 0.5;
+        let v = acos(clamp(dir.y, -1.0, 1.0)) / PI;
+        return vec2<f32>(u, v);
+    }
+
+    // planar
+    return pa.xz;
+}
+
+// samples a projected uv with explicit gradients: the angle based uvs jump at the atan2 seam which
+// would break the mip level selection there - wrapping the gradients removes the seam line.
+// mapping scale and the per texture 2d transform are applied on top of the projected uv.
+fn sample_projected(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, texture_index: u32) -> vec4<f32>
+{
+    let scale = material.mapping_scale;
+
+    var gx = dpdx(uv);
+    var gy = dpdy(uv);
+    gx.x = gx.x - round(gx.x);
+    gy.x = gy.x - round(gy.x);
+
+    return textureSampleGrad(tex, samp, transform_uv(uv * scale, texture_index), transform_uv_dir(gx * scale, texture_index), transform_uv_dir(gy * scale, texture_index));
+}
+
 // triplanar color sample (p / n in the chosen projection space - world or object)
-fn sample_triplanar(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32) -> vec4<f32>
+fn sample_triplanar(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32, texture_index: u32) -> vec4<f32>
 {
     let blend = triplanar_blend(n, sharpness);
 
-    let cx = textureSample(tex, samp, p.zy * scale);
-    let cy = textureSample(tex, samp, p.xz * scale);
-    let cz = textureSample(tex, samp, p.xy * scale);
+    let cx = textureSample(tex, samp, transform_uv(p.zy * scale, texture_index));
+    let cy = textureSample(tex, samp, transform_uv(p.xz * scale, texture_index));
+    let cz = textureSample(tex, samp, transform_uv(p.xy * scale, texture_index));
 
     return cx * blend.x + cy * blend.y + cz * blend.z;
 }
 
-// samples a material texture: UV mapping when triplanar is off, otherwise triplanar (mode 1 = world, mode 2 = object space)
+// samples a material texture with the active mapping mode (uv / triplanar / cube / planar / cylindrical / spherical)
 fn sample_material_texture(tex: texture_2d<f32>, samp: sampler, in: VertexOutput, texture_index: u32) -> vec4<f32>
 {
-    if (material.triplanar_mode == 1u)
+    if (material.mapping_mode == MAPPING_MODE_TRIPLANAR)
     {
-        return sample_triplanar(tex, samp, in.position, in.normal, material.triplanar_scale, material.triplanar_sharpness);
+        return sample_triplanar(tex, samp, mapping_position(in), mapping_normal(in), material.mapping_scale, material.mapping_sharpness, texture_index);
     }
-    if (material.triplanar_mode == 2u)
+    if (material.mapping_mode != MAPPING_MODE_UV)
     {
-        return sample_triplanar(tex, samp, in.object_position, in.object_normal, material.triplanar_scale, material.triplanar_sharpness);
+        return sample_projected(tex, samp, projected_uv(mapping_position(in), mapping_normal(in)), texture_index);
     }
 
     return textureSample(tex, samp, get_uv(in, texture_index));
 }
 
+// samples a tangent space normal at the given (already scaled) plane uv, applying the texture transform;
+// the sampled xy is rotated back by the transform rotation so the normal stays aligned with the plane axes
+fn sample_plane_normal(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    var tn = textureSample(tex, samp, transform_uv(uv, texture_index)).xyz * 2.0 - 1.0;
+    tn = vec3<f32>(tn.xy * strength, tn.z);
+
+    let rot = material.texture_transforms[texture_index].rotation;
+    let c = cos(rot);
+    let s = sin(rot);
+    return vec3<f32>(c * tn.x + s * tn.y, -s * tn.x + c * tn.y, tn.z);
+}
+
+// like sample_plane_normal but for an unscaled projected uv with seam wrapped gradients (see sample_projected)
+fn sample_projected_normal(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let scale = material.mapping_scale;
+
+    var gx = dpdx(uv);
+    var gy = dpdy(uv);
+    gx.x = gx.x - round(gx.x);
+    gy.x = gy.x - round(gy.x);
+
+    var tn = textureSampleGrad(tex, samp, transform_uv(uv * scale, texture_index), transform_uv_dir(gx * scale, texture_index), transform_uv_dir(gy * scale, texture_index)).xyz * 2.0 - 1.0;
+    tn = vec3<f32>(tn.xy * strength, tn.z);
+
+    let rot = material.texture_transforms[texture_index].rotation;
+    let c = cos(rot);
+    let s = sin(rot);
+    return vec3<f32>(c * tn.x + s * tn.y, -s * tn.x + c * tn.y, tn.z);
+}
+
 // triplanar normal mapping (whiteout blend). p / n in the chosen projection space; result is a normal in that same space.
-fn sample_triplanar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32, strength: f32) -> vec3<f32>
+fn sample_triplanar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32, strength: f32, texture_index: u32) -> vec3<f32>
 {
     let gn = normalize(n);
     let blend = triplanar_blend(gn, sharpness);
 
-    var tnx = textureSample(tex, samp, p.zy * scale).xyz * 2.0 - 1.0;
-    var tny = textureSample(tex, samp, p.xz * scale).xyz * 2.0 - 1.0;
-    var tnz = textureSample(tex, samp, p.xy * scale).xyz * 2.0 - 1.0;
-
-    // normal map strength (tangent space xy)
-    tnx = vec3<f32>(tnx.xy * strength, tnx.z);
-    tny = vec3<f32>(tny.xy * strength, tny.z);
-    tnz = vec3<f32>(tnz.xy * strength, tnz.z);
+    var tnx = sample_plane_normal(tex, samp, p.zy * scale, strength, texture_index);
+    var tny = sample_plane_normal(tex, samp, p.xz * scale, strength, texture_index);
+    var tnz = sample_plane_normal(tex, samp, p.xy * scale, strength, texture_index);
 
     // whiteout blend - reorient each projected normal by the geometric normal
     tnx = vec3<f32>(tnx.xy + gn.zy, gn.x);
@@ -661,6 +794,74 @@ fn sample_triplanar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n:
     // swizzle to world/object orientation and blend
     let result = tnx.zyx * blend.x + tny.xzy * blend.y + tnz.xyz * blend.z;
     return normalize(result);
+}
+
+// cube mapping normal - hard pick of the dominant plane, whiteout reorientation like triplanar (no blend).
+// p / n in the chosen projection space; result is a normal in that same space.
+fn sample_cube_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let an = abs(gn);
+
+    let tn = sample_projected_normal(tex, samp, projected_uv(p, gn), strength, texture_index);
+
+    if (an.x >= an.y && an.x >= an.z)
+    {
+        return normalize(vec3<f32>(tn.xy + gn.zy, gn.x).zyx);
+    }
+    if (an.y >= an.z)
+    {
+        return normalize(vec3<f32>(tn.xy + gn.xz, gn.y).xzy);
+    }
+    return normalize(vec3<f32>(tn.xy + gn.xy, gn.z));
+}
+
+// planar mapping normal - fixed projection plane selected by the mapping axis (whiteout reorientation).
+// p / n in the chosen projection space; result is a normal in that same space.
+fn sample_planar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let tn = sample_projected_normal(tex, samp, projected_uv(p, gn), strength, texture_index);
+
+    if (material.mapping_axis == 0u) // x
+    {
+        return normalize(vec3<f32>(tn.xy + gn.zy, gn.x).zyx);
+    }
+    if (material.mapping_axis == 2u) // z
+    {
+        return normalize(vec3<f32>(tn.xy + gn.xy, gn.z));
+    }
+    // y (default)
+    return normalize(vec3<f32>(tn.xy + gn.xz, gn.y).xzy);
+}
+
+// cylindrical / spherical normal mapping - analytic tangent frame from the parametrization.
+// p / n in the chosen projection space; result is a normal in that same space.
+fn sample_wrapped_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let tn = sample_projected_normal(tex, samp, projected_uv(p, gn), strength, texture_index);
+
+    let pa = axis_align(p);
+
+    // tangent along the angle (u) direction
+    let flat_len = max(length(pa.xz), 0.0001);
+    let sin_theta = pa.x / flat_len;
+    let cos_theta = pa.z / flat_len;
+    let tangent = axis_unalign(vec3<f32>(cos_theta, 0.0, -sin_theta));
+
+    // bitangent along the v direction
+    var bitangent_aligned = vec3<f32>(0.0, 1.0, 0.0); // cylindrical: v runs along the axis
+    if (material.mapping_mode == MAPPING_MODE_SPHERICAL)
+    {
+        // spherical: v runs from the +axis pole to the -axis pole
+        let dir = normalize(pa);
+        let sin_phi = max(sqrt(max(1.0 - dir.y * dir.y, 0.0)), 0.0001);
+        bitangent_aligned = normalize(vec3<f32>(dir.y * sin_theta, -sin_phi, dir.y * cos_theta));
+    }
+    let bitangent = axis_unalign(bitangent_aligned);
+
+    return normalize(tangent * tn.x + bitangent * tn.y + gn * tn.z);
 }
 
 
@@ -691,15 +892,36 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // normal mapping
     if (has_normal_texture())
     {
-        if (material.triplanar_mode == 1u) // world space triplanar normal mapping
+        if (material.mapping_mode != MAPPING_MODE_UV) // projected normal mapping
         {
-            normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, in.position, in.normal, material.triplanar_scale, material.triplanar_sharpness, material.normal_map_strength);
-        }
-        else if (material.triplanar_mode == 2u) // object space triplanar normal mapping
-        {
-            let obj_normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, in.object_position, in.object_normal, material.triplanar_scale, material.triplanar_sharpness, material.normal_map_strength);
-            // bring the object space normal into world space (handles object rotation incl. twist) for correct lighting
-            normal = normalize(rotate_by_quat(normalize(in.model_rotation), obj_normal));
+            let p = mapping_position(in);
+            let n = mapping_normal(in);
+
+            var mapped_normal: vec3<f32>;
+            if (material.mapping_mode == MAPPING_MODE_TRIPLANAR)
+            {
+                mapped_normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, p, n, material.mapping_scale, material.mapping_sharpness, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+            else if (material.mapping_mode == MAPPING_MODE_CUBE)
+            {
+                mapped_normal = sample_cube_normal(tex_normal, tex_normal_Sampler, p, n, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+            else if (material.mapping_mode == MAPPING_MODE_PLANAR)
+            {
+                mapped_normal = sample_planar_normal(tex_normal, tex_normal_Sampler, p, n, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+            else // cylindrical / spherical
+            {
+                mapped_normal = sample_wrapped_normal(tex_normal, tex_normal_Sampler, p, n, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+
+            if (material.mapping_space == MAPPING_SPACE_OBJECT)
+            {
+                // bring the object space normal into world space (handles object rotation incl. twist) for correct lighting
+                mapped_normal = rotate_by_quat(normalize(in.model_rotation), mapped_normal);
+            }
+
+            normal = normalize(mapped_normal);
         }
         else // UV normal mapping
         {

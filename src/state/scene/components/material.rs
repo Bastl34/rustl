@@ -71,12 +71,34 @@ impl TextureType
 }
 
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
-pub enum TriplanarMode
+pub enum TextureMappingMode
 {
     #[default]
-    Off,
-    WorldSpace,
-    ObjectSpace
+    Uv,
+    Triplanar,
+    Cube,
+    Planar,
+    Cylindrical,
+    Spherical
+}
+
+// projection space for all non-uv mapping modes
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum MappingSpace
+{
+    #[default]
+    Object,
+    World
+}
+
+// projection axis for planar, cylindrical and spherical mapping
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum MappingAxis
+{
+    X,
+    #[default]
+    Y,
+    Z
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, Serialize, Deserialize)]
@@ -200,9 +222,9 @@ impl TextureState
     }
 }
 
-// serde defaults so material files saved before triplanar was added still load
-fn default_triplanar_scale() -> f32 { 1.0 }
-fn default_triplanar_sharpness() -> f32 { 4.0 }
+// serde defaults so material files saved before texture mapping modes were added still load
+fn default_mapping_scale() -> f32 { 1.0 }
+fn default_mapping_sharpness() -> f32 { 4.0 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MaterialData
@@ -253,9 +275,11 @@ pub struct MaterialData
     pub reflection_only: bool,
     pub backface_culling: bool,
 
-    #[serde(default)] pub triplanar_mode: TriplanarMode,
-    #[serde(default = "default_triplanar_scale")] pub triplanar_scale: f32,
-    #[serde(default = "default_triplanar_sharpness")] pub triplanar_sharpness: f32,
+    #[serde(default)] pub mapping_mode: TextureMappingMode,
+    #[serde(default)] pub mapping_space: MappingSpace,
+    #[serde(default)] pub mapping_axis: MappingAxis,
+    #[serde(default = "default_mapping_scale")] pub mapping_scale: f32,
+    #[serde(default = "default_mapping_sharpness")] pub mapping_sharpness: f32,
 
     pub allow_xray: bool, // when false, this material is excluded from x-ray mode (gizmos, grid, etc.)
 }
@@ -319,9 +343,11 @@ impl Material
             reflection_only: false,
             backface_culling: true,
 
-            triplanar_mode: TriplanarMode::Off,
-            triplanar_scale: 1.0,
-            triplanar_sharpness: 4.0,
+            mapping_mode: TextureMappingMode::Uv,
+            mapping_space: MappingSpace::Object,
+            mapping_axis: MappingAxis::Y,
+            mapping_scale: 1.0,
+            mapping_sharpness: 4.0,
 
             allow_xray: true,
         };
@@ -407,9 +433,11 @@ impl Material
         if default_material_data.reflection_only != new_mat_data.reflection_only { data.reflection_only = new_mat_data.reflection_only; }
         if default_material_data.backface_culling != new_mat_data.backface_culling { data.backface_culling = new_mat_data.backface_culling; }
 
-        if default_material_data.triplanar_mode != new_mat_data.triplanar_mode { data.triplanar_mode = new_mat_data.triplanar_mode; }
-        if !helper::math::approx_equal(default_material_data.triplanar_scale, new_mat_data.triplanar_scale) { data.triplanar_scale = new_mat_data.triplanar_scale; }
-        if !helper::math::approx_equal(default_material_data.triplanar_sharpness, new_mat_data.triplanar_sharpness) { data.triplanar_sharpness = new_mat_data.triplanar_sharpness; }
+        if default_material_data.mapping_mode != new_mat_data.mapping_mode { data.mapping_mode = new_mat_data.mapping_mode; }
+        if default_material_data.mapping_space != new_mat_data.mapping_space { data.mapping_space = new_mat_data.mapping_space; }
+        if default_material_data.mapping_axis != new_mat_data.mapping_axis { data.mapping_axis = new_mat_data.mapping_axis; }
+        if !helper::math::approx_equal(default_material_data.mapping_scale, new_mat_data.mapping_scale) { data.mapping_scale = new_mat_data.mapping_scale; }
+        if !helper::math::approx_equal(default_material_data.mapping_sharpness, new_mat_data.mapping_sharpness) { data.mapping_sharpness = new_mat_data.mapping_sharpness; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -503,9 +531,11 @@ impl Material
         console_log!("reflection_only: {:?}", data.reflection_only);
         console_log!("backface_culling: {:?}", data.backface_culling);
 
-        console_log!("triplanar_mode: {:?}", data.triplanar_mode);
-        console_log!("triplanar_scale: {:?}", data.triplanar_scale);
-        console_log!("triplanar_sharpness: {:?}", data.triplanar_sharpness);
+        console_log!("mapping_mode: {:?}", data.mapping_mode);
+        console_log!("mapping_space: {:?}", data.mapping_space);
+        console_log!("mapping_axis: {:?}", data.mapping_axis);
+        console_log!("mapping_scale: {:?}", data.mapping_scale);
+        console_log!("mapping_sharpness: {:?}", data.mapping_sharpness);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -1106,9 +1136,11 @@ impl Component for Material
         let mut highlight_color;
         let mut locked_color;
 
-        let mut triplanar_mode;
-        let mut triplanar_scale;
-        let mut triplanar_sharpness;
+        let mut mapping_mode;
+        let mut mapping_space;
+        let mut mapping_axis;
+        let mut mapping_scale;
+        let mut mapping_sharpness;
 
         {
             let data = self.data.get_ref();
@@ -1158,9 +1190,11 @@ impl Component for Material
             let b = (data.locked_color.z * 255.0) as u8;
             locked_color = egui::Color32::from_rgb(r, g, b);
 
-            triplanar_mode = data.triplanar_mode;
-            triplanar_scale = data.triplanar_scale;
-            triplanar_sharpness = data.triplanar_sharpness;
+            mapping_mode = data.mapping_mode;
+            mapping_space = data.mapping_space;
+            mapping_axis = data.mapping_axis;
+            mapping_scale = data.mapping_scale;
+            mapping_sharpness = data.mapping_sharpness;
         }
 
         let mut apply_settings = false;
@@ -1227,19 +1261,62 @@ impl Component for Material
             apply_settings = ui.color_edit_button_srgba(&mut locked_color).changed() || apply_settings;
         });
 
+        ui.separator();
+
         ui.horizontal(|ui|
         {
-            ui.label("Triplanar Mode:");
-            apply_settings = ui.selectable_value(& mut triplanar_mode, TriplanarMode::Off, "Off").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut triplanar_mode, TriplanarMode::WorldSpace, "World").changed() || apply_settings;
-            apply_settings = ui.selectable_value(& mut triplanar_mode, TriplanarMode::ObjectSpace, "Object").changed() || apply_settings;
-        });
-        apply_settings = ui.add(egui::Slider::new(&mut triplanar_scale, 0.01..=100.0).logarithmic(true).text("Triplanar Scale")).changed() || apply_settings;
-        apply_settings = ui.add(egui::Slider::new(&mut triplanar_sharpness, 1.0..=32.0).text("Triplanar Sharpness")).changed() || apply_settings;
+            ui.label("Mapping Mode:");
 
-        if triplanar_mode != TriplanarMode::Off
+            let mapping_mode_name = match mapping_mode
+            {
+                TextureMappingMode::Uv => "UV",
+                TextureMappingMode::Triplanar => "Triplanar",
+                TextureMappingMode::Cube => "Cube",
+                TextureMappingMode::Planar => "Planar",
+                TextureMappingMode::Cylindrical => "Cylindrical",
+                TextureMappingMode::Spherical => "Spherical",
+            };
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mapping_mode")).selected_text(mapping_mode_name).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Uv, "UV").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Triplanar, "Triplanar").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Cube, "Cube").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Planar, "Planar").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Cylindrical, "Cylindrical").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Spherical, "Spherical").changed() || apply_settings;
+            });
+        });
+
+        if mapping_mode != TextureMappingMode::Uv
         {
-            info_box(ui, "Triplanar mapping is active: the Address Mode is automatically forced to 'Repeat' for all textures of this material.");
+            ui.horizontal(|ui|
+            {
+                ui.label("Mapping Space:");
+                apply_settings = ui.selectable_value(& mut mapping_space, MappingSpace::Object, "Object").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_space, MappingSpace::World, "World").changed() || apply_settings;
+            });
+
+            // triplanar and cube project along all three axes - no axis needed
+            if mapping_mode == TextureMappingMode::Planar || mapping_mode == TextureMappingMode::Cylindrical || mapping_mode == TextureMappingMode::Spherical
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("Mapping Axis:");
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::X, "X").changed() || apply_settings;
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::Y, "Y").changed() || apply_settings;
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::Z, "Z").changed() || apply_settings;
+                });
+            }
+
+            apply_settings = ui.add(egui::Slider::new(&mut mapping_scale, 0.01..=100.0).logarithmic(true).text("Mapping Scale")).changed() || apply_settings;
+
+            if mapping_mode == TextureMappingMode::Triplanar
+            {
+                apply_settings = ui.add(egui::Slider::new(&mut mapping_sharpness, 1.0..=32.0).text("Triplanar Sharpness")).changed() || apply_settings;
+            }
+
+            info_box(ui, "Projected texture mapping is active: the Address Mode is automatically forced to 'Repeat' for all textures of this material.");
         }
 
         if apply_settings
@@ -1294,9 +1371,11 @@ impl Component for Material
             let b = ((highlight_color.b() as f32) / 255.0).clamp(0.0, 1.0);
             data.highlight_color = Vector3::<f32>::new(r, g, b);
 
-            data.triplanar_mode = triplanar_mode;
-            data.triplanar_scale = triplanar_scale;
-            data.triplanar_sharpness = triplanar_sharpness;
+            data.mapping_mode = mapping_mode;
+            data.mapping_space = mapping_space;
+            data.mapping_axis = mapping_axis;
+            data.mapping_scale = mapping_scale;
+            data.mapping_sharpness = mapping_sharpness;
         }
     }
 }

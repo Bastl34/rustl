@@ -2,7 +2,7 @@ use std::{mem::swap, collections::HashMap};
 
 use wgpu::{BindGroup, BindGroupLayout, Sampler, util::DeviceExt};
 
-use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureState, TextureType, TriplanarMode, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
+use crate::{render_item_impl_default, rendering::bind_groups::uniform, state::{helper::render_item::{get_render_item, RenderItem, RenderItemType}, resources::texture::TextureItem, scene::components::{component::Component, material::{Material, TextureMappingMode, TextureState, TextureType, ALL_TEXTURE_TYPES, TEXTURE_AMOUNT}}}};
 
 use super::{texture::{Texture, TextureFormat}, wgpu::WGpu};
 
@@ -109,9 +109,13 @@ pub struct MaterialUniform
     pub texture_transforms: [TextureTransform; TEXTURE_AMOUNT],
     pub textures_used: u32,
 
-    pub triplanar_mode: u32,
-    pub triplanar_scale: f32,
-    pub triplanar_sharpness: f32,
+    pub mapping_mode: u32,
+    pub mapping_space: u32,
+    pub mapping_axis: u32,
+    pub mapping_scale: f32,
+    pub mapping_sharpness: f32,
+
+    pub _padding: [u32; 2],
 }
 
 impl MaterialUniform
@@ -205,9 +209,13 @@ impl MaterialUniform
             texture_transforms,
             textures_used: textures_used,
 
-            triplanar_mode: material_data.triplanar_mode as u32,
-            triplanar_scale: material_data.triplanar_scale,
-            triplanar_sharpness: material_data.triplanar_sharpness,
+            mapping_mode: material_data.mapping_mode as u32,
+            mapping_space: material_data.mapping_space as u32,
+            mapping_axis: material_data.mapping_axis as u32,
+            mapping_scale: material_data.mapping_scale,
+            mapping_sharpness: material_data.mapping_sharpness,
+
+            _padding: [0, 0],
         }
     }
 }
@@ -317,8 +325,8 @@ impl MaterialBuffer
         let mut texture_render_items: HashMap<u32, (RenderItemType, TextureItem, wgpu::Sampler)> = HashMap::new();
         let mut texture_render_items_dir = vec![];
 
-        // triplanar samples outside the [0,1] uv range -> force a tiling (repeat) address mode when active
-        let force_repeat = material.get_data().triplanar_mode != TriplanarMode::Off;
+        // projected mapping modes sample outside the [0,1] uv range -> force a tiling (repeat) address mode when active
+        let force_repeat = material.get_data().mapping_mode != TextureMappingMode::Uv;
 
         for texture_type in ALL_TEXTURE_TYPES
         {
@@ -483,7 +491,7 @@ impl MaterialBuffer
             crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
         }
 
-        // triplanar sampling reads outside the [0,1] uv range -> override with a tiling address mode
+        // projected mapping modes read outside the [0,1] uv range -> override with a tiling address mode
         let (address_mode_u, address_mode_v, address_mode_w) = if force_repeat
         {
             (wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat)
