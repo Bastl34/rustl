@@ -45,6 +45,9 @@ impl LightUniform
             LightType::Point => l_type = 2,
             LightType::Spot => l_type = 3,
             LightType::Hemispheric => l_type = 4,
+
+            // a sun is a directional light for the shader - only color/intensity differ (see below)
+            LightType::Sun => l_type = 1,
         };
 
         if !light.enabled
@@ -57,8 +60,17 @@ impl LightUniform
         let dir_normalized = light.dir_normalized();
 
         let position: Point3<f32> = light.pos;
-        let color = light.color;
         let ground_color = light.ground_color;
+
+        // sun: modulate the user color (tint) with the elevation based sun color
+        // and fade the intensity out below the horizon
+        let mut color = light.color;
+        let mut intensity = light.intensity;
+        if light.light_type == LightType::Sun
+        {
+            color = color.component_mul(&light.sun_color());
+            intensity *= light.sun_intensity_factor();
+        }
 
         Self
         {
@@ -66,7 +78,7 @@ impl LightUniform
             dir: [dir_normalized.x, dir_normalized.y, dir_normalized.z, 1.0],
             color: [color.x, color.y, color.z, 1.0],
             ground_color: [ground_color.x, ground_color.y, ground_color.z, 1.0],
-            intensity: light.intensity,
+            intensity,
             range: light.range,
             light_type: l_type,
             max_angle: light.max_angle,

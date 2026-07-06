@@ -5,13 +5,18 @@ use std::cell::RefCell;
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{console_log, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}, state::scene::utilities::tags::Tags};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_zero_vec3, interpolate_vec3}}, state::scene::utilities::tags::Tags};
 
 use super::manager::id_manager;
 
 pub type LightItem = Box<Light>;
 
 const DEFAULT_SHADOW_BIAS: f32 = 0.0001;
+
+// sun color ramp based on the sun elevation (see Light::sun_color)
+const SUN_COLOR_HORIZON: Vector3<f32> = Vector3::new(1.0, 0.35, 0.10); // sunrise / sunset
+const SUN_COLOR_GOLDEN: Vector3<f32> = Vector3::new(1.0, 0.65, 0.35);  // golden hour
+const SUN_COLOR_NOON: Vector3<f32> = Vector3::new(1.0, 0.98, 0.93);    // slightly warm white
 
 // ******************** LightType ********************
 
@@ -21,7 +26,10 @@ pub enum LightType
     Directional,
     Point,
     Spot,
-    Hemispheric
+    Hemispheric,
+
+    // directional light with an elevation based color (warm/red at the horizon, neutral at noon)
+    Sun,
 }
 
 // ******************** Light ********************
@@ -186,6 +194,34 @@ impl Light
         }
     }
 
+    // approximated sun color based on the sun elevation:
+    // deep orange/red at the horizon ("Abendrot"), warm white at noon
+    pub fn sun_color(&self) -> Vector3<f32>
+    {
+        let elevation = (-self.dir_normalized().y).clamp(0.0, 1.0); // sine of the angle above the horizon
+
+        if elevation < 0.15
+        {
+            interpolate_vec3(&SUN_COLOR_HORIZON, &SUN_COLOR_GOLDEN, elevation / 0.15)
+        }
+        else if elevation < 0.45
+        {
+            interpolate_vec3(&SUN_COLOR_GOLDEN, &SUN_COLOR_NOON, (elevation - 0.15) / 0.3)
+        }
+        else
+        {
+            SUN_COLOR_NOON
+        }
+    }
+
+    // fades the sun out when it dips below the horizon
+    pub fn sun_intensity_factor(&self) -> f32
+    {
+        let elevation = -self.dir_normalized().y;
+
+        ((elevation + 0.05) / 0.1).clamp(0.0, 1.0)
+    }
+
     pub fn ui(light: &RefCell<ChangeTracker<Box<Light>>>, ui: &mut egui::Ui)
     {
         let mut enabled;
@@ -271,7 +307,7 @@ impl Light
                 });
             }
 
-            if light_type == LightType::Directional || light_type == LightType::Hemispheric
+            if light_type == LightType::Directional || light_type == LightType::Hemispheric || light_type == LightType::Sun
             {
                 changed = ui.add(egui::Slider::new(&mut intensity, 0.0..=1.0).text("intensity")).changed() || changed;
             }
@@ -289,6 +325,7 @@ impl Light
                 changed = ui.selectable_value(& mut light_type, LightType::Point, "Point").changed() || changed;
                 changed = ui.selectable_value(& mut light_type, LightType::Spot, "Spot").changed() || changed;
                 changed = ui.selectable_value(& mut light_type, LightType::Hemispheric, "Hemispheric").changed() || changed;
+                changed = ui.selectable_value(& mut light_type, LightType::Sun, "Sun").changed() || changed;
             });
 
             changed = ui.checkbox(&mut distance_based_intensity, "Distance based intensity").changed() || changed;

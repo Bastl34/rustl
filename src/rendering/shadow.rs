@@ -96,7 +96,7 @@ pub fn shadow_view_count(light: &Light) -> u32
 
     match light.light_type
     {
-        LightType::Directional => SHADOW_CASCADES,
+        LightType::Directional | LightType::Sun => SHADOW_CASCADES,
         LightType::Spot => 1,
         LightType::Point => 6,
         LightType::Hemispheric => 0,
@@ -336,7 +336,7 @@ pub fn compute_shadow_views(lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max
 
         match light.light_type
         {
-            LightType::Directional => directional_views(light, cam_data, first_layer, shadow_map_size, shadow_max_distance, &mut views),
+            LightType::Directional | LightType::Sun => directional_views(light, cam_data, first_layer, shadow_map_size, shadow_max_distance, &mut views),
             LightType::Spot => views.push(spot_view(light, first_layer, shadow_max_distance)),
             LightType::Point => point_views(light, first_layer, shadow_max_distance, &mut views),
             LightType::Hemispheric => {},
