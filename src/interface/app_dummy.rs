@@ -60,7 +60,7 @@ impl App for AppDummy
 
 
         // load project if needed
-        if let Some(project) = env::args().find(|a| a.ends_with(".json"))
+        if let Some(project) = env::args().find(|a| a.ends_with(".project"))
         {
             let state = &mut *(context.state.borrow_mut());
 

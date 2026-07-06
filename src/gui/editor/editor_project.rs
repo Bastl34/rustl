@@ -336,7 +336,7 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
         },
     };
 
-    let full_path = format!("{}.json", path);
+    let full_path = format!("{}.project", path);
     match write_string_to_tile(full_path.as_str(), json)
     {
         Ok(_) =>
