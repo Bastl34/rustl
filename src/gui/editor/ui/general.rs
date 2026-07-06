@@ -293,7 +293,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             }
 
             let mut changed = false;
-            egui::ComboBox::from_label("px").selected_text(format!("{current:?}")).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt("max_texture_res_combo").selected_text(format!("{current:?}")).show_ui(ui, |ui|
             {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 //ui.set_min_width(60.0);
@@ -303,6 +303,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
                     changed = ui.selectable_value(&mut current, item, format!("{item:?}")).changed() || changed;
                 }
             });
+            ui.label("px");
 
             ui.label("ℹ").on_hover_text("larger textures will be scaled down");
 
@@ -310,6 +311,59 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             {
                 state.rendering.max_texture_resolution = Some(current);
             }
+            ui.end_row();
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Shadow Map Res:");
+
+            let max = state.rendering_adapter.max_texture_resolution;
+            let mut current = *state.rendering.shadow_map_resolution.get_ref();
+
+            let mut possibilities = vec![];
+
+            let mut item = max;
+            while item > 0
+            {
+                possibilities.push(item);
+                item /= 2;
+            }
+
+            let mut changed = false;
+            egui::ComboBox::from_id_salt("shadow_map_res_combo").selected_text(format!("{current:?}")).show_ui(ui, |ui|
+            {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                //ui.set_min_width(60.0);
+
+                for item in possibilities
+                {
+                    changed = ui.selectable_value(&mut current, item, format!("{item:?}")).changed() || changed;
+                }
+            });
+            ui.label("px");
+
+            ui.label("ℹ").on_hover_text("larger shadow map sizes can impact performance");
+
+            if changed
+            {
+                *state.rendering.shadow_map_resolution.get_mut() = current;
+            }
+            ui.end_row();
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Shadow Distance:");
+
+            let mut shadow_max_distance = state.rendering.shadow_max_distance;
+            if ui.add(egui::DragValue::new(&mut shadow_max_distance).speed(1.0).range(1.0..=10000.0)).changed()
+            {
+                state.rendering.shadow_max_distance = shadow_max_distance;
+            }
+
+            ui.label("ℹ").on_hover_text("max distance (from the camera) covered by directional light shadows (cascades) - smaller = sharper shadows");
+
             ui.end_row();
         });
     });

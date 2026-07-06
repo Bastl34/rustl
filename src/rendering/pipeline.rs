@@ -4,7 +4,7 @@ use wgpu::{ShaderModule, BindGroupLayout};
 
 use crate::{console_log, render_item_impl_default, state::helper::render_item::RenderItem};
 
-use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance, skeleton::MAX_JOINTS, morph_target::MAX_MORPH_TARGETS};
+use super::{wgpu::WGpu, vertex_buffer::Vertex, texture::{self}, instance::Instance, skeleton::MAX_JOINTS, morph_target::MAX_MORPH_TARGETS, shadow::MAX_SHADOW_VIEWS};
 
 pub struct Pipeline
 {
@@ -83,6 +83,112 @@ impl Pipeline
     }
     */
 
+    pub fn new_shadow(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
+    {
+        let shader;
+        {
+            let device = wgpu.device();
+
+            // shader (no lights needed - only joints/morph target amounts are replaced)
+            let prepared_shader = Self::prepare_shader(shader_source, 0);
+            shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
+            {
+                label: Some(name),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&prepared_shader)).into(),
+            });
+        }
+
+        // create pipe
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: false,
+
+            shader,
+            pipeline: None,
+        };
+
+        pipe.create_shadow(wgpu, bind_group_layouts);
+
+        pipe
+    }
+
+    pub fn create_shadow(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    {
+        // depth-only pass (no fragment shader) rendering into one shadow atlas layer
+
+        let device = wgpu.device();
+
+        let layout_name = format!("{} Layout", self.name);
+        let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some(layout_name.as_str()),
+            bind_group_layouts: &bind_group_layouts,
+            ..Default::default()
+        });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some(&self.name),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState
+            {
+                module: &self.shader,
+                entry_point: Some("vs_main"),
+                buffers:
+                &[
+                    Vertex::desc(),
+                    Instance::desc()
+                ],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState
+            {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+
+                // constant + slope-scaled bias against shadow acne
+                bias: wgpu::DepthBiasState
+                {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState
+            {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+
+        self.pipeline = Some(render_pipeline);
+    }
+
+    pub fn re_create_shadow(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    {
+        console_log!("recreating shadow pipeline");
+
+        self.create_shadow(wgpu, bind_group_layouts);
+    }
+
     pub fn new_depth_export(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
     {
         let shader;
@@ -119,6 +225,7 @@ impl Pipeline
         shader = shader.replace("[MAX_LIGHTS]", format!("{}", max_lights).as_str());
         shader = shader.replace("[MAX_JOINTS]", format!("{}", MAX_JOINTS).as_str());
         shader = shader.replace("[MAX_MORPH_TARGETS]", format!("{}", MAX_MORPH_TARGETS).as_str());
+        shader = shader.replace("[MAX_SHADOW_VIEWS]", format!("{}", MAX_SHADOW_VIEWS).as_str());
 
         shader
     }

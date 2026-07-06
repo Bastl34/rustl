@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Caster culling: which objects are drawn into a shadow view?</text>
+
+  <!-- left panel: sphere -->
+  <rect x="30" y="55" width="345" height="330" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="202" y="85" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">Spot / Point — sphere</text>
+
+  <!-- range sphere -->
+  <circle cx="202" cy="230" r="110" fill="#fef3c7" opacity="0.6"/>
+  <circle cx="202" cy="230" r="110" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5"/>
+  <circle cx="202" cy="230" r="10" fill="#f6b73c" stroke="#b45309" stroke-width="2"/>
+  <text x="202" y="262" text-anchor="middle" font-size="11.5" fill="#b45309">light</text>
+  <line x1="202" y1="230" x2="300" y2="180" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="268" y="192" font-size="11.5" fill="#b45309" paint-order="stroke" stroke="#fef3c7" stroke-width="3" stroke-linejoin="round">range</text>
+
+  <!-- objects -->
+  <rect x="140" y="270" width="34" height="34" fill="#64748b" rx="5"/>
+  <text x="157" y="325" text-anchor="middle" font-size="12" font-weight="600" fill="#047857">✓ drawn</text>
+
+  <rect x="300" y="310" width="34" height="34" fill="#cbd5e1" rx="5"/>
+  <text x="317" y="365" text-anchor="middle" font-size="12" font-weight="600" fill="#b91c1c">✗ culled</text>
+
+  <text x="202" y="412" text-anchor="middle" font-size="12" fill="#64748b">beyond the range no shadow can reach back in</text>
+  <text x="202" y="429" text-anchor="middle" font-size="12" fill="#64748b">→ cull everything outside the sphere</text>
+
+  <!-- right panel: beam -->
+  <rect x="390" y="55" width="345" height="330" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="562" y="85" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">Directional cascade — beam</text>
+
+  <!-- sun rays -->
+  <g stroke="#f6b73c" stroke-width="2.5" marker-end="url(#arrow9)">
+    <line x1="470" y1="100" x2="470" y2="130"/>
+    <line x1="654" y1="100" x2="654" y2="130"/>
+  </g>
+
+  <!-- beam (infinite along light dir) -->
+  <rect x="490" y="95" width="145" height="250" fill="#dbeafe" opacity="0.55"/>
+  <line x1="490" y1="95" x2="490" y2="345" stroke="#2563eb" stroke-width="2" stroke-dasharray="7 5"/>
+  <line x1="635" y1="95" x2="635" y2="345" stroke="#2563eb" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="562" y="112" text-anchor="middle" font-size="11.5" fill="#1d4ed8" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">beam: no limit along the light</text>
+
+  <!-- cascade area on the ground -->
+  <line x1="410" y1="330" x2="715" y2="330" stroke="#94a3b8" stroke-width="3"/>
+  <rect x="490" y="322" width="145" height="16" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5" rx="4"/>
+  <text x="562" y="356" text-anchor="middle" font-size="11.5" fill="#1d4ed8">cascade area (radius × √2)</text>
+
+  <!-- tall caster high above, still inside the beam -->
+  <rect x="540" y="140" width="30" height="46" fill="#64748b" rx="5"/>
+  <line x1="555" y1="186" x2="555" y2="318" stroke="#334155" stroke-width="2" stroke-dasharray="4 4" opacity="0.6"/>
+  <rect x="541" y="325" width="28" height="7" fill="#334155" rx="3"/>
+  <text x="600" y="165" font-size="12" font-weight="600" fill="#047857" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">✓ drawn</text>
+  <text x="600" y="182" font-size="11" fill="#475569" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">far away, but its shadow</text>
+  <text x="600" y="196" font-size="11" fill="#475569" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">still lands in the cascade</text>
+
+  <!-- object outside laterally -->
+  <rect x="425" y="240" width="34" height="34" fill="#cbd5e1" rx="5"/>
+  <text x="442" y="295" text-anchor="middle" font-size="12" font-weight="600" fill="#b91c1c">✗ culled</text>
+
+  <text x="562" y="412" text-anchor="middle" font-size="12" fill="#64748b">sun light is parallel: cull only sideways (perpendicular to the light),</text>
+  <text x="562" y="429" text-anchor="middle" font-size="12" fill="#64748b">never along the light direction</text>
+</svg>

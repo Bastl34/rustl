@@ -228,6 +228,19 @@ pub fn bezier_interpolate(t: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32
     3.0 * (1.0 - refined_t).powi(2) * refined_t * y1 + 3.0 * (1.0 - refined_t) * refined_t.powi(2) * y2 + refined_t.powi(3)
 }
 
+// up vector that is not parallel to the given direction (e.g. for look-at matrices)
+pub fn up_vector_for_direction(dir: &Vector3<f32>) -> Vector3<f32>
+{
+    if dir.y.abs() > 0.99
+    {
+        Vector3::new(0.0, 0.0, 1.0)
+    }
+    else
+    {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+}
+
 pub fn yaw_pitch_from_direction(dir: Vector3::<f32>) -> (f32, f32)
 {
     let pitch = dir.y.asin();

@@ -27,6 +27,32 @@ impl LightCamSceneBindGroup
                 uniform::uniform_bind_group_layout_entry(1, true, true),
                 uniform::uniform_bind_group_layout_entry(2, true, true),
                 uniform::uniform_bind_group_layout_entry(3, true, true),
+
+                // shadow view matrices
+                uniform::uniform_bind_group_layout_entry(4, false, true),
+
+                // shadow atlas (depth texture array)
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture
+                    {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Depth,
+                    },
+                    count: None,
+                },
+
+                // shadow comparison sampler (hardware PCF)
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
             ],
             label: Some("light_cam_scene_bind_group_layout"),
         })
@@ -45,7 +71,10 @@ impl LightCamSceneBindGroup
                 wgpu::BindGroupEntry { binding: 0, resource: cam_buffer.get_buffer().as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: scene_buffer.get_buffer().as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 2, resource: light_buffer.get_amount_buffer().as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: light_buffer.get_lights_buffer().as_entire_binding() }
+                wgpu::BindGroupEntry { binding: 3, resource: light_buffer.get_lights_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: scene_buffer.shadow.get_views_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(scene_buffer.shadow.get_atlas_view()) },
+                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(scene_buffer.shadow.get_sampler()) },
             ],
             label: Some(bind_group_name.as_str()),
         });

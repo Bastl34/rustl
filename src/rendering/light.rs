@@ -8,11 +8,11 @@
 
 use std::{mem, cell::RefCell};
 
-use nalgebra::{Vector3, Point3};
+use nalgebra::Point3;
 
-use crate::{console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}, render_item_impl_default, state::{helper::render_item::RenderItem, scene::light::{Light, LightItem, LightType}}};
+use crate::{console_warning, helper::change_tracker::ChangeTracker, render_item_impl_default, state::{helper::render_item::RenderItem, scene::light::{Light, LightItem, LightType}}};
 
-use super::{wgpu::WGpu, helper::buffer::create_empty_buffer};
+use super::{shadow, wgpu::WGpu, helper::buffer::create_empty_buffer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -27,15 +27,19 @@ pub struct LightUniform
     pub light_type: u32,        //0 = disabled, ...
     pub max_angle: f32,
     pub distance_based_intensity: u32,
-    _padding: [f32; 3],
+
+    // shadow mapping: first layer in the shadow atlas (-1 = light casts no shadow)
+    pub shadow_index: i32,
+    pub shadow_views: u32,
+    pub shadow_bias: f32,
 }
 
 impl LightUniform
 {
-    pub fn new(enabled: bool, light_type: LightType, position: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32, range: f32, max_angle: f32, distance_based_intensity: bool) -> Self
+    pub fn new(light: &Light, shadow_index: i32, shadow_views: u32) -> Self
     {
         let mut l_type;
-        match light_type
+        match light.light_type
         {
             LightType::Directional => l_type = 1,
             LightType::Point => l_type = 2,
@@ -43,22 +47,18 @@ impl LightUniform
             LightType::Hemispheric => l_type = 4,
         };
 
-        if !enabled
+        if !light.enabled
         {
             l_type = 0;
         }
 
-        let dist_based_intensity; if distance_based_intensity { dist_based_intensity = 1; } else { dist_based_intensity = 0; }
+        let dist_based_intensity; if light.distance_based_intensity { dist_based_intensity = 1; } else { dist_based_intensity = 0; }
 
-        let dir_normalized;
-        if approx_zero_vec3(&dir)
-        {
-            dir_normalized = Vector3::new(0.0, -1.0, 0.0);
-        }
-        else
-        {
-            dir_normalized = dir.normalize();
-        }
+        let dir_normalized = light.dir_normalized();
+
+        let position: Point3<f32> = light.pos;
+        let color = light.color;
+        let ground_color = light.ground_color;
 
         Self
         {
@@ -66,12 +66,15 @@ impl LightUniform
             dir: [dir_normalized.x, dir_normalized.y, dir_normalized.z, 1.0],
             color: [color.x, color.y, color.z, 1.0],
             ground_color: [ground_color.x, ground_color.y, ground_color.z, 1.0],
-            intensity,
-            range,
+            intensity: light.intensity,
+            range: light.range,
             light_type: l_type,
-            max_angle,
+            max_angle: light.max_angle,
             distance_based_intensity: dist_based_intensity,
-            _padding: [0.0; 3]
+
+            shadow_index,
+            shadow_views,
+            shadow_bias: light.shadow_bias,
         }
     }
 }
@@ -150,6 +153,9 @@ impl LightBuffer
             bytemuck::bytes_of(&amount),
         );
 
+        // shadow atlas layer assignment (must match rendering::shadow::compute_shadow_views)
+        let shadow_assignments = shadow::assign_shadow_views(lights, self.max_lights);
+
         for (i, light) in lights.iter().enumerate()
         {
             if i + 1 > self.max_lights
@@ -160,7 +166,9 @@ impl LightBuffer
 
             let light = light.borrow();
             let light = light.get_ref();
-            let data = LightUniform::new(light.enabled, light.light_type, light.pos, light.dir, light.color, light.ground_color, light.intensity, light.range, light.max_angle, light.distance_based_intensity);
+
+            let (shadow_index, shadow_views) = shadow_assignments[i];
+            let data = LightUniform::new(light, shadow_index, shadow_views);
 
             wgpu.queue_mut().write_buffer
             (
@@ -169,24 +177,6 @@ impl LightBuffer
                 bytemuck::bytes_of(&data),
             );
         }
-    }
-
-    pub fn update_buffer(&mut self, wgpu: &mut WGpu, light: &Light, index: usize)
-    {
-        if index + 1 > self.max_lights
-        {
-            console_warning!("only {} lights are supported", self.max_lights);
-            return;
-        }
-
-        let data = LightUniform::new(light.enabled, light.light_type, light.pos, light.dir, light.color, light.ground_color, light.intensity, light.range, light.max_angle, light.distance_based_intensity);
-
-        wgpu.queue_mut().write_buffer
-        (
-            &self.lights_buffer,
-            (index * mem::size_of::<LightUniform>()) as wgpu::BufferAddress,
-            bytemuck::bytes_of(&data),
-        );
     }
 
     pub fn get_amount_buffer(&self) -> &wgpu::Buffer

@@ -11,6 +11,7 @@ mod rendering
     pub(crate) mod scene;
     pub(crate) mod camera;
     pub(crate) mod light;
+    pub(crate) mod shadow;
     pub(crate) mod material;
     pub(crate) mod skeleton;
     pub(crate) mod morph_target;

@@ -7,7 +7,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, ut
 
 use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
+use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 
@@ -78,11 +78,12 @@ pub struct SceneUniform
     pub exposure: f32,
     pub ibl_diffuse_intensity: f32,
     pub xray_alpha: f32,
+    pub shadow_max_distance: f32,
 }
 
 impl SceneUniform
 {
-    pub fn new(scene_data: &SceneData, xray_alpha: f32) -> Self
+    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32) -> Self
     {
         let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
         let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
@@ -94,6 +95,7 @@ impl SceneUniform
             exposure: exposure,
             ibl_diffuse_intensity: ibl_diffuse_intensity,
             xray_alpha: xray_alpha,
+            shadow_max_distance: shadow_max_distance,
         }
     }
 }
@@ -113,6 +115,8 @@ pub enum RenderPipelineType
     // hzb,
     DepthExport,
 
+    Shadow,
+
     //OcclusionCulling,
 }
 
@@ -123,12 +127,20 @@ pub enum ComputePipelineType
     HzbOcclusionCheck,
 }
 
+pub enum DrawPhase<'a>
+{
+    Depth { light_cam_bind_group: &'a BindGroup },
+    Color { light_cam_bind_group: &'a BindGroup },
+    Shadow { shadow_view: &'a shadow::ShadowViewData },
+}
+
 pub struct Scene
 {
     clear_color: wgpu::Color,
 
     color_shader: String,
     depth_shader: String,
+    shadow_shader: String,
 
     // occlusion_culling_shader: String,
     depth_export_shader: String,
@@ -156,6 +168,9 @@ pub struct Scene
     pub depth_buffer_texture: Texture,
     // hzb_texture: Texture,
 
+    pub shadow: ShadowBuffer,
+    pub shadow_max_distance: f32,
+
     depth_export_bind_group: DepthExportBindGroup,
     // hzb_downsample_bind_group: HZBDownsampleBindGroup,
 
@@ -178,6 +193,7 @@ impl RenderItem for Scene
         self.buffer.size()
         + self.bounding_boxes_buffer.gpu_usage()
         + self.hzb_cull_buffer.gpu_usage()
+        + self.shadow.gpu_usage()
         + self.empty_skeleton.gpu_usage()
         + self.empty_morph_target.gpu_usage()
     }
@@ -190,6 +206,7 @@ impl Scene
         // shader source
         let color_shader = resources::load_string("shader/base.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
+        let shadow_shader = resources::load_string("shader/shadow.wgsl").unwrap();
         //let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
         let depth_export_shader = resources::load_string("shader/depth_export.wgsl").unwrap();
         let hzb_downsample_shader = resources::load_string("shader/compute/hzb_downsample.wgsl").unwrap();
@@ -233,6 +250,7 @@ impl Scene
 
             color_shader,
             depth_shader,
+            shadow_shader,
             // occlusion_culling_shader,
             depth_export_shader,
             hzb_downsample_shader,
@@ -259,6 +277,9 @@ impl Scene
             depth_pass_buffer_texture,
             // hzb_texture,
 
+            shadow: ShadowBuffer::new(wgpu, *state.rendering.shadow_map_resolution.get_ref()),
+            shadow_max_distance: state.rendering.shadow_max_distance,
+
             depth_export_bind_group,
             // hzb_downsample_bind_group,
 
@@ -284,7 +305,7 @@ impl Scene
         let data = scene.get_data();
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha);
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -302,7 +323,7 @@ impl Scene
         let data = scene.get_data();
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha);
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
     }
@@ -393,6 +414,21 @@ impl Scene
         else
         {
             self.render_pipelines.get_mut(RenderPipelineType::DepthExport as usize).unwrap().re_create_depth_export(wgpu, &bind_group_layouts);
+        }
+
+        // ********** shadow pass **********
+
+        let shadow_view_bind_layout = ShadowBuffer::caster_bind_layout(wgpu);
+
+        let bind_group_layouts = [ &shadow_view_bind_layout, &skeleton_morph_bind_layout ];
+
+        if !re_create
+        {
+            self.render_pipelines.push(Pipeline::new_shadow(wgpu, "shadow", &self.shadow_shader, &bind_group_layouts));
+        }
+        else
+        {
+            self.render_pipelines.get_mut(RenderPipelineType::Shadow as usize).unwrap().re_create_shadow(wgpu, &bind_group_layouts);
         }
 
         // ********** downsample pass (for occlusion culling - hzb) **********
@@ -489,7 +525,7 @@ impl Scene
         }
     }
 
-    pub fn update_light_cameras(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
+    pub fn update_light_cameras_shadows(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, shadow_map_size: u32)
     {
         // ********** lights: all **********
         let max_lights = scene.get_data().max_lights;
@@ -511,19 +547,30 @@ impl Scene
         // ********** light: check each **********
         if !all_lights_changed
         {
-            for (i, light) in lights.iter().enumerate()
+            let mut any_light_changed = false;
+            for light in lights.iter()
             {
                 let mut light = light.borrow_mut();
-                let (light, light_changed) = light.consume_borrow();
+                let (_, light_changed) = light.consume_borrow();
                 if light_changed
                 {
-                    let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                    render_item.update_buffer(wgpu, light, i);
-
-                    //console_log!(" ============ ONE light updated");
+                    any_light_changed = true;
                 }
             }
+
+            // a single light change (type/enabled/cast_shadow) can shift the shadow atlas
+            // layer assignment of all lights -> re-write the whole buffer
+            if any_light_changed
+            {
+                let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                render_item.to_buffer(wgpu, lights);
+
+                //console_log!(" ============ lights updated");
+            }
         }
+
+        // ********** shadow atlas **********
+        let shadow_atlas_recreated = self.shadow.ensure_for_lights(wgpu, lights, max_lights as usize, shadow_map_size);
 
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
@@ -591,7 +638,7 @@ impl Scene
             }
 
             // create cam/light/scene bind group
-            if cam.bind_group_render_item.is_none() || all_lights_changed
+            if cam.bind_group_render_item.is_none() || all_lights_changed || shadow_atlas_recreated
             {
                 let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
                 let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
@@ -1068,7 +1115,14 @@ impl Scene
         self.update_nodes(wgpu, &mut all_nodes);
         Self::consume_changed_joints(&all_nodes);
 
-        self.update_light_cameras(wgpu, scene);
+        // shadow distance is part of the scene uniform (used for the distance fade in the shader)
+        if state.rendering.shadow_max_distance != self.shadow_max_distance
+        {
+            self.shadow_max_distance = state.rendering.shadow_max_distance;
+            self.update_buffer(wgpu, scene);
+        }
+
+        self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref());
 
         // ********** save image stuff **********
         if state.debug.save_image
@@ -1370,6 +1424,14 @@ impl Scene
         if self.occlusion_culling
         {
             self.read_back_visibility_results(wgpu, &scene.cameras, &mut render_results);
+        }
+
+        // ********** shadow maps **********
+        // render all shadow views (directional cascades, spot, point faces) into the shadow atlas
+        let shadow_draw_calls = self.render_shadows(wgpu, encoder, scene, &render_groups);
+        if let Some(render_result) = render_results.first_mut()
+        {
+            render_result.draw_calls += shadow_draw_calls;
         }
 
         // render for each camera
@@ -1846,6 +1908,61 @@ impl Scene
     }
     */
 
+    pub fn render_shadows(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>, render_groups: &Vec<(Vec<RenderData>, Vec<RenderData>)>) -> u32
+    {
+        let max_lights = scene.get_data().max_lights as usize;
+        let lights = scene.lights.get_ref();
+
+        // directional cascades are fitted to the first enabled camera
+        let cam_data = scene.cameras.iter().find(|cam| cam.enabled).map(|cam| cam.get_data());
+
+        let shadow_views = shadow::compute_shadow_views(lights, max_lights, cam_data, self.shadow.size(), self.shadow_max_distance);
+
+        if shadow_views.is_empty()
+        {
+            return 0;
+        }
+
+        self.shadow.write_views(wgpu, &shadow_views);
+
+        let mut draw_calls: u32 = 0;
+
+        for shadow_view in &shadow_views
+        {
+            if shadow_view.layer >= self.shadow.layers()
+            {
+                continue;
+            }
+
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            {
+                label: Some("shadow pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
+                {
+                    view: self.shadow.get_layer_view(shadow_view.layer),
+                    depth_ops: Some(wgpu::Operations
+                    {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            // transparent objects do not cast shadows
+            for (solid_objects, _transparent_objects) in render_groups
+            {
+                draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, solid_objects);
+            }
+        }
+
+        draw_calls
+    }
+
     pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
     {
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
@@ -1913,7 +2030,7 @@ impl Scene
         // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, false, nodes, light_cam_bind_group)
+        self.draw_phase(&mut render_pass, &DrawPhase::Depth { light_cam_bind_group }, nodes)
     }
 
     pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
@@ -1978,10 +2095,10 @@ impl Scene
         // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, true, nodes, light_cam_bind_group)
+        self.draw_phase(&mut render_pass, &DrawPhase::Color { light_cam_bind_group }, nodes)
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, color_pipeline: bool, nodes: &'a Vec<RenderData>, light_cam_bind_group: &'a BindGroup) -> u32
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, phase: &DrawPhase, nodes: &'a Vec<RenderData>) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -2001,11 +2118,31 @@ impl Scene
                 continue;
             }
 
+            let material_component = mat.as_any().downcast_ref::<MaterialComponent>();
+
+            // shadow pass: only shadow casting materials + per-view culling
+            if let DrawPhase::Shadow { shadow_view } = phase
+            {
+                if !material_component.map(|m| m.get_data().cast_shadow).unwrap_or(true)
+                {
+                    continue;
+                }
+
+                // per-view culling via bounding sphere (if available)
+                if let (Some(center), Some(radius)) = (data.middle.as_ref(), data.radius)
+                {
+                    if !shadow_view.intersects_sphere(center, radius)
+                    {
+                        continue;
+                    }
+                }
+            }
+
             let material_render_item = mat.get_base().render_item.as_ref();
             let material_render_item = get_render_item::<MaterialBuffer>(material_render_item.as_ref().unwrap());
             let material_bind_group = material_render_item.bind_group.as_ref().unwrap();
 
-            let material_allow_xray = mat.as_any().downcast_ref::<MaterialComponent>().map(|m| m.get_data().allow_xray).unwrap_or(true);
+            let material_allow_xray = material_component.map(|m| m.get_data().allow_xray).unwrap_or(true);
 
             for mesh in meshes
             {
@@ -2026,70 +2163,92 @@ impl Scene
                     {
                         let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
 
-                        // x-ray mode forces no depth-write on the color pass so back faces / occluded objects remain visible
-                        // materials with allow_xray=false (gizmos, grid, etc.) keep their normal pipeline so they stay on top
-                        let xray_color = color_pipeline && self.xray_mode && material_allow_xray;
+                        // ********** pipeline + phase specific bind groups **********
+                        let skeleton_bind_group_slot;
+                        match phase
+                        {
+                            DrawPhase::Shadow { shadow_view } =>
+                            {
+                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Shadow as usize].get());
 
-                        if node.settings.depth_test && node.settings.depth_write
-                        {
-                            if color_pipeline
-                            {
-                                let pipe = if xray_color { RenderPipelineType::ColorNoWrite } else { RenderPipelineType::Color };
-                                pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
-                            }
-                            else
-                            {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Depth as usize].get());
-                            }
-                        }
-                        else if !node.settings.depth_test && node.settings.depth_write
-                        {
-                            if color_pipeline
-                            {
-                                let pipe = if xray_color { RenderPipelineType::ColorNoWriteNoCompare } else { RenderPipelineType::ColorNoCompare };
-                                pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
-                            }
-                            else
-                            {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoCompare as usize].get());
-                            }
-                        }
-                        else if node.settings.depth_test && !node.settings.depth_write
-                        {
-                            if color_pipeline
-                            {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWrite as usize].get());
-                            }
-                            else
-                            {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWrite as usize].get());
-                            }
-                        }
-                        else
-                        {
-                            if color_pipeline
-                            {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWriteNoCompare as usize].get());
-                            }
-                            else
-                            {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWriteNoCompare as usize].get());
-                            }
-                        }
+                                // per-view light matrix via dynamic offset
+                                let dynamic_offset = shadow_view.layer * shadow::SHADOW_VIEW_UNIFORM_STRIDE as u32;
+                                pass.set_bind_group(0, &self.shadow.caster_bind_group, &[dynamic_offset]);
 
-                        pass.set_bind_group(0, material_bind_group, &[]);
-                        pass.set_bind_group(1, light_cam_bind_group, &[]);
+                                skeleton_bind_group_slot = 1;
+                            },
+                            DrawPhase::Depth { light_cam_bind_group } | DrawPhase::Color { light_cam_bind_group } =>
+                            {
+                                let color_pipeline = matches!(phase, DrawPhase::Color { .. });
+
+                                // x-ray mode forces no depth-write on the color pass so back faces / occluded objects remain visible
+                                // materials with allow_xray=false (gizmos, grid, etc.) keep their normal pipeline so they stay on top
+                                let xray_color = color_pipeline && self.xray_mode && material_allow_xray;
+
+                                if node.settings.depth_test && node.settings.depth_write
+                                {
+                                    if color_pipeline
+                                    {
+                                        let pipe = if xray_color { RenderPipelineType::ColorNoWrite } else { RenderPipelineType::Color };
+                                        pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
+                                    }
+                                    else
+                                    {
+                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Depth as usize].get());
+                                    }
+                                }
+                                else if !node.settings.depth_test && node.settings.depth_write
+                                {
+                                    if color_pipeline
+                                    {
+                                        let pipe = if xray_color { RenderPipelineType::ColorNoWriteNoCompare } else { RenderPipelineType::ColorNoCompare };
+                                        pass.set_pipeline(&self.render_pipelines[pipe as usize].get());
+                                    }
+                                    else
+                                    {
+                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoCompare as usize].get());
+                                    }
+                                }
+                                else if node.settings.depth_test && !node.settings.depth_write
+                                {
+                                    if color_pipeline
+                                    {
+                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWrite as usize].get());
+                                    }
+                                    else
+                                    {
+                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWrite as usize].get());
+                                    }
+                                }
+                                else
+                                {
+                                    if color_pipeline
+                                    {
+                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ColorNoWriteNoCompare as usize].get());
+                                    }
+                                    else
+                                    {
+                                        pass.set_pipeline(&self.render_pipelines[RenderPipelineType::DepthNoWriteNoCompare as usize].get());
+                                    }
+                                }
+
+                                pass.set_bind_group(0, material_bind_group, &[]);
+                                pass.set_bind_group(1, *light_cam_bind_group, &[]);
+
+                                skeleton_bind_group_slot = 2;
+                            }
+                        }
 
                         // skeleton
                         let skeleton_morph_target_render_item = node.skeleton_morph_target_bind_group_render_item.as_ref();
                         if let Some(skeleton_morph_target_render_item) = skeleton_morph_target_render_item
                         {
                             let skeleton_morph_target_render_item = get_render_item::<SkeletonMorphTargetBindGroup>(skeleton_morph_target_render_item);
-                            pass.set_bind_group(2, &skeleton_morph_target_render_item.as_ref().bind_group, &[]);
+                            pass.set_bind_group(skeleton_bind_group_slot, &skeleton_morph_target_render_item.as_ref().bind_group, &[]);
                         }
                         else
                         {
-                            pass.set_bind_group(2, &self.empty_skeleton_morph_group.bind_group, &[]);
+                            pass.set_bind_group(skeleton_bind_group_slot, &self.empty_skeleton_morph_group.bind_group, &[]);
                         }
 
                         pass.set_vertex_buffer(0, vertex_buffer.get_vertex_buffer().slice(..));

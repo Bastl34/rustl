@@ -16,6 +16,9 @@ pub const FPS_CHART_VALUES: usize = 100;
 pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
 pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 
+pub const DEFAULT_SHADOW_MAP_SIZE: u32 = 2048;
+pub const DEFAULT_SHADOW_MAX_DISTANCE: f32 = 100.0;
+
 pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
@@ -64,6 +67,10 @@ pub struct Rendering
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
+    pub shadow_map_resolution: ChangeTracker<u32>,
+
+    // max distance (from the camera) covered by directional light cascades
+    pub shadow_max_distance: f32,
 
     pub distance_sorting: bool,
     pub frustum_culling: bool,
@@ -326,6 +333,8 @@ impl State
 
                 fullscreen: ChangeTracker::new(false),
                 msaa: ChangeTracker::new(8),
+                shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
+                shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
 
                 distance_sorting: true,
                 frustum_culling: true,

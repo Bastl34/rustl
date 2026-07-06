@@ -5,11 +5,13 @@ use std::cell::RefCell;
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{console_log, helper::{change_tracker::ChangeTracker}, state::scene::utilities::tags::Tags};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::approx_zero_vec3}, state::scene::utilities::tags::Tags};
 
 use super::manager::id_manager;
 
 pub type LightItem = Box<Light>;
+
+const DEFAULT_SHADOW_BIAS: f32 = 0.0001;
 
 // ******************** LightType ********************
 
@@ -23,6 +25,10 @@ pub enum LightType
 }
 
 // ******************** Light ********************
+
+// serde defaults (for scenes saved before shadow support)
+fn default_cast_shadow() -> bool { true }
+fn default_shadow_bias() -> f32 { DEFAULT_SHADOW_BIAS }
 
 #[derive(Serialize, Deserialize)]
 pub struct Light
@@ -45,6 +51,12 @@ pub struct Light
     pub distance_based_intensity: bool,
     pub max_angle: f32, //in rad
     pub light_type: LightType,
+
+    #[serde(default = "default_cast_shadow")]
+    pub cast_shadow: bool,
+
+    #[serde(default = "default_shadow_bias")]
+    pub shadow_bias: f32,
 }
 
 impl Light
@@ -71,6 +83,9 @@ impl Light
             distance_based_intensity: false,
             max_angle: 0.0,
             light_type: LightType::Point,
+
+            cast_shadow: default_cast_shadow(),
+            shadow_bias: default_shadow_bias(),
         }
     }
 
@@ -96,6 +111,9 @@ impl Light
             distance_based_intensity: false,
             max_angle: 0.0,
             light_type: LightType::Directional,
+
+            cast_shadow: default_cast_shadow(),
+            shadow_bias: default_shadow_bias(),
         }
     }
 
@@ -121,6 +139,9 @@ impl Light
             distance_based_intensity: false,
             max_angle: max_angle,
             light_type: LightType::Spot,
+
+            cast_shadow: default_cast_shadow(),
+            shadow_bias: default_shadow_bias(),
         }
     }
 
@@ -146,6 +167,22 @@ impl Light
             distance_based_intensity: false,
             max_angle: 0.0,
             light_type: LightType::Hemispheric,
+
+            cast_shadow: false, // hemispheric lights can not cast shadows
+            shadow_bias: default_shadow_bias(),
+        }
+    }
+
+    // normalized light direction with a fallback (straight down) for zero-length directions
+    pub fn dir_normalized(&self) -> Vector3<f32>
+    {
+        if approx_zero_vec3(&self.dir)
+        {
+            Vector3::new(0.0, -1.0, 0.0)
+        }
+        else
+        {
+            self.dir.normalize()
         }
     }
 
@@ -162,6 +199,8 @@ impl Light
         let mut max_angle;
         let mut light_type;
         let mut distance_based_intensity;
+        let mut cast_shadow;
+        let mut shadow_bias;
 
         {
             let light = light.borrow();
@@ -191,6 +230,8 @@ impl Light
             max_angle = light.max_angle.to_degrees();
             light_type = light.light_type;
             distance_based_intensity = light.distance_based_intensity;
+            cast_shadow = light.cast_shadow;
+            shadow_bias = light.shadow_bias;
         }
 
         let mut changed = false;
@@ -251,6 +292,12 @@ impl Light
             });
 
             changed = ui.checkbox(&mut distance_based_intensity, "Distance based intensity").changed() || changed;
+
+            if light_type != LightType::Hemispheric
+            {
+                changed = ui.checkbox(&mut cast_shadow, "Cast shadow").changed() || changed;
+                changed = ui.add(egui::Slider::new(&mut shadow_bias, 0.0..=0.05).text("shadow bias")).changed() || changed;
+            }
         });
 
         if changed
@@ -282,6 +329,8 @@ impl Light
             light.max_angle = max_angle.to_radians();
             light.light_type = light_type;
             light.distance_based_intensity = distance_based_intensity;
+            light.cast_shadow = cast_shadow;
+            light.shadow_bias = shadow_bias;
         }
     }
 

@@ -3,6 +3,7 @@ const PI: f32 = 3.141592653589793;
 const MAX_LIGHTS = [MAX_LIGHTS];
 const MAX_JOINTS = [MAX_JOINTS];
 const MAX_MORPH_TARGETS: u32 = [MAX_MORPH_TARGETS]u;
+const MAX_SHADOW_VIEWS = [MAX_SHADOW_VIEWS];
 
 const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
 const LIGHT_TYPE_POINT: u32 = 1u;
@@ -31,6 +32,16 @@ struct LightUniform
     light_type: u32,
     max_angle: f32,
     distance_based_intensity: u32,
+
+    // first layer in the shadow atlas (-1 = light casts no shadow)
+    shadow_index: i32,
+    shadow_views: u32,
+    shadow_bias: f32,
+};
+
+struct ShadowView
+{
+    view_proj: mat4x4<f32>,
 };
 
 struct SceneUniform
@@ -39,6 +50,7 @@ struct SceneUniform
     exposure: f32,
     ibl_diffuse_intensity: f32,
     xray_alpha: f32,
+    shadow_max_distance: f32,
 };
 
 struct SkeletonUniform
@@ -115,6 +127,12 @@ var<uniform> light_amount: i32;
 
 @group(1) @binding(3)
 var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
+
+@group(1) @binding(4)
+var<uniform> shadow_views: array<ShadowView, MAX_SHADOW_VIEWS>;
+
+@group(1) @binding(5) var t_shadow: texture_depth_2d_array;
+@group(1) @binding(6) var s_shadow: sampler_comparison;
 
 @group(2) @binding(0)
 var<uniform> skeleton: SkeletonUniform;
@@ -427,6 +445,8 @@ struct MaterialUniform
     mapping_axis: u32,
     mapping_scale: f32,
     mapping_sharpness: f32,
+
+    shadow_softness: f32,
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -865,6 +885,128 @@ fn sample_wrapped_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: v
 }
 
 
+// ****************************** shadow mapping ******************************
+
+// sample one shadow atlas layer with a 3x3 PCF kernel
+// (the comparison sampler adds hardware 2x2 PCF per tap)
+fn shadow_sample_view(view_index: u32, world_pos: vec3<f32>, bias: f32) -> f32
+{
+    let clip = shadow_views[view_index].view_proj * vec4<f32>(world_pos, 1.0);
+    if (clip.w <= 0.0)
+    {
+        return 1.0;
+    }
+
+    let ndc = clip.xyz / clip.w;
+
+    // shadow map uv (y flipped: texture origin is top-left)
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 1.0 - (ndc.y * 0.5 + 0.5));
+
+    // outside of the shadow map -> not shadowed
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0)
+    {
+        return 1.0;
+    }
+
+    let depth_ref = ndc.z - bias;
+
+    let texel = 1.0 / f32(textureDimensions(t_shadow).x);
+    let spread = max(material.shadow_softness, 0.5) * texel;
+
+    var shadow = 0.0;
+    for (var y = -1; y <= 1; y = y + 1)
+    {
+        for (var x = -1; x <= 1; x = x + 1)
+        {
+            let offset = vec2<f32>(f32(x), f32(y)) * spread;
+            shadow += textureSampleCompareLevel(t_shadow, s_shadow, uv + offset, view_index, depth_ref);
+        }
+    }
+
+    return shadow / 9.0;
+}
+
+// 1.0 = fully lit, 0.0 = fully shadowed
+fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
+{
+    let shadow_index = lights[light_index].shadow_index;
+    if (shadow_index < 0)
+    {
+        return 1.0;
+    }
+
+    let first_view = u32(shadow_index);
+    let bias = lights[light_index].shadow_bias;
+
+    switch lights[light_index].light_type
+    {
+        case 1u //LIGHT_TYPE_DIRECTIONAL -> cascaded shadow maps
+        {
+            // fade the shadow out over the last 15% of the shadow distance (instead of a hard cutoff)
+            var fade = 0.0;
+            if (scene.shadow_max_distance > 0.0)
+            {
+                let fade_start = scene.shadow_max_distance * 0.85;
+                let view_distance = length(camera.view_pos.xyz - world_pos);
+                fade = clamp((view_distance - fade_start) / max(scene.shadow_max_distance - fade_start, 0.0001), 0.0, 1.0);
+            }
+
+            if (fade >= 1.0)
+            {
+                return 1.0;
+            }
+
+            // use the first (smallest) cascade that contains the position
+            for (var cascade = 0u; cascade < lights[light_index].shadow_views; cascade = cascade + 1u)
+            {
+                let clip = shadow_views[first_view + cascade].view_proj * vec4<f32>(world_pos, 1.0);
+                if (clip.w <= 0.0)
+                {
+                    continue;
+                }
+
+                let ndc = clip.xyz / clip.w;
+                if (abs(ndc.x) < 0.99 && abs(ndc.y) < 0.99 && ndc.z > 0.0 && ndc.z < 1.0)
+                {
+                    return mix(shadow_sample_view(first_view + cascade, world_pos, bias), 1.0, fade);
+                }
+            }
+
+            return 1.0;
+        }
+        case 2u //LIGHT_TYPE_POINT -> pick the cube face by the major axis
+        {
+            let to_frag = world_pos - lights[light_index].position.xyz;
+            let abs_dir = abs(to_frag);
+
+            var face = 0u;
+            if (abs_dir.x >= abs_dir.y && abs_dir.x >= abs_dir.z)
+            {
+                face = select(1u, 0u, to_frag.x > 0.0);
+            }
+            else if (abs_dir.y >= abs_dir.z)
+            {
+                face = select(3u, 2u, to_frag.y > 0.0);
+            }
+            else
+            {
+                face = select(5u, 4u, to_frag.z > 0.0);
+            }
+
+            return shadow_sample_view(first_view + face, world_pos, bias);
+        }
+        case 3u //LIGHT_TYPE_SPOT
+        {
+            return shadow_sample_view(first_view, world_pos, bias);
+        }
+        default
+        {
+            return 1.0;
+        }
+    }
+}
+
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
@@ -1077,7 +1219,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
                 let specular_color = (lights[i].color * specular * specular_strength).rgb;
 
-                color += (diffuse_color + specular_color) * intensity;
+                // shadow mapping (skip surfaces facing away from the light - they are dark anyway)
+                var shadow = 1.0;
+                if (material.receive_shadow != 0u && lights[i].shadow_index >= 0 && diffuse_strength > 0.0)
+                {
+                    shadow = shadow_factor(i, in.position);
+                }
+
+                color += (diffuse_color + specular_color) * intensity * shadow;
             }
         }
 

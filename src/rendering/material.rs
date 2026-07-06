@@ -115,7 +115,9 @@ pub struct MaterialUniform
     pub mapping_scale: f32,
     pub mapping_sharpness: f32,
 
-    pub _padding: [u32; 2],
+    pub shadow_softness: f32,
+
+    pub _padding: [u32; 1],
 }
 
 impl MaterialUniform
@@ -215,7 +217,9 @@ impl MaterialUniform
             mapping_scale: material_data.mapping_scale,
             mapping_sharpness: material_data.mapping_sharpness,
 
-            _padding: [0, 0],
+            shadow_softness: material_data.shadow_softness,
+
+            _padding: [0],
         }
     }
 }
