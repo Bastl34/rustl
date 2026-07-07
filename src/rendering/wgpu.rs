@@ -87,13 +87,14 @@ impl WGpu
         let adapter_features = adapter.features();
         let polygon_mode_features = wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::POLYGON_MODE_POINT;
         let supported_polygon_mode_features = adapter_features & polygon_mode_features;
+        let timestamp_query_features = adapter_features & wgpu::Features::TIMESTAMP_QUERY;
 
         let device_result = adapter.request_device
         (
             &wgpu::DeviceDescriptor
             {
                 label: None,
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | supported_polygon_mode_features, // for multisampling + wireframe (if supported)
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | supported_polygon_mode_features | timestamp_query_features, // for multisampling + wireframe + gpu timing (if supported)
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
                 required_limits: if cfg!(target_arch = "wasm32")
                 {

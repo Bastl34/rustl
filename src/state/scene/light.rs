@@ -198,7 +198,8 @@ impl Light
     // deep orange/red at the horizon ("Abendrot"), warm white at noon
     pub fn sun_color(&self) -> Vector3<f32>
     {
-        let elevation = (-self.dir_normalized().y).clamp(0.0, 1.0); // sine of the angle above the horizon
+        // sine of the angle above the horizon
+        let elevation = (-self.dir_normalized().y).clamp(0.0, 1.0);
 
         if elevation < 0.15
         {

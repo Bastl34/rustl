@@ -485,6 +485,14 @@ impl MainInterface
                     let engine_render_time = Instant::now();
 
                     state.stats.draw_calls = 0;
+                    state.stats.shadow_views = 0;
+                    state.stats.shadow_draw_calls = 0;
+
+                    state.stats.gpu_shadow_time = None;
+                    state.stats.gpu_depth_time = None;
+                    state.stats.gpu_color_time = None;
+                    state.stats.gpu_hzb_time = None;
+                    state.stats.gpu_egui_time = None;
 
                     for scene in &mut state.scenes
                     {
@@ -521,8 +529,21 @@ impl MainInterface
                             enabled_index += 1;
                         }
 
-                        // all draw calls
-                        state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>();
+                        // all draw calls (camera passes + shadow passes)
+                        state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>() + render_scene.shadow_draw_calls;
+
+                        // shadow stats
+                        state.stats.shadow_views += render_scene.shadow_views;
+                        state.stats.shadow_draw_calls += render_scene.shadow_draw_calls;
+
+                        // gpu pass timings (read back from the previous frame)
+                        if let Some(gpu_times) = render_scene.gpu_pass_times()
+                        {
+                            if let Some(time) = gpu_times.shadow { state.stats.gpu_shadow_time = Some(state.stats.gpu_shadow_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.depth { state.stats.gpu_depth_time = Some(state.stats.gpu_depth_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.color { state.stats.gpu_color_time = Some(state.stats.gpu_color_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.hzb { state.stats.gpu_hzb_time = Some(state.stats.gpu_hzb_time.unwrap_or(0.0) + time); }
+                        }
 
                         // debug highlight visible occlusions
                         if state.debug.highlight_visible_occlusions
@@ -546,6 +567,9 @@ impl MainInterface
                     if editor_gui.editor_state.visible
                     {
                         self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
+
+                        // gpu time of the egui pass (read back from the previous frame)
+                        state.stats.gpu_egui_time = self.context.egui.gpu_render_time();
                     }
                     state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
                 }

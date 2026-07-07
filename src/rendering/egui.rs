@@ -7,7 +7,7 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::winit;
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::rendering::wgpu::WGpu;
+use crate::rendering::{gpu_timer::{GpuTimer, GpuTimerPass}, wgpu::WGpu};
 
 pub struct EGui
 {
@@ -18,6 +18,9 @@ pub struct EGui
 
     pub output: Option<FullOutput>,
     pub pending_textures_delta: egui::TexturesDelta,
+
+    // gpu time of the egui render pass (None if the adapter does not support timestamp queries)
+    gpu_timer: Option<GpuTimer>,
 }
 
 impl EGui
@@ -51,6 +54,8 @@ impl EGui
             },
             output: None,
             pending_textures_delta: egui::TexturesDelta::default(),
+
+            gpu_timer: GpuTimer::new(device),
         }
     }
 
@@ -108,9 +113,17 @@ impl EGui
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
+        // read back the gpu timing of the previous egui pass
+        if let Some(gpu_timer) = self.gpu_timer.as_mut()
+        {
+            gpu_timer.read_back_results(wgpu);
+        }
+
         let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
 
         {
+            let timer_segment = self.gpu_timer.as_mut().and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Egui));
+
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: None,
@@ -129,7 +142,7 @@ impl EGui
                     })
                 ],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: timer_segment.map(|timer_segment| timer_segment.full_render_writes()),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -138,5 +151,17 @@ impl EGui
             // https://github.com/emilk/egui/pull/5149
             self.renderer.render(&mut pass.forget_lifetime(), &primitives, &self.screen_descriptor);
         }
+
+        // resolve the gpu timestamps into the readback buffer (read back in the next frame)
+        if let Some(gpu_timer) = self.gpu_timer.as_mut()
+        {
+            gpu_timer.resolve(encoder);
+        }
+    }
+
+    // averaged gpu time of the egui render pass in ms
+    pub fn gpu_render_time(&self) -> Option<f32>
+    {
+        self.gpu_timer.as_ref().and_then(|gpu_timer| gpu_timer.pass_times().egui)
     }
 }

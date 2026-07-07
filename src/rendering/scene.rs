@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, hzb_cull_buffer::HZBCullBuffer, visibility::{Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::{Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -171,6 +171,10 @@ pub struct Scene
     pub shadow: ShadowBuffer,
     pub shadow_max_distance: f32,
 
+    // shadow stats of the last rendered frame
+    pub shadow_views: u32,
+    pub shadow_draw_calls: u32,
+
     depth_export_bind_group: DepthExportBindGroup,
     // hzb_downsample_bind_group: HZBDownsampleBindGroup,
 
@@ -178,6 +182,9 @@ pub struct Scene
     // occlusion_bind_group: OcclusionBindGroup,
 
     hzb_cull_buffer: HZBCullBuffer,
+
+    // gpu pass timings via timestamp queries (None if the adapter does not support them)
+    gpu_timer: Option<GpuTimer>,
 
     empty_skeleton: SkeletonBuffer,
     empty_morph_target: MorphTarget,
@@ -280,12 +287,17 @@ impl Scene
             shadow: ShadowBuffer::new(wgpu, *state.rendering.shadow_map_resolution.get_ref()),
             shadow_max_distance: state.rendering.shadow_max_distance,
 
+            shadow_views: 0,
+            shadow_draw_calls: 0,
+
             depth_export_bind_group,
             // hzb_downsample_bind_group,
 
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
 
             hzb_cull_buffer: HZBCullBuffer::new(wgpu),
+
+            gpu_timer: GpuTimer::new(wgpu.device()),
 
             empty_skeleton,
             empty_morph_target,
@@ -1426,13 +1438,21 @@ impl Scene
             self.read_back_visibility_results(wgpu, &scene.cameras, &mut render_results);
         }
 
+        // read back gpu pass timings from the previous frame
+        if let Some(gpu_timer) = self.gpu_timer.as_mut()
+        {
+            gpu_timer.read_back_results(wgpu);
+        }
+
+        // take out the gpu timer to keep self borrowable for the render functions
+        let mut gpu_timer = self.gpu_timer.take();
+
         // ********** shadow maps **********
         // render all shadow views (directional cascades, spot, point faces) into the shadow atlas
-        let shadow_draw_calls = self.render_shadows(wgpu, encoder, scene, &render_groups);
-        if let Some(render_result) = render_results.first_mut()
-        {
-            render_result.draw_calls += shadow_draw_calls;
-        }
+        let (shadow_views, shadow_draw_calls) = self.render_shadows(wgpu, encoder, scene, &render_groups, gpu_timer.as_mut());
+
+        self.shadow_views = shadow_views;
+        self.shadow_draw_calls = shadow_draw_calls;
 
         // render for each camera
         let mut i = 0;
@@ -1563,7 +1583,7 @@ impl Scene
                 render_data_before_occlusion.extend(solid_objects.iter().cloned());
                 render_data_before_occlusion.extend(transparent_objects.iter().cloned());
             }
-            render_result.draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear);
+            render_result.draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
 
 
             // SUBMIT depth pre-pass so it's executed before occlusion queries
@@ -1596,24 +1616,32 @@ impl Scene
                 render_data.extend(solid_objects.iter().cloned());
                 render_data.extend(transparent_objects.iter().cloned());
             }
-            render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear);
+            render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
 
             if self.occlusion_culling
             {
+                // the hzb block spans multiple passes: the depth export pass writes the begin
+                // timestamp and the occlusion check pass writes the end timestamp
+                let hzb_timer_segment = gpu_timer.as_mut().and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Hzb));
+
                 // ********** hzb **********
-                render_result.draw_calls += self.create_hzb(wgpu, encoder, cam);
+                render_result.draw_calls += self.create_hzb(wgpu, encoder, cam, hzb_timer_segment);
 
                 // ********** hzb occlusion culling **********
-                self.hzb_occlusion_culling(wgpu, encoder, cam);
+                self.hzb_occlusion_culling(wgpu, encoder, cam, hzb_timer_segment);
             }
 
             i += 1;
         }
 
+        // resolve the gpu timestamps into the readback buffer (read back in the next frame)
+        if let Some(gpu_timer) = gpu_timer.as_mut() { gpu_timer.resolve(encoder); }
+        self.gpu_timer = gpu_timer;
+
         render_results
     }
 
-    pub fn create_hzb(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera) -> u32
+    pub fn create_hzb(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera, timer_segment: Option<GpuTimerSegment>) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -1646,7 +1674,7 @@ impl Scene
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
-                timestamp_writes: None,
+                timestamp_writes: timer_segment.map(|timer_segment| timer_segment.begin_render_writes()),
                 multiview_mask: None,
             });
 
@@ -1690,13 +1718,13 @@ impl Scene
         draw_calls
     }
 
-    pub fn hzb_occlusion_culling(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera)
+    pub fn hzb_occlusion_culling(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera, timer_segment: Option<GpuTimerSegment>)
     {
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
             {
                 label: Some("Occlusion Culling Pass"),
-                timestamp_writes: None,
+                timestamp_writes: timer_segment.map(|timer_segment| timer_segment.end_compute_writes()),
             });
 
             let pipeline = self.compute_pipelines[ComputePipelineType::HzbOcclusionCheck as usize].get();
@@ -1775,6 +1803,12 @@ impl Scene
                 readback_buffer.unmap();
             }
         }
+    }
+
+    // averaged gpu time per pass block (None if the adapter does not support timestamp queries)
+    pub fn gpu_pass_times(&self) -> Option<GpuPassTimes>
+    {
+        self.gpu_timer.as_ref().map(|gpu_timer| gpu_timer.pass_times())
     }
 
     /*
@@ -1908,7 +1942,8 @@ impl Scene
     }
     */
 
-    pub fn render_shadows(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>, render_groups: &Vec<(Vec<RenderData>, Vec<RenderData>)>) -> u32
+    // returns the number of rendered shadow views and the number of shadow draw calls
+    pub fn render_shadows(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>, render_groups: &Vec<(Vec<RenderData>, Vec<RenderData>)>, gpu_timer: Option<&mut GpuTimer>) -> (u32, u32)
     {
         let max_lights = scene.get_data().max_lights as usize;
         let lights = scene.lights.get_ref();
@@ -1920,19 +1955,22 @@ impl Scene
 
         if shadow_views.is_empty()
         {
-            return 0;
+            return (0, 0);
         }
 
         self.shadow.write_views(wgpu, &shadow_views);
 
+        // only views which fit into the shadow atlas are rendered
+        let views_to_render: Vec<_> = shadow_views.iter().filter(|shadow_view| shadow_view.layer < self.shadow.layers()).collect();
+
+        // the begin timestamp is written by the first shadow pass and the end timestamp by the last one
+        let timer_segment = if views_to_render.is_empty() { None } else { gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Shadow)) };
+
         let mut draw_calls: u32 = 0;
 
-        for shadow_view in &shadow_views
+        for (i, shadow_view) in views_to_render.iter().copied().enumerate()
         {
-            if shadow_view.layer >= self.shadow.layers()
-            {
-                continue;
-            }
+            let timestamp_writes = timer_segment.and_then(|timer_segment| timer_segment.render_writes_for_pass(i, views_to_render.len()));
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
@@ -1948,7 +1986,7 @@ impl Scene
                     }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
+                timestamp_writes: timestamp_writes,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -1960,11 +1998,13 @@ impl Scene
             }
         }
 
-        draw_calls
+        (views_to_render.len() as u32, draw_calls)
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
     {
+        let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Depth));
+
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
         let mut clear_depth = wgpu::LoadOp::Clear(1.0);
 
@@ -2014,7 +2054,7 @@ impl Scene
                 }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
+            timestamp_writes: timer_segment.map(|timer_segment| timer_segment.full_render_writes()),
             occlusion_query_set: None,
             multiview_mask: None,
         });
@@ -2033,8 +2073,10 @@ impl Scene
         self.draw_phase(&mut render_pass, &DrawPhase::Depth { light_cam_bind_group }, nodes)
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool) -> u32
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
     {
+        let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Color));
+
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
         if msaa_view.is_some()
@@ -2079,7 +2121,7 @@ impl Scene
                 }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
+            timestamp_writes: timer_segment.map(|timer_segment| timer_segment.full_render_writes()),
             occlusion_query_set: None,
             multiview_mask: None,
         });
@@ -2154,7 +2196,7 @@ impl Scene
                 }
 
                 //if let Some(render_item) = mesh.get_base().render_item.as_ref()
-                // existance of mesh_resource is guaranteed
+                // existence of mesh_resource is guaranteed
                 if let Some(render_item) = mesh.mesh_resource.as_ref().unwrap().read().unwrap().render_item.as_ref()
                 {
                     let vertex_buffer = get_render_item::<VertexBuffer>(&render_item);

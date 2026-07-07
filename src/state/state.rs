@@ -134,6 +134,15 @@ pub struct Statistics
     pub egui_update_time: f32,
     pub egui_render_time: f32,
 
+    pub shadow_views: u32,
+    pub shadow_draw_calls: u32,
+
+    pub gpu_shadow_time: Option<f32>,
+    pub gpu_depth_time: Option<f32>,
+    pub gpu_color_time: Option<f32>,
+    pub gpu_hzb_time: Option<f32>,
+    pub gpu_egui_time: Option<f32>,
+
     pub frame: u64,
 }
 
@@ -426,6 +435,15 @@ impl State
 
                 egui_update_time: 0.0,
                 egui_render_time: 0.0,
+
+                shadow_views: 0,
+                shadow_draw_calls: 0,
+
+                gpu_shadow_time: None,
+                gpu_depth_time: None,
+                gpu_color_time: None,
+                gpu_hzb_time: None,
+                gpu_egui_time: None,
 
                 frame: 0,
             },

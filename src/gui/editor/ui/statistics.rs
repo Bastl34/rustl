@@ -1,7 +1,7 @@
 use egui::{Ui, Color32, RichText, Stroke, Frame, Margin, CornerRadius};
 use egui_plot::{Plot, Line, PlotPoints, Points, MarkerShape};
 
-use crate::state::state::State;
+use crate::{console_debug, state::state::State};
 use super::super::editor_state::EditorState;
 
 const CHART_PADDING_FACTOR: f32 = 1.12;
@@ -320,25 +320,75 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
         materials += scene.materials.len();
     }
 
-    ui.label(RichText::new("ℹ Info").strong());
-    ui.label(format!(" ⚫ fps: {}", state.stats.last_fps));
-    ui.label(format!(" ⚫ fps 1% low: {}", state.stats.last_fps_1_percent_low));
-    ui.label(format!(" ⚫ absolute cpu fps: {}", state.stats.fps_cpu_absolute));
-    ui.label(format!(" ⚫ frame time: {:.3} ms", state.stats.frame_time));
+    let mut stats: Vec<(String, String, Vec<String>)> = vec![];
 
-    ui.label(RichText::new("⚙ Engine").strong());
-    ui.label(format!(" ⚫ update time: {:.3} ms", state.stats.engine_update_time));
-    ui.label(format!(" ⚫ render time: {:.3} ms", state.stats.engine_render_time));
-    ui.label(format!(" ⚫ draw calls: {}", state.stats.draw_calls));
-    ui.label(format!(" ⚫ textures: {}", state.resources.textures.len()));
-    ui.label(format!(" ⚫ sounds: {}", state.resources.sound_sources.len()));
-    ui.label(format!(" ⚫ materials: {}", materials));
-    ui.label(format!(" ⚫ meshes: {}", state.resources.mesh_resources.len()));
+    // info
+    let mut info = vec![];
+    info.push(format!("fps: {}", state.stats.last_fps));
+    info.push(format!("fps 1% low: {}", state.stats.last_fps_1_percent_low));
+    info.push(format!("absolute cpu fps: {}", state.stats.fps_cpu_absolute));
+    info.push(format!("frame time: {:.3} ms", state.stats.frame_time));
+    stats.push(("Info".to_string(), "ℹ".to_string(), info));
 
-    ui.label(RichText::new("✏ Editor").strong());
-    ui.label(format!(" ⚫ update time: {:.3} ms", state.stats.egui_update_time));
-    ui.label(format!(" ⚫ render time: {:.3} ms", state.stats.egui_render_time));
+    // engine
+    let mut engine: Vec<_> = vec![];
+    engine.push(format!("update time: {:.3} ms", state.stats.engine_update_time));
+    engine.push(format!("render time: {:.3} ms", state.stats.engine_render_time));
+    engine.push(format!("draw calls: {}", state.stats.draw_calls));
+    engine.push(format!("shadow views: {}", state.stats.shadow_views));
+    engine.push(format!("shadow draw calls: {}", state.stats.shadow_draw_calls));
+    engine.push(format!("textures: {}", state.resources.textures.len()));
+    engine.push(format!("sounds: {}", state.resources.sound_sources.len()));
+    engine.push(format!("materials: {}", materials));
+    engine.push(format!("meshes: {}", state.resources.mesh_resources.len()));
+    stats.push(("Engine".to_string(), "⚙".to_string(), engine));
 
-    ui.label(RichText::new("🗖 App").strong());
-    ui.label(format!(" ⚫ update time: {:.3} ms", state.stats.app_update_time));
+    // gpu timings
+    let mut timings: Vec<_> = vec![];
+    if let Some(time) = state.stats.gpu_shadow_time { timings.push(format!("shadow pass: {:.3} ms", time)); }
+    if let Some(time) = state.stats.gpu_depth_time { timings.push(format!("depth pass: {:.3} ms", time)); }
+    if let Some(time) = state.stats.gpu_color_time { timings.push(format!("color pass: {:.3} ms", time)); }
+    if let Some(time) = state.stats.gpu_hzb_time { timings.push(format!("hzb culling: {:.3} ms", time)); }
+    if let Some(time) = state.stats.gpu_egui_time { timings.push(format!("egui pass: {:.3} ms", time)); }
+    stats.push(("GPU".to_string(), "💻".to_string(), timings));
+
+    // editor
+    let mut editor: Vec<_> = vec![];
+    editor.push(format!("update time: {:.3} ms", state.stats.egui_update_time));
+    editor.push(format!("render time: {:.3} ms", state.stats.egui_render_time));
+    stats.push(("Editor".to_string(), "✏".to_string(), editor));
+
+    // app
+    let mut app: Vec<_> = vec![];
+    app.push(format!(" update time: {:.3} ms", state.stats.app_update_time));
+    stats.push(("Editor".to_string(), "✏".to_string(), app));
+
+    for (stat_category, stat_icon, stat_items) in &stats
+    {
+        ui.label(RichText::new(format!("{} {}", stat_icon, stat_category)).strong());
+
+        for stat_item in stat_items
+        {
+            ui.label(format!(" ⚫ {}", stat_item));
+        }
+    }
+
+    // debug print
+    ui.separator();
+    ui.horizontal(|ui|
+    {
+        if ui.button("🐛 Output Stats").clicked()
+        {
+            console_debug!("Output Stats");
+            for (stat_category, _, stat_items) in stats
+            {
+                console_debug!(format!("{}: ",stat_category));
+
+                for stat_item in stat_items
+                {
+                    console_debug!(format!(" - {}", stat_item));
+                }
+            }
+        }
+    });
 }
