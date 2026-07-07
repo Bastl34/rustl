@@ -113,7 +113,7 @@ impl RenderItem for LightBuffer
 
 impl LightBuffer
 {
-    pub fn new(wgpu: &mut WGpu, name: String, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: u32) -> LightBuffer
+    pub fn new(wgpu: &mut WGpu, name: String, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: u32, shadows_enabled: bool) -> LightBuffer
     {
         let mut buffer = LightBuffer
         {
@@ -125,7 +125,7 @@ impl LightBuffer
 
 
         buffer.create_buffer(wgpu);
-        buffer.to_buffer(wgpu, lights);
+        buffer.to_buffer(wgpu, lights, shadows_enabled);
 
         buffer
     }
@@ -154,7 +154,7 @@ impl LightBuffer
         });
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, shadows_enabled: bool)
     {
         let amount = lights.len().min(self.max_lights) as u32;
 
@@ -166,7 +166,15 @@ impl LightBuffer
         );
 
         // shadow atlas layer assignment (must match rendering::shadow::compute_shadow_views)
-        let shadow_assignments = shadow::assign_shadow_views(lights, self.max_lights);
+        // shadows disabled -> shadow_index = -1 for all lights (shader skips the shadow sampling)
+        let shadow_assignments = if shadows_enabled
+        {
+            shadow::assign_shadow_views(lights, self.max_lights)
+        }
+        else
+        {
+            vec![(-1, 0); lights.len()]
+        };
 
         for (i, light) in lights.iter().enumerate()
         {

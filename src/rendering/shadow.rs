@@ -516,9 +516,10 @@ impl ShadowBuffer
 
     // resizes the atlas to fit all shadow views of the given lights
     // returns true if the atlas was re-created (bind groups referencing it must be re-created)
-    pub fn ensure_for_lights(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: usize, size: u32) -> bool
+    pub fn ensure_for_lights(&mut self, wgpu: &mut WGpu, lights: &Vec<RefCell<ChangeTracker<LightItem>>>, max_lights: usize, size: u32, shadows_enabled: bool) -> bool
     {
-        let needed_layers = total_shadow_views(lights, max_lights);
+        // shadows disabled -> shrink the atlas to a single (unused) layer
+        let needed_layers = if shadows_enabled { total_shadow_views(lights, max_lights) } else { 0 };
         self.ensure(wgpu, needed_layers, size)
     }
 

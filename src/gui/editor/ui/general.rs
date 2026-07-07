@@ -316,6 +316,16 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            let mut shadow_enabled = *state.rendering.shadow.get_ref();
+            if ui.checkbox(&mut shadow_enabled, "Shadows").changed()
+            {
+                *state.rendering.shadow.get_mut() = shadow_enabled;
+            }
+            ui.end_row();
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("Shadow Map Res:");
 
             let max = state.rendering_adapter.max_texture_resolution;

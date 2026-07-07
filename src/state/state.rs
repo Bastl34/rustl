@@ -67,9 +67,9 @@ pub struct Rendering
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
-    pub shadow_map_resolution: ChangeTracker<u32>,
 
-    // max distance (from the camera) covered by directional light cascades
+    pub shadow: ChangeTracker<bool>,
+    pub shadow_map_resolution: ChangeTracker<u32>,
     pub shadow_max_distance: f32,
 
     pub distance_sorting: bool,
@@ -342,6 +342,7 @@ impl State
 
                 fullscreen: ChangeTracker::new(false),
                 msaa: ChangeTracker::new(8),
+                shadow: ChangeTracker::new(true),
                 shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
                 shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
 

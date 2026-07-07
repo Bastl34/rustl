@@ -169,6 +169,7 @@ pub struct Scene
     // hzb_texture: Texture,
 
     pub shadow: ShadowBuffer,
+    pub shadow_enabled: bool,
     pub shadow_max_distance: f32,
 
     // shadow stats of the last rendered frame
@@ -285,6 +286,7 @@ impl Scene
             // hzb_texture,
 
             shadow: ShadowBuffer::new(wgpu, *state.rendering.shadow_map_resolution.get_ref()),
+            shadow_enabled: *state.rendering.shadow.get_ref(),
             shadow_max_distance: state.rendering.shadow_max_distance,
 
             shadow_views: 0,
@@ -537,21 +539,21 @@ impl Scene
         }
     }
 
-    pub fn update_light_cameras_shadows(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, shadow_map_size: u32)
+    pub fn update_light_cameras_shadows(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, shadow_map_size: u32, shadow_enabled_changed: bool)
     {
         // ********** lights: all **********
         let max_lights = scene.get_data().max_lights;
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
-        if all_lights_changed || self.update_result.scene_changed
+        if all_lights_changed || self.update_result.scene_changed || shadow_enabled_changed
         {
             if scene.lights_render_item.is_none()
             {
-                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, max_lights);
+                let lights_buffer = LightBuffer::new(wgpu, format!("{} lights buffer", scene.name).to_string(), lights, max_lights, self.shadow_enabled);
                 scene.lights_render_item = Some(Box::new(lights_buffer));
             }
 
             let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-            render_item.to_buffer(wgpu, lights);
+            render_item.to_buffer(wgpu, lights, self.shadow_enabled);
 
             //console_log!(" ============ lights updated");
         }
@@ -575,14 +577,14 @@ impl Scene
             if any_light_changed
             {
                 let render_item = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
-                render_item.to_buffer(wgpu, lights);
+                render_item.to_buffer(wgpu, lights, self.shadow_enabled);
 
                 //console_log!(" ============ lights updated");
             }
         }
 
         // ********** shadow atlas **********
-        let shadow_atlas_recreated = self.shadow.ensure_for_lights(wgpu, lights, max_lights as usize, shadow_map_size);
+        let shadow_atlas_recreated = self.shadow.ensure_for_lights(wgpu, lights, max_lights as usize, shadow_map_size, self.shadow_enabled);
 
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
@@ -1134,7 +1136,12 @@ impl Scene
             self.update_buffer(wgpu, scene);
         }
 
-        self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref());
+        // toggling shadows changes the atlas layer assignment of all lights -> lights buffer must be re-written
+        let shadow_enabled = *state.rendering.shadow.get_ref();
+        let shadow_enabled_changed = shadow_enabled != self.shadow_enabled;
+        self.shadow_enabled = shadow_enabled;
+
+        self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref(), shadow_enabled_changed);
 
         // ********** save image stuff **********
         if state.debug.save_image
@@ -1945,6 +1952,11 @@ impl Scene
     // returns the number of rendered shadow views and the number of shadow draw calls
     pub fn render_shadows(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>, render_groups: &Vec<(Vec<RenderData>, Vec<RenderData>)>, gpu_timer: Option<&mut GpuTimer>) -> (u32, u32)
     {
+        if !self.shadow_enabled
+        {
+            return (0, 0);
+        }
+
         let max_lights = scene.get_data().max_lights as usize;
         let lights = scene.lights.get_ref();
 
