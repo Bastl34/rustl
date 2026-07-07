@@ -328,6 +328,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     info.push(format!("fps: {}", state.stats.last_fps));
     info.push(format!("fps 1% low: {}", state.stats.last_fps_1_percent_low));
     info.push(format!("absolute cpu fps: {}", state.stats.fps_cpu_absolute));
+    if let Some(fps) = state.stats.fps_gpu_absolute { info.push(format!("absolute gpu fps: {}", fps)); }
     info.push(format!("frame time: {:.3} ms", state.stats.frame_time));
     stats.push(("Info".to_string(), "ℹ".to_string(), info, false));
 

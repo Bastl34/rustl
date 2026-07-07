@@ -118,6 +118,7 @@ pub struct Statistics
     pub last_fps: u32,
     pub last_fps_1_percent_low: u32, //1% low
     pub fps_cpu_absolute: u32,
+    pub fps_gpu_absolute: Option<u32>, // None if the adapter does not support timestamp queries
     pub fps_average_chart: VecDeque<u32>,
     pub fps_1_percent_low_chart: VecDeque<u32>,
 
@@ -424,6 +425,7 @@ impl State
                 last_fps: 0,
                 last_fps_1_percent_low: 0,
                 fps_cpu_absolute: 0,
+                fps_gpu_absolute: None,
                 fps_average_chart: VecDeque::from(vec![0; 100]),
                 fps_1_percent_low_chart: VecDeque::from(vec![0; 100]),
                 frame_times: VecDeque::from(vec![]),

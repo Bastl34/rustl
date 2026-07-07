@@ -740,6 +740,11 @@ impl MainInterface
             // cpu-only fps estimate without the editor overhead (the editor is not part of a game build)
             state.stats.fps_cpu_absolute = (1000.0 / (state.stats.engine_update_time + state.stats.engine_render_time + state.stats.app_update_time)) as u32;
 
+            // gpu-only fps estimate without the editor overhead (egui pass excluded)
+            // based on the summed pass times of the last read back frame
+            let gpu_total = state.stats.gpu_shadow_time.unwrap_or(0.0) + state.stats.gpu_depth_time.unwrap_or(0.0) + state.stats.gpu_color_time.unwrap_or(0.0) + state.stats.gpu_hzb_time.unwrap_or(0.0);
+            state.stats.fps_gpu_absolute = if gpu_total > 0.0 { Some((1000.0 / gpu_total) as u32) } else { None };
+
             // frame update
             state.stats.frame += 1;
         }
