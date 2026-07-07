@@ -658,7 +658,7 @@ impl Scene
     {
         // lights
         self.add_light_point("Point", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0, 0.0);
-        self.add_light_hemisperical("Hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+        self.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
 
         // cam
         let mut cam = Camera::new("Cam".to_string());
@@ -939,7 +939,7 @@ impl Scene
         self.lights.get_ref().last().unwrap()
     }
 
-    pub fn add_light_hemisperical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    pub fn add_light_hemispherical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
         let light = Light::new_hemi(name.to_string(), dir, color, ground_color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));

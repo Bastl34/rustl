@@ -59,7 +59,7 @@ fn create_preview_scene(state: &mut State)
         key.borrow_mut().get_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
         // soft ambient fill
-        let hemi = scene.add_light_hemisperical("preview ambient", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.2, 0.2, 0.2), 0.6);
+        let hemi = scene.add_light_hemispherical("preview ambient", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.2, 0.2, 0.2), 0.6);
         hemi.borrow_mut().get_mut().tags.insert_with_color_locked(ENGINE_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
         // camera (framing is refined via align_camera_to_scene once the sphere is loaded)

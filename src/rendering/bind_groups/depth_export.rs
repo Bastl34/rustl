@@ -1,18 +1,25 @@
 #![allow(dead_code)]
 
 use wgpu::{BindGroupLayout, BindGroup};
+use wgpu::util::DeviceExt;
 
 use crate::{render_item_impl_default, rendering::{texture::Texture, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 pub struct DepthExportBindGroup
 {
     pub layout: BindGroupLayout,
-    pub bind_group: BindGroup
+    pub bind_group: BindGroup,
+    pub viewport_buffer: wgpu::Buffer,
 }
 
 impl RenderItem for DepthExportBindGroup
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.viewport_buffer.size()
+    }
 }
 
 impl DepthExportBindGroup
@@ -46,11 +53,26 @@ impl DepthExportBindGroup
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
+
+                // Binding 2: viewport remap (uv offset + scale of the camera viewport)
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer
+                    {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
 
-    pub fn new(wgpu: &mut WGpu, name: &str, depth_texture: &Texture) -> DepthExportBindGroup
+    // viewport_offset_scale: xy = uv offset of the camera viewport inside the depth texture, zw = uv scale
+    pub fn new(wgpu: &mut WGpu, name: &str, depth_texture: &Texture, viewport_offset_scale: [f32; 4]) -> DepthExportBindGroup
     {
         let bind_group_layout = Self::bind_layout(wgpu);
 
@@ -71,6 +93,13 @@ impl DepthExportBindGroup
             ..Default::default()
         });
 
+        let viewport_buffer = wgpu.device().create_buffer_init(&wgpu::util::BufferInitDescriptor
+        {
+            label: Some("depth_export_viewport_buffer"),
+            contents: bytemuck::cast_slice(&viewport_offset_scale),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         let bind_group_name = format!("{} depth_texture_export_bind_group", name);
         let bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
         {
@@ -87,6 +116,11 @@ impl DepthExportBindGroup
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry
+                {
+                    binding: 2,
+                    resource: viewport_buffer.as_entire_binding(),
+                },
             ],
             label: Some(bind_group_name.as_str()),
         });
@@ -94,7 +128,13 @@ impl DepthExportBindGroup
         DepthExportBindGroup
         {
             layout: bind_group_layout,
-            bind_group
+            bind_group,
+            viewport_buffer,
         }
+    }
+
+    pub fn update_viewport(&self, wgpu: &mut WGpu, viewport_offset_scale: [f32; 4])
+    {
+        wgpu.queue_mut().write_buffer(&self.viewport_buffer, 0, bytemuck::cast_slice(&viewport_offset_scale));
     }
 }

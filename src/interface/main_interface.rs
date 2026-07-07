@@ -485,6 +485,8 @@ impl MainInterface
                     let engine_render_time = Instant::now();
 
                     state.stats.draw_calls = 0;
+                    state.stats.occlusion_culled_objects = 0;
+                    state.stats.frustum_culled_objects = 0;
                     state.stats.shadow_views = 0;
                     state.stats.shadow_draw_calls = 0;
 
@@ -531,6 +533,12 @@ impl MainInterface
 
                         // all draw calls (camera passes + shadow passes)
                         state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>() + render_scene.shadow_draw_calls;
+
+                        // objects culled by the gpu occlusion check (async readback - a few frames behind)
+                        state.stats.occlusion_culled_objects += render_results.iter().map(|r| r.objects_invisible.len() as u32).sum::<u32>();
+
+                        // objects dropped by the cpu frustum culling
+                        state.stats.frustum_culled_objects += render_results.iter().map(|r| r.objects_frustum_culled).sum::<u32>();
 
                         // shadow stats
                         state.stats.shadow_views += render_scene.shadow_views;

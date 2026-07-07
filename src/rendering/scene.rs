@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::{Visibility, VisibilityBuffer}}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -30,6 +30,8 @@ pub struct UpdateResult
     pub scene_changed: bool,
     pub nodes_amount: usize,
     pub bounding_boxes_buffer_recreated: bool,
+    pub slots_rebuilt: bool,
+    pub slot_buffer_recreated: bool,
     pub instances_updated: bool,
 }
 
@@ -42,6 +44,8 @@ impl UpdateResult
             scene_changed: false,
             nodes_amount: 0,
             bounding_boxes_buffer_recreated: false,
+            slots_rebuilt: false,
+            slot_buffer_recreated: false,
             instances_updated: false,
         }
     }
@@ -53,6 +57,7 @@ pub struct RenderResultForCamera
     pub camera_id: u32,
     pub objects_visible: Vec<u32>,
     pub objects_invisible: Vec<u32>,
+    pub objects_frustum_culled: u32,
     pub draw_calls: u32,
 }
 
@@ -65,6 +70,7 @@ impl RenderResultForCamera
             camera_id: 0,
             objects_visible: Vec::new(),
             objects_invisible: Vec::new(),
+            objects_frustum_culled: 0,
             draw_calls: 0,
         }
     }
@@ -116,8 +122,6 @@ pub enum RenderPipelineType
     DepthExport,
 
     Shadow,
-
-    //OcclusionCulling,
 }
 
 #[derive(EnumCount)]
@@ -142,7 +146,6 @@ pub struct Scene
     depth_shader: String,
     shadow_shader: String,
 
-    // occlusion_culling_shader: String,
     depth_export_shader: String,
     hzb_downsample_shader: String,
     hzb_occlusion_check_shader: String,
@@ -155,18 +158,23 @@ pub struct Scene
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
 
+    // occlusion culling needs compute shaders + indirect draws (not available on WebGL)
+    occlusion_supported: bool,
+    occlusion_was_active: bool,
+
     update_result: UpdateResult,
 
     render_pipelines: Vec<Pipeline>,
     compute_pipelines: Vec<ComputePipeline>,
 
     buffer: wgpu::Buffer,
-    // occlusion_query_buffer: wgpu::Buffer,
-    // occlusion_query_buffer_staging: wgpu::Buffer,
 
     pub depth_pass_buffer_texture: Texture,
     pub depth_buffer_texture: Texture,
-    // hzb_texture: Texture,
+
+    // the per camera depth export bind groups sample the depth pass texture
+    // -> they have to be recreated when the texture is recreated (resize)
+    depth_pass_texture_changed: bool,
 
     pub shadow: ShadowBuffer,
     pub shadow_enabled: bool,
@@ -176,11 +184,15 @@ pub struct Scene
     pub shadow_views: u32,
     pub shadow_draw_calls: u32,
 
-    depth_export_bind_group: DepthExportBindGroup,
-    // hzb_downsample_bind_group: HZBDownsampleBindGroup,
-
     bounding_boxes_buffer: BoundingBoxesBuffer,
-    // occlusion_bind_group: OcclusionBindGroup,
+
+    // one slot per (node, mesh) draw - the slot index is the fixed offset into the indirect
+    // args buffers and connects the cpu-recorded draws with the gpu culling results
+    draw_slots: DrawSlotsBuffer,
+
+    // hash over the culling-relevant node state without own change tracking
+    // (settings, mesh counts, instance counts) - triggers the culling buffer rebuild
+    culling_state_hash: u64,
 
     hzb_cull_buffer: HZBCullBuffer,
 
@@ -200,6 +212,7 @@ impl RenderItem for Scene
     {
         self.buffer.size()
         + self.bounding_boxes_buffer.gpu_usage()
+        + self.draw_slots.gpu_usage()
         + self.hzb_cull_buffer.gpu_usage()
         + self.shadow.gpu_usage()
         + self.empty_skeleton.gpu_usage()
@@ -215,7 +228,6 @@ impl Scene
         let color_shader = resources::load_string("shader/base.wgsl").unwrap();
         let depth_shader = resources::load_string("shader/depth.wgsl").unwrap();
         let shadow_shader = resources::load_string("shader/shadow.wgsl").unwrap();
-        //let occlusion_culling_shader = resources::load_string("shader/occlusion_culling.wgsl").unwrap();
         let depth_export_shader = resources::load_string("shader/depth_export.wgsl").unwrap();
         let hzb_downsample_shader = resources::load_string("shader/compute/hzb_downsample.wgsl").unwrap();
         let hzb_occlusion_check_shader = resources::load_string("shader/compute/occlusion_hzb_check.wgsl").unwrap();
@@ -225,32 +237,9 @@ impl Scene
 
         let empty_skeleton_morph_group = SkeletonMorphTargetBindGroup::new(wgpu, "empty", &empty_skeleton, &empty_morph_target);
 
-        /*
-        let num_queries = wgpu::QUERY_SET_MAX_QUERIES as u64;
-        let occlusion_query_result_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
-        {
-            label: Some("occlusion_query_result_buffer"),
-            size: num_queries * std::mem::size_of::<u64>() as u64,
-            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::QUERY_RESOLVE,
-            mapped_at_creation: false,
-        });
-
-        let occlusion_query_result_buffer_staging = wgpu.device().create_buffer(&wgpu::BufferDescriptor
-        {
-            label: Some("occlusion_query_result_buffer_staging_buffer"),
-            size: num_queries * std::mem::size_of::<u64>() as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        */
-
         let (depth_width, depth_height) = { let config = wgpu.surface_config(); (config.width, config.height) };
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples, depth_width, depth_height);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, depth_width, depth_height);
-        // let hzb_texture = Texture::new_hzb_texture(wgpu);
-
-        let depth_export_bind_group = DepthExportBindGroup::new(wgpu, "depth export", &depth_pass_buffer_texture);
-        // let hzb_downsample_bind_group = HZBDownsampleBindGroup::new(wgpu, "hzb downsample", &hzb_texture);
 
         let mut render_scene = Self
         {
@@ -259,7 +248,6 @@ impl Scene
             color_shader,
             depth_shader,
             shadow_shader,
-            // occlusion_culling_shader,
             depth_export_shader,
             hzb_downsample_shader,
             hzb_occlusion_check_shader,
@@ -272,18 +260,20 @@ impl Scene
             frustum_culling: true,
             occlusion_culling: true,
 
+            occlusion_supported: state.rendering_adapter.occlusion_culling_support,
+            occlusion_was_active: false,
+
             update_result: UpdateResult::new(),
 
             render_pipelines: vec![],
             compute_pipelines: vec![],
 
             buffer: create_empty_buffer(wgpu),
-            // occlusion_query_buffer: occlusion_query_result_buffer,
-            // occlusion_query_buffer_staging: occlusion_query_result_buffer_staging,
 
             depth_buffer_texture,
             depth_pass_buffer_texture,
-            // hzb_texture,
+
+            depth_pass_texture_changed: false,
 
             shadow: ShadowBuffer::new(wgpu, *state.rendering.shadow_map_resolution.get_ref()),
             shadow_enabled: *state.rendering.shadow.get_ref(),
@@ -292,10 +282,9 @@ impl Scene
             shadow_views: 0,
             shadow_draw_calls: 0,
 
-            depth_export_bind_group,
-            // hzb_downsample_bind_group,
-
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
+            draw_slots: DrawSlotsBuffer::new(wgpu),
+            culling_state_hash: 0,
 
             hzb_cull_buffer: HZBCullBuffer::new(wgpu),
 
@@ -445,36 +434,40 @@ impl Scene
             self.render_pipelines.get_mut(RenderPipelineType::Shadow as usize).unwrap().re_create_shadow(wgpu, &bind_group_layouts);
         }
 
-        // ********** downsample pass (for occlusion culling - hzb) **********
-
-        let hzb_downsample_bind_layout = HZBDownsampleBindGroup::bind_layout(wgpu);
-
-        let bind_group_layouts = [ &hzb_downsample_bind_layout ];
-
-        if !re_create
+        // compute shaders are not available on all adapters (WebGL) -> the occlusion
+        // culling pipelines must not even be created there
+        if self.occlusion_supported
         {
-            self.compute_pipelines.push(ComputePipeline::new_hzb_downsample_compute(wgpu, "hzb downsample", &self.hzb_downsample_shader, &bind_group_layouts));
+            // ********** downsample pass (for occlusion culling - hzb) **********
+
+            let hzb_downsample_bind_layout = HZBDownsampleBindGroup::bind_layout(wgpu);
+
+            let bind_group_layouts = [ &hzb_downsample_bind_layout ];
+
+            if !re_create
+            {
+                self.compute_pipelines.push(ComputePipeline::new_hzb_downsample_compute(wgpu, "hzb downsample", &self.hzb_downsample_shader, &bind_group_layouts));
+            }
+            else
+            {
+                self.compute_pipelines.get_mut(ComputePipelineType::HzbDownsample as usize).unwrap().re_create_hzb_downsample_compute(wgpu, &bind_group_layouts);
+            }
+
+            // ********** occlusion check pass (for occlusion culling - hzb) **********
+
+            let hzb_occlusion_check_bind_layout = HZBOcclusionCheckBindGroup::bind_layout(wgpu);
+
+            let bind_group_layouts = [ &hzb_occlusion_check_bind_layout ];
+
+            if !re_create
+            {
+                self.compute_pipelines.push(ComputePipeline::new_hzb_occlusion_check_compute(wgpu, "hzb occlusion check", &self.hzb_occlusion_check_shader, &bind_group_layouts));
+            }
+            else
+            {
+                self.compute_pipelines.get_mut(ComputePipelineType::HzbOcclusionCheck as usize).unwrap().re_create_hzb_occlusion_check_compute(wgpu, &bind_group_layouts);
+            }
         }
-        else
-        {
-            self.compute_pipelines.get_mut(ComputePipelineType::HzbDownsample as usize).unwrap().re_create_hzb_downsample_compute(wgpu, &bind_group_layouts);
-        }
-
-        // ********** occlusion check pass (for occlusion culling - hzb) **********
-
-        let hzb_occlusion_check_bind_layout = HZBOcclusionCheckBindGroup::bind_layout(wgpu);
-
-        let bind_group_layouts = [ &hzb_occlusion_check_bind_layout ];
-
-        if !re_create
-        {
-            self.compute_pipelines.push(ComputePipeline::new_hzb_occlusion_check_compute(wgpu, "hzb occlusion check", &self.hzb_occlusion_check_shader, &bind_group_layouts));
-        }
-        else
-        {
-            self.compute_pipelines.get_mut(ComputePipelineType::HzbOcclusionCheck as usize).unwrap().re_create_hzb_occlusion_check_compute(wgpu, &bind_group_layouts);
-        }
-
     }
 
     pub fn update_textures(&mut self, _wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
@@ -617,6 +610,24 @@ impl Scene
                 cam.render_item = render_item;
             }
 
+            // create cam/light/scene bind group
+            if cam.bind_group_render_item.is_none() || all_lights_changed || shadow_atlas_recreated
+            {
+                let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
+                let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+
+                let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
+
+                cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
+            }
+
+            // ********** occlusion culling resources **********
+            // not created at all on adapters without compute/indirect support (WebGL)
+            if !self.occlusion_supported
+            {
+                continue;
+            }
+
             // create/recreate hzb texture
             if cam_buffer_created || cam.hzb_texture_render_item.is_none() || cam.get_viewport_width_in_px() != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).width || cam.get_viewport_height_in_px() != get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap()).height
             {
@@ -651,35 +662,78 @@ impl Scene
                 }
             }
 
-            // create cam/light/scene bind group
-            if cam.bind_group_render_item.is_none() || all_lights_changed || shadow_atlas_recreated
+            // reset the previous visibility when the node order changed (slot/node indices are no longer valid)
+            if self.update_result.slots_rebuilt && !visibility_changed
             {
-                let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
-                let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+                let visibility_buffer = get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
+                visibility_buffer.reset_all_visible(wgpu);
+            }
 
-                let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
+            // create or re-create the per camera indirect args buffers
+            let mut indirect_args_changed = false;
+            if cam.indirect_args_render_item.is_none() || get_render_item::<IndirectArgsBuffers>(cam.indirect_args_render_item.as_ref().unwrap()).buffer_size < self.draw_slots.slots.len()
+            {
+                let indirect_args = IndirectArgsBuffers::new(wgpu, &self.draw_slots.slots);
+                cam.indirect_args_render_item = Some(Box::new(indirect_args));
 
-                cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
+                indirect_args_changed = true;
+            }
+            else if self.update_result.slots_rebuilt
+            {
+                // slots changed -> reset to "everything visible" until the next occlusion check results exist
+                let indirect_args = get_render_item::<IndirectArgsBuffers>(cam.indirect_args_render_item.as_ref().unwrap());
+                indirect_args.reset_full_visible(wgpu, &self.draw_slots.slots);
+            }
+
+            // create or re-create the depth export bind group (depth -> hzb, remapped to the camera viewport)
+            {
+                let viewport = cam.get_data().get_viewport();
+
+                // uv rect of the camera viewport inside the depth texture (v=0 is the top row)
+                let viewport_offset_scale =
+                [
+                    viewport.x,
+                    1.0 - viewport.y - viewport.height,
+                    viewport.width,
+                    viewport.height,
+                ];
+
+                if cam.depth_export_bind_group_render_item.is_none() || cam_buffer_created || self.depth_pass_texture_changed
+                {
+                    let depth_export_bind_group = DepthExportBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, viewport_offset_scale);
+                    cam.depth_export_bind_group_render_item = Some(Box::new(depth_export_bind_group));
+                }
+                else if cam_changed
+                {
+                    // only the viewport rect can change here - update the uniform in place
+                    // instead of recreating buffer/sampler/bind group every frame while the camera moves
+                    let depth_export_bind_group = get_render_item::<DepthExportBindGroup>(cam.depth_export_bind_group_render_item.as_ref().unwrap());
+                    depth_export_bind_group.update_viewport(wgpu, viewport_offset_scale);
+                }
             }
 
             // create or re-create occlusion bind group
-            if cam.hzb_occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_buffer_created || self.update_result.bounding_boxes_buffer_recreated
+            if cam.hzb_occlusion_bind_group_render_item.is_none() || hzb_changed || visibility_changed || cam_buffer_created || indirect_args_changed || self.update_result.bounding_boxes_buffer_recreated || self.update_result.slot_buffer_recreated
             {
                 console_debug!("create/re-create occlusion bind group for cam {}", cam.name);
 
                 let cam_buffer = &get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
                 let visibility_buffer = &get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
                 let hzb_texture = &get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
+                let indirect_args = &get_render_item::<IndirectArgsBuffers>(cam.indirect_args_render_item.as_ref().unwrap());
 
-                let hzb_occlusion_bind_group = HZBOcclusionCheckBindGroup::new(wgpu, "occlusion", cam_buffer, visibility_buffer, &self.bounding_boxes_buffer, &self.hzb_cull_buffer, hzb_texture);
+                let hzb_occlusion_bind_group = HZBOcclusionCheckBindGroup::new(wgpu, "occlusion", cam_buffer, visibility_buffer, &self.bounding_boxes_buffer, &self.hzb_cull_buffer, hzb_texture, &self.draw_slots, indirect_args);
                 cam.hzb_occlusion_bind_group_render_item = Some(Box::new(hzb_occlusion_bind_group));
             }
         }
+
+        self.depth_pass_texture_changed = false;
     }
 
     pub fn update_nodes(&mut self, wgpu: &mut WGpu, nodes: &mut Vec<Arc<RwLock<Box<Node>>>>)
     {
         let mut instance_buffers_updated = false;
+        let mut vertex_buffers_updated = false;
 
         // go in reverse to find parent transformations for child nodes
         for node_id in (0..nodes.len()).rev()
@@ -710,6 +764,7 @@ impl Scene
                             mesh_resource.render_item = Some(Box::new(vertex_buffer));
 
                             mesh_data_changed = true;
+                            vertex_buffers_updated = true; // index counts are baked into the draw slots
                         }
 
                         // morph target
@@ -877,14 +932,6 @@ impl Scene
                     }
                 }
 
-                // check parents for changed transforms
-                /*
-                if !all_instances_changed
-                {
-                    all_instances_changed = Scene::find_changed_parent_data(node_arc.clone());
-                }
-                */
-
                 if all_instances_changed
                 {
                     // console_debug!(" ============ instances updated {}", &node.name);
@@ -982,45 +1029,123 @@ impl Scene
             }
         }
 
-        // ********** bounding box / occlusion culling buffer **********
-        if instance_buffers_updated
+        // ********** bounding box / draw slot buffers (occlusion culling) **********
+        if self.occlusion_supported
         {
-            let mut buffer_data: Vec<BoundingBox> = Vec::with_capacity(nodes.len());
+            // cheap per-frame hash over everything that is baked into the culling buffers but
+            // has no own change tracker: node ids/count, culling-relevant settings, mesh counts
+            // and instance counts. detects mesh component add/remove and programmatic settings
+            // changes (e.g. gizmo code setting depth_test directly)
+            fn fnv(hash: u64, value: u64) -> u64 { (hash ^ value).wrapping_mul(0x100000001b3) }
 
-            for node_id in 0..nodes.len()
+            let mut culling_hash: u64 = 0xcbf29ce484222325;
+            for node in nodes.iter()
             {
-                let node = nodes.get_mut(node_id).unwrap();
                 let node = node.read().unwrap();
+                let settings = &node.settings;
 
-                // TODO: optimize - only update if node or instances changed -> case base on node_id
-                let bbox_for_all_instances =
-                {
-                    node.get_bounding_box_for_all_instances_from_cached_transform()
-                };
+                culling_hash = fnv(culling_hash, node.id as u64);
+                culling_hash = fnv(culling_hash,
+                    ((settings.occlusion_culling as u64) << 3)
+                    | ((settings.depth_test as u64) << 2)
+                    | ((settings.depth_write as u64) << 1)
+                    | (settings.visible as u64));
+                culling_hash = fnv(culling_hash, node.get_meshes_with_mesh_resource().len() as u64);
+                culling_hash = fnv(culling_hash, node.instances.get_ref().len() as u64);
+            }
 
-                if let Some((min, max)) = bbox_for_all_instances
+            let culling_state_changed = culling_hash != self.culling_state_hash;
+            self.culling_state_hash = culling_hash;
+
+            // rebuild when transforms/geometry changed or the culling-relevant state hash moved
+            if instance_buffers_updated || vertex_buffers_updated || culling_state_changed
+            {
+                let mut buffer_data: Vec<BoundingBox> = Vec::with_capacity(nodes.len());
+                let mut slots: Vec<DrawSlot> = vec![];
+                let mut slot_map: HashMap<u32, (u32, u32)> = HashMap::new();
+
+                for node_id in 0..nodes.len()
                 {
-                    let buffer = BoundingBox::new(node.id, &min, &max);
-                    buffer_data.push(buffer);
+                    let node = nodes.get_mut(node_id).unwrap();
+                    let node = node.read().unwrap();
+
+                    // TODO: optimize - only update if node or instances changed -> case base on node_id
+                    let bbox_for_all_instances =
+                    {
+                        node.get_bounding_box_for_all_instances_from_cached_transform()
+                    };
+
+                    // one draw slot per mesh - the slot index is the offset into the indirect args buffers
+                    let node_meshes = node.get_meshes_with_mesh_resource();
+                    let slot_start = slots.len() as u32;
+                    let slot_count = node_meshes.len() as u32;
+
+                    if slot_count > 0
+                    {
+                        slot_map.insert(node.id, (slot_start, slot_count));
+
+                        let instance_count = node.instances.get_ref().len() as u32;
+
+                        for mesh in &node_meshes
+                        {
+                            let mesh = mesh.read().unwrap();
+                            let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
+
+                            let mut index_count = 0;
+                            if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+                            {
+                                let mesh_resource = mesh_resource.read().unwrap();
+                                if let Some(render_item) = mesh_resource.render_item.as_ref()
+                                {
+                                    index_count = get_render_item::<VertexBuffer>(render_item).get_index_count();
+                                }
+                            }
+
+                            slots.push(DrawSlot { node_index: node_id as u32, index_count, instance_count, _padding: 0 });
+                        }
+                    }
+
+                    // objects without depth test cannot be tested against the hzb (they are drawn
+                    // on top of everything) and hidden objects are never drawn at all - both are
+                    // reported as "visible" so the culling stats stay meaningful
+                    let mut flags = 0;
+                    if node.settings.occlusion_culling && node.settings.depth_test && node.settings.visible
+                    {
+                        flags |= BOUNDING_BOX_FLAG_OCCLUSION_TEST;
+                    }
+
+                    if let Some((min, max)) = bbox_for_all_instances
+                    {
+                        buffer_data.push(BoundingBox::new(node.id, &min, &max, flags, slot_start, slot_count));
+                    }
+                    else
+                    {
+                        buffer_data.push(BoundingBox::new(node.id, &Point3::origin(), &Point3::origin(), 0, slot_start, slot_count));
+                    }
                 }
-                else
+
+                self.update_result.bounding_boxes_buffer_recreated = self.bounding_boxes_buffer.update(wgpu, &buffer_data);
+
+                // the bounding boxes change on every transform update, but the slot table only
+                // changes on topology changes (nodes/meshes/instance counts). only a real slot
+                // change may set slots_rebuilt - it resets the per camera visibility state and
+                // would otherwise disable the occlusion culling in scenes with animated objects
+                let slots_changed = slots != self.draw_slots.slots || slot_map != self.draw_slots.slot_map;
+                if slots_changed
                 {
-                    let buffer = BoundingBox::new(node.id, &Point3::origin(), &Point3::origin());
-                    buffer_data.push(buffer);
+                    self.update_result.slot_buffer_recreated = self.draw_slots.update(wgpu, slots, slot_map);
+                    self.update_result.slots_rebuilt = true;
+                    console_debug!("draw slots updated");
                 }
             }
 
-            self.update_result.bounding_boxes_buffer_recreated = self.bounding_boxes_buffer.update(wgpu, &buffer_data);
-            console_debug!("occlusion culling buffer updated");
-        }
+            // ********** occlusion culling param buffer **********
+            if self.hzb_cull_buffer.num_objects != nodes.len() || self.hzb_cull_buffer.num_slots != self.draw_slots.slots.len()
+            {
+                self.hzb_cull_buffer.update(wgpu, nodes.len() as u32, self.draw_slots.slots.len() as u32);
 
-        // ********** occlusion culling param buffer **********
-        if self.hzb_cull_buffer.num_objects != nodes.len()
-        {
-            self.hzb_cull_buffer.num_objects = nodes.len();
-            self.hzb_cull_buffer.update(wgpu, nodes.len() as u32);
-
-            console_debug!("occlusion culling param buffer updated");
+                console_debug!("occlusion culling param buffer updated");
+            }
         }
 
         self.update_result.instances_updated = instance_buffers_updated;
@@ -1259,9 +1384,10 @@ impl Scene
     {
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples, width, height);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, width, height);
-        // self.hzb_texture = Texture::new_hzb_texture(wgpu);
 
-        // self.depth_export_bind_group = DepthExportBindGroup::new(wgpu, "scene depth export", &self.depth_pass_buffer_texture);
+        // the per camera depth export bind groups sample the recreated depth texture
+        // -> recreate them in the next update
+        self.depth_pass_texture_changed = true;
     }
 
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>, check_visibility: bool) -> Vec<NodeItem>
@@ -1439,8 +1565,29 @@ impl Scene
             }
         }
 
-        // read back visibility results from previous frame
-        if self.occlusion_culling
+        // x-ray shows occluded geometry -> occlusion culling would remove exactly that
+        let occlusion_active = self.occlusion_culling && self.occlusion_supported && !self.xray_mode;
+
+        // occlusion culling was just (re-)enabled -> reset the gpu culling state to "everything visible"
+        if occlusion_active && !self.occlusion_was_active
+        {
+            for cam in &scene.cameras
+            {
+                if let Some(indirect_args) = cam.indirect_args_render_item.as_ref()
+                {
+                    get_render_item::<IndirectArgsBuffers>(indirect_args).reset_full_visible(wgpu, &self.draw_slots.slots);
+                }
+
+                if let Some(visibility_buffer) = cam.visibility_buffer_render_item.as_ref()
+                {
+                    get_render_item::<VisibilityBuffer>(visibility_buffer).reset_all_visible(wgpu);
+                }
+            }
+        }
+        self.occlusion_was_active = occlusion_active;
+
+        // read back visibility results (async stats - a few frames behind, never blocks)
+        if occlusion_active
         {
             self.read_back_visibility_results(wgpu, &scene.cameras, &mut render_results);
         }
@@ -1525,14 +1672,18 @@ impl Scene
                 render_groups_layer_filtered.clone()
             };
 
+            // objects dropped by the cpu frustum culling (per camera)
+            let layer_filtered_count: usize = render_groups_layer_filtered.iter().map(|(solid, transparent)| solid.len() + transparent.len()).sum();
+            let frustum_culled_count: usize = render_groups_frustum_culled.iter().map(|(solid, transparent)| solid.len() + transparent.len()).sum();
+            render_result.objects_frustum_culled = (layer_filtered_count - frustum_culled_count) as u32;
 
             // ********** alpha / distance sorting **********
             if self.distance_sorting
             {
                 for (solid_objects, transparent_objects) in &mut render_groups_frustum_culled
                 {
-                    // sort solid objects front-to-back for occlusion culling (TODO check)
-                    if self.occlusion_culling
+                    // sort solid objects front-to-back for early-z / occlusion culling
+                    if occlusion_active
                     {
                         solid_objects.sort_by(|a, b|
                         {
@@ -1582,60 +1733,73 @@ impl Scene
             let bind_group_render_item = cam.bind_group_render_item.as_ref().unwrap();
             let bind_group_render_item = get_render_item::<LightCamSceneBindGroup>(bind_group_render_item);
 
-            // ********** depth pre-pass **********
-            // render all objects to depth buffer first (for occlusion testing)
-            let mut render_data_before_occlusion = Vec::with_capacity(materials_read.len());
-            for (solid_objects, transparent_objects) in &render_groups_frustum_culled
+            let indirect_args = if occlusion_active && cam.indirect_args_render_item.is_some() && cam.hzb_occlusion_bind_group_render_item.is_some()
             {
-                render_data_before_occlusion.extend(solid_objects.iter().cloned());
-                render_data_before_occlusion.extend(transparent_objects.iter().cloned());
+                Some(get_render_item::<IndirectArgsBuffers>(cam.indirect_args_render_item.as_ref().unwrap()))
             }
-            render_result.draw_calls += self.render_depth(wgpu, view, encoder, &render_data_before_occlusion, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
-
-
-            // SUBMIT depth pre-pass so it's executed before occlusion queries
-            /*
-            let new_encoder = wgpu.create_command_encoder();
-            let old_encoder = std::mem::replace(encoder, new_encoder);
-            wgpu.submit_commands(vec![old_encoder]);
-            */
-
-            // ********** occlusion culling **********
-            // test bounding boxes against the depth buffer we just rendered
-            if self.occlusion_culling
+            else
             {
-                /*
-                let occlusion_clear = false; // DON'T clear - test against depth pre-pass!
-                for (solid_objects, _) in &mut render_groups_frustum_culled
+                None
+            };
+
+            if let Some(indirect_args) = indirect_args
+            {
+                // ********** two-pass hzb occlusion culling **********
+                // pass 1 renders the objects which were visible in the previous frame (indirect
+                // draws - the instance counts are masked on the gpu), the hzb is built from their
+                // depth, the occlusion check tests all objects against it and pass 2 renders the
+                // objects which became visible this frame. the visibility never leaves the gpu
+                // -> no cpu readback/stall (the stats readback is async)
+
+                // (occluder solids: depth test + write, other solids, transparents) per render group
+                let mut split_groups: Vec<(Vec<RenderData>, Vec<RenderData>, Vec<RenderData>)> = vec![];
+                for (solid_objects, transparent_objects) in &render_groups_frustum_culled
                 {
-                    let (occlusion_draw_calls, visible_objects) = self.render_occlusion_query_pass(wgpu, encoder, &solid_objects, cam_data, &bind_group_render_item.bind_group, occlusion_clear);
-                    render_result.draw_calls += occlusion_draw_calls;
-                    *solid_objects = visible_objects;
+                    let (occluders, other): (Vec<_>, Vec<_>) = solid_objects.iter().copied().partition(|item| item.node.settings.depth_test && item.node.settings.depth_write);
+                    split_groups.push((occluders, other, transparent_objects.clone()));
                 }
-                */
-            }
 
-            // ********** color pass **********
-            // render only visible objects with color
-            let mut render_data = Vec::with_capacity(materials_read.len());
-            for (solid_objects, transparent_objects) in &mut render_groups_frustum_culled
-            {
-                render_data.extend(solid_objects.iter().cloned());
-                render_data.extend(transparent_objects.iter().cloned());
-            }
-            render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &render_data, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                // ********** pass 1: depth + color (objects visible in the previous frame) **********
+                let pass1_batches: Vec<(&Vec<RenderData>, Option<&wgpu::Buffer>)> = split_groups.iter().map(|(occluders, _, _)| (occluders, Some(&indirect_args.args_visible))).collect();
 
-            if self.occlusion_culling
-            {
+                render_result.draw_calls += self.render_depth(wgpu, view, encoder, &pass1_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &pass1_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+
+                // ********** hzb + occlusion check **********
                 // the hzb block spans multiple passes: the depth export pass writes the begin
                 // timestamp and the occlusion check pass writes the end timestamp
                 let hzb_timer_segment = gpu_timer.as_mut().and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Hzb));
 
-                // ********** hzb **********
                 render_result.draw_calls += self.create_hzb(wgpu, encoder, cam, hzb_timer_segment);
-
-                // ********** hzb occlusion culling **********
                 self.hzb_occlusion_culling(wgpu, encoder, cam, hzb_timer_segment);
+
+                // ********** pass 2: newly visible objects + non-occluders + transparent objects **********
+                let mut pass2_batches: Vec<(&Vec<RenderData>, Option<&wgpu::Buffer>)> = vec![];
+                for (occluders, other_solids, transparents) in &split_groups
+                {
+                    pass2_batches.push((occluders, Some(&indirect_args.args_new)));
+                    pass2_batches.push((other_solids, Some(&indirect_args.args_visible)));
+                    pass2_batches.push((transparents, Some(&indirect_args.args_visible)));
+                }
+
+                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &pass2_batches, cam_data, &bind_group_render_item.bind_group, false, gpu_timer.as_mut());
+            }
+            else
+            {
+                // ********** depth pre-pass **********
+                let mut render_data = Vec::with_capacity(materials_read.len());
+                for (solid_objects, transparent_objects) in &render_groups_frustum_culled
+                {
+                    render_data.extend(solid_objects.iter().cloned());
+                    render_data.extend(transparent_objects.iter().cloned());
+                }
+
+                let batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 1] = [(&render_data, None)];
+
+                render_result.draw_calls += self.render_depth(wgpu, view, encoder, &batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+
+                // ********** color pass **********
+                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
             }
 
             i += 1;
@@ -1652,18 +1816,14 @@ impl Scene
     {
         let mut draw_calls: u32 = 0;
 
-        let viewport = cam.get_data().get_viewport();
+        let hzb_texture = get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
+        let (hzb_width, hzb_height) = (hzb_texture.width, hzb_texture.height);
 
-        // in pxels
-        let x = viewport.x * cam.get_data().resolution_width as f32;
-        let width = viewport.width * cam.get_data().resolution_width as f32;
-
-        let height = viewport.height * cam.get_data().resolution_height as f32;
-        let y = (1.0 - viewport.y - viewport.height) * cam.get_data().resolution_height as f32;
-
-        // *********** depth export pass **********
+        // *********** depth export pass (depth -> hzb mip 0) **********
+        // the hzb texture covers exactly the camera viewport - the bind group
+        // remaps the sampling to the viewport region of the depth texture
         {
-            let hzb_texture = get_render_item::<Texture>(cam.hzb_texture_render_item.as_ref().unwrap());
+            let depth_export_bind_group = get_render_item::<DepthExportBindGroup>(cam.depth_export_bind_group_render_item.as_ref().unwrap());
 
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
@@ -1688,9 +1848,7 @@ impl Scene
             let pipeline = self.render_pipelines[RenderPipelineType::DepthExport as usize].get();
 
             pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &self.depth_export_bind_group.bind_group, &[]);
-
-            pass.set_viewport(x, y, width, height, 0.0, 1.0);
+            pass.set_bind_group(0, &depth_export_bind_group.bind_group, &[]);
 
             pass.draw(0..3, 0..1); // fullscreen triangle
             draw_calls += 1;
@@ -1704,8 +1862,8 @@ impl Scene
 
         for (level, bind_group) in hzb_downsample_bind_group.bind_groups.iter().enumerate()
         {
-            let dst_width  = (width  as u32  >> (level + 1)).max(1);
-            let dst_height = (height  as u32 >> (level + 1)).max(1);
+            let dst_width  = (hzb_width  >> (level + 1)).max(1);
+            let dst_height = (hzb_height >> (level + 1)).max(1);
 
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor
             {
@@ -1749,65 +1907,42 @@ impl Scene
         }
 
         let visibility_buffer = get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
-        visibility_buffer.copy_to_readback_buffer(encoder);
+        let num_objects = self.hzb_cull_buffer.num_objects;
+
+        // current visibility becomes the "previous frame" input of the next frame
+        visibility_buffer.copy_current_to_prev(encoder, num_objects);
+
+        // async stats readback (non-blocking, skipped while a readback is still in flight)
+        visibility_buffer.record_readback_copy(encoder, num_objects);
     }
 
+    // non-blocking: fills the render results with the latest read back visibility (a few frames behind)
     pub fn read_back_visibility_results(&mut self, wgpu: &mut WGpu, cameras: &std::vec::Vec<Box<Camera>>, render_results: &mut Vec<RenderResultForCamera>)
     {
-         // console_log!("------");
-
-        for (cam_index, cam) in cameras.iter().enumerate()
+        let mut result_index = 0;
+        for cam in cameras.iter()
         {
             if !cam.enabled { continue; }
 
+            let render_result = &mut render_results[result_index];
+            render_result.camera_id = cam.id;
+            result_index += 1;
+
+            if cam.visibility_buffer_render_item.is_none() { continue; }
+
             let visibility_buffer = get_render_item::<VisibilityBuffer>(cam.visibility_buffer_render_item.as_ref().unwrap());
-            let readback_buffer = &visibility_buffer.readback_buffer;
+            visibility_buffer.update_readback(wgpu);
 
-            let num_objects = self.hzb_cull_buffer.num_objects;
-
-            let slice = readback_buffer.slice(..);
-            slice.map_async(wgpu::MapMode::Read, |_| ());
-
-            if let Ok(_) = wgpu.device().poll(wgpu::PollType::wait_indefinitely())
+            for res in visibility_buffer.latest_results()
             {
-                let data = slice.get_mapped_range();
-
-                let count_in_bytes = num_objects * std::mem::size_of::<Visibility>();
-                let vis_slice = &data[..count_in_bytes];
-
-                let result = bytemuck::cast_slice::<u8, Visibility>(vis_slice).to_vec();
-
-                for res in result.iter()
+                if res.visible > 0
                 {
-                    /*
-                    if res.object_id as usize >= self.visibility_results.len()
-                    {
-                        continue;
-                    }
-                    self.visibility_results[res.object_id as usize] = res.visible != 0;
-                     */
-
-                    // Log all objects to debug visibility issues
-                    //console_log!("object id {} visible {} (status: {})", res.object_id, res.visible, if res.visible > 0 { "VISIBLE" } else { "OCCLUDED" });
-
-                    /*
-                    if res.visible > 0
-                    {
-                        render_results[cam_index].objects_visible.push(res.object_id);
-                        console_log!("object id {} is VISIBLE", res.object_id);
-                    }
-                    else
-                    {
-                        render_results[cam_index].objects_invisible.push(res.object_id);
-                        // console_log!("object id {} is OCCLUDED", res.object_id);
-                    }
-                    */
+                    render_result.objects_visible.push(res.object_id);
                 }
-
-                //cam.visibility_data_last_frame = result;
-
-                drop(data);
-                readback_buffer.unmap();
+                else
+                {
+                    render_result.objects_invisible.push(res.object_id);
+                }
             }
         }
     }
@@ -1817,137 +1952,6 @@ impl Scene
     {
         self.gpu_timer.as_ref().map(|gpu_timer| gpu_timer.pass_times())
     }
-
-    /*
-    pub fn render_occlusion_query_pass<'a>(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, nodes: &Vec<RenderData<'a>>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, _clear: bool) -> (u32, Vec<RenderData<'a>>)
-    {
-        let mut draw_calls: u32 = 0;
-
-        const MAX_QUERIES: usize = wgpu::QUERY_SET_MAX_QUERIES as usize;
-
-        let depth_view = &self.depth_pass_buffer_texture.get_view();
-        let pipeline = self.pipelines[PipelineType::OcclusionCulling as usize].get();
-
-        let x = cam_data.viewport_x * cam_data.resolution_width as f32;
-        let y = (1.0 - cam_data.viewport_y - cam_data.viewport_height) * cam_data.resolution_height as f32;
-        let width = cam_data.viewport_width * cam_data.resolution_width as f32;
-        let height = cam_data.viewport_height * cam_data.resolution_height as f32;
-
-        let mut visible_nodes = vec![];
-
-        for chunk in nodes.chunks(MAX_QUERIES)
-        {
-            let mut query_id = 0u32;
-            let query_set = wgpu.device().create_query_set(&wgpu::QuerySetDescriptor
-            {
-                count: chunk.len() as u32,
-                ty: wgpu::QueryType::Occlusion,
-                label: Some("occlusion_query_set"),
-            });
-
-            let mut rendered_objects = vec![];
-
-            {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
-                {
-                    label: Some("occlusion_query_pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
-                    {
-                        view: depth_view,
-                        depth_ops: Some(wgpu::Operations
-                        {
-                            load: wgpu::LoadOp::Load,  // Load depth from depth pre-pass
-                            store: wgpu::StoreOp::Discard,  // Don't write, so no need to store
-                        }),
-                        stencil_ops: None,
-                    }),
-                    occlusion_query_set: Some(&query_set),
-                    timestamp_writes: None,
-                    multiview_mask: None,
-                });
-
-
-                render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
-                render_pass.set_pipeline(pipeline);
-
-                // render
-                for data in chunk
-                {
-                    let node = data.node;
-                    let meshes = data.meshes;
-
-                    if !node.settings.visible
-                    {
-                        continue;
-                    }
-
-                    if meshes.len() == 0
-                    {
-                        continue;
-                    }
-
-                    let occlusion_render_item = node.occlusion_render_item.as_ref();
-                    if occlusion_render_item.is_none()
-                    {
-                        continue;
-                    }
-
-                    let occlusion_render_item = occlusion_render_item.unwrap();
-                    let occlusion_render_item = get_render_item::<OcclusionCullingBuffer>(occlusion_render_item);
-                    let occlusion_bind_group = occlusion_render_item.bind_group.as_ref().unwrap();
-
-                    render_pass.set_bind_group(0, occlusion_bind_group, &[]);
-                    render_pass.set_bind_group(1, light_cam_bind_group, &[]);
-
-                    render_pass.begin_occlusion_query(query_id);
-                    render_pass.draw(0..36, 0..1);
-                    render_pass.end_occlusion_query();
-
-                    rendered_objects.push(data);
-
-                    query_id += 1;
-                    draw_calls += 1;
-                }
-            }
-
-            // resolve buffer and copy to staging buffer
-            encoder.resolve_query_set(&query_set, 0..query_id, &self.occlusion_query_buffer, 0);
-            encoder.copy_buffer_to_buffer(&self.occlusion_query_buffer, 0, &self.occlusion_query_buffer_staging, 0,(query_id * 8) as u64);
-
-            // read staging buffer
-            {
-                let slice = self.occlusion_query_buffer_staging.slice(..(query_id as u64 * 8));
-                slice.map_async(wgpu::MapMode::Read, |_| ());
-                if let Ok(_) = wgpu.device().poll(wgpu::PollType::wait_indefinitely())
-                {
-                    let data = slice.get_mapped_range();
-                    for (i, data_chunk) in data.chunks_exact(8).enumerate()
-                    {
-                        let samples_passed = u64::from_ne_bytes(data_chunk.try_into().unwrap());
-                        if samples_passed > 0
-                        {
-                            // console_debug!("object visible: {} samples passed {}", rendered_objects[i].node.name, samples_passed);
-                            visible_nodes.push(rendered_objects[i].clone());
-                        }
-                        else
-                        {
-                            //console_debug!("object occluded: {} samples passed {}", rendered_objects[i].node.name, samples_passed);
-                        }
-                    }
-                }
-                else
-                {
-                    console_warning!("failed to poll device -> use all objects as fallback");
-                    visible_nodes.extend(chunk.iter().cloned());
-                }
-            }
-            self.occlusion_query_buffer_staging.unmap();
-        }
-
-        (draw_calls, visible_nodes)
-    }
-    */
 
     // returns the number of rendered shadow views and the number of shadow draw calls
     pub fn render_shadows(&self, wgpu: &mut WGpu, encoder: &mut CommandEncoder, scene: &Box<crate::state::scene::scene::Scene>, render_groups: &Vec<(Vec<RenderData>, Vec<RenderData>)>, gpu_timer: Option<&mut GpuTimer>) -> (u32, u32)
@@ -2006,14 +2010,15 @@ impl Scene
             // transparent objects do not cast shadows
             for (solid_objects, _transparent_objects) in render_groups
             {
-                draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, solid_objects);
+                draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, solid_objects, None);
             }
         }
 
         (views_to_render.len() as u32, draw_calls)
     }
 
-    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
+    // batches: (nodes, optional indirect args buffer) - indirect batches are drawn gpu-driven
+    pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, batches: &[(&Vec<RenderData>, Option<&wgpu::Buffer>)], cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
     {
         let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Depth));
 
@@ -2082,10 +2087,17 @@ impl Scene
         // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &DrawPhase::Depth { light_cam_bind_group }, nodes)
+        let mut draw_calls = 0;
+        for (nodes, indirect_args) in batches
+        {
+            draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Depth { light_cam_bind_group }, nodes, *indirect_args);
+        }
+
+        draw_calls
     }
 
-    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, nodes: &Vec<RenderData>, cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
+    // batches: (nodes, optional indirect args buffer) - indirect batches are drawn gpu-driven
+    pub fn render_color(&mut self, _wgpu: &mut WGpu, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, batches: &[(&Vec<RenderData>, Option<&wgpu::Buffer>)], cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
     {
         let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Color));
 
@@ -2149,10 +2161,18 @@ impl Scene
         // set viewport uses top-left origin (we are using bottom-left origin)
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-        self.draw_phase(&mut render_pass, &DrawPhase::Color { light_cam_bind_group }, nodes)
+        let mut draw_calls = 0;
+        for (nodes, indirect_args) in batches
+        {
+            draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Color { light_cam_bind_group }, nodes, *indirect_args);
+        }
+
+        draw_calls
     }
 
-    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, phase: &DrawPhase, nodes: &'a Vec<RenderData>) -> u32
+    // indirect_args: when set, the draws are recorded as indirect draws - the occlusion check
+    // compute pass writes the instance counts (0 = culled) into the args buffer
+    fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, phase: &DrawPhase, nodes: &'a Vec<RenderData>, indirect_args: Option<&'a wgpu::Buffer>) -> u32
     {
         let mut draw_calls: u32 = 0;
 
@@ -2198,7 +2218,9 @@ impl Scene
 
             let material_allow_xray = material_component.map(|m| m.get_data().allow_xray).unwrap_or(true);
 
-            for mesh in meshes
+            // the mesh index maps to the draw slot of the (node, mesh) pair - it has to count
+            // all meshes of the node (including skipped ones) to stay aligned with the slot table
+            for (mesh_index, mesh) in meshes.iter().enumerate()
             {
                 let mesh = mesh.as_any().downcast_ref::<Mesh>().unwrap();
 
@@ -2311,9 +2333,32 @@ impl Scene
                         pass.set_vertex_buffer(1, instance_buffer.get_buffer().slice(..));
 
                         pass.set_index_buffer(vertex_buffer.get_index_buffer().slice(..), wgpu::IndexFormat::Uint32);
-                        pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
 
-                        draw_calls += 1;
+                        match indirect_args
+                        {
+                            Some(args_buffer) =>
+                            {
+                                // gpu-driven draw: the occlusion check writes the instance count (0 = culled)
+                                // the bounds check guards against a stale slot table (mesh list changed
+                                // between the slot build and this draw)
+                                if let Some((first_slot, slot_count)) = self.draw_slots.slot_map.get(&node.id)
+                                {
+                                    if (mesh_index as u32) < *slot_count
+                                    {
+                                        let slot = *first_slot as u64 + mesh_index as u64;
+                                        pass.draw_indexed_indirect(args_buffer, slot * DRAW_INDEXED_ARGS_SIZE);
+
+                                        draw_calls += 1;
+                                    }
+                                }
+                            },
+                            None =>
+                            {
+                                pass.draw_indexed(0..vertex_buffer.get_index_count(), 0, 0..instance_buffer.get_count() as _);
+
+                                draw_calls += 1;
+                            }
+                        }
                     }
                 }
             }

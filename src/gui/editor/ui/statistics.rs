@@ -334,6 +334,8 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     // engine
     let mut engine: Vec<_> = vec![];
     engine.push(format!("draw calls: {}", state.stats.draw_calls));
+    engine.push(format!("frustum culled objects: {}", state.stats.frustum_culled_objects));
+    engine.push(format!("occlusion culled objects: {}", state.stats.occlusion_culled_objects));
     engine.push(format!("shadow views: {}", state.stats.shadow_views));
     engine.push(format!("shadow draw calls: {}", state.stats.shadow_draw_calls));
     engine.push(format!("textures: {}", state.resources.textures.len()));

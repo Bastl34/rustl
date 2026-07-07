@@ -46,6 +46,7 @@ pub struct RenderingAdapterFeatures
 
     pub storage_buffer_array_support: bool,
     pub wireframe_mode_support: bool,
+    pub occlusion_culling_support: bool, // compute shaders + indirect draws (not available on WebGL)
     pub max_msaa_samples: u32,
     pub max_texture_resolution: u32,
     pub max_supported_texture_resolution: u32
@@ -109,6 +110,8 @@ impl Default for SupportedFileTypes
 pub struct Statistics
 {
     pub draw_calls: u32,
+    pub occlusion_culled_objects: u32, // objects culled by the gpu occlusion check (async readback - a few frames behind)
+    pub frustum_culled_objects: u32,   // objects dropped by the cpu frustum culling
     pub fps_timer: Instant,
     pub last_time: u128,
     pub fps: u32,
@@ -330,6 +333,7 @@ impl State
                 backend: String::new(),
                 storage_buffer_array_support: false,
                 wireframe_mode_support: false,
+                occlusion_culling_support: false,
                 max_msaa_samples: 1,
                 max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION,
                 max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
@@ -348,7 +352,7 @@ impl State
 
                 distance_sorting: true,
                 frustum_culling: true,
-                occlusion_culling: false,
+                occlusion_culling: true,
                 create_mipmaps: true,
                 max_texture_resolution: None,
 
@@ -412,6 +416,8 @@ impl State
             stats: Statistics
             {
                 draw_calls: 0,
+                occlusion_culled_objects: 0,
+                frustum_culled_objects: 0,
                 fps_timer: Instant::now(),
                 last_time: 0,
                 fps: 0,
@@ -1002,6 +1008,7 @@ impl State
         println!(" - driver info: {}", self.rendering_adapter.driver_info);
         println!(" - backend: {}", self.rendering_adapter.backend);
         println!(" - storage_buffer_array_support: {}", self.rendering_adapter.storage_buffer_array_support);
+        println!(" - occlusion_culling_support: {}", self.rendering_adapter.occlusion_culling_support);
         println!(" - max msaa_samples: {}", self.rendering_adapter.max_msaa_samples);
 
         println!("");

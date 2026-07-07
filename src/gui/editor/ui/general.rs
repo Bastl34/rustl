@@ -89,6 +89,8 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             buffer_gpu_memory_usage += render_item_gpu_usage(&camera.hzb_downsample_bind_group_render_item);
             buffer_gpu_memory_usage += render_item_gpu_usage(&camera.visibility_buffer_render_item);
             buffer_gpu_memory_usage += render_item_gpu_usage(&camera.hzb_occlusion_bind_group_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.depth_export_bind_group_render_item);
+            buffer_gpu_memory_usage += render_item_gpu_usage(&camera.indirect_args_render_item);
         }
 
         // material buffers

@@ -182,13 +182,14 @@ impl WGpu
         // wireframe support
         state.rendering_adapter.wireframe_mode_support = device.features().contains(wgpu::Features::POLYGON_MODE_LINE);
 
-        /* TODO: store and use as occlusion culling feature to enable/disable it
-         ----> STORAGE_READ_ONLY | STORAGE_WRITE_ONLY | STORAGE_READ_WRITE
-        console_log!(" ********** R32Float **********");
-        let features = adapter.get_texture_format_features(wgpu::TextureFormat::R32Float);
-        console_log!("{:?}", features.flags);
-        console_log!("{:?}", features.allowed_usages);
-         */
+        // occlusion culling support: the hzb culling needs compute shaders, indirect draws
+        // and r32float storage texture writes (all missing on WebGL)
+        let downlevel_flags = adapter.get_downlevel_capabilities().flags;
+        let r32_float_usages = adapter.get_texture_format_features(wgpu::TextureFormat::R32Float).allowed_usages;
+        state.rendering_adapter.occlusion_culling_support =
+            downlevel_flags.contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+            && downlevel_flags.contains(wgpu::DownlevelFlags::INDIRECT_EXECUTION)
+            && r32_float_usages.contains(wgpu::TextureUsages::STORAGE_BINDING);
 
         // apply adapter infos
         state.rendering_adapter.name = adapter_info.name.clone();

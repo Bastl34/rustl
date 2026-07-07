@@ -237,6 +237,12 @@ pub struct Camera
     pub hzb_occlusion_bind_group_render_item: RenderItemOption,
 
     #[serde(skip, default)]
+    pub depth_export_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub indirect_args_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
     pub visible_nodes_last_frame: Vec<u32>,
 }
 
@@ -318,6 +324,8 @@ impl Camera
             hzb_downsample_bind_group_render_item: None,
             visibility_buffer_render_item: None,
             hzb_occlusion_bind_group_render_item: None,
+            depth_export_bind_group_render_item: None,
+            indirect_args_render_item: None,
 
             visible_nodes_last_frame: Vec::new(),
         }

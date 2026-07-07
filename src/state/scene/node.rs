@@ -94,7 +94,6 @@ pub struct Node
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
     pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
-    // pub occlusion_render_item: RenderItemOption,
 
     pub on_before_update: Observable<Node>,
     pub on_after_update: Observable<Node>,
@@ -291,7 +290,6 @@ impl Node
             instance_render_item: None,
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
-            // occlusion_render_item: None,
 
             on_before_update: Observable::new(),
             on_after_update: Observable::new(),

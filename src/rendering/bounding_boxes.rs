@@ -2,7 +2,10 @@ use nalgebra::Point3;
 
 use crate::{render_item_impl_default, rendering::{helper::buffer::create_empty_buffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
-const MIN_SIZE: usize = 64 * 1024; // 64k entries
+const MIN_SIZE: usize = 1024; // entries (buffer grows on demand)
+
+// bit 0: object takes part in the occlusion test (see occlusion_hzb_check.wgsl)
+pub const BOUNDING_BOX_FLAG_OCCLUSION_TEST: u32 = 1;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -11,19 +14,23 @@ pub struct BoundingBox
     pub min: [f32; 4],
     pub max: [f32; 4],
     pub object_id: u32,
-    pub _padding: [u32; 3],
+    pub flags: u32,
+    pub slot_start: u32, // first draw slot of the object
+    pub slot_count: u32, // number of draw slots (one per mesh)
 }
 
 impl BoundingBox
 {
-    pub fn new(object_id: u32, min: &Point3<f32>, max: &Point3<f32>) -> Self
+    pub fn new(object_id: u32, min: &Point3<f32>, max: &Point3<f32>, flags: u32, slot_start: u32, slot_count: u32) -> Self
     {
         Self
         {
             object_id: object_id as u32,
             min: [min.x, min.y, min.z, 0.0],
             max: [max.x, max.y, max.z, 0.0],
-            _padding: [0; 3],
+            flags,
+            slot_start,
+            slot_count,
         }
     }
 }
@@ -59,13 +66,14 @@ impl BoundingBoxesBuffer
         bbox_buffers
     }
 
+    // returns true if the gpu buffer was recreated (bind groups have to be recreated)
     pub fn update(&mut self, wgpu: &mut WGpu, buffer_data: &Vec<BoundingBox>) -> bool
     {
         let new_buffer_size = buffer_data.len().next_power_of_two().max(MIN_SIZE);
 
-        let buffer_size_changed = new_buffer_size != self.buffer_size;
+        let recreated = new_buffer_size > self.buffer_size;
 
-        if new_buffer_size > self.buffer_size
+        if recreated
         {
             // recreate buffer
             self.buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
@@ -79,31 +87,14 @@ impl BoundingBoxesBuffer
             self.buffer_size = new_buffer_size;
         }
 
-        let mut padded_data = Vec::with_capacity(new_buffer_size);
-        padded_data.extend_from_slice(buffer_data);
-
-        // fill with dummy padding data
-        let dummy_bbox = BoundingBox
+        // only write the used entries - the compute shader never reads past num_objects
+        // (this runs on every instance change, so avoid uploading the full padded buffer)
+        if !buffer_data.is_empty()
         {
-            object_id: 0,
-            min: [0.0, 0.0, 0.0, 0.0],
-            max: [0.0, 0.0, 0.0, 0.0],
-            _padding: [0, 0, 0],
-        };
-
-        for _ in padded_data.len()..new_buffer_size
-        {
-            padded_data.push(dummy_bbox);
+            wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(buffer_data));
         }
 
-        wgpu.queue_mut().write_buffer
-        (
-            &self.buffer,
-            0,
-            bytemuck::cast_slice(&padded_data),
-        );
-
-        buffer_size_changed
+        recreated
     }
 
     pub fn get_buffer(&self) -> &wgpu::Buffer

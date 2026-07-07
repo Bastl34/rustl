@@ -18,6 +18,7 @@ mod rendering
     pub(crate) mod bounding_boxes;
     pub(crate) mod visibility;
     pub(crate) mod hzb_cull_buffer;
+    pub(crate) mod draw_slots;
     pub(crate) mod gpu_timer;
 
     pub(crate) mod bind_groups
