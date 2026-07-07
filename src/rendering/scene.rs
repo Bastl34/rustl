@@ -122,6 +122,9 @@ pub enum RenderPipelineType
     DepthExport,
 
     Shadow,
+
+    // alpha tested shadow casters (alpha textured materials, e.g. leaves)
+    ShadowCutout,
 }
 
 #[derive(EnumCount)]
@@ -425,13 +428,18 @@ impl Scene
 
         let bind_group_layouts = [ &shadow_view_bind_layout, &skeleton_morph_bind_layout ];
 
+        // cutout casters (alpha textured materials) additionally bind the material (textures for the alpha test)
+        let cutout_bind_group_layouts = [ &shadow_view_bind_layout, &skeleton_morph_bind_layout, material_bind_layout ];
+
         if !re_create
         {
-            self.render_pipelines.push(Pipeline::new_shadow(wgpu, "shadow", &self.shadow_shader, &bind_group_layouts));
+            self.render_pipelines.push(Pipeline::new_shadow(wgpu, "shadow", &self.shadow_shader, &bind_group_layouts, false));
+            self.render_pipelines.push(Pipeline::new_shadow(wgpu, "shadow cutout", &self.shadow_shader, &cutout_bind_group_layouts, true));
         }
         else
         {
-            self.render_pipelines.get_mut(RenderPipelineType::Shadow as usize).unwrap().re_create_shadow(wgpu, &bind_group_layouts);
+            self.render_pipelines.get_mut(RenderPipelineType::Shadow as usize).unwrap().re_create_shadow(wgpu, &bind_group_layouts, false);
+            self.render_pipelines.get_mut(RenderPipelineType::ShadowCutout as usize).unwrap().re_create_shadow(wgpu, &cutout_bind_group_layouts, true);
         }
 
         // compute shaders are not available on all adapters (WebGL) -> the occlusion
@@ -2007,10 +2015,12 @@ impl Scene
                 multiview_mask: None,
             });
 
-            // transparent objects do not cast shadows
-            for (solid_objects, _transparent_objects) in render_groups
+            // transparent objects only cast (cutout) shadows when their transparency is texture
+            // driven (e.g. leaves) - uniform alpha materials are skipped in draw_phase
+            for (solid_objects, transparent_objects) in render_groups
             {
                 draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, solid_objects, None);
+                draw_calls += self.draw_phase(&mut render_pass, &DrawPhase::Shadow { shadow_view }, transparent_objects, None);
             }
         }
 
@@ -2195,11 +2205,23 @@ impl Scene
             let material_component = mat.as_any().downcast_ref::<MaterialComponent>();
 
             // shadow pass: only shadow casting materials + per-view culling
+            let mut shadow_cutout = false;
             if let DrawPhase::Shadow { shadow_view } = phase
             {
-                if !material_component.map(|m| m.get_data().cast_shadow).unwrap_or(true)
+                if let Some(material) = material_component
                 {
-                    continue;
+                    if !material.get_data().cast_shadow
+                    {
+                        continue;
+                    }
+
+                    // alpha textured materials (e.g. leaves) cast cutout shadows,
+                    // uniform alpha only transparency (e.g. glass) casts none
+                    shadow_cutout = material.has_alpha_texture_transparency();
+                    if !shadow_cutout && material.has_transparency()
+                    {
+                        continue;
+                    }
                 }
 
                 // per-view culling via bounding sphere (if available)
@@ -2245,7 +2267,16 @@ impl Scene
                         {
                             DrawPhase::Shadow { shadow_view } =>
                             {
-                                pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Shadow as usize].get());
+                                if shadow_cutout
+                                {
+                                    // alpha tested casters need the material textures for the alpha test
+                                    pass.set_pipeline(&self.render_pipelines[RenderPipelineType::ShadowCutout as usize].get());
+                                    pass.set_bind_group(2, material_bind_group, &[]);
+                                }
+                                else
+                                {
+                                    pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Shadow as usize].get());
+                                }
 
                                 // per-view light matrix via dynamic offset
                                 let dynamic_offset = shadow_view.layer * shadow::SHADOW_VIEW_UNIFORM_STRIDE as u32;

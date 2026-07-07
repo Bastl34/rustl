@@ -83,7 +83,7 @@ impl Pipeline
     }
     */
 
-    pub fn new_shadow(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
+    pub fn new_shadow(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], alpha_test: bool) -> Pipeline
     {
         let shader;
         {
@@ -108,14 +108,16 @@ impl Pipeline
             pipeline: None,
         };
 
-        pipe.create_shadow(wgpu, bind_group_layouts);
+        pipe.create_shadow(wgpu, bind_group_layouts, alpha_test);
 
         pipe
     }
 
-    pub fn create_shadow(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    pub fn create_shadow(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], alpha_test: bool)
     {
-        // depth-only pass (no fragment shader) rendering into one shadow atlas layer
+        // depth-only pass rendering into one shadow atlas layer
+        // alpha_test: adds a fragment stage without color targets which discards cutout pixels
+        // (alpha textured casters like leaves) - opaque casters stay vertex-only
 
         let device = wgpu.device();
 
@@ -127,6 +129,18 @@ impl Pipeline
             bind_group_layouts: &bind_group_layouts,
             ..Default::default()
         });
+
+        let mut fragment_state = None;
+        if alpha_test
+        {
+            fragment_state = Some(wgpu::FragmentState
+            {
+                module: &self.shader,
+                entry_point: Some("fs_main"),
+                targets: &[],
+                compilation_options: Default::default(),
+            });
+        }
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
         {
@@ -143,7 +157,7 @@ impl Pipeline
                 ],
                 compilation_options: Default::default(),
             },
-            fragment: None,
+            fragment: fragment_state,
             primitive: wgpu::PrimitiveState
             {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -182,11 +196,11 @@ impl Pipeline
         self.pipeline = Some(render_pipeline);
     }
 
-    pub fn re_create_shadow(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    pub fn re_create_shadow(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], alpha_test: bool)
     {
         console_log!("recreating shadow pipeline");
 
-        self.create_shadow(wgpu, bind_group_layouts);
+        self.create_shadow(wgpu, bind_group_layouts, alpha_test);
     }
 
     pub fn new_depth_export(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
