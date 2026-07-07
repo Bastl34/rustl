@@ -350,7 +350,12 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     if let Some(time) = state.stats.gpu_color_time { timings.push(format!("color pass: {:.3} ms", time)); }
     if let Some(time) = state.stats.gpu_hzb_time { timings.push(format!("hzb culling: {:.3} ms", time)); }
     if let Some(time) = state.stats.gpu_egui_time { timings.push(format!("egui pass: {:.3} ms", time)); }
-    stats.push(("GPU".to_string(), "💻".to_string(), timings));
+
+    // gpu pass timings are only available if the adapter supports timestamp queries
+    if !timings.is_empty()
+    {
+        stats.push(("GPU".to_string(), "💻".to_string(), timings));
+    }
 
     // editor
     let mut editor: Vec<_> = vec![];
@@ -360,8 +365,8 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
 
     // app
     let mut app: Vec<_> = vec![];
-    app.push(format!(" update time: {:.3} ms", state.stats.app_update_time));
-    stats.push(("Editor".to_string(), "✏".to_string(), app));
+    app.push(format!("update time: {:.3} ms", state.stats.app_update_time));
+    stats.push(("App".to_string(), "🗖".to_string(), app));
 
     for (stat_category, stat_icon, stat_items) in &stats
     {
