@@ -320,7 +320,8 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
         materials += scene.materials.len();
     }
 
-    let mut stats: Vec<(String, String, Vec<String>)> = vec![];
+    // (category, icon, items, separator before the section)
+    let mut stats: Vec<(String, String, Vec<String>, bool)> = vec![];
 
     // info
     let mut info = vec![];
@@ -328,12 +329,10 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     info.push(format!("fps 1% low: {}", state.stats.last_fps_1_percent_low));
     info.push(format!("absolute cpu fps: {}", state.stats.fps_cpu_absolute));
     info.push(format!("frame time: {:.3} ms", state.stats.frame_time));
-    stats.push(("Info".to_string(), "ℹ".to_string(), info));
+    stats.push(("Info".to_string(), "ℹ".to_string(), info, false));
 
     // engine
     let mut engine: Vec<_> = vec![];
-    engine.push(format!("update time: {:.3} ms", state.stats.engine_update_time));
-    engine.push(format!("render time: {:.3} ms", state.stats.engine_render_time));
     engine.push(format!("draw calls: {}", state.stats.draw_calls));
     engine.push(format!("shadow views: {}", state.stats.shadow_views));
     engine.push(format!("shadow draw calls: {}", state.stats.shadow_draw_calls));
@@ -341,35 +340,47 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     engine.push(format!("sounds: {}", state.resources.sound_sources.len()));
     engine.push(format!("materials: {}", materials));
     engine.push(format!("meshes: {}", state.resources.mesh_resources.len()));
-    stats.push(("Engine".to_string(), "⚙".to_string(), engine));
+    stats.push(("Engine".to_string(), "⚙".to_string(), engine, false));
 
-    // gpu timings
-    let mut timings: Vec<_> = vec![];
-    if let Some(time) = state.stats.gpu_shadow_time { timings.push(format!("shadow pass: {:.3} ms", time)); }
-    if let Some(time) = state.stats.gpu_depth_time { timings.push(format!("depth pass: {:.3} ms", time)); }
-    if let Some(time) = state.stats.gpu_color_time { timings.push(format!("color pass: {:.3} ms", time)); }
-    if let Some(time) = state.stats.gpu_hzb_time { timings.push(format!("hzb culling: {:.3} ms", time)); }
-    if let Some(time) = state.stats.gpu_egui_time { timings.push(format!("egui pass: {:.3} ms", time)); }
+    // cpu times (frame loop - these run sequentially on the cpu and add up to the frame time)
+    // wait = rest of the frame time (waiting for gpu/vsync) - if it is small, the frame is cpu bound
+    let cpu_total = state.stats.engine_update_time + state.stats.engine_render_time + state.stats.egui_update_time + state.stats.egui_render_time + state.stats.app_update_time;
+    let cpu_wait = (state.stats.frame_time - cpu_total).max(0.0);
 
-    // gpu pass timings are only available if the adapter supports timestamp queries
-    if !timings.is_empty()
+    let mut cpu_times: Vec<_> = vec![];
+    cpu_times.push(format!("engine update: {:.3} ms", state.stats.engine_update_time));
+    cpu_times.push(format!("engine encode: {:.3} ms", state.stats.engine_render_time));
+    cpu_times.push(format!("editor update: {:.3} ms", state.stats.egui_update_time));
+    cpu_times.push(format!("editor encode: {:.3} ms", state.stats.egui_render_time));
+    cpu_times.push(format!("app update: {:.3} ms", state.stats.app_update_time));
+    cpu_times.push(format!("total: {:.3} ms", cpu_total));
+    cpu_times.push(format!("wait: {:.3} ms", cpu_wait));
+    stats.push(("CPU times".to_string(), "⏱".to_string(), cpu_times, true));
+
+    // gpu times (per pass block - the gpu runs in parallel to the cpu and pass windows can overlap,
+    // so these do not add up to the frame time)
+    // only available if the adapter supports timestamp queries
+    let mut gpu_times: Vec<_> = vec![];
+    let mut gpu_total = 0.0;
+    if let Some(time) = state.stats.gpu_shadow_time { gpu_times.push(format!("shadow pass: {:.3} ms", time)); gpu_total += time; }
+    if let Some(time) = state.stats.gpu_depth_time { gpu_times.push(format!("depth pass: {:.3} ms", time)); gpu_total += time; }
+    if let Some(time) = state.stats.gpu_color_time { gpu_times.push(format!("color pass: {:.3} ms", time)); gpu_total += time; }
+    if let Some(time) = state.stats.gpu_hzb_time { gpu_times.push(format!("hzb culling: {:.3} ms", time)); gpu_total += time; }
+    if let Some(time) = state.stats.gpu_egui_time { gpu_times.push(format!("egui pass: {:.3} ms", time)); gpu_total += time; }
+
+    if !gpu_times.is_empty()
     {
-        stats.push(("GPU".to_string(), "💻".to_string(), timings));
+        gpu_times.push(format!("total: {:.3} ms", gpu_total));
+        stats.push(("GPU times".to_string(), "💻".to_string(), gpu_times, true));
     }
 
-    // editor
-    let mut editor: Vec<_> = vec![];
-    editor.push(format!("update time: {:.3} ms", state.stats.egui_update_time));
-    editor.push(format!("render time: {:.3} ms", state.stats.egui_render_time));
-    stats.push(("Editor".to_string(), "✏".to_string(), editor));
-
-    // app
-    let mut app: Vec<_> = vec![];
-    app.push(format!("update time: {:.3} ms", state.stats.app_update_time));
-    stats.push(("App".to_string(), "🗖".to_string(), app));
-
-    for (stat_category, stat_icon, stat_items) in &stats
+    for (stat_category, stat_icon, stat_items, separator) in &stats
     {
+        if *separator
+        {
+            ui.separator();
+        }
+
         ui.label(RichText::new(format!("{} {}", stat_icon, stat_category)).strong());
 
         for stat_item in stat_items
@@ -385,7 +396,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
         if ui.button("🐛 Output Stats").clicked()
         {
             console_debug!("Output Stats");
-            for (stat_category, _, stat_items) in stats
+            for (stat_category, _, stat_items, _) in stats
             {
                 console_debug!(format!("{}: ",stat_category));
 
