@@ -32,6 +32,10 @@ pub struct LightUniform
     pub shadow_index: i32,
     pub shadow_views: u32,
     pub shadow_bias: f32,
+    pub shadow_strength: f32,
+
+    // uniform array stride must be a multiple of 16 bytes
+    pub _padding: [f32; 3],
 }
 
 impl LightUniform
@@ -87,6 +91,9 @@ impl LightUniform
             shadow_index,
             shadow_views,
             shadow_bias: light.shadow_bias,
+            shadow_strength: light.shadow_strength.clamp(0.0, 1.0),
+
+            _padding: [0.0; 3],
         }
     }
 }

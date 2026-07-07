@@ -37,6 +37,9 @@ struct LightUniform
     shadow_index: i32,
     shadow_views: u32,
     shadow_bias: f32,
+
+    // how much light the shadow removes (1.0 = fully dark, 0.0 = no visible shadow)
+    shadow_strength: f32,
 };
 
 struct ShadowView
@@ -1224,6 +1227,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 if (material.receive_shadow != 0u && lights[i].shadow_index >= 0 && diffuse_strength > 0.0)
                 {
                     shadow = shadow_factor(i, in.position);
+
+                    // shadow strength: lift the shadow so it never removes more than shadow_strength of the light
+                    shadow = mix(1.0, shadow, lights[i].shadow_strength);
                 }
 
                 color += (diffuse_color + specular_color) * intensity * shadow;

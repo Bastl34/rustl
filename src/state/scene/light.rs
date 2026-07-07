@@ -12,6 +12,7 @@ use super::manager::id_manager;
 pub type LightItem = Box<Light>;
 
 const DEFAULT_SHADOW_BIAS: f32 = 0.0001;
+const DEFAULT_SHADOW_STRENGTH: f32 = 0.7;
 
 // sun color ramp based on the sun elevation (see Light::sun_color)
 const SUN_COLOR_HORIZON: Vector3<f32> = Vector3::new(1.0, 0.35, 0.10); // sunrise / sunset
@@ -37,6 +38,7 @@ pub enum LightType
 // serde defaults (for scenes saved before shadow support)
 fn default_cast_shadow() -> bool { true }
 fn default_shadow_bias() -> f32 { DEFAULT_SHADOW_BIAS }
+fn default_shadow_strength() -> f32 { DEFAULT_SHADOW_STRENGTH }
 
 #[derive(Serialize, Deserialize)]
 pub struct Light
@@ -65,6 +67,9 @@ pub struct Light
 
     #[serde(default = "default_shadow_bias")]
     pub shadow_bias: f32,
+
+    #[serde(default = "default_shadow_strength")]
+    pub shadow_strength: f32,
 }
 
 impl Light
@@ -94,6 +99,7 @@ impl Light
 
             cast_shadow: default_cast_shadow(),
             shadow_bias: default_shadow_bias(),
+            shadow_strength: default_shadow_strength(),
         }
     }
 
@@ -122,6 +128,7 @@ impl Light
 
             cast_shadow: default_cast_shadow(),
             shadow_bias: default_shadow_bias(),
+            shadow_strength: default_shadow_strength(),
         }
     }
 
@@ -150,6 +157,7 @@ impl Light
 
             cast_shadow: default_cast_shadow(),
             shadow_bias: default_shadow_bias(),
+            shadow_strength: default_shadow_strength(),
         }
     }
 
@@ -178,6 +186,7 @@ impl Light
 
             cast_shadow: false, // hemispheric lights can not cast shadows
             shadow_bias: default_shadow_bias(),
+            shadow_strength: default_shadow_strength(),
         }
     }
 
@@ -238,6 +247,7 @@ impl Light
         let mut distance_based_intensity;
         let mut cast_shadow;
         let mut shadow_bias;
+        let mut shadow_strength;
 
         {
             let light = light.borrow();
@@ -269,6 +279,7 @@ impl Light
             distance_based_intensity = light.distance_based_intensity;
             cast_shadow = light.cast_shadow;
             shadow_bias = light.shadow_bias;
+            shadow_strength = light.shadow_strength;
         }
 
         let mut changed = false;
@@ -335,6 +346,7 @@ impl Light
             {
                 changed = ui.checkbox(&mut cast_shadow, "Cast shadow").changed() || changed;
                 changed = ui.add(egui::Slider::new(&mut shadow_bias, 0.0..=0.05).text("shadow bias")).changed() || changed;
+                changed = ui.add(egui::Slider::new(&mut shadow_strength, 0.0..=1.0).text("shadow strength")).changed() || changed;
             }
         });
 
@@ -369,6 +381,7 @@ impl Light
             light.distance_based_intensity = distance_based_intensity;
             light.cast_shadow = cast_shadow;
             light.shadow_bias = shadow_bias;
+            light.shadow_strength = shadow_strength;
         }
     }
 
