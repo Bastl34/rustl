@@ -659,6 +659,18 @@ impl Material
 
     pub fn has_transparency(&self) -> bool
     {
+        if self.has_alpha_texture_transparency()
+        {
+            return true;
+        }
+
+        !approx_equal(self.get_data().alpha, 1.0)
+    }
+
+    // transparency driven by a texture (alpha texture or base texture alpha channel)
+    // these materials cast cutout shadows - uniform alpha only materials cast none
+    pub fn has_alpha_texture_transparency(&self) -> bool
+    {
         let data = self.get_data();
 
         // alpha texture
@@ -674,11 +686,6 @@ impl Material
             {
                 return true;
             }
-        }
-
-        if !approx_equal(data.alpha, 1.0)
-        {
-            return true;
         }
 
         false
