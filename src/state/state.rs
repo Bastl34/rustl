@@ -19,6 +19,10 @@ pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
 pub const DEFAULT_SHADOW_MAP_SIZE: u32 = 2048;
 pub const DEFAULT_SHADOW_MAX_DISTANCE: f32 = 100.0;
 
+pub const DEFAULT_SSAO_RADIUS: f32 = 0.5;
+pub const DEFAULT_SSAO_BIAS: f32 = 0.025;
+pub const DEFAULT_SSAO_STRENGTH: f32 = 1.0;
+
 pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
@@ -47,6 +51,7 @@ pub struct RenderingAdapterFeatures
     pub storage_buffer_array_support: bool,
     pub wireframe_mode_support: bool,
     pub occlusion_culling_support: bool, // compute shaders + indirect draws (not available on WebGL)
+    pub ssao_support: bool, // textureLoad on depth textures is not supported by naga's GLSL backend (WebGL/GL)
     pub max_msaa_samples: u32,
     pub max_texture_resolution: u32,
     pub max_supported_texture_resolution: u32
@@ -72,6 +77,11 @@ pub struct Rendering
     pub shadow: ChangeTracker<bool>,
     pub shadow_map_resolution: ChangeTracker<u32>,
     pub shadow_max_distance: f32,
+
+    pub ssao: bool,
+    pub ssao_radius: f32,
+    pub ssao_bias: f32,
+    pub ssao_strength: f32,
 
     pub distance_sorting: bool,
     pub frustum_culling: bool,
@@ -142,6 +152,7 @@ pub struct Statistics
 
     pub gpu_shadow_time: Option<f32>,
     pub gpu_depth_time: Option<f32>,
+    pub gpu_ssao_time: Option<f32>,
     pub gpu_color_time: Option<f32>,
     pub gpu_hzb_time: Option<f32>,
     pub gpu_egui_time: Option<f32>,
@@ -334,6 +345,7 @@ impl State
                 storage_buffer_array_support: false,
                 wireframe_mode_support: false,
                 occlusion_culling_support: false,
+                ssao_support: false,
                 max_msaa_samples: 1,
                 max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION,
                 max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
@@ -349,6 +361,11 @@ impl State
                 shadow: ChangeTracker::new(true),
                 shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
                 shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
+
+                ssao: true,
+                ssao_radius: DEFAULT_SSAO_RADIUS,
+                ssao_bias: DEFAULT_SSAO_BIAS,
+                ssao_strength: DEFAULT_SSAO_STRENGTH,
 
                 distance_sorting: true,
                 frustum_culling: true,
@@ -448,6 +465,7 @@ impl State
 
                 gpu_shadow_time: None,
                 gpu_depth_time: None,
+                gpu_ssao_time: None,
                 gpu_color_time: None,
                 gpu_hzb_time: None,
                 gpu_egui_time: None,
@@ -1009,6 +1027,7 @@ impl State
         println!(" - backend: {}", self.rendering_adapter.backend);
         println!(" - storage_buffer_array_support: {}", self.rendering_adapter.storage_buffer_array_support);
         println!(" - occlusion_culling_support: {}", self.rendering_adapter.occlusion_culling_support);
+        println!(" - ssao_support: {}", self.rendering_adapter.ssao_support);
         println!(" - max msaa_samples: {}", self.rendering_adapter.max_msaa_samples);
 
         println!("");

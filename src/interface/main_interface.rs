@@ -492,6 +492,7 @@ impl MainInterface
 
                     state.stats.gpu_shadow_time = None;
                     state.stats.gpu_depth_time = None;
+                    state.stats.gpu_ssao_time = None;
                     state.stats.gpu_color_time = None;
                     state.stats.gpu_hzb_time = None;
                     state.stats.gpu_egui_time = None;
@@ -549,6 +550,7 @@ impl MainInterface
                         {
                             if let Some(time) = gpu_times.shadow { state.stats.gpu_shadow_time = Some(state.stats.gpu_shadow_time.unwrap_or(0.0) + time); }
                             if let Some(time) = gpu_times.depth { state.stats.gpu_depth_time = Some(state.stats.gpu_depth_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.ssao { state.stats.gpu_ssao_time = Some(state.stats.gpu_ssao_time.unwrap_or(0.0) + time); }
                             if let Some(time) = gpu_times.color { state.stats.gpu_color_time = Some(state.stats.gpu_color_time.unwrap_or(0.0) + time); }
                             if let Some(time) = gpu_times.hzb { state.stats.gpu_hzb_time = Some(state.stats.gpu_hzb_time.unwrap_or(0.0) + time); }
                         }

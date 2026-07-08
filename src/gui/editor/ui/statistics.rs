@@ -366,6 +366,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     let mut gpu_total = 0.0;
     if let Some(time) = state.stats.gpu_shadow_time { gpu_times.push(format!("shadow pass: {:.3} ms", time)); gpu_total += time; }
     if let Some(time) = state.stats.gpu_depth_time { gpu_times.push(format!("depth pass: {:.3} ms", time)); gpu_total += time; }
+    if let Some(time) = state.stats.gpu_ssao_time { gpu_times.push(format!("ssao pass: {:.3} ms", time)); gpu_total += time; }
     if let Some(time) = state.stats.gpu_color_time { gpu_times.push(format!("color pass: {:.3} ms", time)); gpu_total += time; }
     if let Some(time) = state.stats.gpu_hzb_time { gpu_times.push(format!("hzb culling: {:.3} ms", time)); gpu_total += time; }
     if let Some(time) = state.stats.gpu_egui_time { gpu_times.push(format!("egui pass: {:.3} ms", time)); gpu_total += time; }

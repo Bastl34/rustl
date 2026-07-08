@@ -316,6 +316,8 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.end_row();
         });
 
+        ui.separator();
+
         ui.horizontal(|ui|
         {
             let mut shadow_enabled = *state.rendering.shadow.get_ref();
@@ -377,6 +379,37 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.label("ℹ").on_hover_text("max distance (from the camera) covered by directional light shadows (cascades) - smaller = sharper shadows");
 
             ui.end_row();
+        });
+
+        ui.separator();
+
+        let ssao_support = state.rendering_adapter.ssao_support;
+
+        ui.horizontal(|ui|
+        {
+            ui.add_enabled(ssao_support, egui::Checkbox::new(&mut state.rendering.ssao, "SSAO"));
+            ui.label("ℹ").on_hover_text("screen space ambient occlusion - darkens creases, corners and contact areas (not available on WebGL)");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("SSAO Radius:");
+            ui.add_enabled(ssao_support, egui::DragValue::new(&mut state.rendering.ssao_radius).speed(0.01).range(0.05..=10.0));
+            ui.label("ℹ").on_hover_text("sample radius in world units - larger = wider occlusion");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("SSAO Bias:");
+            ui.add_enabled(ssao_support, egui::DragValue::new(&mut state.rendering.ssao_bias).speed(0.001).range(0.0..=0.5));
+            ui.label("ℹ").on_hover_text("depth offset against self shadowing artifacts on flat surfaces");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("SSAO Strength:");
+            ui.add_enabled(ssao_support, egui::DragValue::new(&mut state.rendering.ssao_strength).speed(0.01).range(0.0..=1.0));
+            ui.label("ℹ").on_hover_text("how much the occlusion darkens the final color");
         });
     });
 }

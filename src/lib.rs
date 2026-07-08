@@ -31,6 +31,7 @@ mod rendering
         pub(crate) mod depth_export;
         pub(crate) mod hzb_downsample;
         pub(crate) mod hzb_occlusion_check;
+        pub(crate) mod ssao;
     }
 
     pub(crate) mod helper

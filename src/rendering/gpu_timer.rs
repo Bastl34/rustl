@@ -5,15 +5,16 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use crate::rendering::wgpu::WGpu;
 
 const ROLLING_WINDOW: usize = 30; // frames used for the displayed average
-const MAX_QUERIES: u32 = 64; // 2 per timed segment (shadow block + depth/color/hzb per camera)
+const MAX_QUERIES: u32 = 128; // 2 per timed segment (shadow block + egui + up to 5 segments per camera: depth x2/ssao/color/hzb)
 
-pub const GPU_TIMER_PASSES: usize = 5;
+pub const GPU_TIMER_PASSES: usize = 6;
 
 #[derive(Copy, Clone)]
 pub enum GpuTimerPass
 {
     Shadow = 0,
     Depth,
+    Ssao,
     Color,
     Hzb,
     Egui,
@@ -25,6 +26,7 @@ pub struct GpuPassTimes
 {
     pub shadow: Option<f32>,
     pub depth: Option<f32>,
+    pub ssao: Option<f32>,
     pub color: Option<f32>,
     pub hzb: Option<f32>,
     pub egui: Option<f32>,
@@ -317,6 +319,7 @@ impl GpuTimer
         {
             shadow: self.averages[GpuTimerPass::Shadow as usize],
             depth: self.averages[GpuTimerPass::Depth as usize],
+            ssao: self.averages[GpuTimerPass::Ssao as usize],
             color: self.averages[GpuTimerPass::Color as usize],
             hzb: self.averages[GpuTimerPass::Hzb as usize],
             egui: self.averages[GpuTimerPass::Egui as usize],
