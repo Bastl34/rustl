@@ -682,6 +682,7 @@ impl MainInterface
                 let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
+                img_data.save("data/screenshot.webp").unwrap();
 
                 // restore the original (window) resolution
                 if target_size.is_some()
