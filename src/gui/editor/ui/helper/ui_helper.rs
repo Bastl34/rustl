@@ -108,9 +108,9 @@ pub fn loading_progress_bar(ui: &mut egui::Ui, progress: f32)
         .frame(progress_frame)
         .show_separator_line(false)
         .resizable(false)
-        .min_height(0.0)
-        .max_height(bar_height)
-        .exact_height(bar_height)
+        .min_size(0.0)
+        .max_size(bar_height)
+        .exact_size(bar_height)
         .show_inside(ui, |ui|
     {
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;

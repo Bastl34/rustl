@@ -211,16 +211,22 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
                 .show_grid(egui::Vec2b::new(false, true))
                 .show_x(true)
                 .show_y(true)
-                .label_formatter(|name, value|
+                .label_formatter(|pos|
                 {
-                    let fps = value.y.round() as i64;
+                    let (name, point) = match pos
+                    {
+                        egui_plot::HoverPosition::NearDataPoint { plot_name, position, .. } => (*plot_name, position),
+                        egui_plot::HoverPosition::Elsewhere { position } => ("", position),
+                    };
+
+                    let fps = point.y.round() as i64;
                     if name.is_empty()
                     {
-                        format!("{} fps", fps)
+                        Some(format!("{} fps", fps))
                     }
                     else
                     {
-                        format!("{}: {} fps", name, fps)
+                        Some(format!("{}: {} fps", name, fps))
                     }
                 })
                 .auto_bounds(egui::Vec2b::new(true, true))
