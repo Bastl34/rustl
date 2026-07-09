@@ -103,6 +103,11 @@ impl Mouse
         }
     }
 
+    pub fn invalidate_pos(&mut self)
+    {
+        self.point.pos = None;
+    }
+
     pub fn set_pos(&mut self, pos: Point2::<f32>, engine_frame: u64, window_width: u32, window_height: u32)
     {
         let pressed = self.is_any_button_holding();

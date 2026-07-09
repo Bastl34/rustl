@@ -794,12 +794,22 @@ impl MainInterface
         // thinking a button is held, causing unwanted camera rotation.
         if egui_consumed
         {
-            if let winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } = event
+            let global_state = &mut *(self.context.state.borrow_mut());
+
+            match event
             {
-                let global_state = &mut *(self.context.state.borrow_mut());
-                let button = winit_map_mouse_button(button);
-                global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+                winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } =>
+                {
+                    let button = winit_map_mouse_button(button);
+                    global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+                },
+                winit::event::WindowEvent::CursorMoved { .. } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
+                },
+                _ => {}
             }
+
             return;
         }
         else
@@ -897,6 +907,10 @@ impl MainInterface
                     pos.y = global_state.height as f32 - pos.y;
 
                     global_state.io.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                },
+                winit::event::WindowEvent::CursorLeft { device_id: _ } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
                 },
                 winit::event::WindowEvent::Touch(touch) =>
                 {

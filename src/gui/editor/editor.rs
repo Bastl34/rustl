@@ -666,7 +666,8 @@ impl Editor
 
                 if let Some(copy_asset) = &self.editor_state.copy_asset
                 {
-                    let pos = state.io.input_manager.mouse.point.pos.unwrap();
+                    // fallback to the window center if there is no known cursor position (cursor outside of the window/over the gui)
+                    let pos = state.io.input_manager.mouse.point.pos.unwrap_or(Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0));
 
                     let copy_node_id = self.editor_state.copy_node_id.clone();
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
@@ -719,7 +720,8 @@ impl Editor
 
             if let Some(source) = &node.source
             {
-                let pos = state.io.input_manager.mouse.point.pos.unwrap();
+                // fallback to the window center if there is no known cursor position (cursor outside of the window/over the gui)
+                let pos = state.io.input_manager.mouse.point.pos.unwrap_or(Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0));
 
                 let copy_node_id = self.editor_state.copy_node_id.clone();
                 let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
@@ -1107,13 +1109,17 @@ impl Editor
         // ********** mode change **********
         if state.io.input_manager.keyboard.is_pressed(Key::G)
         {
-            let start_pos = state.io.input_manager.mouse.point.pos.unwrap();
-            self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
+            if let Some(start_pos) = state.io.input_manager.mouse.point.pos
+            {
+                self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
+            }
         }
         if state.io.input_manager.keyboard.is_pressed(Key::R)
         {
-            let start_pos = state.io.input_manager.mouse.point.pos.unwrap();
-            self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+            if let Some(start_pos) = state.io.input_manager.mouse.point.pos
+            {
+                self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+            }
         }
 
         if self.editor_state.edit_mode.is_some()

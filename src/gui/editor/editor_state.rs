@@ -40,6 +40,17 @@ pub enum GizmoTypeAndAxis
     ScaleUniform,
 }
 
+// drag anchor for the translation gizmo
+// the object follows the pointer absolutely based on this -> no offset accumulates when cursor events get lost (cursor outside of the window or over the gui)
+#[derive(Clone, Copy)]
+pub struct GizmoTranslationAnchor
+{
+    pub camera_id: u32, // camera the drag started in
+    pub plane_normal: Vector3<f32>, // movement plane (fixed for the whole drag)
+    pub plane_point: Point3<f32>, // ray/plane intersection at drag start (world space)
+    pub start_position: Vector3<f32>, // local translation of the edited transform at drag start
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
 {
@@ -218,6 +229,7 @@ pub struct EditorState
     pub drag_anchor_offset: Option<Vector3<f32>>,
     pub selected_gizmo: Option<GizmoTypeAndAxis>,
     pub selected_object_gizmo_value: Option<Vector3<f32>>,
+    pub gizmo_translation_anchor: Option<GizmoTranslationAnchor>,
 
     pub last_hover_object: Option<String>,
     pub last_hover_pointer_position: Option<Point3<f32>>,
@@ -343,6 +355,7 @@ impl EditorState
             selected_object: String::new(), // type_nodeID/elementID_instanceID
             selected_object_position: None,
             drag_anchor_offset: None,
+            gizmo_translation_anchor: None,
             selected_gizmo: None,
             selected_object_gizmo_value: None,
 
