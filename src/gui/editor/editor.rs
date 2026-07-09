@@ -1654,7 +1654,14 @@ impl Editor
             if let Some(pick_res) = pick(state, pos_new, true, false, false, Some(predicate))
             {
                 let p = ortho_correction(pick_res.1.point);
-                pick_pos = Some(p + anchor_offset);
+                let mut target = p + anchor_offset;
+
+                if !cam_is_ortho
+                {
+                    target.y = p.y;
+                }
+
+                pick_pos = Some(target);
             }
         }
 
