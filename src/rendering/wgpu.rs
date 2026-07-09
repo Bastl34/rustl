@@ -191,6 +191,10 @@ impl WGpu
             && downlevel_flags.contains(wgpu::DownlevelFlags::INDIRECT_EXECUTION)
             && r32_float_usages.contains(wgpu::TextureUsages::STORAGE_BINDING);
 
+        // ssao support: the ssao shader does textureLoad on a depth texture, which naga's
+        // GLSL backend does not support -> the ssao pipelines must not even be created there
+        state.rendering_adapter.ssao_support = adapter_info.backend != wgpu::Backend::Gl;
+
         // apply adapter infos
         state.rendering_adapter.name = adapter_info.name.clone();
         state.rendering_adapter.driver = adapter_info.driver.clone();

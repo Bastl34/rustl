@@ -54,6 +54,9 @@ struct SceneUniform
     ibl_diffuse_intensity: f32,
     xray_alpha: f32,
     shadow_max_distance: f32,
+
+    // 0.0 = ssao disabled
+    ssao_strength: f32,
 };
 
 struct SkeletonUniform
@@ -136,6 +139,9 @@ var<uniform> shadow_views: array<ShadowView, MAX_SHADOW_VIEWS>;
 
 @group(1) @binding(5) var t_shadow: texture_depth_2d_array;
 @group(1) @binding(6) var s_shadow: sampler_comparison;
+
+// blurred ssao result (1:1 with the framebuffer pixels)
+@group(1) @binding(7) var t_ssao: texture_2d<f32>;
 
 @group(2) @binding(0)
 var<uniform> skeleton: SkeletonUniform;
@@ -1093,6 +1099,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
+    // screen space ambient occlusion (sampled 1:1 via the framebuffer pixel position)
+    // applied to the ambient/indirect terms only (hemispheric light, IBL, ambient color) -
+    // direct light is already occluded by the shadow maps. transparent materials
+    // (blend mode 2) are excluded: the ssao texture holds the occlusion of the
+    // opaque geometry behind them
+    var ssao_factor = 1.0;
+    if (scene.ssao_strength > 0.0001 && material.unlit_shading == 0u && material.blend_mode != 2u)
+    {
+        let ssao_value = textureLoad(t_ssao, vec2<i32>(in.clip_position.xy), 0).r;
+        ssao_factor = 1.0 - (1.0 - ssao_value) * scene.ssao_strength;
+    }
+
     if (material.unlit_shading != 0u || light_amount == 0)
     {
         color = object_color.rgb;
@@ -1191,7 +1209,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 let light_contrib = clamp(normal_dot_light_dir, -1.0, 1.0) * 0.5 + 0.5;
                 let light_color = mix(lights[i].ground_color, lights[i].color, light_contrib);
 
-                color += (light_color * object_color * intensity).rgb;
+                // hemispheric light is an ambient term -> occluded by ssao
+                color += (light_color * object_color * intensity).rgb * ssao_factor;
             }
             else
             {
@@ -1270,9 +1289,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
             let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
             let reflection_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
-            color.x += reflection_color.x * reflectivity;
-            color.y += reflection_color.y * reflectivity;
-            color.z += reflection_color.z * reflectivity;
+            color.x += reflection_color.x * reflectivity * ssao_factor;
+            color.y += reflection_color.y * reflectivity * ssao_factor;
+            color.z += reflection_color.z * reflectivity * ssao_factor;
         }
 
         // Diffuse IBL (Irradiance)
@@ -1287,14 +1306,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
             let ibl_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
 
-            color += ibl_color.rgb * object_color.rgb * ibl_diffuse_intensity;
+            color += ibl_color.rgb * object_color.rgb * ibl_diffuse_intensity * ssao_factor;
         }
     }
 
-    // ambient color
-    color.x += ambient_color.x;
-    color.y += ambient_color.y;
-    color.z += ambient_color.z;
+    // ambient color (occluded by ssao)
+    color.x += ambient_color.x * ssao_factor;
+    color.y += ambient_color.y * ssao_factor;
+    color.z += ambient_color.z * ssao_factor;
 
     // TODO: tone mapping and gamma can be done in post
 

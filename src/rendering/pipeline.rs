@@ -52,37 +52,6 @@ impl Pipeline
         pipe
     }
 
-    /*
-    pub fn new_occlusion_culling(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> Pipeline
-    {
-        let shader;
-        {
-            let device = wgpu.device();
-
-            // shader
-            shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
-            {
-                label: Some(name),
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)).into(),
-            });
-        }
-
-        // create pipe
-        let mut pipe = Self
-        {
-            name: name.to_string(),
-            fragment_attachment: false,
-
-            shader,
-            pipeline: None,
-        };
-
-        pipe.create_occlusion_culling(wgpu, bind_group_layouts);
-
-        pipe
-    }
-    */
-
     pub fn new_shadow(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], alpha_test: bool) -> Pipeline
     {
         let shader;
@@ -370,72 +339,6 @@ impl Pipeline
         self.create_std(wgpu, bind_group_layouts, depth_stencil, depth_compare, depth_write, fragment_attachment, samples, polygon_mode);
     }
 
-    /*
-    pub fn re_create_occlusion_culling(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
-    {
-        console_log!("recreating occlusion culling pipeline");
-
-        self.create_occlusion_culling(wgpu, bind_group_layouts);
-    }
-
-    pub fn create_occlusion_culling(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
-    {
-        let device = wgpu.device();
-
-        let layout_name = format!("{} Layout", self.name);
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
-        {
-            label: Some(layout_name.as_str()),
-            bind_group_layouts,
-            push_constant_ranges: &[],
-        });
-
-        // Depth-only pipeline
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
-        {
-            label: Some(&self.name),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState
-            {
-                module: &self.shader,
-                entry_point: Some("vs_main"),
-                buffers: &[], // no vertex buffer, corners created in the shader
-                compilation_options: Default::default(),
-            },
-            primitive: wgpu::PrimitiveState
-            {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState
-            {
-                format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState
-            {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            fragment: None, // kein Fragment-Shader = depth-only
-            cache: None,
-        });
-
-        self.pipeline = Some(render_pipeline);
-    }
-    */
-
     pub fn create_depth_export(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
     {
         // for converting depth buffer R32Float texture
@@ -501,5 +404,99 @@ impl Pipeline
         console_log!("recreating depth export pipeline");
 
         self.create_depth_export(wgpu, bind_group_layouts);
+    }
+
+    // fullscreen triangle pass rendering into a single color target (no depth) - used by the ssao passes
+    // fs_entry selects the fragment entry point (the ssao shader module contains fs_main and fs_blur)
+    pub fn new_fullscreen(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str) -> Pipeline
+    {
+        let shader;
+        {
+            let device = wgpu.device();
+
+            shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
+            {
+                label: Some(name),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)).into(),
+            });
+        }
+
+        let mut pipe = Self
+        {
+            name: name.to_string(),
+            fragment_attachment: true,
+
+            shader,
+            pipeline: None,
+        };
+
+        pipe.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry);
+
+        pipe
+    }
+
+    pub fn create_fullscreen(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str)
+    {
+        let device = wgpu.device();
+
+        let layout_name = format!("{} Layout", self.name);
+
+        let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some(layout_name.as_str()),
+            bind_group_layouts: &bind_group_layouts,
+            ..Default::default()
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some(&self.name),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState
+            {
+                module: &self.shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState
+            {
+                module: &self.shader,
+                entry_point: Some(fs_entry),
+                targets: &[Some(wgpu::ColorTargetState
+                {
+                    format: target_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        self.pipeline = Some(pipeline);
+    }
+
+    pub fn re_create_fullscreen(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str)
+    {
+        console_log!("recreating fullscreen pipeline");
+
+        self.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry);
     }
 }

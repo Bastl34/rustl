@@ -314,6 +314,48 @@ impl Texture
         }
     }
 
+    // single channel render target for the ssao passes (raw result and blurred result)
+    pub fn new_ssao_texture(wgpu: &mut WGpu, name: &str, width: u32, height: u32) -> Texture
+    {
+        let device = wgpu.device();
+
+        let size = wgpu::Extent3d
+        {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let desc = wgpu::TextureDescriptor
+        {
+            label: Some(name),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::GRAY_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[Self::GRAY_FORMAT],
+        };
+        let texture = device.create_texture(&desc);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self
+        {
+            name: name.to_string(),
+
+            width,
+            height,
+
+            format: TextureFormat::Gray,
+            is_depth_texture: false,
+
+            texture,
+            views: vec![view]
+        }
+    }
+
     pub fn get_wgpu_format(format: &TextureFormat) -> wgpu::TextureFormat
     {
         match format

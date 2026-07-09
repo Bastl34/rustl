@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -85,11 +85,12 @@ pub struct SceneUniform
     pub ibl_diffuse_intensity: f32,
     pub xray_alpha: f32,
     pub shadow_max_distance: f32,
+    pub ssao_strength: f32, // 0.0 = ssao disabled
 }
 
 impl SceneUniform
 {
-    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32) -> Self
+    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32, ssao_strength: f32) -> Self
     {
         let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
         let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
@@ -102,6 +103,7 @@ impl SceneUniform
             ibl_diffuse_intensity: ibl_diffuse_intensity,
             xray_alpha: xray_alpha,
             shadow_max_distance: shadow_max_distance,
+            ssao_strength: ssao_strength,
         }
     }
 }
@@ -125,6 +127,9 @@ pub enum RenderPipelineType
 
     // alpha tested shadow casters (alpha textured materials, e.g. leaves)
     ShadowCutout,
+
+    Ssao,
+    SsaoBlur,
 }
 
 #[derive(EnumCount)]
@@ -153,6 +158,9 @@ pub struct Scene
     hzb_downsample_shader: String,
     hzb_occlusion_check_shader: String,
 
+    // one shader module with both fullscreen entry points (fs_main = ssao, fs_blur = blur)
+    ssao_shader: String,
+
     samples: u32,
     pub wireframe_mode: bool,
     pub xray_mode: bool,
@@ -164,6 +172,10 @@ pub struct Scene
     // occlusion culling needs compute shaders + indirect draws (not available on WebGL)
     occlusion_supported: bool,
     occlusion_was_active: bool,
+
+    // the ssao shader does textureLoad on a depth texture, which naga's GLSL backend
+    // does not support (WebGL) -> the ssao pipelines are not created there
+    ssao_supported: bool,
 
     update_result: UpdateResult,
 
@@ -186,6 +198,16 @@ pub struct Scene
     // shadow stats of the last rendered frame
     pub shadow_views: u32,
     pub shadow_draw_calls: u32,
+
+    // ssao render targets (surface sized, 1 sample): raw pass result and blurred result
+    // (the blurred texture is sampled by the color pass via the light/cam/scene bind group)
+    pub ssao_texture: Texture,
+    pub ssao_blur_texture: Texture,
+
+    pub ssao_enabled: bool,
+    pub ssao_radius: f32,
+    pub ssao_bias: f32,
+    pub ssao_strength: f32,
 
     bounding_boxes_buffer: BoundingBoxesBuffer,
 
@@ -234,6 +256,7 @@ impl Scene
         let depth_export_shader = resources::load_string("shader/depth_export.wgsl").unwrap();
         let hzb_downsample_shader = resources::load_string("shader/compute/hzb_downsample.wgsl").unwrap();
         let hzb_occlusion_check_shader = resources::load_string("shader/compute/occlusion_hzb_check.wgsl").unwrap();
+        let ssao_shader = resources::load_string("shader/ssao.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
@@ -243,6 +266,9 @@ impl Scene
         let (depth_width, depth_height) = { let config = wgpu.surface_config(); (config.width, config.height) };
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples, depth_width, depth_height);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, depth_width, depth_height);
+
+        let ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", depth_width, depth_height);
+        let ssao_blur_texture = Texture::new_ssao_texture(wgpu, "ssao blur texture", depth_width, depth_height);
 
         let mut render_scene = Self
         {
@@ -254,6 +280,7 @@ impl Scene
             depth_export_shader,
             hzb_downsample_shader,
             hzb_occlusion_check_shader,
+            ssao_shader,
 
             samples,
             wireframe_mode: false,
@@ -265,6 +292,8 @@ impl Scene
 
             occlusion_supported: state.rendering_adapter.occlusion_culling_support,
             occlusion_was_active: false,
+
+            ssao_supported: state.rendering_adapter.ssao_support,
 
             update_result: UpdateResult::new(),
 
@@ -284,6 +313,14 @@ impl Scene
 
             shadow_views: 0,
             shadow_draw_calls: 0,
+
+            ssao_texture,
+            ssao_blur_texture,
+
+            ssao_enabled: state.rendering.ssao,
+            ssao_radius: state.rendering.ssao_radius,
+            ssao_bias: state.rendering.ssao_bias,
+            ssao_strength: state.rendering.ssao_strength,
 
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
             draw_slots: DrawSlotsBuffer::new(wgpu),
@@ -311,7 +348,8 @@ impl Scene
         let data = scene.get_data();
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance);
+        let effective_ssao_strength = if self.ssao_supported && self.ssao_enabled { self.ssao_strength } else { 0.0 };
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -329,7 +367,8 @@ impl Scene
         let data = scene.get_data();
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance);
+        let effective_ssao_strength = if self.ssao_supported && self.ssao_enabled { self.ssao_strength } else { 0.0 };
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
     }
@@ -371,7 +410,9 @@ impl Scene
         ];
 
         // ********** depth pass **********
-        if !re_create || self.render_pipelines.len() < RenderPipelineType::COUNT
+        // without ssao support the two ssao pipelines at the end of the enum are not created
+        let expected_pipelines = if self.ssao_supported { RenderPipelineType::COUNT } else { RenderPipelineType::COUNT - 2 };
+        if !re_create || self.render_pipelines.len() < expected_pipelines
         {
             self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1, wgpu::PolygonMode::Fill));
             self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1, wgpu::PolygonMode::Fill));
@@ -440,6 +481,42 @@ impl Scene
         {
             self.render_pipelines.get_mut(RenderPipelineType::Shadow as usize).unwrap().re_create_shadow(wgpu, &bind_group_layouts, false);
             self.render_pipelines.get_mut(RenderPipelineType::ShadowCutout as usize).unwrap().re_create_shadow(wgpu, &cutout_bind_group_layouts, true);
+        }
+
+        // the ssao shader does textureLoad on a depth texture, which naga's GLSL
+        // backend does not support -> the ssao pipelines must not even be created there
+        // (they are the last enum entries, so all other pipeline indices stay valid)
+        if self.ssao_supported
+        {
+            // ********** ssao pass (depth -> raw occlusion) **********
+
+            let ssao_bind_layout = SsaoBindGroup::ssao_bind_layout(wgpu);
+
+            let bind_group_layouts = [ &ssao_bind_layout ];
+
+            if !re_create
+            {
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main"));
+            }
+            else
+            {
+                self.render_pipelines.get_mut(RenderPipelineType::Ssao as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main");
+            }
+
+            // ********** ssao blur pass (raw occlusion -> blurred occlusion) **********
+
+            let ssao_blur_bind_layout = SsaoBindGroup::blur_bind_layout(wgpu);
+
+            let bind_group_layouts = [ &ssao_blur_bind_layout ];
+
+            if !re_create
+            {
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao blur", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur"));
+            }
+            else
+            {
+                self.render_pipelines.get_mut(RenderPipelineType::SsaoBlur as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur");
+            }
         }
 
         // compute shaders are not available on all adapters (WebGL) -> the occlusion
@@ -540,7 +617,7 @@ impl Scene
         }
     }
 
-    pub fn update_light_cameras_shadows(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, shadow_map_size: u32, shadow_enabled_changed: bool)
+    pub fn update_light_cameras_shadows(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, shadow_map_size: u32, shadow_enabled_changed: bool, ssao_params_changed: bool)
     {
         // ********** lights: all **********
         let max_lights = scene.get_data().max_lights;
@@ -590,7 +667,7 @@ impl Scene
         // ********** lights and cameras **********
         for cam in &mut scene.cameras
         {
-            let mut cam_changed = cam.get_data_mut().consume_change();
+            let cam_changed = cam.get_data_mut().consume_change();
             let mut hzb_changed = false;
             let mut visibility_changed = false;
             let mut cam_buffer_created = false;
@@ -619,7 +696,9 @@ impl Scene
             }
 
             // create cam/light/scene bind group
-            if cam.bind_group_render_item.is_none() || all_lights_changed || shadow_atlas_recreated
+            // (the ssao blur texture is baked into the bind group - it is recreated together
+            // with the depth pass texture on resize -> same trigger)
+            if cam.bind_group_render_item.is_none() || all_lights_changed || shadow_atlas_recreated || self.depth_pass_texture_changed
             {
                 let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
                 let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
@@ -627,6 +706,26 @@ impl Scene
                 let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
 
                 cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
+            }
+
+            // ********** ssao bind group + uniform **********
+            // no resources at all on adapters without ssao support (WebGL)
+            if self.ssao_supported
+            {
+                // the depth pass and raw ssao texture views are baked into the bind groups
+                // -> recreate when those textures were recreated (resize)
+                if cam.ssao_bind_group_render_item.is_none() || cam_buffer_created || self.depth_pass_texture_changed
+                {
+                    let ssao_uniform = SsaoUniform::new(cam.webgpu_projection(), cam.get_data().viewport_px(), self.ssao_radius, self.ssao_bias);
+                    let ssao_bind_group = SsaoBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, &self.ssao_texture, ssao_uniform);
+                    cam.ssao_bind_group_render_item = Some(Box::new(ssao_bind_group));
+                }
+                else if cam_changed || ssao_params_changed
+                {
+                    let ssao_uniform = SsaoUniform::new(cam.webgpu_projection(), cam.get_data().viewport_px(), self.ssao_radius, self.ssao_bias);
+                    let ssao_bind_group = get_render_item::<SsaoBindGroup>(cam.ssao_bind_group_render_item.as_ref().unwrap());
+                    ssao_bind_group.update_uniform(wgpu, ssao_uniform);
+                }
             }
 
             // ********** occlusion culling resources **********
@@ -1269,12 +1368,28 @@ impl Scene
             self.update_buffer(wgpu, scene);
         }
 
+        // ssao strength/enabled are part of the scene uniform (0.0 = disabled)
+        if state.rendering.ssao != self.ssao_enabled || state.rendering.ssao_strength != self.ssao_strength
+        {
+            self.ssao_enabled = state.rendering.ssao;
+            self.ssao_strength = state.rendering.ssao_strength;
+            self.update_buffer(wgpu, scene);
+        }
+
+        // radius/bias live in the per camera ssao uniforms
+        let ssao_params_changed = state.rendering.ssao_radius != self.ssao_radius || state.rendering.ssao_bias != self.ssao_bias;
+        if ssao_params_changed
+        {
+            self.ssao_radius = state.rendering.ssao_radius;
+            self.ssao_bias = state.rendering.ssao_bias;
+        }
+
         // toggling shadows changes the atlas layer assignment of all lights -> lights buffer must be re-written
         let shadow_enabled = *state.rendering.shadow.get_ref();
         let shadow_enabled_changed = shadow_enabled != self.shadow_enabled;
         self.shadow_enabled = shadow_enabled;
 
-        self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref(), shadow_enabled_changed);
+        self.update_light_cameras_shadows(wgpu, scene, *state.rendering.shadow_map_resolution.get_ref(), shadow_enabled_changed, ssao_params_changed);
 
         // ********** save image stuff **********
         if state.debug.save_image
@@ -1388,14 +1503,63 @@ impl Scene
         self.create_pipelines(wgpu, scene, true);
     }
 
-    pub fn resize(&mut self, wgpu: &mut WGpu, _scene: &mut Box<crate::state::scene::scene::Scene>, width: u32, height: u32)
+    pub fn resize(&mut self, wgpu: &mut WGpu, scene: &mut Box<crate::state::scene::scene::Scene>, width: u32, height: u32)
     {
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples, width, height);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, width, height);
 
-        // the per camera depth export bind groups sample the recreated depth texture
-        // -> recreate them in the next update
+        self.ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", width, height);
+        self.ssao_blur_texture = Texture::new_ssao_texture(wgpu, "ssao blur texture", width, height);
+
+        // the per camera depth export / ssao / light-cam-scene bind groups sample the
+        // recreated textures -> recreate them in the next update (cameras added later etc.)
         self.depth_pass_texture_changed = true;
+
+        // rendering keeps running while the update loop is paused (state.pause) -> existing
+        // bind groups that bake the recreated texture views are rebuilt right away, otherwise
+        // the passes would sample the old (never again written) textures until the next
+        // unpaused update
+        let scene = scene.as_mut();
+        for cam in &mut scene.cameras
+        {
+            if cam.render_item.is_none()
+            {
+                continue;
+            }
+
+            if cam.bind_group_render_item.is_some() && scene.lights_render_item.is_some()
+            {
+                let camera_buffer = get_render_item_mut::<CameraBuffer>(cam.render_item.as_mut().unwrap());
+                let lights_buffer = get_render_item_mut::<LightBuffer>(scene.lights_render_item.as_mut().unwrap());
+
+                let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
+                cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
+            }
+
+            if self.ssao_supported && cam.ssao_bind_group_render_item.is_some()
+            {
+                let ssao_uniform = SsaoUniform::new(cam.webgpu_projection(), cam.get_data().viewport_px(), self.ssao_radius, self.ssao_bias);
+                let ssao_bind_group = SsaoBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, &self.ssao_texture, ssao_uniform);
+                cam.ssao_bind_group_render_item = Some(Box::new(ssao_bind_group));
+            }
+
+            if cam.depth_export_bind_group_render_item.is_some()
+            {
+                let viewport = cam.get_data().get_viewport();
+
+                // uv rect of the camera viewport inside the depth texture (v=0 is the top row)
+                let viewport_offset_scale =
+                [
+                    viewport.x,
+                    1.0 - viewport.y - viewport.height,
+                    viewport.width,
+                    viewport.height,
+                ];
+
+                let depth_export_bind_group = DepthExportBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, viewport_offset_scale);
+                cam.depth_export_bind_group_render_item = Some(Box::new(depth_export_bind_group));
+            }
+        }
     }
 
     pub fn list_all_child_nodes(nodes: &Vec<NodeItem>, check_visibility: bool) -> Vec<NodeItem>
@@ -1767,13 +1931,12 @@ impl Scene
                     split_groups.push((occluders, other, transparent_objects.clone()));
                 }
 
-                // ********** pass 1: depth + color (objects visible in the previous frame) **********
+                // ********** pass 1: depth (objects visible in the previous frame) **********
                 let pass1_batches: Vec<(&Vec<RenderData>, Option<&wgpu::Buffer>)> = split_groups.iter().map(|(occluders, _, _)| (occluders, Some(&indirect_args.args_visible))).collect();
 
                 render_result.draw_calls += self.render_depth(wgpu, view, encoder, &pass1_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
-                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &pass1_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
 
-                // ********** hzb + occlusion check **********
+                // ********** hzb + occlusion check (from the pass 1 depth) **********
                 // the hzb block spans multiple passes: the depth export pass writes the begin
                 // timestamp and the occlusion check pass writes the end timestamp
                 let hzb_timer_segment = gpu_timer.as_mut().and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Hzb));
@@ -1781,33 +1944,59 @@ impl Scene
                 render_result.draw_calls += self.create_hzb(wgpu, encoder, cam, hzb_timer_segment);
                 self.hzb_occlusion_culling(wgpu, encoder, cam, hzb_timer_segment);
 
-                // ********** pass 2: newly visible objects + non-occluders + transparent objects **********
-                let mut pass2_batches: Vec<(&Vec<RenderData>, Option<&wgpu::Buffer>)> = vec![];
-                for (occluders, other_solids, transparents) in &split_groups
+                // ********** pass 2: depth (objects which became visible this frame) **********
+                // completes the opaque depth before ssao samples it - otherwise disoccluded
+                // objects would be shaded with the occlusion of the geometry behind them
+                let pass2_batches: Vec<(&Vec<RenderData>, Option<&wgpu::Buffer>)> = split_groups.iter().map(|(occluders, _, _)| (occluders, Some(&indirect_args.args_new))).collect();
+
+                render_result.draw_calls += self.render_depth(wgpu, view, encoder, &pass2_batches, cam_data, &bind_group_render_item.bind_group, false, gpu_timer.as_mut());
+
+                // ********** ssao (from the completed opaque depth) **********
+                if self.ssao_supported && self.ssao_enabled && self.ssao_strength > 0.0
                 {
-                    pass2_batches.push((occluders, Some(&indirect_args.args_new)));
-                    pass2_batches.push((other_solids, Some(&indirect_args.args_visible)));
-                    pass2_batches.push((transparents, Some(&indirect_args.args_visible)));
+                    render_result.draw_calls += self.render_ssao(wgpu, encoder, cam, cam_data, clear, gpu_timer.as_mut());
                 }
 
-                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &pass2_batches, cam_data, &bind_group_render_item.bind_group, false, gpu_timer.as_mut());
+                // ********** color: all currently visible objects **********
+                // after the occlusion check args_visible holds ALL currently visible objects
+                // (including the newly visible ones) -> a single color pass draws everything
+                let mut color_batches: Vec<(&Vec<RenderData>, Option<&wgpu::Buffer>)> = vec![];
+                for (occluders, other_solids, transparents) in &split_groups
+                {
+                    color_batches.push((occluders, Some(&indirect_args.args_visible)));
+                    color_batches.push((other_solids, Some(&indirect_args.args_visible)));
+                    color_batches.push((transparents, Some(&indirect_args.args_visible)));
+                }
+
+                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
             }
             else
             {
                 // ********** depth pre-pass **********
-                let mut render_data = Vec::with_capacity(materials_read.len());
+                // solids only: the ssao pass samples this depth and expects the occlusion of
+                // the opaque geometry (a transparent pane must not darken the floor behind it)
+                let mut solid_data = Vec::with_capacity(materials_read.len());
+                let mut transparent_data = Vec::with_capacity(materials_read.len());
                 for (solid_objects, transparent_objects) in &render_groups_frustum_culled
                 {
-                    render_data.extend(solid_objects.iter().cloned());
-                    render_data.extend(transparent_objects.iter().cloned());
+                    solid_data.extend(solid_objects.iter().cloned());
+                    transparent_data.extend(transparent_objects.iter().cloned());
                 }
 
-                let batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 1] = [(&render_data, None)];
+                let depth_batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 1] = [(&solid_data, None)];
 
-                render_result.draw_calls += self.render_depth(wgpu, view, encoder, &batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                render_result.draw_calls += self.render_depth(wgpu, view, encoder, &depth_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+
+                // ********** ssao (from the depth pre-pass) **********
+                if self.ssao_supported && self.ssao_enabled && self.ssao_strength > 0.0
+                {
+                    render_result.draw_calls += self.render_ssao(wgpu, encoder, cam, cam_data, clear, gpu_timer.as_mut());
+                }
 
                 // ********** color pass **********
-                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                let color_batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 2] = [(&solid_data, None), (&transparent_data, None)];
+
+                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
             }
 
             i += 1;
@@ -2027,6 +2216,90 @@ impl Scene
         (views_to_render.len() as u32, draw_calls)
     }
 
+    // two fullscreen passes: ssao (depth -> raw occlusion) + blur (raw -> blurred occlusion)
+    // the blurred result is sampled by the color pass via the light/cam/scene bind group
+    pub fn render_ssao(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera, cam_data: &CameraData, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
+    {
+        if cam.ssao_bind_group_render_item.is_none()
+        {
+            return 0;
+        }
+
+        let ssao_bind_group = get_render_item::<SsaoBindGroup>(cam.ssao_bind_group_render_item.as_ref().unwrap());
+
+        // both ssao passes always run together -> begin/end timestamps are always written
+        let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Ssao));
+
+        // whole pixels (top-left origin) - must match the viewport in the ssao uniform
+        let [x, y, width, height] = cam_data.viewport_px();
+
+        // the first camera clears the (surface sized) targets - 1.0 = no occlusion
+        let load_op = if clear { wgpu::LoadOp::Clear(wgpu::Color::WHITE) } else { wgpu::LoadOp::Load };
+
+        // ********** ssao pass **********
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            {
+                label: Some("ssao pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment
+                {
+                    view: &self.ssao_texture.get_view(),
+                    resolve_target: None,
+                    ops: wgpu::Operations
+                    {
+                        load: load_op,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: timer_segment.map(|timer_segment| timer_segment.begin_render_writes()),
+                multiview_mask: None,
+            });
+
+            // set viewport uses top-left origin (we are using bottom-left origin)
+            pass.set_viewport(x, y, width, height, 0.0, 1.0);
+
+            pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Ssao as usize].get());
+            pass.set_bind_group(0, &ssao_bind_group.ssao_bind_group, &[]);
+
+            pass.draw(0..3, 0..1); // fullscreen triangle
+        }
+
+        // ********** blur pass **********
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            {
+                label: Some("ssao blur pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment
+                {
+                    view: &self.ssao_blur_texture.get_view(),
+                    resolve_target: None,
+                    ops: wgpu::Operations
+                    {
+                        load: load_op,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: timer_segment.map(|timer_segment| timer_segment.end_render_writes()),
+                multiview_mask: None,
+            });
+
+            pass.set_viewport(x, y, width, height, 0.0, 1.0);
+
+            pass.set_pipeline(&self.render_pipelines[RenderPipelineType::SsaoBlur as usize].get());
+            pass.set_bind_group(0, &ssao_bind_group.blur_bind_group, &[]);
+
+            pass.draw(0..3, 0..1); // fullscreen triangle
+        }
+
+        2
+    }
+
     // batches: (nodes, optional indirect args buffer) - indirect batches are drawn gpu-driven
     pub fn render_depth(&mut self, _wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder, batches: &[(&Vec<RenderData>, Option<&wgpu::Buffer>)], cam_data: &CameraData, light_cam_bind_group: &BindGroup, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
     {
@@ -2086,15 +2359,8 @@ impl Scene
             multiview_mask: None,
         });
 
-        let viewport = cam_data.get_viewport();
-
-        let x = viewport.x * cam_data.resolution_width as f32;
-        let width = viewport.width * cam_data.resolution_width as f32;
-
-        let height = viewport.height * cam_data.resolution_height as f32;
-        let y = (1.0 - viewport.y - viewport.height) * cam_data.resolution_height as f32;
-
-        // set viewport uses top-left origin (we are using bottom-left origin)
+        // whole pixels, top-left origin (the viewport values use bottom-left origin)
+        let [x, y, width, height] = cam_data.viewport_px();
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         let mut draw_calls = 0;
@@ -2160,15 +2426,8 @@ impl Scene
             multiview_mask: None,
         });
 
-        let viewport = cam_data.get_viewport();
-
-        let x = viewport.x * cam_data.resolution_width as f32;
-        let width = viewport.width * cam_data.resolution_width as f32;
-
-        let height = viewport.height * cam_data.resolution_height as f32;
-        let y = (1.0 - viewport.y - viewport.height) * cam_data.resolution_height as f32;
-
-        // set viewport uses top-left origin (we are using bottom-left origin)
+        // whole pixels, top-left origin (the viewport values use bottom-left origin)
+        let [x, y, width, height] = cam_data.viewport_px();
         render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         let mut draw_calls = 0;

@@ -174,6 +174,25 @@ impl CameraData
     {
         self.viewport.clone()
     }
+
+    // camera viewport in surface pixels (top-left origin): [x, y, width, height]
+    // rounded to whole pixels via the viewport edges so that rasterization (set_viewport),
+    // the ssao pixel clamp and adjacent camera viewports agree on pixel ownership
+    // (fractional viewport splits would otherwise bleed one pixel row/column between cameras)
+    pub fn viewport_px(&self) -> [f32; 4]
+    {
+        let res_width = self.resolution_width as f32;
+        let res_height = self.resolution_height as f32;
+
+        let x0 = (self.viewport.x * res_width).round();
+        let x1 = ((self.viewport.x + self.viewport.width) * res_width).round();
+
+        // set_viewport uses top-left origin (the viewport values use bottom-left origin)
+        let y0 = ((1.0 - self.viewport.y - self.viewport.height) * res_height).round();
+        let y1 = ((1.0 - self.viewport.y) * res_height).round();
+
+        [x0, y0, x1 - x0, y1 - y0]
+    }
 }
 
 
@@ -238,6 +257,9 @@ pub struct Camera
 
     #[serde(skip, default)]
     pub depth_export_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub ssao_bind_group_render_item: RenderItemOption,
 
     #[serde(skip, default)]
     pub indirect_args_render_item: RenderItemOption,
@@ -325,6 +347,7 @@ impl Camera
             visibility_buffer_render_item: None,
             hzb_occlusion_bind_group_render_item: None,
             depth_export_bind_group_render_item: None,
+            ssao_bind_group_render_item: None,
             indirect_args_render_item: None,
 
             visible_nodes_last_frame: Vec::new(),
