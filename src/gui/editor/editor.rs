@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::ensure_preview_scene}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::ensure_preview_scene}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -1427,7 +1427,6 @@ impl Editor
 
         let pos_new = pointer_pos.unwrap();
         let pos = pos_new - pointer_velocity;
-        let pos_delta = pointer_velocity;
 
         // ********** get selection **********
         let selected_scene_id;
@@ -1473,6 +1472,7 @@ impl Editor
                 {
                     self.editor_state.edit_moving = true;
                     self.editor_state.selected_object_position = None;
+                    self.editor_state.drag_anchor_offset = None;
                 }
             }
         }
@@ -1532,7 +1532,6 @@ impl Editor
 
         // ********** get pick info **********
         let mut pick_pos = None;
-        let mut pick_distance = None;
         let mut bounding_min = None;
         let mut bounding_center = None;
 
@@ -1582,7 +1581,7 @@ impl Editor
 
             let bottom_center = Point3::<f32>::new(bounding_center.x, bounding_min.y, bounding_center.z);
 
-            let mut bottom_center_screen_space = None;
+            let mut cam_found = false;
             let mut cam_is_ortho = false;
             let mut cam_dir = Vector3::<f32>::zeros();
 
@@ -1594,47 +1593,66 @@ impl Editor
                 if camera.enabled && camera.is_point_in_viewport(&pos_new) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                 {
                     let cam_data = camera.get_data();
-                    bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center));
                     cam_is_ortho = cam_data.projection_type == CameraProjectionType::Orthogonal;
                     cam_dir = cam_data.dir;
+                    cam_found = true;
 
                     break;
                 }
             }
 
-            if bottom_center_screen_space.is_none() { return; }
-            let bottom_center_screen_space = bottom_center_screen_space.unwrap();
-            let new_bottom_center = bottom_center_screen_space + pos_delta;
+            if !cam_found { return; }
 
-
-            let pick_res: Option<(u32, ScenePickRes)>;
+            let predicate: PickPredicate;
             if self.editor_state.drag_and_drop_grid_only
             {
-                pick_res = pick(state, new_bottom_center, true, false, false, Some(Arc::new(pick_predicate_grid_only)));
+                predicate = Arc::new(pick_predicate_grid_only);
             }
             else
             {
-                pick_res = pick(state, new_bottom_center, true, false, false, Some(Arc::new(pick_predicate)));
+                predicate = Arc::new(pick_predicate);
             }
 
-            if let Some(pick_res) = pick_res
+            // ortho cams: project pick point onto the screen-parallel plane through bottom_center
+            let ortho_correction = |p: Point3<f32>| -> Point3<f32>
             {
-                let mut p = pick_res.1.point;
-
-                // ortho cams: project pick point onto the screen-parallel plane through bottom_center
                 if cam_is_ortho
                 {
                     let n = cam_dir.normalize();
                     let proj_distance = (p - bottom_center).dot(&n);
-                    p = p - n * proj_distance;
+                    return p - n * proj_distance;
                 }
 
-                pick_pos = Some(p);
-                pick_distance = Some(pick_res.1.time_of_impact);
+                p
+            };
+
+            // ***** capture the drag anchor on the first frame of the drag *****
+            // the anchor is the world space offset between the object's bottom center and the surface point under the pointer
+            // keeping it constant while dragging makes the object stick to the pointer independent of its size
+            if self.editor_state.drag_anchor_offset.is_none()
+            {
+                if let Some(anchor_res) = pick(state, pos, true, false, false, Some(predicate.clone()))
+                {
+                    let p = ortho_correction(anchor_res.1.point);
+                    self.editor_state.drag_anchor_offset = Some(bottom_center - p);
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            let anchor_offset = self.editor_state.drag_anchor_offset.unwrap();
+
+            // ***** pick the surface under the pointer and re-apply the anchor offset *****
+            if let Some(pick_res) = pick(state, pos_new, true, false, false, Some(predicate))
+            {
+                let p = ortho_correction(pick_res.1.point);
+                pick_pos = Some(p + anchor_offset);
             }
         }
 
-        if pick_pos.is_none() || pick_distance.is_none() || bounding_min.is_none()
+        if pick_pos.is_none() || bounding_min.is_none()
         {
             return;
         }
