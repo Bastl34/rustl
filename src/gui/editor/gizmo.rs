@@ -936,11 +936,32 @@ pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, st
     let parent_transform = get_parent_world_transform_from_selected_node(editor_state, state);
     let parent_world_rotation_only = extract_rotation_as_euler_vec(&parent_transform);
 
+    // place the gizmo at the center of the object's bounding box
+    // the origin/pivot of the object can be somewhere else (off-center geometry) - the gizmo should always be at the visible geometry
+    let mut bounding_center = None;
+    {
+        let (_, node, instance_id) = editor_state.get_selected_node(state);
+        if let Some(node) = node
+        {
+            if let Some((b_min, b_max)) = node.read().unwrap().get_world_bounding_info(instance_id, true, None)
+            {
+                bounding_center = Some(b_min + (b_max - b_min) / 2.0);
+            }
+        }
+    }
+
     let (scene, _, _) = editor_state.get_selected_node(state);
     let scene = scene.unwrap();
 
-    // get pos from transform
-    let pos = world_transform.column(3).xyz();
+    // get pos from the bounding box center (fallback: transform position)
+    let pos = if let Some(bounding_center) = bounding_center
+    {
+        bounding_center.coords
+    }
+    else
+    {
+        world_transform.column(3).xyz()
+    };
 
     // pick the active camera (the one the pointer is over), fallback to the perspective cam
     let mut camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();

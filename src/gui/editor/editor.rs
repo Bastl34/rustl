@@ -1830,21 +1830,23 @@ impl Editor
                     {
                         if let Some(root_node) = &root_node
                         {
-                            // find offset based on bounding box
-                            let mut offset = 0.0;
+                            let mut offset = Vector3::<f32>::zeros();
                             {
                                 let root_node = root_node.read().unwrap();
                                 let bounding_info = root_node.get_world_bounding_info(None, true, None);
 
-                                if let Some(bounding_info) = bounding_info
+                                if let Some((b_min, b_max)) = bounding_info
                                 {
-                                    //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
-                                    offset = -bounding_info.0.y;
+                                    let center = b_min + (b_max - b_min) / 2.0;
+
+                                    offset.x = -center.x;
+                                    offset.y = -b_min.y;
+                                    offset.z = -center.z;
                                 }
                             }
 
                             let mut transform = Transformation::identity("Transform");
-                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
+                            transform.apply_translation(Vector3::<f32>::new(pos.x + offset.x, pos.y + offset.y, pos.z + offset.z));
 
                             root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
 
