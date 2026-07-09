@@ -130,6 +130,7 @@ pub enum RenderPipelineType
 
     Ssao,
     SsaoBlur,
+    SsaoUpsample,
 }
 
 #[derive(EnumCount)]
@@ -144,6 +145,24 @@ pub enum DrawPhase<'a>
     Depth { light_cam_bind_group: &'a BindGroup },
     Color { light_cam_bind_group: &'a BindGroup },
     Shadow { shadow_view: &'a shadow::ShadowViewData },
+}
+
+// size of the raw/blur ssao render targets (half the surface in half res mode)
+fn ssao_target_size(width: u32, height: u32, half_res: bool) -> (u32, u32)
+{
+    if half_res { ((width + 1) / 2, (height + 1) / 2) } else { (width, height) }
+}
+
+// scale a pixel viewport rect via its edges (keeps adjacent camera viewports tiling
+// without gaps or overlap - scaling the size directly would drift at odd sizes)
+fn scale_viewport_px(viewport_px: [f32; 4], scale: f32) -> [f32; 4]
+{
+    let x0 = (viewport_px[0] * scale).round();
+    let y0 = (viewport_px[1] * scale).round();
+    let x1 = ((viewport_px[0] + viewport_px[2]) * scale).round();
+    let y1 = ((viewport_px[1] + viewport_px[3]) * scale).round();
+
+    [x0, y0, x1 - x0, y1 - y0]
 }
 
 pub struct Scene
@@ -199,12 +218,16 @@ pub struct Scene
     pub shadow_views: u32,
     pub shadow_draw_calls: u32,
 
-    // ssao render targets (surface sized, 1 sample): raw pass result and blurred result
-    // (the blurred texture is sampled by the color pass via the light/cam/scene bind group)
+    // ssao render targets (1 sample): raw result and blur result live in ao resolution
+    // (surface sized, or half of it in half res mode - there the bilateral upsample pass
+    // fills the always surface sized ssao_blur_texture, which the color pass samples via
+    // the light/cam/scene bind group)
     pub ssao_texture: Texture,
+    pub ssao_blur_half_texture: Texture,
     pub ssao_blur_texture: Texture,
 
     pub ssao_enabled: bool,
+    pub ssao_half_res: bool,
     pub ssao_radius: f32,
     pub ssao_bias: f32,
     pub ssao_strength: f32,
@@ -267,7 +290,11 @@ impl Scene
         let depth_buffer_texture = Texture::new_depth_texture(wgpu, samples, depth_width, depth_height);
         let depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, depth_width, depth_height);
 
-        let ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", depth_width, depth_height);
+        let ssao_half_res = state.rendering.ssao_half_res;
+        let (ao_width, ao_height) = ssao_target_size(depth_width, depth_height, ssao_half_res);
+
+        let ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", ao_width, ao_height);
+        let ssao_blur_half_texture = Texture::new_ssao_texture(wgpu, "ssao blur half texture", (depth_width + 1) / 2, (depth_height + 1) / 2);
         let ssao_blur_texture = Texture::new_ssao_texture(wgpu, "ssao blur texture", depth_width, depth_height);
 
         let mut render_scene = Self
@@ -315,9 +342,11 @@ impl Scene
             shadow_draw_calls: 0,
 
             ssao_texture,
+            ssao_blur_half_texture,
             ssao_blur_texture,
 
             ssao_enabled: state.rendering.ssao,
+            ssao_half_res,
             ssao_radius: state.rendering.ssao_radius,
             ssao_bias: state.rendering.ssao_bias,
             ssao_strength: state.rendering.ssao_strength,
@@ -410,8 +439,8 @@ impl Scene
         ];
 
         // ********** depth pass **********
-        // without ssao support the two ssao pipelines at the end of the enum are not created
-        let expected_pipelines = if self.ssao_supported { RenderPipelineType::COUNT } else { RenderPipelineType::COUNT - 2 };
+        // without ssao support the three ssao pipelines at the end of the enum are not created
+        let expected_pipelines = if self.ssao_supported { RenderPipelineType::COUNT } else { RenderPipelineType::COUNT - 3 };
         if !re_create || self.render_pipelines.len() < expected_pipelines
         {
             self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1, wgpu::PolygonMode::Fill));
@@ -516,6 +545,21 @@ impl Scene
             else
             {
                 self.render_pipelines.get_mut(RenderPipelineType::SsaoBlur as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur");
+            }
+
+            // ********** ssao upsample pass (half res mode: blurred half res -> full res) **********
+
+            let ssao_upsample_bind_layout = SsaoBindGroup::upsample_bind_layout(wgpu);
+
+            let bind_group_layouts = [ &ssao_upsample_bind_layout ];
+
+            if !re_create
+            {
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao upsample", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample"));
+            }
+            else
+            {
+                self.render_pipelines.get_mut(RenderPipelineType::SsaoUpsample as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample");
             }
         }
 
@@ -716,13 +760,13 @@ impl Scene
                 // -> recreate when those textures were recreated (resize)
                 if cam.ssao_bind_group_render_item.is_none() || cam_buffer_created || self.depth_pass_texture_changed
                 {
-                    let ssao_uniform = SsaoUniform::new(cam.webgpu_projection(), cam.get_data().viewport_px(), self.ssao_radius, self.ssao_bias);
-                    let ssao_bind_group = SsaoBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, &self.ssao_texture, ssao_uniform);
+                    let ssao_uniform = self.build_ssao_uniform(cam);
+                    let ssao_bind_group = SsaoBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, &self.ssao_texture, &self.ssao_blur_half_texture, ssao_uniform);
                     cam.ssao_bind_group_render_item = Some(Box::new(ssao_bind_group));
                 }
                 else if cam_changed || ssao_params_changed
                 {
-                    let ssao_uniform = SsaoUniform::new(cam.webgpu_projection(), cam.get_data().viewport_px(), self.ssao_radius, self.ssao_bias);
+                    let ssao_uniform = self.build_ssao_uniform(cam);
                     let ssao_bind_group = get_render_item::<SsaoBindGroup>(cam.ssao_bind_group_render_item.as_ref().unwrap());
                     ssao_bind_group.update_uniform(wgpu, ssao_uniform);
                 }
@@ -1384,6 +1428,19 @@ impl Scene
             self.ssao_bias = state.rendering.ssao_bias;
         }
 
+        // half res mode changes the ao target size -> recreate the raw target and rebuild the
+        // bind groups (same trigger as a resize - the uniforms get the new ao viewport there)
+        if state.rendering.ssao_half_res != self.ssao_half_res
+        {
+            self.ssao_half_res = state.rendering.ssao_half_res;
+
+            let (width, height) = (self.ssao_blur_texture.width, self.ssao_blur_texture.height);
+            let (ao_width, ao_height) = ssao_target_size(width, height, self.ssao_half_res);
+            self.ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", ao_width, ao_height);
+
+            self.depth_pass_texture_changed = true;
+        }
+
         // toggling shadows changes the atlas layer assignment of all lights -> lights buffer must be re-written
         let shadow_enabled = *state.rendering.shadow.get_ref();
         let shadow_enabled_changed = shadow_enabled != self.shadow_enabled;
@@ -1508,7 +1565,9 @@ impl Scene
         self.depth_buffer_texture = Texture::new_depth_texture(wgpu, self.samples, width, height);
         self.depth_pass_buffer_texture = Texture::new_depth_texture(wgpu, 1, width, height);
 
-        self.ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", width, height);
+        let (ao_width, ao_height) = ssao_target_size(width, height, self.ssao_half_res);
+        self.ssao_texture = Texture::new_ssao_texture(wgpu, "ssao texture", ao_width, ao_height);
+        self.ssao_blur_half_texture = Texture::new_ssao_texture(wgpu, "ssao blur half texture", (width + 1) / 2, (height + 1) / 2);
         self.ssao_blur_texture = Texture::new_ssao_texture(wgpu, "ssao blur texture", width, height);
 
         // the per camera depth export / ssao / light-cam-scene bind groups sample the
@@ -1538,8 +1597,8 @@ impl Scene
 
             if self.ssao_supported && cam.ssao_bind_group_render_item.is_some()
             {
-                let ssao_uniform = SsaoUniform::new(cam.webgpu_projection(), cam.get_data().viewport_px(), self.ssao_radius, self.ssao_bias);
-                let ssao_bind_group = SsaoBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, &self.ssao_texture, ssao_uniform);
+                let ssao_uniform = self.build_ssao_uniform(cam);
+                let ssao_bind_group = SsaoBindGroup::new(wgpu, &cam.name, &self.depth_pass_buffer_texture, &self.ssao_texture, &self.ssao_blur_half_texture, ssao_uniform);
                 cam.ssao_bind_group_render_item = Some(Box::new(ssao_bind_group));
             }
 
@@ -2216,8 +2275,22 @@ impl Scene
         (views_to_render.len() as u32, draw_calls)
     }
 
-    // two fullscreen passes: ssao (depth -> raw occlusion) + blur (raw -> blurred occlusion)
-    // the blurred result is sampled by the color pass via the light/cam/scene bind group
+    // per camera ssao uniform: viewport in surface pixels + in ao target pixels
+    fn build_ssao_uniform(&self, cam: &Camera) -> SsaoUniform
+    {
+        let viewport_px = cam.get_data().viewport_px();
+        let ao_viewport_px = if self.ssao_half_res { scale_viewport_px(viewport_px, 0.5) } else { viewport_px };
+
+        // half res evaluates a quarter of the pixels - doubling the samples there costs
+        // roughly half of full res and reduces the noise/shimmer under camera motion
+        let samples = if self.ssao_half_res { 32 } else { 16 };
+
+        SsaoUniform::new(cam.webgpu_projection(), viewport_px, ao_viewport_px, self.ssao_radius, self.ssao_bias, samples)
+    }
+
+    // fullscreen passes: ssao (depth -> raw occlusion) + blur (raw -> blurred occlusion),
+    // in half res mode followed by a bilateral upsample into the surface sized target -
+    // the final result is sampled by the color pass via the light/cam/scene bind group
     pub fn render_ssao(&mut self, _wgpu: &mut WGpu, encoder: &mut CommandEncoder, cam: &Camera, cam_data: &CameraData, clear: bool, gpu_timer: Option<&mut GpuTimer>) -> u32
     {
         if cam.ssao_bind_group_render_item.is_none()
@@ -2227,16 +2300,18 @@ impl Scene
 
         let ssao_bind_group = get_render_item::<SsaoBindGroup>(cam.ssao_bind_group_render_item.as_ref().unwrap());
 
-        // both ssao passes always run together -> begin/end timestamps are always written
+        // all ssao passes always run together -> begin/end timestamps are always written
         let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Ssao));
 
-        // whole pixels (top-left origin) - must match the viewport in the ssao uniform
-        let [x, y, width, height] = cam_data.viewport_px();
+        // whole pixels (top-left origin) - must match the viewports in the ssao uniform
+        let viewport_px = cam_data.viewport_px();
+        let [x, y, width, height] = viewport_px;
+        let [ao_x, ao_y, ao_width, ao_height] = if self.ssao_half_res { scale_viewport_px(viewport_px, 0.5) } else { viewport_px };
 
-        // the first camera clears the (surface sized) targets - 1.0 = no occlusion
+        // the first camera clears the (shared) targets - 1.0 = no occlusion
         let load_op = if clear { wgpu::LoadOp::Clear(wgpu::Color::WHITE) } else { wgpu::LoadOp::Load };
 
-        // ********** ssao pass **********
+        // ********** ssao pass (ao resolution) **********
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
@@ -2259,7 +2334,7 @@ impl Scene
             });
 
             // set viewport uses top-left origin (we are using bottom-left origin)
-            pass.set_viewport(x, y, width, height, 0.0, 1.0);
+            pass.set_viewport(ao_x, ao_y, ao_width, ao_height, 0.0, 1.0);
 
             pass.set_pipeline(&self.render_pipelines[RenderPipelineType::Ssao as usize].get());
             pass.set_bind_group(0, &ssao_bind_group.ssao_bind_group, &[]);
@@ -2267,11 +2342,53 @@ impl Scene
             pass.draw(0..3, 0..1); // fullscreen triangle
         }
 
-        // ********** blur pass **********
+        // ********** blur pass (ao resolution) **********
+        // full res mode writes the final texture directly - half res mode writes the half res
+        // intermediate, which the upsample pass below lifts to full resolution
         {
+            let blur_target = if self.ssao_half_res { &self.ssao_blur_half_texture } else { &self.ssao_blur_texture };
+
+            // in half res mode the upsample pass writes the end timestamp
+            let timestamp_writes = if self.ssao_half_res { None } else { timer_segment.map(|timer_segment| timer_segment.end_render_writes()) };
+
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: Some("ssao blur pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment
+                {
+                    view: &blur_target.get_view(),
+                    resolve_target: None,
+                    ops: wgpu::Operations
+                    {
+                        load: load_op,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: timestamp_writes,
+                multiview_mask: None,
+            });
+
+            pass.set_viewport(ao_x, ao_y, ao_width, ao_height, 0.0, 1.0);
+
+            pass.set_pipeline(&self.render_pipelines[RenderPipelineType::SsaoBlur as usize].get());
+            pass.set_bind_group(0, &ssao_bind_group.blur_bind_group, &[]);
+
+            pass.draw(0..3, 0..1); // fullscreen triangle
+        }
+
+        if !self.ssao_half_res
+        {
+            return 2;
+        }
+
+        // ********** upsample pass (half res mode: blurred half res -> full res) **********
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+            {
+                label: Some("ssao upsample pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment
                 {
                     view: &self.ssao_blur_texture.get_view(),
@@ -2291,13 +2408,13 @@ impl Scene
 
             pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
-            pass.set_pipeline(&self.render_pipelines[RenderPipelineType::SsaoBlur as usize].get());
-            pass.set_bind_group(0, &ssao_bind_group.blur_bind_group, &[]);
+            pass.set_pipeline(&self.render_pipelines[RenderPipelineType::SsaoUpsample as usize].get());
+            pass.set_bind_group(0, &ssao_bind_group.upsample_bind_group, &[]);
 
             pass.draw(0..3, 0..1); // fullscreen triangle
         }
 
-        2
+        3
     }
 
     // batches: (nodes, optional indirect args buffer) - indirect batches are drawn gpu-driven
