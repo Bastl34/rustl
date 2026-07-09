@@ -9,40 +9,40 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 simple_logger = "5.2.0"
-log = "0.4.31"
+log = "0.4.33"
 cfg-if = "1.0.4"
 wgpu = "29.0.3"
 bytemuck = { version = "1.25.0", features = [ "derive" ] }
 web-time = "1.1.0"
 winit = "0.30.13"
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 nalgebra = { version = "0.35.0", features = ["serde-serialize", "convert-glam033"] }
 colored = "3.1.1"
 base64 = "0.22.1"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 rfd = "0.17.2"
-chrono = "0.4.44"
+chrono = "0.4.45"
 urlencoding = "2.1.2"
 
 serde = "1.0.228"
 serde_json = "1.0.150"
 typetag = "0.2.22"
 
-regex = "1.12.3"
+regex = "1.13.0"
 # use lewton for ogg (symphonia-vorbis can not seek or loop properly)
 rodio = { version = "0.22.2", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
 gilrs = { version = "0.11.2", default-features = false, features = ["xinput"]}
 take_mut = "0.2.2"
-uuid = {version = "1.23.2", features = ["v4"] }
+uuid = {version = "1.23.4", features = ["v4"] }
 
-xxhash-rust = { version = "0.8.15", features = [ "xxh3"] }
+xxhash-rust = { version = "0.8.16", features = [ "xxh3"] }
 
 parry3d = "0.28.0"
 
 arboard = "3.6.1"
 
-tobj = { version = "4.0.3", features = ["async"]}
+tobj = { version = "4.0.4", features = ["async"]}
 
 #gltf = { version = "1.4", features = [
 gltf = { git = "https://github.com/gltf-rs/gltf", features = [
@@ -85,9 +85,9 @@ console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 reqwest = "0.13.4"
 wgpu = { version = "29.0.3", features = ["webgl"]}
-wasm-bindgen = "0.2.122"
-wasm-bindgen-futures = "0.4.72"
-web-sys = { version = "0.3.99", features = [
+wasm-bindgen = "0.2.126"
+wasm-bindgen-futures = "0.4.76"
+web-sys = { version = "0.3.103", features = [
     "Document",
     "Window",
     "Element",
