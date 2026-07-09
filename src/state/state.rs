@@ -79,6 +79,7 @@ pub struct Rendering
     pub shadow_max_distance: f32,
 
     pub ssao: bool,
+    pub ssao_half_res: bool,
     pub ssao_radius: f32,
     pub ssao_bias: f32,
     pub ssao_strength: f32,
@@ -364,6 +365,7 @@ impl State
                 shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
 
                 ssao: true,
+                ssao_half_res: false,
                 ssao_radius: DEFAULT_SSAO_RADIUS,
                 ssao_bias: DEFAULT_SSAO_BIAS,
                 ssao_strength: DEFAULT_SSAO_STRENGTH,

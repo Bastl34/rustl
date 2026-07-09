@@ -17,15 +17,22 @@ pub struct SsaoUniform
     // camera viewport in surface pixels (top-left origin): xy = offset, zw = size
     pub viewport: [f32; 4],
 
+    // camera viewport in the pixels of the ao render targets
+    // (equal to `viewport` at full resolution, half of it in half resolution mode)
+    pub ao_viewport: [f32; 4],
+
     pub radius: f32,
     pub bias: f32,
 
-    pub _padding: [f32; 2],
+    // kernel sample count: 16 in full res mode, 32 in half res mode
+    pub samples: u32,
+
+    pub _padding: f32,
 }
 
 impl SsaoUniform
 {
-    pub fn new(projection: Matrix4<f32>, viewport: [f32; 4], radius: f32, bias: f32) -> SsaoUniform
+    pub fn new(projection: Matrix4<f32>, viewport: [f32; 4], ao_viewport: [f32; 4], radius: f32, bias: f32, samples: u32) -> SsaoUniform
     {
         let inv_projection = projection.try_inverse().unwrap_or_else(Matrix4::identity);
 
@@ -34,22 +41,27 @@ impl SsaoUniform
             projection: projection.into(),
             inv_projection: inv_projection.into(),
             viewport,
+            ao_viewport,
             radius,
             bias,
-            _padding: [0.0; 2],
+            samples,
+            _padding: 0.0,
         }
     }
 }
 
-// per camera ssao resources: one uniform buffer shared by both passes,
-// one bind group for the ssao pass (scene depth) and one for the blur pass (raw ssao result)
+// per camera ssao resources: one uniform buffer shared by all passes, one bind group
+// for the ssao pass (scene depth), one for the blur pass (raw ssao result) and one for
+// the upsample pass (scene depth + blurred half res ssao, used in half res mode only)
 pub struct SsaoBindGroup
 {
     pub ssao_layout: BindGroupLayout,
     pub blur_layout: BindGroupLayout,
+    pub upsample_layout: BindGroupLayout,
 
     pub ssao_bind_group: BindGroup,
     pub blur_bind_group: BindGroup,
+    pub upsample_bind_group: BindGroup,
 
     pub uniform_buffer: wgpu::Buffer,
 }
@@ -144,10 +156,63 @@ impl SsaoBindGroup
         })
     }
 
-    pub fn new(wgpu: &mut WGpu, name: &str, depth_texture: &Texture, ssao_raw_texture: &Texture, uniform: SsaoUniform) -> SsaoBindGroup
+    pub fn upsample_bind_layout(wgpu: &mut WGpu) -> BindGroupLayout
+    {
+        wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            label: Some("ssao_upsample_bind_group_layout"),
+            entries:
+            &[
+                // Binding 0: scene depth texture (bilateral weights)
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture
+                    {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+
+                // Binding 1: ssao uniform
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer
+                    {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+
+                // Binding 2: blurred half res ssao texture
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture
+                    {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        })
+    }
+
+    pub fn new(wgpu: &mut WGpu, name: &str, depth_texture: &Texture, ssao_raw_texture: &Texture, ssao_blur_half_texture: &Texture, uniform: SsaoUniform) -> SsaoBindGroup
     {
         let ssao_layout = Self::ssao_bind_layout(wgpu);
         let blur_layout = Self::blur_bind_layout(wgpu);
+        let upsample_layout = Self::upsample_bind_layout(wgpu);
 
         let uniform_buffer = wgpu.device().create_buffer_init(&wgpu::util::BufferInitDescriptor
         {
@@ -194,13 +259,39 @@ impl SsaoBindGroup
             label: Some(format!("{} ssao_blur_bind_group", name).as_str()),
         });
 
+        let upsample_bind_group = wgpu.device().create_bind_group(&wgpu::BindGroupDescriptor
+        {
+            layout: &upsample_layout,
+            entries:
+            &[
+                wgpu::BindGroupEntry
+                {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&depth_texture.get_view()),
+                },
+                wgpu::BindGroupEntry
+                {
+                    binding: 1,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry
+                {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&ssao_blur_half_texture.get_view()),
+                },
+            ],
+            label: Some(format!("{} ssao_upsample_bind_group", name).as_str()),
+        });
+
         SsaoBindGroup
         {
             ssao_layout,
             blur_layout,
+            upsample_layout,
 
             ssao_bind_group,
             blur_bind_group,
+            upsample_bind_group,
 
             uniform_buffer,
         }

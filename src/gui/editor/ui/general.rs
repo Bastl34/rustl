@@ -393,6 +393,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            ui.add_enabled(ssao_support, egui::Checkbox::new(&mut state.rendering.ssao_half_res, "SSAO Half Resolution"));
+            ui.label("ℹ").on_hover_text("computes the occlusion at half resolution and upsamples it depth-aware - much faster, slightly less detail on fine geometry");
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("SSAO Radius:");
             ui.add_enabled(ssao_support, egui::DragValue::new(&mut state.rendering.ssao_radius).speed(0.01).range(0.05..=10.0));
             ui.label("ℹ").on_hover_text("sample radius in world units - larger = wider occlusion");
