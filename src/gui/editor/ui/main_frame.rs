@@ -513,6 +513,39 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // bounding volume rendering (cycles off -> spheres -> boxes)
+            {
+                let boxes = state.rendering.draw_bounding_boxes;
+                let spheres = state.rendering.draw_bounding_spheres;
+
+                // the icon shows the active hull type (box icon while off)
+                let img = if spheres && !boxes
+                {
+                    egui::Image::new(egui::include_image!("../../../../resources/icons/bounding_sphere.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))
+                }
+                else
+                {
+                    egui::Image::new(egui::include_image!("../../../../resources/icons/bounding_box.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))
+                };
+
+                let mut btn = egui::Button::image(img).selected(boxes || spheres).frame(true);
+                let supported = state.rendering_adapter.storage_buffer_array_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle bounding volume rendering (off -> spheres -> boxes)" } else { "bounding volume rendering not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    match (boxes, spheres)
+                    {
+                        (false, false) => { state.rendering.draw_bounding_boxes = true; },
+                        (true, false) => { state.rendering.draw_bounding_boxes = false; state.rendering.draw_bounding_spheres = true; },
+                        _ => { state.rendering.draw_bounding_boxes = false; state.rendering.draw_bounding_spheres = false; },
+                    }
+                }
+            }
+
             // x-ray mode (Blender-style see-through)
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/xray.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));

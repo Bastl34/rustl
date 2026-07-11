@@ -234,6 +234,20 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.label("ℹ").on_hover_text(if state.rendering_adapter.wireframe_mode_support { "renders all objects in wireframe mode, useful for debugging" } else { "not supported by this GPU/backend" });
         });
 
+        let debug_volumes_support = state.rendering_adapter.storage_buffer_array_support;
+
+        ui.horizontal(|ui|
+        {
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_bounding_boxes, "Draw Bounding Boxes"));
+            ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the bounding box of each object as lines (the same boxes the occlusion culling tests against)" } else { "not supported by this GPU/backend" });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_bounding_spheres, "Draw Bounding Spheres"));
+            ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the bounding sphere of each object as lines (the same spheres the frustum culling tests against)" } else { "not supported by this GPU/backend" });
+        });
+
         ui.horizontal(|ui|
         {
             ui.checkbox(&mut state.rendering.create_mipmaps, "create mipmaps");

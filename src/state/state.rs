@@ -92,6 +92,12 @@ pub struct Rendering
 
     pub wireframe_mode: bool,
 
+    // debug rendering of the culling bounding volumes (lines)
+    #[serde(default)]
+    pub draw_bounding_boxes: bool,
+    #[serde(default)]
+    pub draw_bounding_spheres: bool,
+
     pub xray_mode: bool,
     pub xray_alpha: f32,
 }
@@ -377,6 +383,9 @@ impl State
                 max_texture_resolution: None,
 
                 wireframe_mode: false,
+
+                draw_bounding_boxes: false,
+                draw_bounding_spheres: false,
 
                 xray_mode: false,
                 xray_alpha: DEFAULT_XRAY_ALPHA,

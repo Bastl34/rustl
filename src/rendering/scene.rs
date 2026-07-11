@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, debug_volumes::{DebugVolume, DebugVolumesBuffer, BOX_VERTICES, SPHERE_VERTICES}, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -30,6 +30,7 @@ pub struct UpdateResult
     pub scene_changed: bool,
     pub nodes_amount: usize,
     pub bounding_boxes_buffer_recreated: bool,
+    pub debug_volumes_buffer_recreated: bool,
     pub slots_rebuilt: bool,
     pub slot_buffer_recreated: bool,
     pub instances_updated: bool,
@@ -44,6 +45,7 @@ impl UpdateResult
             scene_changed: false,
             nodes_amount: 0,
             bounding_boxes_buffer_recreated: false,
+            debug_volumes_buffer_recreated: false,
             slots_rebuilt: false,
             slot_buffer_recreated: false,
             instances_updated: false,
@@ -180,6 +182,8 @@ pub struct Scene
     // one shader module with both fullscreen entry points (fs_main = ssao, fs_blur = blur)
     ssao_shader: String,
 
+    debug_volumes_shader: String,
+
     samples: u32,
     pub wireframe_mode: bool,
     pub xray_mode: bool,
@@ -234,6 +238,13 @@ pub struct Scene
 
     bounding_boxes_buffer: BoundingBoxesBuffer,
 
+    // debug rendering of the culling bounding volumes (boxes/spheres) as lines
+    // (needs storage buffer access in the vertex stage - not available on WebGL)
+    debug_volumes_supported: bool,
+    pub draw_bounding_boxes: bool,
+    pub draw_bounding_spheres: bool,
+    debug_volumes_buffer: DebugVolumesBuffer,
+
     // one slot per (node, mesh) draw - the slot index is the fixed offset into the indirect
     // args buffers and connects the cpu-recorded draws with the gpu culling results
     draw_slots: DrawSlotsBuffer,
@@ -260,6 +271,7 @@ impl RenderItem for Scene
     {
         self.buffer.size()
         + self.bounding_boxes_buffer.gpu_usage()
+        + self.debug_volumes_buffer.gpu_usage()
         + self.draw_slots.gpu_usage()
         + self.hzb_cull_buffer.gpu_usage()
         + self.shadow.gpu_usage()
@@ -280,6 +292,7 @@ impl Scene
         let hzb_downsample_shader = resources::load_string("shader/compute/hzb_downsample.wgsl").unwrap();
         let hzb_occlusion_check_shader = resources::load_string("shader/compute/occlusion_hzb_check.wgsl").unwrap();
         let ssao_shader = resources::load_string("shader/ssao.wgsl").unwrap();
+        let debug_volumes_shader = resources::load_string("shader/debug_volumes.wgsl").unwrap();
 
         let empty_skeleton = SkeletonBuffer::empty(wgpu);
         let empty_morph_target = MorphTarget::empty(wgpu);
@@ -308,6 +321,7 @@ impl Scene
             hzb_downsample_shader,
             hzb_occlusion_check_shader,
             ssao_shader,
+            debug_volumes_shader,
 
             samples,
             wireframe_mode: false,
@@ -352,6 +366,12 @@ impl Scene
             ssao_strength: state.rendering.ssao_strength,
 
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
+
+            debug_volumes_supported: state.rendering_adapter.storage_buffer_array_support,
+            draw_bounding_boxes: false,
+            draw_bounding_spheres: false,
+            debug_volumes_buffer: DebugVolumesBuffer::new(wgpu),
+
             draw_slots: DrawSlotsBuffer::new(wgpu),
             culling_state_hash: 0,
 
@@ -597,6 +617,13 @@ impl Scene
                 self.compute_pipelines.get_mut(ComputePipelineType::HzbOcclusionCheck as usize).unwrap().re_create_hzb_occlusion_check_compute(wgpu, &bind_group_layouts);
             }
         }
+
+        // ********** debug volumes pass (bounding boxes / spheres) **********
+        // needs storage buffers in the vertex stage - the pipelines must not even be created otherwise (WebGL)
+        if self.debug_volumes_supported
+        {
+            self.debug_volumes_buffer.create_pipelines(wgpu, &self.debug_volumes_shader, self.samples);
+        }
     }
 
     pub fn update_textures(&mut self, _wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene)
@@ -750,6 +777,17 @@ impl Scene
                 let light_cam_scene_bind_group = LightCamSceneBindGroup::new(wgpu, &cam.name, &camera_buffer, &lights_buffer, &self);
 
                 cam.bind_group_render_item = Some(Box::new(light_cam_scene_bind_group));
+            }
+
+            // ********** debug volumes bind group **********
+            if self.debug_volumes_supported && (self.draw_bounding_boxes || self.draw_bounding_spheres)
+            {
+                if cam.debug_volumes_bind_group_render_item.is_none() || cam_buffer_created || self.update_result.debug_volumes_buffer_recreated
+                {
+                    let camera_buffer = get_render_item::<CameraBuffer>(cam.render_item.as_ref().unwrap());
+                    let debug_volumes_bind_group = DebugVolumesBindGroup::new(wgpu, &cam.name, &camera_buffer, &self.debug_volumes_buffer);
+                    cam.debug_volumes_bind_group_render_item = Some(Box::new(debug_volumes_bind_group));
+                }
             }
 
             // ********** ssao bind group + uniform **********
@@ -1405,6 +1443,45 @@ impl Scene
         self.update_nodes(wgpu, &mut all_nodes);
         Self::consume_changed_joints(&all_nodes);
 
+        // ********** debug bounding volumes (boxes / spheres) **********
+        self.draw_bounding_boxes = state.rendering.draw_bounding_boxes && self.debug_volumes_supported;
+        self.draw_bounding_spheres = state.rendering.draw_bounding_spheres && self.debug_volumes_supported;
+
+        if self.draw_bounding_boxes || self.draw_bounding_spheres
+        {
+            // rebuilt every frame while enabled (cheap) - transform changes, node add/remove and
+            // visibility toggles are all covered without extra change tracking
+            let visible_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
+            let mut volumes: Vec<DebugVolume> = Vec::with_capacity(visible_nodes.len());
+
+            for node_arc in &visible_nodes
+            {
+                let node = node_arc.read().unwrap();
+
+                // skip engine/editor helper objects (grid, gizmos, ...)
+                if node.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                {
+                    continue;
+                }
+
+                // the same box the occlusion culling tests against
+                if let Some((min, max)) = node.get_bounding_box_for_all_instances_from_cached_transform()
+                {
+                    // the same sphere the frustum culling tests against
+                    let sphere = node.instance_render_item.as_ref().and_then(|render_item|
+                    {
+                        let instance_buffer = get_render_item::<InstanceBuffer>(render_item);
+                        node.get_bounding_sphere_for_all_instances(&instance_buffer.transformations)
+                    });
+
+                    let (center, radius) = sphere.unwrap_or((Point3::origin(), 0.0));
+                    volumes.push(DebugVolume::new(&min, &max, &center, radius));
+                }
+            }
+
+            self.update_result.debug_volumes_buffer_recreated = self.debug_volumes_buffer.update(wgpu, &volumes);
+        }
+
         // shadow distance is part of the scene uniform (used for the distance fade in the shader)
         if state.rendering.shadow_max_distance != self.shadow_max_distance
         {
@@ -2058,6 +2135,16 @@ impl Scene
                 render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
             }
 
+            // ********** debug bounding volumes **********
+            if (self.draw_bounding_boxes || self.draw_bounding_spheres) && self.debug_volumes_buffer.count > 0
+            {
+                if let Some(debug_volumes_bind_group) = cam.debug_volumes_bind_group_render_item.as_ref()
+                {
+                    let debug_volumes_bind_group = get_render_item::<DebugVolumesBindGroup>(debug_volumes_bind_group);
+                    render_result.draw_calls += self.render_debug_volumes(view, msaa_view, encoder, cam_data, &debug_volumes_bind_group.bind_group);
+                }
+            }
+
             i += 1;
         }
 
@@ -2556,6 +2643,83 @@ impl Scene
         draw_calls
     }
 
+    // draws the culling bounding volumes (boxes/spheres) as lines on top of the color pass
+    // (vertex pulling from the debug volumes buffer - no vertex buffers, one instance per volume)
+    pub fn render_debug_volumes(&self, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, cam_data: &CameraData, bind_group: &BindGroup) -> u32
+    {
+        let mut render_pass_view = view;
+        let mut render_pass_resolve_target = None;
+        if msaa_view.is_some()
+        {
+            render_pass_view = msaa_view.as_ref().unwrap();
+            render_pass_resolve_target = Some(view);
+        }
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+        {
+            label: Some("debug volumes pass"),
+            color_attachments:
+            &[
+                Some(wgpu::RenderPassColorAttachment
+                {
+                    view: render_pass_view,
+                    resolve_target: render_pass_resolve_target,
+                    ops: wgpu::Operations
+                    {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })
+            ],
+            // the scene depth is only compared against (lines behind geometry are hidden), never written
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment
+            {
+                view: &self.depth_buffer_texture.get_view(),
+                depth_ops: Some(wgpu::Operations
+                {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        // whole pixels, top-left origin (the viewport values use bottom-left origin)
+        let [x, y, width, height] = cam_data.viewport_px();
+        render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
+
+        render_pass.set_bind_group(0, bind_group, &[]);
+
+        let volumes = self.debug_volumes_buffer.count as u32;
+        let mut draw_calls = 0;
+
+        if self.draw_bounding_boxes
+        {
+            if let Some(pipeline) = self.debug_volumes_buffer.box_pipeline()
+            {
+                render_pass.set_pipeline(pipeline);
+                render_pass.draw(0..BOX_VERTICES, 0..volumes);
+                draw_calls += 1;
+            }
+        }
+
+        if self.draw_bounding_spheres
+        {
+            if let Some(pipeline) = self.debug_volumes_buffer.sphere_pipeline()
+            {
+                render_pass.set_pipeline(pipeline);
+                render_pass.draw(0..SPHERE_VERTICES, 0..volumes);
+                draw_calls += 1;
+            }
+        }
+
+        draw_calls
+    }
+
     // indirect_args: when set, the draws are recorded as indirect draws - the occlusion check
     // compute pass writes the instance counts (0 = culled) into the args buffer
     fn draw_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, phase: &DrawPhase, nodes: &'a Vec<RenderData>, indirect_args: Option<&'a wgpu::Buffer>) -> u32
@@ -2809,6 +2973,11 @@ pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene
     render_scene.frustum_culling = state.rendering.frustum_culling;
     render_scene.occlusion_culling = false;
     render_scene.update(wgpu, state, scene);
+
+    // no debug bounding volumes in offscreen renders (material thumbnails etc.)
+    // - update() syncs them from the state, so they are cleared afterwards
+    render_scene.draw_bounding_boxes = false;
+    render_scene.draw_bounding_spheres = false;
 
     let (buffer_dimensions, output_buffer, texture, view, msaa_view) = wgpu.start_offscreen_render(Some((width, height)));
     let mut encoder = wgpu.create_command_encoder();

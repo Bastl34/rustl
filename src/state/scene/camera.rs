@@ -262,6 +262,9 @@ pub struct Camera
     pub ssao_bind_group_render_item: RenderItemOption,
 
     #[serde(skip, default)]
+    pub debug_volumes_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
     pub indirect_args_render_item: RenderItemOption,
 
     #[serde(skip, default)]
@@ -348,6 +351,7 @@ impl Camera
             hzb_occlusion_bind_group_render_item: None,
             depth_export_bind_group_render_item: None,
             ssao_bind_group_render_item: None,
+            debug_volumes_bind_group_render_item: None,
             indirect_args_render_item: None,
 
             visible_nodes_last_frame: Vec::new(),
