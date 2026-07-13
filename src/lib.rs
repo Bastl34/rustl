@@ -154,6 +154,7 @@ mod gui
         pub(crate) mod helper;
         pub(crate) mod gizmo;
         pub(crate) mod grid;
+        pub(crate) mod box_select;
         pub(crate) mod preview_scene;
 
         pub(crate) mod ui

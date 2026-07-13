@@ -98,6 +98,8 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
                     ui.label(RichText::new(format!("{} | x: {:.2}, y: {:.2}, z: {:.2}", last_hover_object, pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
                 }
 
+                let multi_select_amount = editor_state.hierarchy_multi_select.len();
+
                 let (_scene, node, instance_id) = editor_state.get_selected_node(state);
                 if let Some(node) = node
                 {
@@ -112,6 +114,11 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
                     }
 
                     ui.label(RichText::new(format!("Selected: {}", node.read().unwrap().name)));
+                }
+                else if multi_select_amount > 1
+                {
+                    ui.separator();
+                    ui.label(RichText::new(format!("Selected: {} objects", multi_select_amount)));
                 }
             });
         });
@@ -222,6 +229,9 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     {
         loading_progress_bar(ui, loading_progress);
     }
+
+    // box select overlay (selection rect / crosshair)
+    crate::gui::editor::box_select::draw_box_select_overlay(ui, editor_state, state);
 
     // modals
     create_modals(editor_state, state, ui.ctx());

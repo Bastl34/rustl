@@ -130,12 +130,15 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
 
             // selection
             category_header(ui, "  Selection");
+            binding_row(ui, &["B"],            "Box select (drag a rect, x-ray mode selects through)");
+            binding_row_mixed(ui, &[Chip::Key("B"), Chip::Key("Ctrl"), Chip::Mouse("drag")], "Box select: extend current selection");
+            binding_row_mixed(ui, &[Chip::Key("B"), Chip::Key("Shift"), Chip::Mouse("drag")], "Box select: deselect boxed objects");
             binding_row(ui, &["Escape"],       "Deselect object / cancel action");
             binding_row(ui, &["Ctrl", "C"],    "Copy selected object");
             binding_row(ui, &["Ctrl", "V"],    "Paste object");
             binding_row(ui, &["Ctrl", "D"],    "Duplicate selected object");
             binding_row(ui, &["I"],            "Create instance of selected object");
-            binding_row(ui, &["Del / Back"],   "Delete selected object");
+            binding_row(ui, &["Del / Back"],   "Delete selected object(s)");
 
             // transform (Edit Mode)
             category_header(ui, "  Transform  (select an object first)");

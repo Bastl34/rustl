@@ -2,7 +2,7 @@
 
 use std::f32::consts::PI;
 
-use nalgebra::{Matrix3, Matrix4, Point3, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
+use nalgebra::{Matrix3, Matrix4, Point2, Point3, Rotation3, UnitQuaternion, Vector2, Vector3, Vector4};
 use parry3d::query::Ray;
 
 pub fn approx_equal(a: f32, b: f32) -> bool
@@ -285,6 +285,11 @@ pub fn calculate_normal(v1: &Point3<f32>, v2: &Point3<f32>, v3: &Point3<f32>) ->
 
     let normal = vec_1.cross(&vec_2);
     normal.normalize()
+}
+
+pub fn clamp_point2(point: &Point2<f32>, min: &Point2<f32>, max: &Point2<f32>) -> Point2<f32>
+{
+    Point2::<f32>::new(point.x.clamp(min.x, max.x), point.y.clamp(min.y, max.y))
 }
 
 pub fn snap_to_grid(value: f32, grid_size: f32) -> f32

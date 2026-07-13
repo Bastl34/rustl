@@ -704,6 +704,44 @@ impl Camera
         world_space.xyz()
     }
 
+    pub fn world_to_screen(&self, world: &Point3<f32>) -> Option<Point2<f32>>
+    {
+        Self::world_to_screen_data(self.get_data(), world)
+    }
+
+    pub fn world_to_screen_data(data: &CameraData, world: &Point3<f32>) -> Option<Point2<f32>>
+    {
+        let clip = data.projection * data.view * world.to_homogeneous();
+
+        // behind the camera
+        // the projection uses the opengl convention (ndc z in [-1, 1], near plane at -1)
+        // perspective: w <= 0, orthogonal: w is always 1 -> check z against the near plane
+        if data.projection_type == CameraProjectionType::Perspective && clip.w <= 0.00001
+        {
+            return None;
+        }
+
+        if data.projection_type == CameraProjectionType::Orthogonal && clip.z < -1.0
+        {
+            return None;
+        }
+
+        if approx_zero(clip.w)
+        {
+            return None;
+        }
+
+        let ndc_x = clip.x / clip.w;
+        let ndc_y = clip.y / clip.w;
+
+        let x0 = data.viewport.x * data.resolution_width as f32;
+        let y0 = data.viewport.y * data.resolution_height as f32;
+        let width = data.viewport.width * data.resolution_width as f32;
+        let height = data.viewport.height * data.resolution_height as f32;
+
+        Some(Point2::<f32>::new(x0 + (ndc_x + 1.0) * 0.5 * width, y0 + (ndc_y + 1.0) * 0.5 * height))
+    }
+
     pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>) -> Ray
     {
         let data = self.get_data();
