@@ -274,6 +274,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            ui.checkbox(&mut state.rendering.reverse_z, "Reverse Z");
+            ui.label("ℹ").on_hover_text("reverse z depth buffer (near = 1, far = 0): distributes the depth precision almost uniformly over the whole depth range - reduces z-fighting on large scenes");
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.label("MSAA:");
 
             let mut changed = false;

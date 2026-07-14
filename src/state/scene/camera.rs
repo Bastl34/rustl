@@ -48,6 +48,14 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
     0.0, 0.0, 0.0, 1.0,
 );
 
+pub const OPENGL_TO_WGPU_MATRIX_REVERSE_Z: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
+(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, -0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+);
+
 pub type CameraItem = Box<Camera>;
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
@@ -623,11 +631,20 @@ impl Camera
         self.init_matrices();
     }
 
-    pub fn webgpu_projection(&self) -> nalgebra::Matrix4<f32>
+    // the internal projection stays in opengl convention (frustum extraction, picking, ...) -
+    // only the matrix handed to the gpu bakes the wgpu depth range (reverse or forward)
+    pub fn webgpu_projection(&self, reverse_z: bool) -> nalgebra::Matrix4<f32>
     {
         let data = self.data.get_ref();
 
-        OPENGL_TO_WGPU_MATRIX * data.projection
+        if reverse_z
+        {
+            OPENGL_TO_WGPU_MATRIX_REVERSE_Z * data.projection
+        }
+        else
+        {
+            OPENGL_TO_WGPU_MATRIX * data.projection
+        }
     }
 
     pub fn is_point_in_frustum(&self, point: &Point3<f32>) -> bool

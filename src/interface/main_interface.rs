@@ -454,6 +454,11 @@ impl MainInterface
                     render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.wireframe_mode);
                 }
 
+                if state.rendering.reverse_z != render_scene.reverse_z
+                {
+                    render_scene.reverse_z_update(&mut self.context.wgpu, scene, state.rendering.reverse_z);
+                }
+
                 if state.rendering.xray_mode != render_scene.xray_mode || (state.rendering.xray_mode && state.rendering.xray_alpha != render_scene.xray_alpha)
                 {
                     render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.xray_mode, state.rendering.xray_alpha);

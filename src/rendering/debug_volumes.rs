@@ -121,7 +121,7 @@ impl DebugVolumesBuffer
 
     // pipelines for boxes and spheres (vertex pulling - no vertex buffers)
     // lines are rendered as screen space quads (WebGPU has no line width support)
-    pub fn create_pipelines(&mut self, wgpu: &mut WGpu, shader_source: &String, samples: u32)
+    pub fn create_pipelines(&mut self, wgpu: &mut WGpu, shader_source: &String, samples: u32, reverse_z: bool)
     {
         let bind_group_layout = DebugVolumesBindGroup::bind_layout(wgpu);
 
@@ -197,7 +197,7 @@ impl DebugVolumesBuffer
                 {
                     format: Texture::DEPTH_FORMAT,
                     depth_write_enabled: Some(false),
-                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    depth_compare: Some(if reverse_z { wgpu::CompareFunction::GreaterEqual } else { wgpu::CompareFunction::LessEqual }),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),

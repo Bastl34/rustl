@@ -186,6 +186,7 @@ pub struct Scene
 
     samples: u32,
     pub wireframe_mode: bool,
+    pub reverse_z: bool,
     pub xray_mode: bool,
     pub xray_alpha: f32,
     pub distance_sorting: bool,
@@ -325,6 +326,7 @@ impl Scene
 
             samples,
             wireframe_mode: false,
+            reverse_z: state.rendering.reverse_z,
             xray_mode: false,
             xray_alpha: DEFAULT_XRAY_ALPHA,
             distance_sorting: true,
@@ -463,17 +465,17 @@ impl Scene
         let expected_pipelines = if self.ssao_supported { RenderPipelineType::COUNT } else { RenderPipelineType::COUNT - 3 };
         if !re_create || self.render_pipelines.len() < expected_pipelines
         {
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, 1, wgpu::PolygonMode::Fill));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, 1, wgpu::PolygonMode::Fill));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, 1, wgpu::PolygonMode::Fill));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe all", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, self.reverse_z, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, self.reverse_z, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, self.reverse_z, true, 1, wgpu::PolygonMode::Fill));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "depth pipe no compare no write", &self.depth_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, self.reverse_z, true, 1, wgpu::PolygonMode::Fill));
         }
         else
         {
-            self.render_pipelines.get_mut(RenderPipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, 1, wgpu::PolygonMode::Fill);
-            self.render_pipelines.get_mut(RenderPipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, 1, wgpu::PolygonMode::Fill);
-            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, 1, wgpu::PolygonMode::Fill);
-            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::Depth as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, self.reverse_z, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, self.reverse_z, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, self.reverse_z, true, 1, wgpu::PolygonMode::Fill);
+            self.render_pipelines.get_mut(RenderPipelineType::DepthNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, self.reverse_z, true, 1, wgpu::PolygonMode::Fill);
         }
 
         // ********** color pass **********
@@ -483,18 +485,18 @@ impl Scene
         if !re_create
         {
             let polygon_mode = if self.wireframe_mode { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill };
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, true, self.samples, polygon_mode));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, true, self.samples, polygon_mode));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, true, self.samples, polygon_mode));
-            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, true, self.reverse_z, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, true, self.reverse_z, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, true, false, self.reverse_z, true, self.samples, polygon_mode));
+            self.render_pipelines.push(Pipeline::new_std(wgpu, "color pipe no compare no write", &self.color_shader, &bind_group_layouts, scene.get_data().max_lights, true, false, false, self.reverse_z, true, self.samples, polygon_mode));
         }
         else
         {
             let polygon_mode = if self.wireframe_mode { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill };
-            self.render_pipelines.get_mut(RenderPipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, true, self.samples, polygon_mode);
-            self.render_pipelines.get_mut(RenderPipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, true, self.samples, polygon_mode);
-            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, true, self.samples, polygon_mode);
-            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::Color as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, true, self.reverse_z, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, true, self.reverse_z, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWrite as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, true, false, self.reverse_z, true, self.samples, polygon_mode);
+            self.render_pipelines.get_mut(RenderPipelineType::ColorNoWriteNoCompare as usize).unwrap().re_create_std(wgpu, &bind_group_layouts, true, false, false, self.reverse_z, true, self.samples, polygon_mode);
         }
 
         // ********** depth export pass (for occlusion culling - hzb) **********
@@ -545,11 +547,11 @@ impl Scene
 
             if !re_create
             {
-                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main"));
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main", self.reverse_z));
             }
             else
             {
-                self.render_pipelines.get_mut(RenderPipelineType::Ssao as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main");
+                self.render_pipelines.get_mut(RenderPipelineType::Ssao as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main", self.reverse_z);
             }
 
             // ********** ssao blur pass (raw occlusion -> blurred occlusion) **********
@@ -560,11 +562,11 @@ impl Scene
 
             if !re_create
             {
-                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao blur", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur"));
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao blur", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur", self.reverse_z));
             }
             else
             {
-                self.render_pipelines.get_mut(RenderPipelineType::SsaoBlur as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur");
+                self.render_pipelines.get_mut(RenderPipelineType::SsaoBlur as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur", self.reverse_z);
             }
 
             // ********** ssao upsample pass (half res mode: blurred half res -> full res) **********
@@ -575,11 +577,11 @@ impl Scene
 
             if !re_create
             {
-                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao upsample", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample"));
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao upsample", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample", self.reverse_z));
             }
             else
             {
-                self.render_pipelines.get_mut(RenderPipelineType::SsaoUpsample as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample");
+                self.render_pipelines.get_mut(RenderPipelineType::SsaoUpsample as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample", self.reverse_z);
             }
         }
 
@@ -595,11 +597,11 @@ impl Scene
 
             if !re_create
             {
-                self.compute_pipelines.push(ComputePipeline::new_hzb_downsample_compute(wgpu, "hzb downsample", &self.hzb_downsample_shader, &bind_group_layouts));
+                self.compute_pipelines.push(ComputePipeline::new_hzb_downsample_compute(wgpu, "hzb downsample", &self.hzb_downsample_shader, &bind_group_layouts, self.reverse_z));
             }
             else
             {
-                self.compute_pipelines.get_mut(ComputePipelineType::HzbDownsample as usize).unwrap().re_create_hzb_downsample_compute(wgpu, &bind_group_layouts);
+                self.compute_pipelines.get_mut(ComputePipelineType::HzbDownsample as usize).unwrap().re_create_hzb_downsample_compute(wgpu, &bind_group_layouts, self.reverse_z);
             }
 
             // ********** occlusion check pass (for occlusion culling - hzb) **********
@@ -610,11 +612,11 @@ impl Scene
 
             if !re_create
             {
-                self.compute_pipelines.push(ComputePipeline::new_hzb_occlusion_check_compute(wgpu, "hzb occlusion check", &self.hzb_occlusion_check_shader, &bind_group_layouts));
+                self.compute_pipelines.push(ComputePipeline::new_hzb_occlusion_check_compute(wgpu, "hzb occlusion check", &self.hzb_occlusion_check_shader, &bind_group_layouts, self.reverse_z));
             }
             else
             {
-                self.compute_pipelines.get_mut(ComputePipelineType::HzbOcclusionCheck as usize).unwrap().re_create_hzb_occlusion_check_compute(wgpu, &bind_group_layouts);
+                self.compute_pipelines.get_mut(ComputePipelineType::HzbOcclusionCheck as usize).unwrap().re_create_hzb_occlusion_check_compute(wgpu, &bind_group_layouts, self.reverse_z);
             }
         }
 
@@ -622,7 +624,7 @@ impl Scene
         // needs storage buffers in the vertex stage - the pipelines must not even be created otherwise (WebGL)
         if self.debug_volumes_supported
         {
-            self.debug_volumes_buffer.create_pipelines(wgpu, &self.debug_volumes_shader, self.samples);
+            self.debug_volumes_buffer.create_pipelines(wgpu, &self.debug_volumes_shader, self.samples, self.reverse_z);
         }
     }
 
@@ -749,7 +751,7 @@ impl Scene
                 cam.update_resolution(wgpu.surface_config().width, wgpu.surface_config().height);
                 cam.init_matrices();
 
-                let camera_buffer = CameraBuffer::new(wgpu, &cam);
+                let camera_buffer = CameraBuffer::new(wgpu, &cam, self.reverse_z);
                 cam.render_item = Some(Box::new(camera_buffer));
 
                 cam_buffer_created = true;
@@ -760,7 +762,7 @@ impl Scene
 
                 {
                     let render_item = get_render_item_mut::<CameraBuffer>(render_item.as_mut().unwrap());
-                    render_item.update_buffer(wgpu, cam.as_ref());
+                    render_item.update_buffer(wgpu, cam.as_ref(), self.reverse_z);
                 }
 
                 cam.render_item = render_item;
@@ -1619,6 +1621,41 @@ impl Scene
         self.create_pipelines(wgpu, scene, true);
     }
 
+    pub fn reverse_z_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, reverse_z: bool)
+    {
+        self.reverse_z = reverse_z;
+
+        // all depth compares / shader depth logic bake the convention -> full pipeline rebuild
+        self.create_pipelines(wgpu, scene, true);
+
+        // the camera uniform (view_proj) and the ssao uniform (projection + inverse) bake the
+        // projection convention as well -> refresh them right away instead of waiting for a
+        // camera change
+        for cam in &mut scene.cameras
+        {
+            if cam.render_item.is_none()
+            {
+                continue;
+            }
+
+            let mut render_item = cam.render_item.take();
+
+            {
+                let camera_buffer = get_render_item_mut::<CameraBuffer>(render_item.as_mut().unwrap());
+                camera_buffer.update_buffer(wgpu, cam.as_ref(), self.reverse_z);
+            }
+
+            cam.render_item = render_item;
+
+            if self.ssao_supported && cam.ssao_bind_group_render_item.is_some()
+            {
+                let ssao_uniform = self.build_ssao_uniform(cam);
+                let ssao_bind_group = get_render_item::<SsaoBindGroup>(cam.ssao_bind_group_render_item.as_ref().unwrap());
+                ssao_bind_group.update_uniform(wgpu, ssao_uniform);
+            }
+        }
+    }
+
     pub fn xray_mode_update(&mut self, wgpu: &mut WGpu, scene: &mut crate::state::scene::scene::Scene, xray_mode: bool, xray_alpha: f32)
     {
         self.xray_mode = xray_mode;
@@ -2372,7 +2409,7 @@ impl Scene
         // roughly half of full res and reduces the noise/shimmer under camera motion
         let samples = if self.ssao_half_res { 32 } else { 16 };
 
-        SsaoUniform::new(cam.webgpu_projection(), viewport_px, ao_viewport_px, self.ssao_radius, self.ssao_bias, samples)
+        SsaoUniform::new(cam.webgpu_projection(self.reverse_z), viewport_px, ao_viewport_px, self.ssao_radius, self.ssao_bias, samples)
     }
 
     // fullscreen passes: ssao (depth -> raw occlusion) + blur (raw -> blurred occlusion),
@@ -2510,7 +2547,7 @@ impl Scene
         let timer_segment = gpu_timer.and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Depth));
 
         let mut clear_color = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
-        let mut clear_depth = wgpu::LoadOp::Clear(1.0);
+        let mut clear_depth = wgpu::LoadOp::Clear(if self.reverse_z { 0.0 } else { 1.0 });
 
         if !clear
         {
@@ -2590,7 +2627,7 @@ impl Scene
         }
 
         let mut clear_color = wgpu::LoadOp::Clear(self.clear_color);
-        let mut clear_depth = wgpu::LoadOp::Clear(1.0);
+        let mut clear_depth = wgpu::LoadOp::Clear(if self.reverse_z { 0.0 } else { 1.0 });
 
         if !clear
         {

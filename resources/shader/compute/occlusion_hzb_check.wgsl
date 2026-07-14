@@ -10,6 +10,39 @@
 
 const FLAG_OCCLUSION_TEST : u32 = 1u; // bit 0: object takes part in the occlusion test
 
+// set at pipeline creation (reverse z depth buffer: near = 1, far = 0)
+override REVERSE_Z: bool = false;
+
+// depth a is closer to the camera than (or as close as) depth b
+fn is_closer(a: f32, b: f32) -> bool
+{
+    if (REVERSE_Z)
+    {
+        return a >= b;
+    }
+    return a <= b;
+}
+
+// combine two depths, keeping the one closer to the camera
+fn closer(a: f32, b: f32) -> f32
+{
+    if (REVERSE_Z)
+    {
+        return max(a, b);
+    }
+    return min(a, b);
+}
+
+// combine two depths, keeping the one farther from the camera
+fn farther(a: f32, b: f32) -> f32
+{
+    if (REVERSE_Z)
+    {
+        return min(a, b);
+    }
+    return max(a, b);
+}
+
 struct BoundingBox
 {
     min : vec4<f32>,
@@ -113,7 +146,7 @@ fn is_object_visible(bb: BoundingBox) -> bool
     // Project all corners and find screen bounds + closest depth
     var min_ndc = vec2<f32>(1.0, 1.0);
     var max_ndc = vec2<f32>(-1.0, -1.0);
-    var closest_depth = 1.0;
+    var closest_depth = select(1.0, 0.0, REVERSE_Z); // farthest possible depth
 
     for (var i = 0; i < 8; i++)
     {
@@ -130,12 +163,13 @@ fn is_object_visible(bb: BoundingBox) -> bool
         min_ndc = min(min_ndc, ndc.xy);
         max_ndc = max(max_ndc, ndc.xy);
 
-        // wgpu ndc depth is already in [0,1] (OPENGL_TO_WGPU_MATRIX is part of the projection)
-        closest_depth = min(closest_depth, ndc.z);
+        // wgpu ndc depth is already in [0,1] (the depth range conversion is part of the projection)
+        closest_depth = closer(closest_depth, ndc.z);
     }
 
-    // object in front of the near plane
-    if (closest_depth <= 0.0)
+    // object in front of the near plane (near = 0 in forward z, near = 1 in reverse z)
+    let near_depth = select(0.0, 1.0, REVERSE_Z);
+    if (is_closer(closest_depth, near_depth))
     {
         return true;
     }
@@ -166,18 +200,18 @@ fn is_object_visible(bb: BoundingBox) -> bool
     }
     let mip = i32(mip_f);
 
-    // sample the 4 texels covering the rect (max = farthest depth in the region)
+    // sample the 4 texels covering the rect (keep the farthest depth in the region)
     let dims = vec2<i32>(textureDimensions(hzb_tex, mip));
     let t0 = clamp(vec2<i32>(min_uv * vec2<f32>(dims)), vec2<i32>(0), dims - 1);
     let t1 = clamp(vec2<i32>(max_uv * vec2<f32>(dims)), vec2<i32>(0), dims - 1);
 
     var hzb_depth = textureLoad(hzb_tex, t0, mip).r;
-    hzb_depth = max(hzb_depth, textureLoad(hzb_tex, vec2<i32>(t1.x, t0.y), mip).r);
-    hzb_depth = max(hzb_depth, textureLoad(hzb_tex, vec2<i32>(t0.x, t1.y), mip).r);
-    hzb_depth = max(hzb_depth, textureLoad(hzb_tex, t1, mip).r);
+    hzb_depth = farther(hzb_depth, textureLoad(hzb_tex, vec2<i32>(t1.x, t0.y), mip).r);
+    hzb_depth = farther(hzb_depth, textureLoad(hzb_tex, vec2<i32>(t0.x, t1.y), mip).r);
+    hzb_depth = farther(hzb_depth, textureLoad(hzb_tex, t1, mip).r);
 
     // visible if the closest point of the box is closer than the farthest occluder depth
-    return closest_depth <= hzb_depth;
+    return is_closer(closest_depth, hzb_depth);
 }
 
 @compute @workgroup_size(64)

@@ -60,7 +60,7 @@ impl RenderItem for CameraBuffer
 
 impl CameraBuffer
 {
-    pub fn new(wgpu: &mut WGpu, cam: &Camera) -> CameraBuffer
+    pub fn new(wgpu: &mut WGpu, cam: &Camera, reverse_z: bool) -> CameraBuffer
     {
         let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -76,12 +76,12 @@ impl CameraBuffer
             buffer: empty_buffer,
         };
 
-        buffer.to_buffer(wgpu, cam);
+        buffer.to_buffer(wgpu, cam, reverse_z);
 
         buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera, reverse_z: bool)
     {
         let viewport_width = cam.get_viewport_width_in_px();
         let viewport_height = cam.get_viewport_height_in_px();
@@ -89,7 +89,7 @@ impl CameraBuffer
         let data = cam.get_data();
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view, viewport_width, viewport_height);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(reverse_z), data.view, viewport_width, viewport_height);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -102,7 +102,7 @@ impl CameraBuffer
         );
     }
 
-    pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera, reverse_z: bool)
     {
         let viewport_width = cam.get_viewport_width_in_px();
         let viewport_height = cam.get_viewport_height_in_px();
@@ -110,7 +110,7 @@ impl CameraBuffer
         let data = cam.get_data();
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view, viewport_width, viewport_height);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(reverse_z), data.view, viewport_width, viewport_height);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
     }

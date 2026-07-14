@@ -92,6 +92,10 @@ pub struct Rendering
 
     pub wireframe_mode: bool,
 
+    // reverse z depth buffer (near = 1, far = 0): near-uniform depth precision, less z-fighting
+    #[serde(default)]
+    pub reverse_z: bool,
+
     // debug rendering of the culling bounding volumes (lines)
     #[serde(default)]
     pub draw_bounding_boxes: bool,
@@ -383,6 +387,7 @@ impl State
                 max_texture_resolution: None,
 
                 wireframe_mode: false,
+                reverse_z: false,
 
                 draw_bounding_boxes: false,
                 draw_bounding_spheres: false,
