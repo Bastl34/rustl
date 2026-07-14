@@ -437,6 +437,42 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.add_enabled(ssao_support, egui::DragValue::new(&mut state.rendering.ssao_strength).speed(0.01).range(0.0..=1.0));
             ui.label("ℹ").on_hover_text("how much the occlusion darkens the final color");
         });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.fog, "Fog");
+            ui.label("ℹ").on_hover_text("distance based exponential fog - fades geometry into the fog color with growing distance from the camera (editor helpers like grid and gizmos are excluded)");
+        });
+
+        ui.horizontal(|ui|
+        {
+            let fog_color = state.rendering.fog_color;
+
+            let r = (fog_color.x * 255.0) as u8;
+            let g = (fog_color.y * 255.0) as u8;
+            let b = (fog_color.z * 255.0) as u8;
+            let mut color = Color32::from_rgb(r, g, b);
+
+            ui.label("Fog Color:");
+            if ui.color_edit_button_srgba(&mut color).changed()
+            {
+                let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                state.rendering.fog_color = Vector3::<f32>::new(r, g, b);
+            }
+
+            ui.label("ℹ").on_hover_text("tip: matching the clear color lets distant geometry blend seamlessly into the background");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Fog Density:");
+            ui.add(egui::DragValue::new(&mut state.rendering.fog_density).speed(0.001).range(0.0..=1.0));
+            ui.label("ℹ").on_hover_text("exponential density - at density d the visibility drops to ~37% at distance 1/d");
+        });
     });
 }
 

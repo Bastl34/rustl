@@ -88,11 +88,15 @@ pub struct SceneUniform
     pub xray_alpha: f32,
     pub shadow_max_distance: f32,
     pub ssao_strength: f32, // 0.0 = ssao disabled
+
+    pub fog_density: f32, // 0.0 = fog disabled
+    pub _padding: f32, // fog_color must sit on a 16 byte boundary (wgsl vec4 alignment)
+    pub fog_color: [f32; 4],
 }
 
 impl SceneUniform
 {
-    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32, ssao_strength: f32) -> Self
+    pub fn new(scene_data: &SceneData, xray_alpha: f32, shadow_max_distance: f32, ssao_strength: f32, fog_color: nalgebra::Vector3<f32>, fog_density: f32) -> Self
     {
         let gamma = if let Some(gamma) = scene_data.gamma { gamma } else { 0.0 };
         let exposure = if let Some(exposure) = scene_data.exposure { exposure } else { 0.0 };
@@ -106,6 +110,9 @@ impl SceneUniform
             xray_alpha: xray_alpha,
             shadow_max_distance: shadow_max_distance,
             ssao_strength: ssao_strength,
+            fog_density: fog_density,
+            _padding: 0.0,
+            fog_color: [fog_color.x, fog_color.y, fog_color.z, 1.0],
         }
     }
 }
@@ -237,6 +244,11 @@ pub struct Scene
     pub ssao_bias: f32,
     pub ssao_strength: f32,
 
+    // distance based fog (part of the scene uniform, 0.0 density = disabled)
+    pub fog_enabled: bool,
+    pub fog_color: nalgebra::Vector3<f32>,
+    pub fog_density: f32,
+
     bounding_boxes_buffer: BoundingBoxesBuffer,
 
     // debug rendering of the culling bounding volumes (boxes/spheres) as lines
@@ -367,6 +379,10 @@ impl Scene
             ssao_bias: state.rendering.ssao_bias,
             ssao_strength: state.rendering.ssao_strength,
 
+            fog_enabled: state.rendering.fog,
+            fog_color: state.rendering.fog_color,
+            fog_density: state.rendering.fog_density,
+
             bounding_boxes_buffer: BoundingBoxesBuffer::new(wgpu),
 
             debug_volumes_supported: state.rendering_adapter.storage_buffer_array_support,
@@ -400,7 +416,8 @@ impl Scene
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
         let effective_ssao_strength = if self.ssao_supported && self.ssao_enabled { self.ssao_strength } else { 0.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength);
+        let effective_fog_density = if self.fog_enabled { self.fog_density } else { 0.0 };
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength, self.fog_color, effective_fog_density);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -419,7 +436,8 @@ impl Scene
 
         let effective_xray_alpha = if self.xray_mode { self.xray_alpha } else { 1.0 };
         let effective_ssao_strength = if self.ssao_supported && self.ssao_enabled { self.ssao_strength } else { 0.0 };
-        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength);
+        let effective_fog_density = if self.fog_enabled { self.fog_density } else { 0.0 };
+        let scene_uniform = SceneUniform::new(data, effective_xray_alpha, self.shadow_max_distance, effective_ssao_strength, self.fog_color, effective_fog_density);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[scene_uniform]));
     }
@@ -1496,6 +1514,15 @@ impl Scene
         {
             self.ssao_enabled = state.rendering.ssao;
             self.ssao_strength = state.rendering.ssao_strength;
+            self.update_buffer(wgpu, scene);
+        }
+
+        // fog settings are part of the scene uniform (0.0 density = disabled)
+        if state.rendering.fog != self.fog_enabled || state.rendering.fog_color != self.fog_color || state.rendering.fog_density != self.fog_density
+        {
+            self.fog_enabled = state.rendering.fog;
+            self.fog_color = state.rendering.fog_color;
+            self.fog_density = state.rendering.fog_density;
             self.update_buffer(wgpu, scene);
         }
 

@@ -57,6 +57,11 @@ struct SceneUniform
 
     // 0.0 = ssao disabled
     ssao_strength: f32,
+
+    // 0.0 = fog disabled
+    fog_density: f32,
+    _padding: f32,
+    fog_color: vec4<f32>,
 };
 
 struct SkeletonUniform
@@ -456,6 +461,8 @@ struct MaterialUniform
     mapping_sharpness: f32,
 
     shadow_softness: f32,
+
+    no_fog: u32,
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -1314,6 +1321,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     color.x += ambient_color.x * ssao_factor;
     color.y += ambient_color.y * ssao_factor;
     color.z += ambient_color.z * ssao_factor;
+
+    // distance based fog (world space distance -> independent of the depth convention),
+    // applied in linear hdr space so tone mapping/gamma treat the fog color consistently.
+    // materials with no_fog (sky spheres, editor helpers like grid/gizmos, ...) are excluded
+    if (scene.fog_density > 0.0001 && material.no_fog == 0u)
+    {
+        let fog_distance = length(in.view_dir);
+        let fog_factor = 1.0 - exp(-scene.fog_density * fog_distance);
+        color = mix(color, scene.fog_color.rgb, fog_factor);
+    }
 
     // TODO: tone mapping and gamma can be done in post
 

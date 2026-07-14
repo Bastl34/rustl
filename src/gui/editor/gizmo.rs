@@ -110,6 +110,7 @@ pub fn create_grid_and_gizmo_objects(editor_state: &mut EditorState, state: &mut
                         component_downcast_mut!(material, Material);
                         material.get_data_mut().get_mut().unlit_shading = true;
                         material.get_data_mut().get_mut().allow_xray = false;
+                        material.get_data_mut().get_mut().no_fog = true;
 
                         material.get_data_mut().get_mut().alpha = 0.8;
                         material.get_data_mut().get_mut().blend_mode = BlendMode::Blend;

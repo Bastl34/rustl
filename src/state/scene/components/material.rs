@@ -282,6 +282,9 @@ pub struct MaterialData
     #[serde(default = "default_mapping_sharpness")] pub mapping_sharpness: f32,
 
     pub allow_xray: bool, // when false, this material is excluded from x-ray mode (gizmos, grid, etc.)
+
+    #[serde(default)]
+    pub no_fog: bool, // when true, this material is excluded from the distance fog (sky spheres, editor helpers, etc.)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -350,6 +353,7 @@ impl Material
             mapping_sharpness: 4.0,
 
             allow_xray: true,
+            no_fog: false,
         };
 
         Material
@@ -1130,6 +1134,7 @@ impl Component for Material
         let mut unlit_shading;
         let mut cast_shadow;
         let mut receive_shadow;
+        let mut no_fog;
 
         let mut shadow_softness;
         let mut roughness;
@@ -1165,6 +1170,7 @@ impl Component for Material
             unlit_shading = data.unlit_shading;
             cast_shadow = data.cast_shadow;
             receive_shadow = data.receive_shadow;
+            no_fog = data.no_fog;
 
             shadow_softness = data.shadow_softness;
             roughness = data.roughness;
@@ -1231,6 +1237,7 @@ impl Component for Material
         apply_settings = ui.checkbox(&mut unlit_shading, "unlit shading (just base color and base texture)").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut no_fog, "no fog (excluded from distance fog)").changed() || apply_settings;
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
@@ -1351,6 +1358,7 @@ impl Component for Material
             data.unlit_shading = unlit_shading;
             data.cast_shadow = cast_shadow;
             data.receive_shadow = receive_shadow;
+            data.no_fog = no_fog;
 
             data.shadow_softness = shadow_softness;
             data.roughness = roughness;

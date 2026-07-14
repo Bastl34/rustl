@@ -81,6 +81,8 @@ struct MaterialUniform
     mapping_sharpness: f32,
 
     shadow_softness: f32,
+
+    no_fog: u32,
 };
 
 struct VertexInput

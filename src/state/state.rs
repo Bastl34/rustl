@@ -25,6 +25,9 @@ pub const DEFAULT_SSAO_STRENGTH: f32 = 1.0;
 
 pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
 
+pub const DEFAULT_FOG_COLOR: Vector3<f32> = Vector3::new(0.6, 0.7, 0.8);
+pub const DEFAULT_FOG_DENSITY: f32 = 0.02;
+
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
 pub const ENGINE_INTERNAL_TAG_PREFX: &str = "__internal_";
@@ -84,6 +87,14 @@ pub struct Rendering
     pub ssao_bias: f32,
     pub ssao_strength: f32,
 
+    // distance based fog (world space)
+    #[serde(default)]
+    pub fog: bool,
+    #[serde(default = "default_fog_color")]
+    pub fog_color: Vector3<f32>,
+    #[serde(default = "default_fog_density")]
+    pub fog_density: f32,
+
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
@@ -105,6 +116,9 @@ pub struct Rendering
     pub xray_mode: bool,
     pub xray_alpha: f32,
 }
+
+fn default_fog_color() -> Vector3<f32> { DEFAULT_FOG_COLOR }
+fn default_fog_density() -> f32 { DEFAULT_FOG_DENSITY }
 
 pub struct SupportedFileTypes
 {
@@ -379,6 +393,10 @@ impl State
                 ssao_radius: DEFAULT_SSAO_RADIUS,
                 ssao_bias: DEFAULT_SSAO_BIAS,
                 ssao_strength: DEFAULT_SSAO_STRENGTH,
+
+                fog: false,
+                fog_color: DEFAULT_FOG_COLOR,
+                fog_density: DEFAULT_FOG_DENSITY,
 
                 distance_sorting: true,
                 frustum_culling: true,
