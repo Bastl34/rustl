@@ -566,6 +566,16 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // grid visibility
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/grid.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.grid_visible).frame(true);
+                if ui.add(btn).on_hover_text("show/hide grid").clicked()
+                {
+                    editor_state.grid_visible = !editor_state.grid_visible;
+                }
+            }
+
             ui.separator();
 
             {

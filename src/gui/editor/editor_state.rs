@@ -214,6 +214,7 @@ pub struct EditorState
     pub pick_id: String,
     pub pick_mode: PickType,
 
+    pub grid_visible: bool,
     pub grid_size: f32,
     pub grid_amount: u32,
     pub grid_recreate: bool,
@@ -349,6 +350,7 @@ impl EditorState
             pick_id: "".to_string(),
             pick_mode: PickType::None,
 
+            grid_visible: true,
             grid_size: DEFAULT_GRID_SIZE,
             grid_amount: DEFAULT_GRID_AMOUNT,
             grid_recreate: false,
