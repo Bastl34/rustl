@@ -454,6 +454,11 @@ impl MainInterface
                     render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.wireframe_mode);
                 }
 
+                if state.rendering.reverse_z != render_scene.reverse_z
+                {
+                    render_scene.reverse_z_update(&mut self.context.wgpu, scene, state.rendering.reverse_z);
+                }
+
                 if state.rendering.xray_mode != render_scene.xray_mode || (state.rendering.xray_mode && state.rendering.xray_alpha != render_scene.xray_alpha)
                 {
                     render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.xray_mode, state.rendering.xray_alpha);
@@ -682,6 +687,7 @@ impl MainInterface
                 let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
+                img_data.save("data/screenshot.webp").unwrap();
 
                 // restore the original (window) resolution
                 if target_size.is_some()
@@ -742,6 +748,11 @@ impl MainInterface
             // cpu-only fps estimate without the editor overhead (the editor is not part of a game build)
             state.stats.fps_cpu_absolute = (1000.0 / (state.stats.engine_update_time + state.stats.engine_render_time + state.stats.app_update_time)) as u32;
 
+            // gpu-only fps estimate without the editor overhead (egui pass excluded)
+            // based on the summed pass times of the last read back frame
+            let gpu_total = state.stats.gpu_shadow_time.unwrap_or(0.0) + state.stats.gpu_depth_time.unwrap_or(0.0) + state.stats.gpu_color_time.unwrap_or(0.0) + state.stats.gpu_hzb_time.unwrap_or(0.0);
+            state.stats.fps_gpu_absolute = if gpu_total > 0.0 { Some((1000.0 / gpu_total) as u32) } else { None };
+
             // frame update
             state.stats.frame += 1;
         }
@@ -789,12 +800,22 @@ impl MainInterface
         // thinking a button is held, causing unwanted camera rotation.
         if egui_consumed
         {
-            if let winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } = event
+            let global_state = &mut *(self.context.state.borrow_mut());
+
+            match event
             {
-                let global_state = &mut *(self.context.state.borrow_mut());
-                let button = winit_map_mouse_button(button);
-                global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+                winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } =>
+                {
+                    let button = winit_map_mouse_button(button);
+                    global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+                },
+                winit::event::WindowEvent::CursorMoved { .. } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
+                },
+                _ => {}
             }
+
             return;
         }
         else
@@ -892,6 +913,10 @@ impl MainInterface
                     pos.y = global_state.height as f32 - pos.y;
 
                     global_state.io.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
+                },
+                winit::event::WindowEvent::CursorLeft { device_id: _ } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
                 },
                 winit::event::WindowEvent::Touch(touch) =>
                 {

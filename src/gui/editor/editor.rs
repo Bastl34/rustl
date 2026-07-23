@@ -6,11 +6,11 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
-use super::{editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
+use super::{box_select::{cancel_box_select, update_box_select}, editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
 
 pub const MAX_NAME_LENGTH: usize = 24;
@@ -21,6 +21,8 @@ pub const EDITOR_UTILS_NODE_NAME: &str = "editor utils";
 pub const QUAD_CAM: &str = "quad";
 
 pub const THUMBNAIL_SIZE: u32 = 256;
+
+pub const EXTERNAL_DROP_PADDING: f32 = 0.25; // world space gap between objects dropped in one batch
 
 pub struct Editor
 {
@@ -281,6 +283,9 @@ impl Editor
         // preview scene + material thumbnail rendering / reloading
         self.update_material_thumbnails(state, wgpu, egui_ctx);
 
+        // load queued external file drops (one after another)
+        self.process_external_drop_queue(state);
+
         // update debug images
         self.editor_state.update_debug_images(state, wgpu, egui_ctx);
 
@@ -298,20 +303,27 @@ impl Editor
             // key bindings (copy paste, instancing, ...)
             self.key_bindings(state);
 
-            // set edit mode
-            self.set_edit_mode(state);
+            // blender style box select (b)
+            update_box_select(&mut self.editor_state, state);
 
-            // update gizmos
-            update_gizmos(&mut self.editor_state, state);
+            // while box selecting: no edit mode, gizmo interaction or click selection
+            if self.editor_state.box_select.is_none()
+            {
+                // set edit mode
+                self.set_edit_mode(state);
 
-            // select/pick objects
-            self.select_object(state);
+                // update gizmos
+                update_gizmos(&mut self.editor_state, state);
+
+                // select/pick objects
+                self.select_object(state);
+
+                // edit mode
+                self.move_object(state);
+            }
 
             // delete objects
             self.delete_objcts(state);
-
-            // edit mode
-            self.move_object(state);
         }
     }
 
@@ -380,7 +392,8 @@ impl Editor
         }
 
         // toggle sidebars (Ctrl+B = left, Ctrl+Alt+B = right)
-        if state.io.input_manager.keyboard.is_pressed(Key::B) && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo))
+        // note: the modifier check runs first so that a plain b press is not consumed (used for box select)
+        if (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::B)
         {
             if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
             {
@@ -401,12 +414,27 @@ impl Editor
         // escape
         if state.io.input_manager.keyboard.is_pressed(Key::Escape)
         {
-            if self.editor_state.edit_mode.is_some()
+            // cancel box select first (do not deselect in that case)
+            if self.editor_state.box_select.is_some()
             {
-                self.editor_state.edit_mode = None;
+                cancel_box_select(&mut self.editor_state, state);
             }
+            else
+            {
+                if self.editor_state.edit_mode.is_some()
+                {
+                    self.editor_state.edit_mode = None;
+                }
 
-            self.editor_state.de_select_current_item(state);
+                self.editor_state.de_select_current_item(state);
+
+                // clear the multi selection (and its highlights) as well
+                if self.editor_state.hierarchy_multi_select.len() > 0
+                {
+                    self.editor_state.hierarchy_multi_select.clear();
+                    EditorState::de_select_all_items(state, None);
+                }
+            }
         }
     }
 
@@ -666,13 +694,14 @@ impl Editor
 
                 if let Some(copy_asset) = &self.editor_state.copy_asset
                 {
-                    let pos = state.io.input_manager.mouse.point.pos.unwrap();
+                    // fallback to the window center if there is no known cursor position (cursor outside of the window/over the gui)
+                    let pos = state.io.input_manager.mouse.point.pos.unwrap_or(Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0));
 
                     let copy_node_id = self.editor_state.copy_node_id.clone();
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
                     let copy_node_name = self.editor_state.copy_node_name.clone();
 
-                    self.load_asset(state, copy_asset.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                    self.load_asset(state, copy_asset.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, None, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                     {
                         // copy over transformation
                         if let Some(transform_data) = copy_asset_transform.clone()
@@ -719,12 +748,13 @@ impl Editor
 
             if let Some(source) = &node.source
             {
-                let pos = state.io.input_manager.mouse.point.pos.unwrap();
+                // fallback to the window center if there is no known cursor position (cursor outside of the window/over the gui)
+                let pos = state.io.input_manager.mouse.point.pos.unwrap_or(Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0));
 
                 let copy_node_id = self.editor_state.copy_node_id.clone();
                 let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
 
-                self.load_asset(state, source.origin_path.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+                self.load_asset(state, source.origin_path.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, None, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                 {
                     // copy over transformation
                     if let Some(transform_data) = copy_asset_transform.clone()
@@ -893,6 +923,15 @@ impl Editor
                         {
                             if ctrl_holding
                             {
+                                // seed the list with the current single selection (like the hierarchy ctrl+click does)
+                                if self.editor_state.hierarchy_multi_select.is_empty() && self.editor_state.selected_type == SelectionType::Object
+                                {
+                                    if let Some(selected_id) = self.editor_state.get_selected_node_id()
+                                    {
+                                        self.editor_state.hierarchy_multi_select.push(selected_id);
+                                    }
+                                }
+
                                 let already_selected = self.editor_state.hierarchy_multi_select.contains(&node.id);
                                 if already_selected
                                 {
@@ -923,6 +962,13 @@ impl Editor
 
                                 if selected
                                 {
+                                    // the selection list is the single source of truth - a plain click is a one element selection
+                                    // (instance selections stay out of the list so that deleting an instance keeps working)
+                                    if instande_id.is_none()
+                                    {
+                                        self.editor_state.hierarchy_multi_select.push(node.id);
+                                    }
+
                                     let start_pos = pos.unwrap();
                                     self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
 
@@ -970,6 +1016,18 @@ impl Editor
                 }
             }
             self.editor_state.hierarchy_multi_select.clear();
+
+            // clear the active object if it was part of the deleted selection
+            if self.editor_state.selected_type == SelectionType::Object
+            {
+                if let Some(node_id) = self.editor_state.get_selected_node_id()
+                {
+                    if selected_ids.contains(&node_id)
+                    {
+                        self.editor_state.de_select_current_item(state);
+                    }
+                }
+            }
         }
         else if !self.editor_state.selected_object.is_empty()
         {
@@ -1067,7 +1125,7 @@ impl Editor
                         if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
                         {
                             let reuse_materials = if (self.editor_state.asset_type == AssetType::Object || self.editor_state.asset_type == AssetType::Material) && self.editor_state.reuse_materials_by_name  { true } else { false };
-                            self.load_asset(state, drag_id.clone(), self.editor_state.asset_type, Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None);
+                            self.load_asset(state, drag_id.clone(), self.editor_state.asset_type, Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None, None);
                         }
                     }
                 }
@@ -1079,17 +1137,99 @@ impl Editor
 
     pub fn apply_external_asset_drag(&mut self, state: &mut State, path: String)
     {
-        let pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
-        let reuse_materials = false;
         let asset_type = get_asset_type_by_supported_files(&state.supported_file_types, &path.clone());
-        if let Some(asset_type) = asset_type
+
+        match asset_type
         {
-            self.load_asset(state, path, asset_type, pos, reuse_materials, None);
+            Some(AssetType::Object) | Some(AssetType::Material) => {},
+            Some(_) =>
+            {
+                console_error!("Asset type not supported for drag and drop: {}", path);
+                return;
+            },
+            None =>
+            {
+                console_error!("Unsupported file type: {}", path);
+                return;
+            }
         }
-        else
+
+        // a new batch starts when nothing is queued or loading -> reset the placement state
+        if self.editor_state.external_drop_queue.is_empty() && !*self.editor_state.loading.read().unwrap()
         {
-            console_error!("Unsupported file type: {}", path);
+            self.editor_state.external_drop_pos = None;
+            *self.editor_state.external_drop_right_edge.write().unwrap() = None;
         }
+
+        // loading is not parallel -> queue the files and load them one after another (see process_external_drop_queue)
+        self.editor_state.external_drop_queue.push(path);
+    }
+
+    pub fn process_external_drop_queue(&mut self, state: &mut State)
+    {
+        if self.editor_state.external_drop_queue.is_empty() || *self.editor_state.loading.read().unwrap()
+        {
+            return;
+        }
+
+        let path = self.editor_state.external_drop_queue.remove(0);
+
+        let screen_pos = Point2::<f32>::new(state.width as f32 / 2.0, state.height as f32 / 2.0);
+
+        let asset_type = get_asset_type_by_supported_files(&state.supported_file_types, &path.clone());
+        if asset_type.is_none()
+        {
+            return;
+        }
+        let asset_type = asset_type.unwrap();
+
+        // pick the drop position once per batch - later picks would hit the already placed objects
+        if self.editor_state.external_drop_pos.is_none()
+        {
+            if let Some(pick_res) = pick(state, screen_pos, true, false, false, None)
+            {
+                self.editor_state.external_drop_pos = Some(pick_res.1.point);
+            }
+        }
+
+        let mut on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>> = None;
+
+        if asset_type == AssetType::Object
+        {
+            // place the objects of one batch next to each other (based on their bounding boxes with some padding)
+            let right_edge = self.editor_state.external_drop_right_edge.clone();
+
+            on_done = Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
+            {
+                let bounding_info = root_node.read().unwrap().get_world_bounding_info(None, true, None);
+
+                if let Some((b_min, b_max)) = bounding_info
+                {
+                    let width = b_max.x - b_min.x;
+
+                    let mut right_edge = right_edge.write().unwrap();
+
+                    if let Some(edge) = *right_edge
+                    {
+                        let offset = edge + EXTERNAL_DROP_PADDING + width / 2.0;
+
+                        if let Some(transformation) = root_node.read().unwrap().find_component::<Transformation>()
+                        {
+                            component_downcast_mut!(transformation, Transformation);
+                            transformation.apply_translation(Vector3::<f32>::new(offset, 0.0, 0.0));
+                        }
+
+                        *right_edge = Some(offset + width / 2.0);
+                    }
+                    else
+                    {
+                        *right_edge = Some(width / 2.0);
+                    }
+                }
+            }));
+        }
+
+        self.load_asset(state, path, asset_type, screen_pos, false, self.editor_state.external_drop_pos, on_done);
     }
 
     pub fn set_edit_mode(&mut self, state: &mut State)
@@ -1107,13 +1247,17 @@ impl Editor
         // ********** mode change **********
         if state.io.input_manager.keyboard.is_pressed(Key::G)
         {
-            let start_pos = state.io.input_manager.mouse.point.pos.unwrap();
-            self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
+            if let Some(start_pos) = state.io.input_manager.mouse.point.pos
+            {
+                self.editor_state.edit_mode = Some(EditMode::Movement(start_pos, true, true, true));
+            }
         }
         if state.io.input_manager.keyboard.is_pressed(Key::R)
         {
-            let start_pos = state.io.input_manager.mouse.point.pos.unwrap();
-            self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+            if let Some(start_pos) = state.io.input_manager.mouse.point.pos
+            {
+                self.editor_state.edit_mode = Some(EditMode::Rotate(start_pos, false, true, false));
+            }
         }
 
         if self.editor_state.edit_mode.is_some()
@@ -1427,7 +1571,6 @@ impl Editor
 
         let pos_new = pointer_pos.unwrap();
         let pos = pos_new - pointer_velocity;
-        let pos_delta = pointer_velocity;
 
         // ********** get selection **********
         let selected_scene_id;
@@ -1473,6 +1616,7 @@ impl Editor
                 {
                     self.editor_state.edit_moving = true;
                     self.editor_state.selected_object_position = None;
+                    self.editor_state.drag_anchor_offset = None;
                 }
             }
         }
@@ -1532,7 +1676,6 @@ impl Editor
 
         // ********** get pick info **********
         let mut pick_pos = None;
-        let mut pick_distance = None;
         let mut bounding_min = None;
         let mut bounding_center = None;
 
@@ -1582,7 +1725,7 @@ impl Editor
 
             let bottom_center = Point3::<f32>::new(bounding_center.x, bounding_min.y, bounding_center.z);
 
-            let mut bottom_center_screen_space = None;
+            let mut cam_found = false;
             let mut cam_is_ortho = false;
             let mut cam_dir = Vector3::<f32>::zeros();
 
@@ -1594,47 +1737,73 @@ impl Editor
                 if camera.enabled && camera.is_point_in_viewport(&pos_new) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                 {
                     let cam_data = camera.get_data();
-                    bottom_center_screen_space = Some(camera.get_viewport_coordinates_from_point(&bottom_center));
                     cam_is_ortho = cam_data.projection_type == CameraProjectionType::Orthogonal;
                     cam_dir = cam_data.dir;
+                    cam_found = true;
 
                     break;
                 }
             }
 
-            if bottom_center_screen_space.is_none() { return; }
-            let bottom_center_screen_space = bottom_center_screen_space.unwrap();
-            let new_bottom_center = bottom_center_screen_space + pos_delta;
+            if !cam_found { return; }
 
-
-            let pick_res: Option<(u32, ScenePickRes)>;
+            let predicate: PickPredicate;
             if self.editor_state.drag_and_drop_grid_only
             {
-                pick_res = pick(state, new_bottom_center, true, false, false, Some(Arc::new(pick_predicate_grid_only)));
+                predicate = Arc::new(pick_predicate_grid_only);
             }
             else
             {
-                pick_res = pick(state, new_bottom_center, true, false, false, Some(Arc::new(pick_predicate)));
+                predicate = Arc::new(pick_predicate);
             }
 
-            if let Some(pick_res) = pick_res
+            // ortho cams: project pick point onto the screen-parallel plane through bottom_center
+            let ortho_correction = |p: Point3<f32>| -> Point3<f32>
             {
-                let mut p = pick_res.1.point;
-
-                // ortho cams: project pick point onto the screen-parallel plane through bottom_center
                 if cam_is_ortho
                 {
                     let n = cam_dir.normalize();
                     let proj_distance = (p - bottom_center).dot(&n);
-                    p = p - n * proj_distance;
+                    return p - n * proj_distance;
                 }
 
-                pick_pos = Some(p);
-                pick_distance = Some(pick_res.1.time_of_impact);
+                p
+            };
+
+            // ***** capture the drag anchor on the first frame of the drag *****
+            // the anchor is the world space offset between the object's bottom center and the surface point under the pointer
+            // keeping it constant while dragging makes the object stick to the pointer independent of its size
+            if self.editor_state.drag_anchor_offset.is_none()
+            {
+                if let Some(anchor_res) = pick(state, pos, true, false, false, Some(predicate.clone()))
+                {
+                    let p = ortho_correction(anchor_res.1.point);
+                    self.editor_state.drag_anchor_offset = Some(bottom_center - p);
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            let anchor_offset = self.editor_state.drag_anchor_offset.unwrap();
+
+            // ***** pick the surface under the pointer and re-apply the anchor offset *****
+            if let Some(pick_res) = pick(state, pos_new, true, false, false, Some(predicate))
+            {
+                let p = ortho_correction(pick_res.1.point);
+                let mut target = p + anchor_offset;
+
+                if !cam_is_ortho
+                {
+                    target.y = p.y;
+                }
+
+                pick_pos = Some(target);
             }
         }
 
-        if pick_pos.is_none() || pick_distance.is_none() || bounding_min.is_none()
+        if pick_pos.is_none() || bounding_min.is_none()
         {
             return;
         }
@@ -1707,7 +1876,7 @@ impl Editor
         }
     }
 
-    pub fn load_asset(&mut self, state: &mut State, path: String, asset_type: AssetType, pos: Point2::<f32>, reuse_material: bool, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
+    pub fn load_asset(&mut self, state: &mut State, path: String, asset_type: AssetType, pos: Point2::<f32>, reuse_material: bool, world_pos: Option<Point3<f32>>, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
     {
         if self.editor_state.loading.read().unwrap().clone()
         {
@@ -1729,11 +1898,14 @@ impl Editor
         // pick
         let pick_res = pick(state, pos, true, false, false, None);
 
-        let mut pos = None;
+        let mut pos = world_pos;
         let mut node = None;
         if let Some(pick_res) = pick_res
         {
-            pos = Some(pick_res.1.point);
+            if pos.is_none()
+            {
+                pos = Some(pick_res.1.point);
+            }
             node = Some(pick_res.1.node.clone());
         }
 
@@ -1799,21 +1971,23 @@ impl Editor
                     {
                         if let Some(root_node) = &root_node
                         {
-                            // find offset based on bounding box
-                            let mut offset = 0.0;
+                            let mut offset = Vector3::<f32>::zeros();
                             {
                                 let root_node = root_node.read().unwrap();
                                 let bounding_info = root_node.get_world_bounding_info(None, true, None);
 
-                                if let Some(bounding_info) = bounding_info
+                                if let Some((b_min, b_max)) = bounding_info
                                 {
-                                    //offset = (bounding_info.1.y - bounding_info.0.y) / 2.0;
-                                    offset = -bounding_info.0.y;
+                                    let center = b_min + (b_max - b_min) / 2.0;
+
+                                    offset.x = -center.x;
+                                    offset.y = -b_min.y;
+                                    offset.z = -center.z;
                                 }
                             }
 
                             let mut transform = Transformation::identity("Transform");
-                            transform.apply_translation(Vector3::<f32>::new(pos.x, pos.y + offset, pos.z));
+                            transform.apply_translation(Vector3::<f32>::new(pos.x + offset.x, pos.y + offset.y, pos.z + offset.z));
 
                             root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transform))));
 

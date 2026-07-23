@@ -98,6 +98,8 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
                     ui.label(RichText::new(format!("{} | x: {:.2}, y: {:.2}, z: {:.2}", last_hover_object, pointer_pos.x, pointer_pos.y, pointer_pos.z)).size(12.0));
                 }
 
+                let multi_select_amount = editor_state.hierarchy_multi_select.len();
+
                 let (_scene, node, instance_id) = editor_state.get_selected_node(state);
                 if let Some(node) = node
                 {
@@ -112,6 +114,11 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
                     }
 
                     ui.label(RichText::new(format!("Selected: {}", node.read().unwrap().name)));
+                }
+                else if multi_select_amount > 1
+                {
+                    ui.separator();
+                    ui.label(RichText::new(format!("Selected: {} objects", multi_select_amount)));
                 }
             });
         });
@@ -222,6 +229,9 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     {
         loading_progress_bar(ui, loading_progress);
     }
+
+    // box select overlay (selection rect / crosshair)
+    crate::gui::editor::box_select::draw_box_select_overlay(ui, editor_state, state);
 
     // modals
     create_modals(editor_state, state, ui.ctx());
@@ -513,6 +523,39 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // bounding volume rendering (cycles off -> spheres -> boxes)
+            {
+                let boxes = state.rendering.draw_bounding_boxes;
+                let spheres = state.rendering.draw_bounding_spheres;
+
+                // the icon shows the active hull type (box icon while off)
+                let img = if spheres && !boxes
+                {
+                    egui::Image::new(egui::include_image!("../../../../resources/icons/bounding_sphere.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))
+                }
+                else
+                {
+                    egui::Image::new(egui::include_image!("../../../../resources/icons/bounding_box.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))
+                };
+
+                let mut btn = egui::Button::image(img).selected(boxes || spheres).frame(true);
+                let supported = state.rendering_adapter.storage_buffer_array_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle bounding volume rendering (off -> spheres -> boxes)" } else { "bounding volume rendering not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    match (boxes, spheres)
+                    {
+                        (false, false) => { state.rendering.draw_bounding_boxes = true; },
+                        (true, false) => { state.rendering.draw_bounding_boxes = false; state.rendering.draw_bounding_spheres = true; },
+                        _ => { state.rendering.draw_bounding_boxes = false; state.rendering.draw_bounding_spheres = false; },
+                    }
+                }
+            }
+
             // x-ray mode (Blender-style see-through)
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/xray.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
@@ -520,6 +563,16 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 if ui.add(btn).on_hover_text("toggle x-ray mode (see through objects)").clicked()
                 {
                     state.rendering.xray_mode = !state.rendering.xray_mode;
+                }
+            }
+
+            // grid visibility
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/grid.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.grid_visible).frame(true);
+                if ui.add(btn).on_hover_text("show/hide grid").clicked()
+                {
+                    editor_state.grid_visible = !editor_state.grid_visible;
                 }
             }
 

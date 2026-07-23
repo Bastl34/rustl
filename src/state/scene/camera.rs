@@ -48,6 +48,14 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
     0.0, 0.0, 0.0, 1.0,
 );
 
+pub const OPENGL_TO_WGPU_MATRIX_REVERSE_Z: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
+(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, -0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+);
+
 pub type CameraItem = Box<Camera>;
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
@@ -262,6 +270,9 @@ pub struct Camera
     pub ssao_bind_group_render_item: RenderItemOption,
 
     #[serde(skip, default)]
+    pub debug_volumes_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
     pub indirect_args_render_item: RenderItemOption,
 
     #[serde(skip, default)]
@@ -348,6 +359,7 @@ impl Camera
             hzb_occlusion_bind_group_render_item: None,
             depth_export_bind_group_render_item: None,
             ssao_bind_group_render_item: None,
+            debug_volumes_bind_group_render_item: None,
             indirect_args_render_item: None,
 
             visible_nodes_last_frame: Vec::new(),
@@ -619,11 +631,20 @@ impl Camera
         self.init_matrices();
     }
 
-    pub fn webgpu_projection(&self) -> nalgebra::Matrix4<f32>
+    // the internal projection stays in opengl convention (frustum extraction, picking, ...) -
+    // only the matrix handed to the gpu bakes the wgpu depth range (reverse or forward)
+    pub fn webgpu_projection(&self, reverse_z: bool) -> nalgebra::Matrix4<f32>
     {
         let data = self.data.get_ref();
 
-        OPENGL_TO_WGPU_MATRIX * data.projection
+        if reverse_z
+        {
+            OPENGL_TO_WGPU_MATRIX_REVERSE_Z * data.projection
+        }
+        else
+        {
+            OPENGL_TO_WGPU_MATRIX * data.projection
+        }
     }
 
     pub fn is_point_in_frustum(&self, point: &Point3<f32>) -> bool
@@ -698,6 +719,44 @@ impl Camera
         let world_space = data.view_inverse * camera_space;
 
         world_space.xyz()
+    }
+
+    pub fn world_to_screen(&self, world: &Point3<f32>) -> Option<Point2<f32>>
+    {
+        Self::world_to_screen_data(self.get_data(), world)
+    }
+
+    pub fn world_to_screen_data(data: &CameraData, world: &Point3<f32>) -> Option<Point2<f32>>
+    {
+        let clip = data.projection * data.view * world.to_homogeneous();
+
+        // behind the camera
+        // the projection uses the opengl convention (ndc z in [-1, 1], near plane at -1)
+        // perspective: w <= 0, orthogonal: w is always 1 -> check z against the near plane
+        if data.projection_type == CameraProjectionType::Perspective && clip.w <= 0.00001
+        {
+            return None;
+        }
+
+        if data.projection_type == CameraProjectionType::Orthogonal && clip.z < -1.0
+        {
+            return None;
+        }
+
+        if approx_zero(clip.w)
+        {
+            return None;
+        }
+
+        let ndc_x = clip.x / clip.w;
+        let ndc_y = clip.y / clip.w;
+
+        let x0 = data.viewport.x * data.resolution_width as f32;
+        let y0 = data.viewport.y * data.resolution_height as f32;
+        let width = data.viewport.width * data.resolution_width as f32;
+        let height = data.viewport.height * data.resolution_height as f32;
+
+        Some(Point2::<f32>::new(x0 + (ndc_x + 1.0) * 0.5 * width, y0 + (ndc_y + 1.0) * 0.5 * height))
     }
 
     pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>) -> Ray

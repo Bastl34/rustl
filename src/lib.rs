@@ -16,6 +16,7 @@ mod rendering
     pub(crate) mod skeleton;
     pub(crate) mod morph_target;
     pub(crate) mod bounding_boxes;
+    pub(crate) mod debug_volumes;
     pub(crate) mod visibility;
     pub(crate) mod hzb_cull_buffer;
     pub(crate) mod draw_slots;
@@ -28,6 +29,7 @@ mod rendering
         pub(crate) mod light_cam_scene;
         pub(crate) mod skeleton_morph_target;
         pub(crate) mod single_binding_group;
+        pub(crate) mod debug_volumes;
         pub(crate) mod depth_export;
         pub(crate) mod hzb_downsample;
         pub(crate) mod hzb_occlusion_check;
@@ -152,6 +154,7 @@ mod gui
         pub(crate) mod helper;
         pub(crate) mod gizmo;
         pub(crate) mod grid;
+        pub(crate) mod box_select;
         pub(crate) mod preview_scene;
 
         pub(crate) mod ui

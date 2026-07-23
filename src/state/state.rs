@@ -25,6 +25,9 @@ pub const DEFAULT_SSAO_STRENGTH: f32 = 1.0;
 
 pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
 
+pub const DEFAULT_FOG_COLOR: Vector3<f32> = Vector3::new(0.6, 0.7, 0.8);
+pub const DEFAULT_FOG_DENSITY: f32 = 0.02;
+
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
 pub const ENGINE_INTERNAL_TAG_PREFX: &str = "__internal_";
@@ -84,6 +87,14 @@ pub struct Rendering
     pub ssao_bias: f32,
     pub ssao_strength: f32,
 
+    // distance based fog (world space)
+    #[serde(default)]
+    pub fog: bool,
+    #[serde(default = "default_fog_color")]
+    pub fog_color: Vector3<f32>,
+    #[serde(default = "default_fog_density")]
+    pub fog_density: f32,
+
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
@@ -92,9 +103,22 @@ pub struct Rendering
 
     pub wireframe_mode: bool,
 
+    // reverse z depth buffer (near = 1, far = 0): near-uniform depth precision, less z-fighting
+    #[serde(default)]
+    pub reverse_z: bool,
+
+    // debug rendering of the culling bounding volumes (lines)
+    #[serde(default)]
+    pub draw_bounding_boxes: bool,
+    #[serde(default)]
+    pub draw_bounding_spheres: bool,
+
     pub xray_mode: bool,
     pub xray_alpha: f32,
 }
+
+fn default_fog_color() -> Vector3<f32> { DEFAULT_FOG_COLOR }
+fn default_fog_density() -> f32 { DEFAULT_FOG_DENSITY }
 
 pub struct SupportedFileTypes
 {
@@ -129,6 +153,7 @@ pub struct Statistics
     pub last_fps: u32,
     pub last_fps_1_percent_low: u32, //1% low
     pub fps_cpu_absolute: u32,
+    pub fps_gpu_absolute: Option<u32>, // None if the adapter does not support timestamp queries
     pub fps_average_chart: VecDeque<u32>,
     pub fps_1_percent_low_chart: VecDeque<u32>,
 
@@ -369,6 +394,10 @@ impl State
                 ssao_bias: DEFAULT_SSAO_BIAS,
                 ssao_strength: DEFAULT_SSAO_STRENGTH,
 
+                fog: false,
+                fog_color: DEFAULT_FOG_COLOR,
+                fog_density: DEFAULT_FOG_DENSITY,
+
                 distance_sorting: true,
                 frustum_culling: true,
                 occlusion_culling: true,
@@ -376,6 +405,10 @@ impl State
                 max_texture_resolution: None,
 
                 wireframe_mode: false,
+                reverse_z: false,
+
+                draw_bounding_boxes: false,
+                draw_bounding_spheres: false,
 
                 xray_mode: false,
                 xray_alpha: DEFAULT_XRAY_ALPHA,
@@ -443,6 +476,7 @@ impl State
                 last_fps: 0,
                 last_fps_1_percent_low: 0,
                 fps_cpu_absolute: 0,
+                fps_gpu_absolute: None,
                 fps_average_chart: VecDeque::from(vec![0; 100]),
                 fps_1_percent_low_chart: VecDeque::from(vec![0; 100]),
                 frame_times: VecDeque::from(vec![]),

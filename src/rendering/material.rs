@@ -117,7 +117,7 @@ pub struct MaterialUniform
 
     pub shadow_softness: f32,
 
-    pub _padding: [u32; 1],
+    pub no_fog: u32,
 }
 
 impl MaterialUniform
@@ -219,7 +219,7 @@ impl MaterialUniform
 
             shadow_softness: material_data.shadow_softness,
 
-            _padding: [0],
+            no_fog: material_data.no_fog as u32,
         }
     }
 }

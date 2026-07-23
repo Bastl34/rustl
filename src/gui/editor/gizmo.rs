@@ -4,7 +4,7 @@ use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
 use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::State}};
 
-use super::{editor_state::{EditorState, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
+use super::{editor_state::{EditorState, GizmoTranslationAnchor, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
 const GIZMO_MOVEMENT_CLAMP: f32 = 10.0;
 const GIZMO_SCALE_CLAMP: f32 = 10.0;
@@ -110,6 +110,7 @@ pub fn create_grid_and_gizmo_objects(editor_state: &mut EditorState, state: &mut
                         component_downcast_mut!(material, Material);
                         material.get_data_mut().get_mut().unlit_shading = true;
                         material.get_data_mut().get_mut().allow_xray = false;
+                        material.get_data_mut().get_mut().no_fog = true;
 
                         material.get_data_mut().get_mut().alpha = 0.8;
                         material.get_data_mut().get_mut().blend_mode = BlendMode::Blend;
@@ -140,6 +141,7 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
     if editor_state.selected_gizmo.is_some() && !input_active
     {
         editor_state.selected_gizmo = None;
+        editor_state.gizmo_translation_anchor = None;
 
         let (scene, _, _) = editor_state.get_selected_node(state);
         if let Some(scene) = scene
@@ -177,7 +179,7 @@ pub fn update_gizmos(editor_state: &mut EditorState, state: &mut State)
     }
 
     let mut updated = false;
-    updated = update_position_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
+    updated = update_position_gizmo(pointer_pos, first_action, input_active, editor_state, state) || updated;
     updated = update_rotation_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
     updated = update_scale_gizmo(pointer_pos, pointer_pos_last, first_action, input_active, editor_state, state) || updated;
 
@@ -250,7 +252,7 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
     }
 }
 
-pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
+pub fn update_position_gizmo(pointer_pos: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
 {
     if !editor_state.gizmo_position
     {
@@ -292,6 +294,7 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
         }
 
         editor_state.selected_object_gizmo_value = None;
+        editor_state.gizmo_translation_anchor = None;
     }
 
     let mut updated = false;
@@ -328,58 +331,100 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
         }
 
         {
-            let plane_origin = gizmo_pos;
-            let mut plane_normal = None;
-
-            let mut ray_last = None;
-            let mut ray_now = None;
-
+            // ***** capture the drag anchor on the first frame of the drag *****
+            // the anchor is the ray/plane intersection at the drag start
+            // the object follows the pointer absolutely -> no offset accumulates when cursor events get lost (cursor outside of the window or over the gui)
+            if editor_state.gizmo_translation_anchor.is_none()
             {
-                let selected_gizmo = editor_state.selected_gizmo.clone();
+                let mut anchor_data = None;
+
+                {
+                    let selected_gizmo = editor_state.selected_gizmo.clone();
+
+                    let (scene, _, _) = editor_state.get_selected_node(state);
+                    for camera in &scene.unwrap().cameras
+                    {
+                        if camera.enabled && camera.is_point_in_viewport(&pointer_pos)
+                        {
+                            let ray = camera.get_ray_from_viewport_coordinates(&pointer_pos);
+                            let ray_dir = Vector3::new(ray.dir.x, ray.dir.y, ray.dir.z);
+
+                            let xy_plane = Vector3::new(0.0, 0.0, 1.0);
+                            let xz_plane = Vector3::new(0.0, 1.0, 0.0);
+                            let yz_plane = Vector3::new(1.0, 0.0, 0.0);
+
+                            // find best plane to move on based on camera direction and selected axis
+                            let best_plane = |a: Vector3<f32>, b: Vector3<f32>|
+                            {
+                                if ray_dir.dot(&a).abs() >= ray_dir.dot(&b).abs() { a } else { b }
+                            };
+
+                            let plane_normal = match selected_gizmo
+                            {
+                                Some(GizmoTypeAndAxis::TranslateX) => Some(best_plane(xy_plane, xz_plane)),
+                                Some(GizmoTypeAndAxis::TranslateY) => Some(best_plane(xy_plane, yz_plane)),
+                                Some(GizmoTypeAndAxis::TranslateZ) => Some(best_plane(xz_plane, yz_plane)),
+                                Some(GizmoTypeAndAxis::TranslateXY) => Some(xy_plane),
+                                Some(GizmoTypeAndAxis::TranslateXZ) => Some(xz_plane),
+                                Some(GizmoTypeAndAxis::TranslateYZ) => Some(yz_plane),
+                                _ => None,
+                            };
+
+                            if let Some(plane_normal) = plane_normal
+                            {
+                                if let Some(plane_point) = math::ray_plane_intersection(&ray, plane_normal, gizmo_pos)
+                                {
+                                    anchor_data = Some((camera.id, plane_normal, plane_point));
+                                }
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                if let Some((camera_id, plane_normal, plane_point)) = anchor_data
+                {
+                    let edit_transformation = find_transform_component(editor_state, state);
+                    component_downcast!(edit_transformation, Transformation);
+                    let start_position = edit_transformation.get_data().position.clone();
+
+                    editor_state.gizmo_translation_anchor = Some(GizmoTranslationAnchor
+                    {
+                        camera_id,
+                        plane_normal,
+                        plane_point,
+                        start_position,
+                    });
+                }
+            }
+
+            // ***** move the object to the pointer (absolute) *****
+            let mut ray_now = None;
+            if let Some(anchor) = &editor_state.gizmo_translation_anchor
+            {
+                let anchor_camera_id = anchor.camera_id;
 
                 let (scene, _, _) = editor_state.get_selected_node(state);
                 for camera in &scene.unwrap().cameras
                 {
-                    if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
+                    // stick to the camera the drag started in -> the object keeps following even if the pointer leaves the viewport/window
+                    if camera.enabled && camera.id == anchor_camera_id
                     {
-                        ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
                         ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
-                        let ray_dir = Vector3::new(ray_now.unwrap().dir.x, ray_now.unwrap().dir.y, ray_now.unwrap().dir.z);
-
-                        let xy_plane = Vector3::new(0.0, 0.0, 1.0);
-                        let xz_plane = Vector3::new(0.0, 1.0, 0.0);
-                        let yz_plane = Vector3::new(1.0, 0.0, 0.0);
-
-                        // find best plane to move on based on camera direction and selected axis
-                        let best_plane = |a: Vector3<f32>, b: Vector3<f32>|
-                        {
-                            if ray_dir.dot(&a).abs() >= ray_dir.dot(&b).abs() { a } else { b }
-                        };
-
-                        plane_normal = match selected_gizmo
-                        {
-                            Some(GizmoTypeAndAxis::TranslateX) => Some(best_plane(xy_plane, xz_plane)),
-                            Some(GizmoTypeAndAxis::TranslateY) => Some(best_plane(xy_plane, yz_plane)),
-                            Some(GizmoTypeAndAxis::TranslateZ) => Some(best_plane(xz_plane, yz_plane)),
-                            Some(GizmoTypeAndAxis::TranslateXY) => Some(xy_plane),
-                            Some(GizmoTypeAndAxis::TranslateXZ) => Some(xz_plane),
-                            Some(GizmoTypeAndAxis::TranslateYZ) => Some(yz_plane),
-                            _ => None,
-                        };
-
                         break;
                     }
                 }
             }
 
-            if let (Some(plane_normal), Some(ray_last), Some(ray_now)) = (plane_normal, ray_last, ray_now)
+            if let (Some(anchor), Some(ray_now)) = (editor_state.gizmo_translation_anchor, ray_now)
             {
-                let p0 = math::ray_plane_intersection(&ray_last, plane_normal, plane_origin);
-                let p1 = math::ray_plane_intersection(&ray_now, plane_normal, plane_origin);
+                let p1 = math::ray_plane_intersection(&ray_now, anchor.plane_normal, anchor.plane_point);
 
-                if let (Some(p0), Some(p1)) = (p0, p1)
+                if let Some(p1) = p1
                 {
-                    let vec: nalgebra::Matrix<f32, nalgebra::Const<3>, nalgebra::Const<1>, nalgebra::ArrayStorage<f32, 3, 1>> = p1 - p0;
+                    // total movement since drag start (world space)
+                    let vec: nalgebra::Matrix<f32, nalgebra::Const<3>, nalgebra::Const<1>, nalgebra::ArrayStorage<f32, 3, 1>> = p1 - anchor.plane_point;
                     let movement_vec = match editor_state.selected_gizmo
                     {
                         Some(GizmoTypeAndAxis::TranslateX) => Vector3::new(vec.x, 0.0, 0.0),
@@ -391,35 +436,24 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
                         _ => Vector3::<f32>::zeros()
                     };
 
-                    let mut movement_vec = movement_vec;
-                    movement_vec.x = movement_vec.x.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-                    movement_vec.y = movement_vec.y.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
-                    movement_vec.z = movement_vec.z.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                    let local_transform = transform_vec_to_parent_local(instance_id.clone(), node.clone(), movement_vec);
+                    let target = anchor.start_position + local_transform;
 
-                    let local_transform  = transform_vec_to_parent_local(instance_id.clone(), node.clone(), movement_vec);
+                    // clamp the movement per frame (protection against near-parallel ray/plane intersections)
+                    let current = editor_state.selected_object_gizmo_value.unwrap_or(anchor.start_position);
+                    let mut delta = target - current;
+                    delta.x = delta.x.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                    delta.y = delta.y.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
+                    delta.z = delta.z.clamp(-GIZMO_MOVEMENT_CLAMP, GIZMO_MOVEMENT_CLAMP);
 
-                    {
-                        if let Some(selected_object_gizmo_value) = editor_state.selected_object_gizmo_value.as_mut()
-                        {
-                            selected_object_gizmo_value.x += local_transform.x;
-                            selected_object_gizmo_value.y += local_transform.y;
-                            selected_object_gizmo_value.z += local_transform.z;
-                        }
-                        else
-                        {
-                            let edit_transformation = find_transform_component(editor_state, state);
-                            component_downcast!(edit_transformation, Transformation);
-
-                            let pos = edit_transformation.get_data().position.clone() + local_transform;
-                            editor_state.selected_object_gizmo_value = Some(pos);
-                        }
-                    }
+                    let new_position = current + delta;
+                    editor_state.selected_object_gizmo_value = Some(new_position);
 
                     // ********** without snap **********
                     {
                         let edit_transformation = find_transform_component(editor_state, state);
                         component_downcast_mut!(edit_transformation, Transformation);
-                        edit_transformation.apply_translation(local_transform.xyz());
+                        edit_transformation.set_translation(new_position);
                     }
 
                     // ********** snap to grid center **********
@@ -903,11 +937,32 @@ pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, st
     let parent_transform = get_parent_world_transform_from_selected_node(editor_state, state);
     let parent_world_rotation_only = extract_rotation_as_euler_vec(&parent_transform);
 
+    // place the gizmo at the center of the object's bounding box
+    // the origin/pivot of the object can be somewhere else (off-center geometry) - the gizmo should always be at the visible geometry
+    let mut bounding_center = None;
+    {
+        let (_, node, instance_id) = editor_state.get_selected_node(state);
+        if let Some(node) = node
+        {
+            if let Some((b_min, b_max)) = node.read().unwrap().get_world_bounding_info(instance_id, true, None)
+            {
+                bounding_center = Some(b_min + (b_max - b_min) / 2.0);
+            }
+        }
+    }
+
     let (scene, _, _) = editor_state.get_selected_node(state);
     let scene = scene.unwrap();
 
-    // get pos from transform
-    let pos = world_transform.column(3).xyz();
+    // get pos from the bounding box center (fallback: transform position)
+    let pos = if let Some(bounding_center) = bounding_center
+    {
+        bounding_center.coords
+    }
+    else
+    {
+        world_transform.column(3).xyz()
+    };
 
     // pick the active camera (the one the pointer is over), fallback to the perspective cam
     let mut camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();

@@ -21,7 +21,7 @@ impl RenderItem for ComputePipeline
 
 impl ComputePipeline
 {
-    pub fn new_hzb_downsample_compute(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> ComputePipeline
+    pub fn new_hzb_downsample_compute(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], reverse_z: bool) -> ComputePipeline
     {
         let shader;
         {
@@ -44,12 +44,12 @@ impl ComputePipeline
             pipeline: None,
         };
 
-        pipe.create_hzb_downsample_compute(wgpu, bind_group_layouts);
+        pipe.create_hzb_downsample_compute(wgpu, bind_group_layouts, reverse_z);
 
         pipe
     }
 
-    pub fn new_hzb_occlusion_check_compute(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout]) -> ComputePipeline
+    pub fn new_hzb_occlusion_check_compute(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], reverse_z: bool) -> ComputePipeline
     {
         let shader;
         {
@@ -72,7 +72,7 @@ impl ComputePipeline
             pipeline: None,
         };
 
-        pipe.create_hzb_downsample_compute(wgpu, bind_group_layouts);
+        pipe.create_hzb_occlusion_check_compute(wgpu, bind_group_layouts, reverse_z);
 
         pipe
     }
@@ -82,7 +82,7 @@ impl ComputePipeline
         self.pipeline.as_ref().unwrap()
     }
 
-    pub fn create_hzb_downsample_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    pub fn create_hzb_downsample_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], reverse_z: bool)
     {
         // for creating the hierarchical Z-buffer mip chain
 
@@ -102,23 +102,27 @@ impl ComputePipeline
             layout: Some(&pipeline_layout),
             module: &self.shader,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions
+            {
+                constants: &[("REVERSE_Z", if reverse_z { 1.0 } else { 0.0 })],
+                ..Default::default()
+            },
             cache: None,
         });
 
         self.pipeline = Some(hzb_compute_pipeline);
     }
 
-    pub fn re_create_hzb_downsample_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    pub fn re_create_hzb_downsample_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], reverse_z: bool)
     {
         console_log!("recreating hzb downsample compute pipeline");
 
-        self.create_hzb_downsample_compute(wgpu, bind_group_layouts);
+        self.create_hzb_downsample_compute(wgpu, bind_group_layouts, reverse_z);
     }
 
-    pub fn create_hzb_occlusion_check_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    pub fn create_hzb_occlusion_check_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], reverse_z: bool)
     {
-        // for creating the hierarchical Z-buffer mip chain
+        // tests the object bounding boxes against the hierarchical Z-buffer
 
         let device = wgpu.device();
 
@@ -136,18 +140,22 @@ impl ComputePipeline
             layout: Some(&pipeline_layout),
             module: &self.shader,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions
+            {
+                constants: &[("REVERSE_Z", if reverse_z { 1.0 } else { 0.0 })],
+                ..Default::default()
+            },
             cache: None,
         });
 
         self.pipeline = Some(hzb_compute_pipeline);
     }
 
-    pub fn re_create_hzb_occlusion_check_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout])
+    pub fn re_create_hzb_occlusion_check_compute(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], reverse_z: bool)
     {
         console_log!("recreating hzb occlusion check compute pipeline");
 
-        self.create_hzb_occlusion_check_compute(wgpu, bind_group_layouts);
+        self.create_hzb_occlusion_check_compute(wgpu, bind_group_layouts, reverse_z);
     }
 
 }

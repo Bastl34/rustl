@@ -1,5 +1,18 @@
 const PI: f32 = 3.141592653589793;
 
+// set at pipeline creation (reverse z depth buffer: near = 1, far = 0)
+override REVERSE_Z: bool = false;
+
+// nothing was rendered at this pixel (depth still at its clear value)
+fn is_background(depth: f32) -> bool
+{
+    if (REVERSE_Z)
+    {
+        return depth <= 0.0;
+    }
+    return depth >= 1.0;
+}
+
 // maximum screen space footprint of the kernel as a fraction of the viewport height -
 // close-up geometry would otherwise project the world space radius onto a huge pixel
 // area (the widely scattered depth loads thrash the texture cache and the pass cost
@@ -238,7 +251,7 @@ fn fs_main(in: VertexOutput) -> @location(0) f32
     let depth = load_depth(px);
 
     // background: no occlusion
-    if (depth >= 1.0)
+    if (is_background(depth))
     {
         return 1.0;
     }
@@ -338,7 +351,7 @@ fn fs_upsample(in: VertexOutput) -> @location(0) f32
     let center_depth = load_depth(px);
 
     // background: no occlusion
-    if (center_depth >= 1.0)
+    if (is_background(center_depth))
     {
         return 1.0;
     }

@@ -7,11 +7,13 @@ use crate::{component_downcast, component_downcast_mut, console_error, gui::edit
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
-pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid root main";         // single view + 3d quad
-pub const GRID_ROOT_NAME_XZ: &str = "grid root xz"; // top quad — same orientation, independent transform
-pub const GRID_ROOT_NAME_XY: &str = "grid root xy";
-pub const GRID_ROOT_NAME_YZ: &str = "grid root yz";
-pub const GRID_ORIGIN_ROOT_NAME: &str = "grid origin root";
+
+pub const GRID_ROOT: &str = "grid root";
+pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid main";         // single view + 3d quad
+pub const GRID_NAME_XZ: &str = "grid xz"; // top quad — same orientation, independent transform
+pub const GRID_NAME_XY: &str = "grid xy";
+pub const GRID_NAME_YZ: &str = "grid yz";
+pub const GRID_ORIGIN_NAME: &str = "grid origin";
 
 const GRID_XZ_LAYER_MASK: u32 = LAYER_SINGLE_VIEW | LAYER_QUAD_VIEW_3D;
 const GRID_2D_DEPTH: f32 = DEFAULT_CLIPPING_FAR / 2.0 - 1.0;
@@ -37,6 +39,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             {
                 *editor_utils_node_id.write().unwrap() = Some(editor_utils_node.read().unwrap().id);
             }
+
         }
     }));
     let editor_utils_node_id = *editor_utils_node_id.read().unwrap();
@@ -50,15 +53,32 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
     // delte already existing first ("grid root", and "grid origin root")
     execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
     {
-        scene.delete_node_by_name(GRID_ORIGIN_ROOT_NAME, true, true, true, true);
+        scene.delete_node_by_name(GRID_ROOT, true, true, true, true);
+        scene.delete_node_by_name(GRID_ORIGIN_NAME, true, true, true, true);
         scene.delete_node_by_name(GRID_ROOT_NAME_XZ_MAIN, true, true, true, true);
-        scene.delete_node_by_name(GRID_ROOT_NAME_XZ, true, true, true, true);
-        scene.delete_node_by_name(GRID_ROOT_NAME_XY, true, true, true, true);
-        scene.delete_node_by_name(GRID_ROOT_NAME_YZ, true, true, true, true);
+        scene.delete_node_by_name(GRID_NAME_XZ, true, true, true, true);
+        scene.delete_node_by_name(GRID_NAME_XY, true, true, true, true);
+        scene.delete_node_by_name(GRID_NAME_YZ, true, true, true, true);
     }));
 
-    let loaded_assets_grid = load_asset_and_add_to_scene("objects/grid/grid_line.gltf", scene_id, editor_utils_node_id, main_queue.clone(), false, true, true, true, false, 0).unwrap();
-    let loaded_assets_origin = load_asset_and_add_to_scene("objects/grid/grid_line_extruded.glb", scene_id, editor_utils_node_id, main_queue.clone(), false, false, true, true, false, 0).unwrap();
+    // create grid root node
+    let grid_root_node_id: Arc<RwLock<Option<u32>>> = Arc::new(RwLock::new(None));
+    let grid_root_node_id_clone = grid_root_node_id.clone();
+    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
+    {
+        let editor_utils_node = scene.find_node_by_id(editor_utils_node_id.unwrap());
+        *grid_root_node_id_clone.write().unwrap() = Some(scene.add_empty_node_front(GRID_ROOT, editor_utils_node).read().unwrap().id);
+    }));
+
+    let grid_root_node_id = *grid_root_node_id.read().unwrap();
+    if grid_root_node_id.is_none()
+    {
+        console_error!("Failed to find grid root node for grid creation");
+        return;
+    }
+
+    let loaded_assets_grid = load_asset_and_add_to_scene("objects/grid/grid_line.gltf", scene_id, grid_root_node_id, main_queue.clone(), false, true, true, true, false, 0).unwrap();
+    let loaded_assets_origin = load_asset_and_add_to_scene("objects/grid/grid_line_extruded.glb", scene_id, grid_root_node_id, main_queue.clone(), false, false, true, true, false, 0).unwrap();
 
     let mut grid_root = None;
 
@@ -79,7 +99,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                 if let Some(root_node) = scene.find_node_by_id(*root)
                 {
                     {
-                        root_node.write().unwrap().name = GRID_ORIGIN_ROOT_NAME.to_string();
+                        root_node.write().unwrap().name = GRID_ORIGIN_NAME.to_string();
                     }
 
                     // move to front
@@ -98,12 +118,11 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                 {
                     if node.read().unwrap().name == "grid"
                     {
-                        // ranem to origin -> otherwise lookups to "grid" will fail and result the wrong node
-                        node.write().unwrap().name = "grid origin".to_string();
+                        // rename -> otherwise lookups to "grid" (or the "grid origin" root) will result the wrong node
+                        node.write().unwrap().name = "grid origin line".to_string();
                     }
                 }
             }
-
 
             // grid itself
             if let Some(root) = loaded_assets_grid.root_node_ids.get(0)
@@ -188,6 +207,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                         material.get_data_mut().get_mut().unlit_shading = true;
                         material.get_data_mut().get_mut().cast_shadow = false;
                         material.get_data_mut().get_mut().allow_xray = false;
+                        material.get_data_mut().get_mut().no_fog = true;
                         material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(0.0, 0.0, 0.0);
                     }
                 }
@@ -226,6 +246,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                         material.get_data_mut().get_mut().unlit_shading = true;
                         material.get_data_mut().get_mut().cast_shadow = false;
                         material.get_data_mut().get_mut().allow_xray = false;
+                        material.get_data_mut().get_mut().no_fog = true;
                         material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
                         material.get_data_mut().get_mut().alpha = 0.7;
                     }
@@ -293,6 +314,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                         material.get_data_mut().get_mut().unlit_shading = true;
                         material.get_data_mut().get_mut().cast_shadow = false;
                         material.get_data_mut().get_mut().allow_xray = false;
+                        material.get_data_mut().get_mut().no_fog = true;
                         material.get_data_mut().get_mut().alpha = 0.8;
                         material.get_data_mut().get_mut().base_color = Vector3::<f32>::new(1.0, 1.0, 1.0);
                     }
@@ -320,6 +342,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
             plane_material.get_data_mut().get_mut().alpha = 0.7;
             // plane_material.get_data_mut().get_mut().unlit_shading = true;
             plane_material.get_data_mut().get_mut().allow_xray = false;
+            plane_material.get_data_mut().get_mut().no_fog = true;
 
             let plane_material_arc: MaterialItem = Arc::new(RwLock::new(Box::new(plane_material)));
 
@@ -348,10 +371,10 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
         {
             let scene = state.find_scene_by_id_mut(scene_id).unwrap();
 
-            let editor_utils = scene.find_node_by_name(EDITOR_UTILS_NODE_NAME);
+            let grid_root = scene.find_node_by_name(GRID_ROOT);
 
             // scope the lookups to the editor utils subtree so a user-scene node named "grid" or "plane" can't collide
-            let (line_src, plane_src) = if let Some(editor_utils) = editor_utils.as_ref()
+            let (line_src, plane_src) = if let Some(editor_utils) = grid_root.as_ref()
             {
                 let utils = editor_utils.read().unwrap();
                 (
@@ -364,7 +387,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                 (None, None)
             };
 
-            if let (Some(editor_utils), Some(line_src), Some(plane_src)) = (editor_utils, line_src, plane_src)
+            if let (Some(grid_root), Some(line_src), Some(plane_src)) = (grid_root, line_src, plane_src)
             {
                 // restrict the existing X-Z grid to the single view + top + 3d quad cameras
                 line_src.write().unwrap().settings.layer_mask = GRID_XZ_LAYER_MASK;
@@ -393,9 +416,9 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
                 [
                     // root name, root rotation, quad-view layer, initial root translation
                     // (the X-Y/Y-Z grids are pushed back along their cam-look axis so scene objects naturally depth-win over the plane)
-                    (GRID_ROOT_NAME_XZ, Vector3::<f32>::new(0.0, 0.0, 0.0), LAYER_QUAD_VIEW_TOP, Vector3::<f32>::new(0.0, -GRID_2D_DEPTH, 0.0)),
-                    (GRID_ROOT_NAME_XY, Vector3::<f32>::new(PI / 2.0, 0.0, 0.0), LAYER_QUAD_VIEW_FRONT, Vector3::<f32>::new(0.0, 0.0, -GRID_2D_DEPTH)),
-                    (GRID_ROOT_NAME_YZ, Vector3::<f32>::new(0.0, 0.0, -PI / 2.0), LAYER_QUAD_VIEW_RIGHT, Vector3::<f32>::new(-GRID_2D_DEPTH, 0.0, 0.0)),
+                    (GRID_NAME_XZ, Vector3::<f32>::new(0.0, 0.0, 0.0), LAYER_QUAD_VIEW_TOP, Vector3::<f32>::new(0.0, -GRID_2D_DEPTH, 0.0)),
+                    (GRID_NAME_XY, Vector3::<f32>::new(PI / 2.0, 0.0, 0.0), LAYER_QUAD_VIEW_FRONT, Vector3::<f32>::new(0.0, 0.0, -GRID_2D_DEPTH)),
+                    (GRID_NAME_YZ, Vector3::<f32>::new(0.0, 0.0, -PI / 2.0), LAYER_QUAD_VIEW_RIGHT, Vector3::<f32>::new(-GRID_2D_DEPTH, 0.0, 0.0)),
                 ];
 
                 for (root_name, rotation, layer_mask, initial_translation) in extra_grids
@@ -441,7 +464,7 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
 
                     Node::add_node(root.clone(), lines_node);
                     Node::add_node(root.clone(), plane_node);
-                    Node::add_node(editor_utils.clone(), root);
+                    Node::add_node(grid_root.clone(), root);
                 }
             }
         }
@@ -456,6 +479,23 @@ pub fn create_grid(scene_id: u32, main_queue: ExecutionQueueItem, amount: u32, s
 
 pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
 {
+    for scene in &mut state.scenes
+    {
+        if !scene.active { continue; }
+
+        let grid: Option<Arc<RwLock<Box<Node>>>> = scene.find_node_by_name(GRID_ROOT);
+        if let Some(grid) = grid
+        {
+            let mut grid = grid.write().unwrap();
+            grid.settings.visible = editor_state.grid_visible;
+        }
+    }
+
+    if !editor_state.grid_visible
+    {
+        return;
+    }
+
     let grid_size = editor_state.grid_size;
 
     // create instance
@@ -506,11 +546,11 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         if grid.is_some() && editor_state.grid_recreate
         {
             // delete first
-            scene.delete_node_by_name(GRID_ORIGIN_ROOT_NAME, true, true, true, true);
+            scene.delete_node_by_name(GRID_ORIGIN_NAME, true, true, true, true);
             scene.delete_node_by_name(GRID_ROOT_NAME_XZ_MAIN, true, true, true, true);
-            scene.delete_node_by_name(GRID_ROOT_NAME_XZ, true, true, true, true);
-            scene.delete_node_by_name(GRID_ROOT_NAME_XY, true, true, true, true);
-            scene.delete_node_by_name(GRID_ROOT_NAME_YZ, true, true, true, true);
+            scene.delete_node_by_name(GRID_NAME_XZ, true, true, true, true);
+            scene.delete_node_by_name(GRID_NAME_XY, true, true, true, true);
+            scene.delete_node_by_name(GRID_NAME_YZ, true, true, true, true);
 
             let grid_size = editor_state.grid_size;
             let grid_amount = editor_state.grid_amount;
@@ -564,7 +604,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         }
 
         // update X-Z grid for the top quad view — follows the top quad cam on x/z (independent of the 3d/editor X-Z grid)
-        if let Some(grid_xz_top) = scene.find_node_by_name(GRID_ROOT_NAME_XZ)
+        if let Some(grid_xz_top) = scene.find_node_by_name(GRID_NAME_XZ)
         {
             let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_TOP != 0);
             if let Some(camera) = camera
@@ -587,7 +627,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         }
 
         // update X-Y grid (front view) — follows the front quad camera on x/y
-        if let Some(grid_xy) = scene.find_node_by_name(GRID_ROOT_NAME_XY)
+        if let Some(grid_xy) = scene.find_node_by_name(GRID_NAME_XY)
         {
             let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_FRONT != 0);
             if let Some(camera) = camera
@@ -610,7 +650,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         }
 
         // Y-Z grid (right view) — follows the right quad camera on y/z
-        if let Some(grid_yz) = scene.find_node_by_name(GRID_ROOT_NAME_YZ)
+        if let Some(grid_yz) = scene.find_node_by_name(GRID_NAME_YZ)
         {
             let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_RIGHT != 0);
             if let Some(camera) = camera

@@ -234,6 +234,20 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.label("ℹ").on_hover_text(if state.rendering_adapter.wireframe_mode_support { "renders all objects in wireframe mode, useful for debugging" } else { "not supported by this GPU/backend" });
         });
 
+        let debug_volumes_support = state.rendering_adapter.storage_buffer_array_support;
+
+        ui.horizontal(|ui|
+        {
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_bounding_boxes, "Draw Bounding Boxes"));
+            ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the bounding box of each object as lines (the same boxes the occlusion culling tests against)" } else { "not supported by this GPU/backend" });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_bounding_spheres, "Draw Bounding Spheres"));
+            ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the bounding sphere of each object as lines (the same spheres the frustum culling tests against)" } else { "not supported by this GPU/backend" });
+        });
+
         ui.horizontal(|ui|
         {
             ui.checkbox(&mut state.rendering.create_mipmaps, "create mipmaps");
@@ -256,6 +270,12 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
         {
             ui.checkbox(&mut state.rendering.occlusion_culling, "Occlusion Culling");
             ui.label("ℹ").on_hover_text("improves performance by not rendering objects which are occluded by other objects in the view frustum");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.reverse_z, "Reverse Z");
+            ui.label("ℹ").on_hover_text("reverse z depth buffer (near = 1, far = 0): distributes the depth precision almost uniformly over the whole depth range - reduces z-fighting on large scenes");
         });
 
         ui.horizontal(|ui|
@@ -416,6 +436,42 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.label("SSAO Strength:");
             ui.add_enabled(ssao_support, egui::DragValue::new(&mut state.rendering.ssao_strength).speed(0.01).range(0.0..=1.0));
             ui.label("ℹ").on_hover_text("how much the occlusion darkens the final color");
+        });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.fog, "Fog");
+            ui.label("ℹ").on_hover_text("distance based exponential fog - fades geometry into the fog color with growing distance from the camera (editor helpers like grid and gizmos are excluded)");
+        });
+
+        ui.horizontal(|ui|
+        {
+            let fog_color = state.rendering.fog_color;
+
+            let r = (fog_color.x * 255.0) as u8;
+            let g = (fog_color.y * 255.0) as u8;
+            let b = (fog_color.z * 255.0) as u8;
+            let mut color = Color32::from_rgb(r, g, b);
+
+            ui.label("Fog Color:");
+            if ui.color_edit_button_srgba(&mut color).changed()
+            {
+                let r = ((color.r() as f32) / 255.0).clamp(0.0, 1.0);
+                let g = ((color.g() as f32) / 255.0).clamp(0.0, 1.0);
+                let b = ((color.b() as f32) / 255.0).clamp(0.0, 1.0);
+                state.rendering.fog_color = Vector3::<f32>::new(r, g, b);
+            }
+
+            ui.label("ℹ").on_hover_text("tip: matching the clear color lets distant geometry blend seamlessly into the background");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Fog Density:");
+            ui.add(egui::DragValue::new(&mut state.rendering.fog_density).speed(0.001).range(0.0..=1.0));
+            ui.label("ℹ").on_hover_text("exponential density - at density d the visibility drops to ~37% at distance 1/d");
         });
     });
 }

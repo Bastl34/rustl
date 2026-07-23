@@ -40,6 +40,15 @@ pub enum GizmoTypeAndAxis
     ScaleUniform,
 }
 
+#[derive(Clone, Copy)]
+pub struct GizmoTranslationAnchor
+{
+    pub camera_id: u32, // camera the drag started in
+    pub plane_normal: Vector3<f32>, // movement plane (fixed for the whole drag)
+    pub plane_point: Point3<f32>, // ray/plane intersection at drag start (world space)
+    pub start_position: Vector3<f32>, // local translation of the edited transform at drag start
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub enum SettingsPanel
 {
@@ -115,6 +124,29 @@ pub enum EditMode
     Rotate(Point2::<f32>, bool, bool, bool)
 }
 
+// blender style box select (b key) - present while the mode is active
+// positions are in physical pixels with a bottom left origin (same as the mouse input)
+#[derive(Clone, Copy)]
+pub struct BoxSelect
+{
+    pub camera_id: Option<u32>, // camera viewport the drag started in (the selection is done through this camera)
+    pub drag_start: Option<Point2<f32>>,
+    pub drag_current: Option<Point2<f32>>,
+}
+
+impl BoxSelect
+{
+    pub fn new() -> BoxSelect
+    {
+        BoxSelect
+        {
+            camera_id: None,
+            drag_start: None,
+            drag_current: None,
+        }
+    }
+}
+
 pub struct Asset
 {
     pub name: String,
@@ -182,6 +214,7 @@ pub struct EditorState
     pub pick_id: String,
     pub pick_mode: PickType,
 
+    pub grid_visible: bool,
     pub grid_size: f32,
     pub grid_amount: u32,
     pub grid_recreate: bool,
@@ -189,6 +222,8 @@ pub struct EditorState
     pub edit_mode: Option<EditMode>,
     pub edit_moving: bool,
     pub drag_and_drop_grid_only: bool,
+
+    pub box_select: Option<BoxSelect>,
 
     pub bottom: BottomPanel,
     pub asset_type: AssetType,
@@ -215,8 +250,10 @@ pub struct EditorState
     pub selected_type: SelectionType,
     pub selected_object: String,
     pub selected_object_position: Option<Vector3<f32>>,
+    pub drag_anchor_offset: Option<Vector3<f32>>,
     pub selected_gizmo: Option<GizmoTypeAndAxis>,
     pub selected_object_gizmo_value: Option<Vector3<f32>>,
+    pub gizmo_translation_anchor: Option<GizmoTranslationAnchor>,
 
     pub last_hover_object: Option<String>,
     pub last_hover_pointer_position: Option<Point3<f32>>,
@@ -228,6 +265,11 @@ pub struct EditorState
     pub copy_node_name: Option<String>,
 
     pub drag_id: Option<String>,
+
+    // external file drops (from the os) - loaded one after another because loading is not parallel
+    pub external_drop_queue: Vec<String>,
+    pub external_drop_pos: Option<Point3<f32>>, // world drop position (picked once per batch)
+    pub external_drop_right_edge: Arc<RwLock<Option<f32>>>, // x offset of the right bounding box edge of the last placed object (relative to the drop position)
 
     pub dialog_add_component: bool,
     pub add_component_id: usize,
@@ -309,6 +351,7 @@ impl EditorState
             pick_id: "".to_string(),
             pick_mode: PickType::None,
 
+            grid_visible: true,
             grid_size: DEFAULT_GRID_SIZE,
             grid_amount: DEFAULT_GRID_AMOUNT,
             grid_recreate: false,
@@ -316,6 +359,8 @@ impl EditorState
             edit_mode: None,
             edit_moving: false,
             drag_and_drop_grid_only: false,
+
+            box_select: None,
 
             bottom: BottomPanel::Assets,
             asset_type: AssetType::Object,
@@ -342,6 +387,8 @@ impl EditorState
             selected_type: SelectionType::None,
             selected_object: String::new(), // type_nodeID/elementID_instanceID
             selected_object_position: None,
+            drag_anchor_offset: None,
+            gizmo_translation_anchor: None,
             selected_gizmo: None,
             selected_object_gizmo_value: None,
 
@@ -355,6 +402,10 @@ impl EditorState
             copy_node_name: None,
 
             drag_id: None,
+
+            external_drop_queue: vec![],
+            external_drop_pos: None,
+            external_drop_right_edge: Arc::new(RwLock::new(None)),
 
             dialog_add_component: false,
             add_component_id: 0,

@@ -211,16 +211,22 @@ pub fn create_chart(_editor_state: &mut EditorState, state: &mut State, ui: &mut
                 .show_grid(egui::Vec2b::new(false, true))
                 .show_x(true)
                 .show_y(true)
-                .label_formatter(|name, value|
+                .label_formatter(|pos|
                 {
-                    let fps = value.y.round() as i64;
+                    let (name, point) = match pos
+                    {
+                        egui_plot::HoverPosition::NearDataPoint { plot_name, position, .. } => (*plot_name, position),
+                        egui_plot::HoverPosition::Elsewhere { position } => ("", position),
+                    };
+
+                    let fps = point.y.round() as i64;
                     if name.is_empty()
                     {
-                        format!("{} fps", fps)
+                        Some(format!("{} fps", fps))
                     }
                     else
                     {
-                        format!("{}: {} fps", name, fps)
+                        Some(format!("{}: {} fps", name, fps))
                     }
                 })
                 .auto_bounds(egui::Vec2b::new(true, true))
@@ -328,6 +334,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     info.push(format!("fps: {}", state.stats.last_fps));
     info.push(format!("fps 1% low: {}", state.stats.last_fps_1_percent_low));
     info.push(format!("absolute cpu fps: {}", state.stats.fps_cpu_absolute));
+    if let Some(fps) = state.stats.fps_gpu_absolute { info.push(format!("absolute gpu fps: {}", fps)); }
     info.push(format!("frame time: {:.3} ms", state.stats.frame_time));
     stats.push(("Info".to_string(), "ℹ".to_string(), info, false));
 

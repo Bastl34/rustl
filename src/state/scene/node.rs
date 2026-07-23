@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
-use nalgebra::{Matrix4, Point3, Vector4};
+use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 use parry3d::bounding_volume::{Aabb, BoundingSphere};
 use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merge
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::extract_max_scale_from_transform, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -701,69 +701,131 @@ impl Node
 
         let meshes = self.get_meshes();
 
-        let mut bounding_sphere_mesh: Option<BoundingSphere> = None;
+        // non-skinned meshes: collect the local aabb - the world sphere is built per instance
+        // from the per axis scaled half extents (scaling a pre-merged local sphere by the max
+        // axis scale massively overestimates non-uniformly scaled meshes - like kit assets
+        // which are just heavily squashed cubes)
+        let mut bounding_box_mesh: Option<Aabb> = None;
+
+        // skinned meshes: keep the (intentionally padded) skin sphere
+        let mut bounding_sphere_skin: Option<BoundingSphere> = None;
 
         for mesh in &meshes
         {
             component_downcast!(mesh, Mesh);
 
-            let mut sphere = None;
             if let Some(skin_sphere) = mesh.get_scaled_skin_bounding_sphere()
             {
-                sphere = Some(skin_sphere);
-            }
-            else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
-            {
-                sphere = Some(mesh_resource.read().unwrap().get_data().b_sphere);
-            }
-
-            if let Some(sphere) = sphere
-            {
-                if let Some(bounding_sphere_mesh) = bounding_sphere_mesh.as_mut()
+                if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_mut()
                 {
-                    bounding_sphere_mesh.merge(&sphere);
+                    bounding_sphere_skin.merge(&skin_sphere);
                 }
                 else
                 {
-                    bounding_sphere_mesh = Some(sphere);
+                    bounding_sphere_skin = Some(skin_sphere);
+                }
+            }
+            else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+            {
+                let b_box = mesh_resource.read().unwrap().get_data().b_box;
+
+                // not yet calculated
+                if b_box.maxs.x < b_box.mins.x
+                {
+                    continue;
+                }
+
+                if let Some(bounding_box_mesh) = bounding_box_mesh.as_mut()
+                {
+                    bounding_box_mesh.merge(&b_box);
+                }
+                else
+                {
+                    bounding_box_mesh = Some(b_box);
                 }
             }
         }
 
         let mut bounding_sphere_result: Option<BoundingSphere> = None;
 
-        if let Some(bounding_sphere_mesh) = bounding_sphere_mesh
+        if bounding_box_mesh.is_some() || bounding_sphere_skin.is_some()
         {
             for (instance_id, _) in self.instances.get_ref().iter().enumerate()
             {
                 let transform = transformations.get(instance_id).unwrap();
 
-                let max_scale = extract_max_scale_from_transform(transform);
-
-                let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_mesh.center.x, bounding_sphere_mesh.center.y, bounding_sphere_mesh.center.z, 1.0);
-                let transformed_center = Point3::new
-                (
-                    transformed_center.x / transformed_center.w,
-                    transformed_center.y / transformed_center.w,
-                    transformed_center.z / transformed_center.w,
-                );
-
-                let transformed_radius = bounding_sphere_mesh.radius * max_scale;
-
-                // merge into final sphere
-                let instance_sphere = BoundingSphere::new
-                (
-                    Point3::<f32>::new(transformed_center.x, transformed_center.y, transformed_center.z).into(),
-                    transformed_radius
-                );
-
-                if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                // aabb based sphere: the scaled half extents are enough for the radius,
+                // because a sphere is rotation invariant (assumes no shear - as everywhere)
+                if let Some(bounding_box_mesh) = bounding_box_mesh.as_ref()
                 {
-                    bounding_sphere_all.merge(&instance_sphere);
+                    let scale = extract_scale_from_transform(transform);
+
+                    let half_extents = Vector3::<f32>::new
+                    (
+                        (bounding_box_mesh.maxs.x - bounding_box_mesh.mins.x) / 2.0,
+                        (bounding_box_mesh.maxs.y - bounding_box_mesh.mins.y) / 2.0,
+                        (bounding_box_mesh.maxs.z - bounding_box_mesh.mins.z) / 2.0,
+                    );
+
+                    let transformed_radius = half_extents.component_mul(&scale).norm();
+
+                    let center = Vector4::<f32>::new
+                    (
+                        (bounding_box_mesh.mins.x + bounding_box_mesh.maxs.x) / 2.0,
+                        (bounding_box_mesh.mins.y + bounding_box_mesh.maxs.y) / 2.0,
+                        (bounding_box_mesh.mins.z + bounding_box_mesh.maxs.z) / 2.0,
+                        1.0
+                    );
+
+                    let transformed_center = transform * center;
+
+                    let instance_sphere = BoundingSphere::new
+                    (
+                        Point3::<f32>::new
+                        (
+                            transformed_center.x / transformed_center.w,
+                            transformed_center.y / transformed_center.w,
+                            transformed_center.z / transformed_center.w,
+                        ).into(),
+                        transformed_radius
+                    );
+
+                    if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                    {
+                        bounding_sphere_all.merge(&instance_sphere);
+                    }
+                    else
+                    {
+                        bounding_sphere_result = Some(instance_sphere);
+                    }
                 }
-                else
+
+                // skin sphere: radius scaled by the max axis scale (padded anyway)
+                if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_ref()
                 {
-                    bounding_sphere_result = Some(instance_sphere);
+                    let max_scale = extract_max_scale_from_transform(transform);
+
+                    let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_skin.center.x, bounding_sphere_skin.center.y, bounding_sphere_skin.center.z, 1.0);
+
+                    let instance_sphere = BoundingSphere::new
+                    (
+                        Point3::<f32>::new
+                        (
+                            transformed_center.x / transformed_center.w,
+                            transformed_center.y / transformed_center.w,
+                            transformed_center.z / transformed_center.w,
+                        ).into(),
+                        bounding_sphere_skin.radius * max_scale
+                    );
+
+                    if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                    {
+                        bounding_sphere_all.merge(&instance_sphere);
+                    }
+                    else
+                    {
+                        bounding_sphere_result = Some(instance_sphere);
+                    }
                 }
             }
         }
