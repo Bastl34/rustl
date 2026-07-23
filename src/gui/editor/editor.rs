@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::ensure_preview_scene}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, light::Light, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
 
 use self::math::approx_zero;
 
@@ -330,16 +330,16 @@ impl Editor
 
         // render material thumbnails on request (uses the engine's off-screen render capability)
         // ignore the request while a previous run is still saving (prevents overlapping worker threads writing the same files)
-        if self.editor_state.generate_material_thumbnails && !*self.editor_state.material_thumbnails_running.read().unwrap()
+        if let Some(force_regeneration) = self.editor_state.generate_material_thumbnails && !*self.editor_state.material_thumbnails_running.read().unwrap() && preview_scene_ready(state)
         {
-            self.editor_state.generate_material_thumbnails = false;
+            self.editor_state.generate_material_thumbnails = None;
 
             // block further requests until the worker is done; the callback releases the lock again
             *self.editor_state.material_thumbnails_running.write().unwrap() = true;
 
             let reload = self.editor_state.reload_assets_requested.clone();
             let running = self.editor_state.material_thumbnails_running.clone();
-            let started = crate::gui::editor::preview_scene::generate_material_thumbnails(&self.editor_state, state, wgpu, THUMBNAIL_SIZE, true, move ||
+            let started = crate::gui::editor::preview_scene::generate_material_thumbnails(&self.editor_state, state, wgpu, THUMBNAIL_SIZE, force_regeneration, move ||
             {
                 *running.write().unwrap() = false;
                 *reload.write().unwrap() = true;

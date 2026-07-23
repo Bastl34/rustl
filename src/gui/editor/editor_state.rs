@@ -257,7 +257,8 @@ pub struct EditorState
     pub assets_scenes: Vec<Asset>,
     pub assets_materials: Vec<Asset>,
 
-    pub generate_material_thumbnails: bool,
+    // Some(true) = re-render all (assets menu), Some(false) = only missing (startup)
+    pub generate_material_thumbnails: Option<bool>,
     pub material_thumbnails_running: Arc<RwLock<bool>>,
     pub reload_assets_requested: Arc<RwLock<bool>>,
 
@@ -382,7 +383,7 @@ impl EditorState
             assets_objects: vec![],
             assets_scenes: vec![],
             assets_materials: vec![],
-            generate_material_thumbnails: false,
+            generate_material_thumbnails: Some(false),
             material_thumbnails_running: Arc::new(RwLock::new(false)),
             reload_assets_requested: Arc::new(RwLock::new(false)),
             log_filter: "".to_string(),
