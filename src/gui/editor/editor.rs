@@ -812,12 +812,53 @@ impl Editor
 
                 if let Some(pos) = pos
                 {
-                    let pick_res = pick(state, pos, false, false, false, None);
+                    // x-ray click-through (blender style): repeated clicks on the same spot cycle to the next hit behind
+                    let xray_cycling = state.rendering.xray_mode && self.editor_state.pick_mode == PickType::None && !ctrl_holding;
+                    let same_spot = xray_cycling && self.editor_state.xray_pick_pos.map_or(false, |last| (last - pos).norm() < 4.0);
+
+                    if !same_spot
+                    {
+                        self.editor_state.xray_pick_cycle.clear();
+                    }
+
+                    let cycle_predicate: Option<PickPredicate> = if same_spot && !self.editor_state.xray_pick_cycle.is_empty()
+                    {
+                        let exclude = self.editor_state.xray_pick_cycle.clone();
+                        Some(Arc::new(move |node_arc: NodeItem, _instance_id: Option<u32>| -> bool
+                        {
+                            let root_id = Node::find_root_node(node_arc.clone()).map_or_else(|| node_arc.read().unwrap().id, |root| root.read().unwrap().id);
+                            !exclude.contains(&root_id)
+                        }))
+                    }
+                    else
+                    {
+                        None
+                    };
+
+                    let mut pick_res = pick(state, pos, false, false, false, cycle_predicate);
+
+                    // all hits cycled through -> wrap around to the nearest again
+                    if pick_res.is_none() && same_spot && !self.editor_state.xray_pick_cycle.is_empty()
+                    {
+                        self.editor_state.xray_pick_cycle.clear();
+                        pick_res = pick(state, pos, false, false, false, None);
+                    }
 
                     if let Some(pick_res) = pick_res
                     {
                         scene_id = pick_res.0;
                         hit = Some(pick_res.1);
+                    }
+
+                    if xray_cycling
+                    {
+                        self.editor_state.xray_pick_pos = Some(pos);
+
+                        if let Some(hit) = hit.as_ref()
+                        {
+                            let root_id = Node::find_root_node(hit.node.clone()).map_or_else(|| hit.node.read().unwrap().id, |root| root.read().unwrap().id);
+                            self.editor_state.xray_pick_cycle.push(root_id);
+                        }
                     }
                 }
 

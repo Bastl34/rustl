@@ -236,6 +236,8 @@ pub struct EditorState
 
     pub hierarchy_multi_select: Vec<u32>,
     pub hierarchy_last_click_id: Option<u32>,
+    pub xray_pick_pos: Option<Point2<f32>>, // last x-ray click position for click-through cycling
+    pub xray_pick_cycle: Vec<u32>, // root node ids already cycled through at that position
     pub hierarchy_flat_nodes_order: Vec<u32>, // flat list of all node ids in the hierarchy, used for shift+click range selection
     pub hierarchy_rename_id: Option<(String, u32)>,
     pub hierarchy_rename_value: String,
@@ -373,6 +375,8 @@ impl EditorState
 
             hierarchy_multi_select: vec![],
             hierarchy_last_click_id: None,
+            xray_pick_pos: None,
+            xray_pick_cycle: vec![],
             hierarchy_flat_nodes_order: vec![],
             hierarchy_rename_id: None,
             hierarchy_rename_value: String::new(),
