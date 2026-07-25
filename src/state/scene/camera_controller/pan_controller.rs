@@ -11,6 +11,11 @@ const DEFAULT_GAMEPAD_SENSIVITY: f32 = 0.03;
 // smallest allowed vertical extent (top - bottom), so a single zoom step can never collapse or invert the window
 const ORTHO_MIN_EXTENT: f32 = 0.001;
 
+// largest allowed vertical extent (top - bottom) - zoom out stops here (blender style)
+const DEFAULT_ORTHO_MAX_EXTENT: f32 = 200.0;
+
+fn default_ortho_max_extent() -> f32 { DEFAULT_ORTHO_MAX_EXTENT }
+
 #[derive(Serialize, Deserialize)]
 pub struct PanController
 {
@@ -26,6 +31,9 @@ pub struct PanController
     move_speed_shift: f32,
     mouse_wheel_sensitivity: f32,
     gamepad_sensitivity: f32,
+
+    #[serde(default = "default_ortho_max_extent")]
+    pub ortho_max_extent: f32,
 }
 
 impl PanController
@@ -47,6 +55,8 @@ impl PanController
             mouse_wheel_sensitivity,
 
             gamepad_sensitivity: DEFAULT_GAMEPAD_SENSIVITY,
+
+            ortho_max_extent: DEFAULT_ORTHO_MAX_EXTENT,
         }
     }
 
@@ -67,6 +77,8 @@ impl PanController
             mouse_wheel_sensitivity: DEFAULT_MOUSE_WHEEL_SENSIVITY,
 
             gamepad_sensitivity: DEFAULT_GAMEPAD_SENSIVITY,
+
+            ortho_max_extent: DEFAULT_ORTHO_MAX_EXTENT,
         }
     }
 }
@@ -270,10 +282,11 @@ impl CameraController for PanController
             };
 
             // symmetric shrink/grow around the center; > 0 zooms in
-            let mut delta = movement.z * frame_scale * self.mouse_wheel_sensitivity;
-            delta = delta.min(old_half_h - ORTHO_MIN_EXTENT * 0.5); // never collapse/invert
+            let delta = movement.z * frame_scale * self.mouse_wheel_sensitivity;
 
-            let new_half_h = old_half_h - delta;
+            // max: keep already-larger legacy extents zoomable-in without snapping
+            let max_half_h = (self.ortho_max_extent * 0.5).max(old_half_h);
+            let new_half_h = (old_half_h - delta).clamp(ORTHO_MIN_EXTENT * 0.5, max_half_h);
             let scale = new_half_h / old_half_h;
 
             let cam_data = cam_data.get_mut();
@@ -310,6 +323,12 @@ impl CameraController for PanController
         {
             ui.label("Gamepad sensitivity (rad): ");
             ui.add(egui::DragValue::new(&mut self.gamepad_sensitivity).speed(0.01));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Max zoom out extent: ");
+            ui.add(egui::DragValue::new(&mut self.ortho_max_extent).speed(1.0).range(ORTHO_MIN_EXTENT..=f32::MAX));
         });
 
         ui.horizontal(|ui|

@@ -103,7 +103,7 @@ impl Editor
                     let ortho_size = 5.0;
                     let pos_offset = DEFAULT_CLIPPING_FAR / 2.0;
 
-                    const MOUSE_WHEEL_SENSIVITY: f32 = 1.5;
+                    const MOUSE_WHEEL_SENSIVITY: f32 = 0.25;
                     const MOVE_SPEED: f32 = 0.1;
                     const MOVE_SPEED_SHIFT: f32 = 0.2;
 
