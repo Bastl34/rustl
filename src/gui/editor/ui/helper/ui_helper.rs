@@ -111,7 +111,7 @@ pub fn loading_progress_bar(ui: &mut egui::Ui, progress: f32)
         .min_size(0.0)
         .max_size(bar_height)
         .exact_size(bar_height)
-        .show_inside(ui, |ui|
+        .show(ui, |ui|
     {
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
         ui.style_mut().visuals.selection.bg_fill = progress_color;

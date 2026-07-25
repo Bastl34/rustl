@@ -56,7 +56,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
 
     let frame = egui::Frame::side_top_panel(&style);
 
-    egui::Panel::top("top_panel").frame(frame).show_inside(ui, |ui|
+    egui::Panel::top("top_panel").frame(frame).show(ui, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -65,7 +65,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     });
 
     // status bar — just a single row at the bottom of the screen, separate from the bottom panel
-    egui::Panel::bottom("bottom_status_panel").resizable(true).frame(frame).show_inside(ui, |ui|
+    egui::Panel::bottom("bottom_status_panel").resizable(true).frame(frame).show(ui, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -127,7 +127,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     // bottom panel
     if editor_state.bottom_panel_open
     {
-        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show_inside(ui, |ui|
+        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show(ui, |ui|
         {
             ui.horizontal(|ui|
             {
@@ -183,13 +183,16 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     // left panel
     if editor_state.left_panel_open
     {
-        egui::Panel::left("left_panel").frame(frame).min_size(300.0).show_inside(ui, |ui|
+        egui::Panel::left("left_panel").frame(frame).min_size(300.0).show(ui, |ui|
         {
             ui.set_max_width(ui.available_width());
 
             //ui.add_enabled_ui(!loading, |ui|
             //{
-                create_left_sidebar(editor_state, state, ui);
+                ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui|
+                {
+                    create_left_sidebar(editor_state, state, ui);
+                });
             //});
         });
     }
@@ -197,7 +200,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     // right panel
     if editor_state.right_panel_open
     {
-        egui::Panel::right("right_panel").frame(frame).show_inside(ui, |ui|
+        egui::Panel::right("right_panel").frame(frame).show(ui, |ui|
         {
             ui.set_min_width(300.0);
 
@@ -210,13 +213,13 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
 
     // scene tabs — no bottom inner margin so the tabs sit flush on the panel separator
     let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 2, bottom: 0 });
-    egui::Panel::top("scene_tabs_panel").frame(scene_tabs_frame).show_inside(ui, |ui|
+    egui::Panel::top("scene_tabs_panel").frame(scene_tabs_frame).show(ui, |ui|
     {
         create_scene_tabs(editor_state, state, ui);
     });
 
     //top
-    egui::Panel::top("top_panel_main").frame(frame).show_inside(ui, |ui|
+    egui::Panel::top("top_panel_main").frame(frame).show(ui, |ui|
     {
         ui.horizontal(|ui|
         {
