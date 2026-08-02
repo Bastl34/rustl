@@ -84,6 +84,9 @@ pub struct MaterialUniform
     pub base_color: [f32; 4],
     pub specular_color: [f32; 4],
 
+    // rgb = emissive color, a = emissive strength (hdr multiplier)
+    pub emissive_color: [f32; 4],
+
     pub highlight_color: [f32; 4],
     pub locked_color: [f32; 4],
 
@@ -127,7 +130,7 @@ impl MaterialUniform
         let material_data = material.get_data();
 
         let mut textures_used: u32 = 0;
-        if material.is_texture_enabled(TextureType::AmbientEmissive)                    { textures_used |= 1 << 1; }
+        if material.is_texture_enabled(TextureType::Emissive)                           { textures_used |= 1 << 1; }
         if material.is_texture_enabled(TextureType::Base)                               { textures_used |= 1 << 2; }
         if material.is_texture_enabled(TextureType::Specular)                           { textures_used |= 1 << 3; }
         if material.is_texture_enabled(TextureType::Normal)                             { textures_used |= 1 << 4; }
@@ -177,6 +180,13 @@ impl MaterialUniform
                 material_data.specular_color.y,
                 material_data.specular_color.z,
                 1.0,
+            ],
+            emissive_color:
+            [
+                material_data.emissive_color.x,
+                material_data.emissive_color.y,
+                material_data.emissive_color.z,
+                material_data.emissive_strength,
             ],
             highlight_color:
             [

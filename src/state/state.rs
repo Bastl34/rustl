@@ -27,6 +27,7 @@ pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
 
 pub const DEFAULT_FOG_COLOR: Vector3<f32> = Vector3::new(0.6, 0.7, 0.8);
 pub const DEFAULT_FOG_DENSITY: f32 = 0.02;
+pub const DEFAULT_BLOOM_INTENSITY: f32 = 0.04;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
@@ -95,6 +96,12 @@ pub struct Rendering
     #[serde(default = "default_fog_density")]
     pub fog_density: f32,
 
+    // bloom (hdr glow - bright/emissive parts bleed over their edges, applied in the post processing composite)
+    #[serde(default = "default_bloom")]
+    pub bloom: bool,
+    #[serde(default = "default_bloom_intensity")]
+    pub bloom_intensity: f32,
+
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
@@ -119,6 +126,8 @@ pub struct Rendering
 
 fn default_fog_color() -> Vector3<f32> { DEFAULT_FOG_COLOR }
 fn default_fog_density() -> f32 { DEFAULT_FOG_DENSITY }
+fn default_bloom() -> bool { true }
+fn default_bloom_intensity() -> f32 { DEFAULT_BLOOM_INTENSITY }
 
 pub struct SupportedFileTypes
 {
@@ -397,6 +406,9 @@ impl State
                 fog: false,
                 fog_color: DEFAULT_FOG_COLOR,
                 fog_density: DEFAULT_FOG_DENSITY,
+
+                bloom: true,
+                bloom_intensity: DEFAULT_BLOOM_INTENSITY,
 
                 distance_sorting: true,
                 frustum_culling: true,

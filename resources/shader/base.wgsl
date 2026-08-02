@@ -430,6 +430,10 @@ struct MaterialUniform
     ambient_color: vec4<f32>,
     base_color: vec4<f32>,
     specular_color: vec4<f32>,
+
+    // rgb = emissive color, a = emissive strength (hdr multiplier)
+    emissive_color: vec4<f32>,
+
     highlight_color: vec4<f32>,
     locked_color: vec4<f32>,
 
@@ -467,8 +471,8 @@ struct MaterialUniform
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
 
-@group(0) @binding(1) var tex_ambient: texture_2d<f32>;
-@group(0) @binding(2) var tex_ambient_sampler: sampler;
+@group(0) @binding(1) var tex_emissive: texture_2d<f32>;
+@group(0) @binding(2) var tex_emissive_sampler: sampler;
 
 @group(0) @binding(3) var tex_base: texture_2d<f32>;
 @group(0) @binding(4) var tex_base_sampler: sampler;
@@ -514,7 +518,7 @@ struct MaterialUniform
 @group(0) @binding(30) var tex_depth: texture_2d<f32>;
 @group(0) @binding(31) var tex_depth_sampler: sampler;
 
-const TEXTURE_INDEX_AMBIENT: u32 = 0u;
+const TEXTURE_INDEX_EMISSIVE: u32 = 0u;
 const TEXTURE_INDEX_BASE: u32 = 1u;
 const TEXTURE_INDEX_SPECULAR: u32 = 2u;
 const TEXTURE_INDEX_NORMAL: u32 = 3u;
@@ -533,7 +537,7 @@ const TEXTURE_INDEX_CUSTOM3: u32 = 13u;
 const TEXTURE_INDEX_DEPTH: u32 = 14u;
 
 
-fn has_ambient_texture() -> bool            { return (material.textures_used & (1u << 1u)) != 0u; }
+fn has_emissive_texture() -> bool           { return (material.textures_used & (1u << 1u)) != 0u; }
 fn has_base_texture() -> bool               { return (material.textures_used & (1u << 2u)) != 0u; }
 fn has_specular_texture() -> bool           { return (material.textures_used & (1u << 3u)) != 0u; }
 fn has_normal_texture() -> bool             { return (material.textures_used & (1u << 4u)) != 0u; }
@@ -1020,6 +1024,10 @@ fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
             return 1.0;
         }
     }
+
+    // unreachable (every case above returns), but fxc cannot prove that through a switch
+    // and rejects the shader with X3507 "not all control paths return a value"
+    return 1.0;
 }
 
 
@@ -1036,10 +1044,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     // ambient color
     var ambient_color = material.ambient_color;
-    if (has_ambient_texture())
+
+    // emissive (self illumination) - hdr: strength can push it beyond 1.0 so bloom picks it up
+    var emissive_color = material.emissive_color.rgb * material.emissive_color.a;
+    if (has_emissive_texture())
     {
-        let tex_color = sample_material_texture(tex_ambient, tex_ambient_sampler, in, TEXTURE_INDEX_AMBIENT);
-        ambient_color *= tex_color;
+        let tex_color = sample_material_texture(tex_emissive, tex_emissive_sampler, in, TEXTURE_INDEX_EMISSIVE);
+        emissive_color *= tex_color.rgb;
     }
 
     // normal
@@ -1322,6 +1333,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     color.y += ambient_color.y * ssao_factor;
     color.z += ambient_color.z * ssao_factor;
 
+    // emissive - independent of lighting and intentionally not occluded by ssao
+    color += emissive_color;
+
     // distance based fog (world space distance -> independent of the depth convention),
     // applied in linear hdr space so tone mapping/gamma treat the fog color consistently.
     // materials with no_fog (sky spheres, editor helpers like grid/gizmos, ...) are excluded
@@ -1332,35 +1346,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         color = mix(color, scene.fog_color.rgb, fog_factor);
     }
 
-    // TODO: tone mapping and gamma can be done in post
+    // note: tone mapping (exposure) and gamma moved into the post processing composite
+    // pass (composite.wgsl) - this shader outputs linear hdr into the Rgba16Float target
 
-    // tone mapping (HDR -> LDR)
-    if (scene.exposure > 0.0001)
-    {
-        let mapped = vec3<f32>(1.0) - exp(-color * scene.exposure);
-        color.x = mapped.x;
-        color.y = mapped.y;
-        color.z = mapped.z;
-    }
-
-    // gamma correction
-    if (scene.gamma > 0.0001)
-    {
-        let mapped = pow(color, vec3<f32>(1.0 / scene.gamma));
-        color.x = mapped.x;
-        color.y = mapped.y;
-        color.z = mapped.z;
-    }
-
-    // locked color
+    // locked/highlight color: editor selection tint - clamp the hdr color first so the
+    // tint stays visible on very bright (emissive) objects (it used to be applied after
+    // tone mapping when that still happened in this shader)
     if (in.highlight > 0.0001 && in.locked > 0.0001)
     {
-        color = (color * 0.5) + (material.locked_color.rgb * 0.5);
+        color = (clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)) * 0.5) + (material.locked_color.rgb * 0.5);
     }
     // highlight color
     else if (in.highlight > 0.0001)
     {
-        color = (color * 0.5) + (material.highlight_color.rgb * 0.5);
+        color = (clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)) * 0.5) + (material.highlight_color.rgb * 0.5);
     }
 
     // alpha

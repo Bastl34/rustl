@@ -5,7 +5,28 @@ use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, Texture
 
 use crate::{console_error, console_log, helper::{image::brga_to_rgba, platform::is_windows}, state::state::{PresentModeSetting, State}};
 
-use super::helper::buffer::{BufferDimensions, remove_padding};
+use super::{helper::buffer::{BufferDimensions, remove_padding}, post_process::PostProcess};
+
+// linear hdr scene color target (the post processing composite pass converts it to the surface format)
+fn create_hdr_texture(device: &Device, width: u32, height: u32) -> Texture
+{
+    device.create_texture(&wgpu::TextureDescriptor
+    {
+        label: Some("hdr_texture"),
+        size: wgpu::Extent3d
+        {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: crate::rendering::texture::Texture::HDR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    })
+}
 
 fn resolve_present_mode(setting: PresentModeSetting, supports_mailbox: bool) -> wgpu::PresentMode
 {
@@ -28,6 +49,16 @@ pub struct WGpu
 
     msaa_samples: u32,
     msaa_texture: Option<wgpu::Texture>,
+
+    // linear hdr scene color target - the scenes render into this texture, the post
+    // processing (bloom + tonemapping/gamma composite) writes the result to the surface
+    hdr_texture: wgpu::Texture,
+    post_process: Option<PostProcess>,
+
+    // separate instance for offscreen renders (screenshots, material thumbnails) - those run
+    // at their own resolution and against a per-call hdr texture, but the pipelines are
+    // expensive to build, so the instance is kept around and only rebound
+    offscreen_post_process: Option<PostProcess>,
 
     surface_config: SurfaceConfiguration,
     supports_mailbox: bool,
@@ -162,13 +193,24 @@ impl WGpu
 
         surface.configure(&device, &surface_config);
 
-        // msaa
-        let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
+        // msaa (the scene renders into the hdr target -> its format drives the supported sample counts)
+        let texture_features = adapter.get_texture_format_features(crate::rendering::texture::Texture::HDR_FORMAT);
 
-        if texture_features.flags.sample_count_supported(2) { state.rendering_adapter.max_msaa_samples = 2; }
-        if texture_features.flags.sample_count_supported(4) { state.rendering_adapter.max_msaa_samples = 4; }
-        if texture_features.flags.sample_count_supported(8) { state.rendering_adapter.max_msaa_samples = 8; }
-        if texture_features.flags.sample_count_supported(16) { state.rendering_adapter.max_msaa_samples = 16; }
+        // the msaa buffer is resolved into the (single sampled) hdr target, so multisampling
+        // is only usable when the format supports resolving as well
+        let msaa_resolvable = texture_features.flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE);
+
+        if msaa_resolvable
+        {
+            if texture_features.flags.sample_count_supported(2) { state.rendering_adapter.max_msaa_samples = 2; }
+            if texture_features.flags.sample_count_supported(4) { state.rendering_adapter.max_msaa_samples = 4; }
+            if texture_features.flags.sample_count_supported(8) { state.rendering_adapter.max_msaa_samples = 8; }
+            if texture_features.flags.sample_count_supported(16) { state.rendering_adapter.max_msaa_samples = 16; }
+        }
+        else
+        {
+            console_log!("{:?} does not support multisample resolve -> msaa disabled", crate::rendering::texture::Texture::HDR_FORMAT);
+        }
 
         let msaa_samples = *state.rendering.msaa.get_ref();
 
@@ -210,20 +252,82 @@ impl WGpu
             wgpu::Backend::BrowserWebGpu => state.rendering_adapter.backend = "BrowserWebGpu".to_string(),
         }
 
+        let hdr_texture = create_hdr_texture(&device, dimensions.width, dimensions.height);
+
         let mut wgpu = Self
         {
             device,
             surface,
             msaa_samples,
             msaa_texture: None,
+            hdr_texture,
+            post_process: None,
+            offscreen_post_process: None,
             queue,
             surface_config,
             supports_mailbox,
         };
 
         wgpu.create_msaa_texture(1);
+        wgpu.recreate_post_process();
 
         wgpu
+    }
+
+    // (re)creates the post processing resources (bloom chain + composite) for the
+    // current surface size and hdr texture - existing pipelines survive
+    pub fn recreate_post_process(&mut self)
+    {
+        let hdr_view = self.hdr_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let (width, height) = (self.surface_config.width.max(1), self.surface_config.height.max(1));
+
+        let mut post_process = self.post_process.take();
+
+        if let Some(post_process) = post_process.as_mut()
+        {
+            post_process.resize(&self.device, &hdr_view, width, height);
+        }
+        else
+        {
+            post_process = Some(PostProcess::new(self, &hdr_view, width, height));
+        }
+
+        self.post_process = post_process;
+    }
+
+    // bloom + tonemapping/gamma composite: hdr scene color -> target (the surface view)
+    pub fn render_post_process(&self, encoder: &mut CommandEncoder, target_view: &TextureView, exposure: f32, gamma: f32, bloom_intensity: f32)
+    {
+        if let Some(post_process) = self.post_process.as_ref()
+        {
+            post_process.render(&self.queue, encoder, target_view, exposure, gamma, bloom_intensity);
+        }
+    }
+
+    // bloom + tonemapping/gamma composite for offscreen renders: the given hdr scene color
+    // -> target (the ldr readback texture)
+    //
+    // material thumbnails call this once per material, so the cached instance is only rebound
+    // to the new hdr view instead of rebuilding the (expensive) pipelines every time
+    pub fn render_offscreen_post_process(&mut self, encoder: &mut CommandEncoder, hdr_view: &TextureView, target_view: &TextureView, width: u32, height: u32, exposure: f32, gamma: f32, bloom_intensity: f32)
+    {
+        let mut post_process = self.offscreen_post_process.take();
+
+        if let Some(post_process) = post_process.as_mut()
+        {
+            post_process.resize(&self.device, hdr_view, width, height);
+        }
+        else
+        {
+            post_process = Some(PostProcess::new(self, hdr_view, width, height));
+        }
+
+        if let Some(post_process) = post_process.as_ref()
+        {
+            post_process.render(&self.queue, encoder, target_view, exposure, gamma, bloom_intensity);
+        }
+
+        self.offscreen_post_process = post_process;
     }
 
     pub fn device(&self) -> &Device
@@ -251,21 +355,22 @@ impl WGpu
             return;
         }
 
+        // the msaa buffer resolves into the hdr scene color target -> same (hdr) format
         let msaa_texture = self.device.create_texture(&wgpu::TextureDescriptor
         {
             label: Some("msaa_texture"),
             size: wgpu::Extent3d
             {
-                width: self.surface_config.width,
-                height: self.surface_config.height,
+                width: self.surface_config.width.max(1),
+                height: self.surface_config.height.max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: sample_count,
             dimension: wgpu::TextureDimension::D2,
-            format: self.surface_config.format,
+            format: crate::rendering::texture::Texture::HDR_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &self.surface_config.view_formats,
+            view_formats: &[],
         });
 
         self.msaa_texture = Some(msaa_texture);
@@ -277,7 +382,11 @@ impl WGpu
         self.surface_config.height = height;
 
         self.surface.configure(&self.device, &self.surface_config);
+
+        self.hdr_texture = create_hdr_texture(&self.device, width, height);
+
         self.create_msaa_texture(self.msaa_samples);
+        self.recreate_post_process();
     }
 
     pub fn set_present_mode(&mut self, setting: PresentModeSetting)
@@ -288,7 +397,10 @@ impl WGpu
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn start_render(&mut self) -> Option<(SurfaceTexture, TextureView, Option<TextureView>)>
+    // returns (surface texture, surface view, hdr scene color view, msaa view):
+    // the scenes render into the hdr view (resolved from the msaa view when msaa is on),
+    // the post processing composite writes into the surface view
+    pub fn start_render(&mut self) -> Option<(SurfaceTexture, TextureView, TextureView, Option<TextureView>)>
     {
         let output = match self.surface.get_current_texture()
         {
@@ -302,6 +414,7 @@ impl WGpu
         };
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let hdr_view = self.hdr_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut msaa_view = None;
         if self.msaa_texture.is_some()
@@ -309,7 +422,7 @@ impl WGpu
             msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
         }
 
-        Some((output, view, msaa_view))
+        Some((output, view, hdr_view, msaa_view))
     }
 
     pub fn create_command_encoder(&mut self) -> CommandEncoder
@@ -333,7 +446,10 @@ impl WGpu
     }
 
 
-    pub fn start_offscreen_render(&mut self, resolution: Option<(u32, u32)>) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
+    // returns (buffer dimensions, readback buffer, ldr output texture, ldr view, hdr view, msaa view):
+    // the scene renders into the hdr view (resolved from the msaa view when msaa is on), the post
+    // processing composite writes into the ldr texture, which is then copied into the readback buffer
+    pub fn start_offscreen_render(&mut self, resolution: Option<(u32, u32)>) -> (BufferDimensions, Buffer, Texture, TextureView, TextureView, Option<TextureView>)
     {
         // when a custom resolution is given the scene must be rendered natively at that size
         // (the caller is responsible for resizing the scene's depth buffer / camera / hzb accordingly).
@@ -370,6 +486,9 @@ impl WGpu
             view_formats: &self.surface_config.view_formats,
         });
 
+        // hdr scene color target (the view keeps the texture alive)
+        let hdr_texture = create_hdr_texture(&self.device, width, height);
+        let hdr_view = hdr_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut msaa_texture_view: Option<TextureView> = None;
         if self.msaa_samples > 1
@@ -380,12 +499,11 @@ impl WGpu
                 mip_level_count: 1,
                 sample_count: self.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
-                //format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                format: self.surface_config.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                // resolves into the hdr scene color target -> same (hdr) format
+                format: crate::rendering::texture::Texture::HDR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 label: None,
-                //view_formats: &[],
-                view_formats: &self.surface_config.view_formats,
+                view_formats: &[],
             });
 
             msaa_texture_view = Some(msaa_texture.create_view(&wgpu::TextureViewDescriptor::default()));
@@ -394,7 +512,7 @@ impl WGpu
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        (buffer_dimensions, output_buffer, texture, view, msaa_texture_view)
+        (buffer_dimensions, output_buffer, texture, view, hdr_view, msaa_texture_view)
     }
 
     pub fn end_offscreen_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage

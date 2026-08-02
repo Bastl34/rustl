@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="tm_arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="760" height="420" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Exposure tone mapping — squeezing HDR into 0…1</text>
+
+  <!-- axes -->
+  <line x1="80" y1="340" x2="640" y2="340" stroke="#475569" stroke-width="2" marker-end="url(#tm_arrow)"/>
+  <line x1="80" y1="340" x2="80" y2="76" stroke="#475569" stroke-width="2" marker-end="url(#tm_arrow)"/>
+  <text x="648" y="345" font-size="11.5" fill="#334155">scene value (linear HDR)</text>
+  <text x="80" y="66" text-anchor="middle" font-size="11.5" fill="#334155">output</text>
+
+  <line x1="80" y1="100" x2="620" y2="100" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="72" y="104" text-anchor="end" font-size="11" fill="#64748b">1.0</text>
+  <text x="72" y="344" text-anchor="end" font-size="11" fill="#64748b">0</text>
+
+  <g font-size="11" fill="#64748b" text-anchor="middle">
+    <text x="167" y="360">1</text>
+    <text x="253" y="360">2</text>
+    <text x="340" y="360">3</text>
+    <text x="427" y="360">4</text>
+    <text x="513" y="360">5</text>
+    <text x="600" y="360">6</text>
+  </g>
+
+  <!-- no tone mapping: clamp -->
+  <polyline points="80,340 167,100 620,100" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="196" y="92" font-size="11.5" font-weight="600" fill="#b91c1c">no tone mapping — hard clip at 1.0</text>
+
+  <!-- exposure 2.0 -->
+  <polyline points="80,340 102,246 123,188 145,154 167,133 210,112 253,104 297,102 340,100 427,100 600,100"
+            fill="none" stroke="#8b5cf6" stroke-width="2.5"/>
+  <text x="330" y="126" font-size="11.5" font-weight="600" fill="#7c3aed">exposure 2.0</text>
+
+  <!-- exposure 1.0 -->
+  <polyline points="80,340 102,287 123,246 145,213 167,188 210,154 253,133 297,120 340,112 383,107 427,104 513,102 600,100"
+            fill="none" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="380" y="152" font-size="11.5" font-weight="600" fill="#1d4ed8">exposure 1.0</text>
+
+  <!-- caption -->
+  <rect x="30" y="372" width="700" height="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="380" y="394" text-anchor="middle" font-size="12.5" fill="#334155">output = 1 − e^(−value · exposure) — approaches 1.0 but never clips, so highlights keep their shape</text>
+</svg>

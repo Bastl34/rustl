@@ -27,7 +27,10 @@ pub type MaterialItem = ComponentItem;
 #[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, FromRepr, EnumString, Serialize, Deserialize)]
 pub enum TextureType
 {
-    AmbientEmissive,
+    // renamed from AmbientEmissive - the aliases keep old saves and type strings loading
+    #[serde(alias = "AmbientEmissive")]
+    #[strum(to_string = "Emissive", serialize = "AmbientEmissive")]
+    Emissive,
     Base,
     Specular,
     Normal,
@@ -52,7 +55,7 @@ impl TextureType
         match self
         {
             TextureType::Base
-            | TextureType::AmbientEmissive
+            | TextureType::Emissive
             | TextureType::Specular
             | TextureType::Environment
             | TextureType::Custom0
@@ -112,7 +115,7 @@ pub enum BlendMode
 pub const TEXTURE_AMOUNT: usize = 14; // without additional textures
 pub const ALL_TEXTURE_TYPES: [TextureType; TEXTURE_AMOUNT] =
 [
-    TextureType::AmbientEmissive,
+    TextureType::Emissive,
     TextureType::Base,
     TextureType::Specular,
     TextureType::Normal,
@@ -225,6 +228,8 @@ impl TextureState
 // serde defaults so material files saved before texture mapping modes were added still load
 fn default_mapping_scale() -> f32 { 1.0 }
 fn default_mapping_sharpness() -> f32 { 4.0 }
+fn default_emissive_color() -> Vector3<f32> { Vector3::<f32>::new(0.0, 0.0, 0.0) }
+fn default_emissive_strength() -> f32 { 1.0 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MaterialData
@@ -233,10 +238,14 @@ pub struct MaterialData
     pub base_color: Vector3<f32>,
     pub specular_color: Vector3<f32>,
 
+    // self illumination - emissive_strength scales the color beyond 1.0 (hdr) so bloom can pick it up
+    #[serde(default = "default_emissive_color")] pub emissive_color: Vector3<f32>,
+    #[serde(default = "default_emissive_strength")] pub emissive_strength: f32,
+
     pub highlight_color: Vector3<f32>,
     pub locked_color: Vector3<f32>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_ambient: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "texture_ambient")] pub texture_emissive: Option<TextureState>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_base: Option<TextureState>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_specular: Option<TextureState>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_normal: Option<TextureState>,
@@ -304,10 +313,13 @@ impl Material
             base_color: Vector3::<f32>::new(1.0, 1.0, 1.0),
             specular_color: Vector3::<f32>::new(0.8, 0.8, 0.8),
 
+            emissive_color: Vector3::<f32>::new(0.0, 0.0, 0.0),
+            emissive_strength: 1.0,
+
             highlight_color: Vector3::<f32>::new(0.0, 1.0, 0.0),
             locked_color: Vector3::<f32>::new(1.0, 0.0, 0.0),
 
-            texture_ambient: None,
+            texture_emissive: None,
             texture_base: None,
             texture_specular: None,
             texture_normal: None,
@@ -417,7 +429,19 @@ impl Material
             data.specular_color = new_mat_data.specular_color;
         }
 
+        // emissive
+        if
+            !helper::math::approx_equal(default_material_data.emissive_color.x, new_mat_data.emissive_color.x)
+            ||
+            !helper::math::approx_equal(default_material_data.emissive_color.y, new_mat_data.emissive_color.y)
+            ||
+            !helper::math::approx_equal(default_material_data.emissive_color.z, new_mat_data.emissive_color.z)
+        {
+            data.emissive_color = new_mat_data.emissive_color;
+        }
+
         // ********** other attributes **********
+        if !helper::math::approx_equal(default_material_data.emissive_strength, new_mat_data.emissive_strength) { data.emissive_strength = new_mat_data.emissive_strength; }
         if !helper::math::approx_equal(default_material_data.alpha, new_mat_data.alpha) { data.alpha = new_mat_data.alpha; }
         if !helper::math::approx_equal(default_material_data.shininess, new_mat_data.shininess) { data.shininess = new_mat_data.shininess; }
         if !helper::math::approx_equal(default_material_data.reflectivity, new_mat_data.reflectivity) { data.reflectivity = new_mat_data.reflectivity; }
@@ -476,7 +500,7 @@ impl Material
 
         let data = self.data.get_mut();
 
-        compare_and_apply_texture_diff!(data.texture_ambient, default_material_data.texture_ambient.as_ref(), new_mat_data.texture_ambient.clone());
+        compare_and_apply_texture_diff!(data.texture_emissive, default_material_data.texture_emissive.as_ref(), new_mat_data.texture_emissive.clone());
         compare_and_apply_texture_diff!(data.texture_base, default_material_data.texture_base.as_ref(), new_mat_data.texture_base.clone());
         compare_and_apply_texture_diff!(data.texture_specular, default_material_data.texture_specular.as_ref(), new_mat_data.texture_specular.clone());
         compare_and_apply_texture_diff!(data.texture_normal, default_material_data.texture_normal.as_ref(), new_mat_data.texture_normal.clone());
@@ -500,7 +524,10 @@ impl Material
         console_log!("ambient_color: {:?}", data.ambient_color);
         console_log!("base_color: {:?}", data.base_color);
         console_log!("specular_color: {:?}", data.specular_color);
+        console_log!("emissive_color: {:?}", data.emissive_color);
+        console_log!("emissive_strength: {:?}", data.emissive_strength);
 
+        console_log!("texture_emissive: {:?}", data.texture_emissive.is_some());
         console_log!("texture_base: {:?}", data.texture_base.is_some());
         console_log!("texture_specular: {:?}", data.texture_specular.is_some());
         console_log!("texture_normal: {:?}", data.texture_normal.is_some());
@@ -549,7 +576,7 @@ impl Material
         match tex_type
         {
             TextureType::Base => { data.texture_base = None; },
-            TextureType::AmbientEmissive => { data.texture_ambient = None; },
+            TextureType::Emissive => { data.texture_emissive = None; },
             TextureType::Specular => { data.texture_specular = None; },
             TextureType::Normal => { data.texture_normal = None; },
             TextureType::Alpha => { data.texture_alpha = None; },
@@ -591,7 +618,7 @@ impl Material
         match tex_type
         {
             TextureType::Base => { data.texture_base = Some(TextureState::new(tex.clone())); },
-            TextureType::AmbientEmissive => { data.texture_ambient = Some(TextureState::new(tex.clone())); },
+            TextureType::Emissive => { data.texture_emissive = Some(TextureState::new(tex.clone())); },
             TextureType::Specular => { data.texture_specular = Some(TextureState::new(tex.clone())); },
             TextureType::Normal => { data.texture_normal = Some(TextureState::new(tex.clone())); },
             TextureType::Alpha => { data.texture_alpha = Some(TextureState::new(tex.clone())); },
@@ -704,7 +731,7 @@ impl Material
         match tex_type
         {
             TextureType::Base => { tex = data.texture_base.clone() },
-            TextureType::AmbientEmissive => { tex = data.texture_ambient.clone() },
+            TextureType::Emissive => { tex = data.texture_emissive.clone() },
             TextureType::Specular => { tex = data.texture_specular.clone() },
             TextureType::Normal => { tex = data.texture_normal.clone() },
             TextureType::Alpha => { tex = data.texture_alpha.clone() },
@@ -732,7 +759,7 @@ impl Material
         match tex_type
         {
             TextureType::Base => { if let Some(tex_state) = data.texture_base.as_mut() { tex = Some(tex_state) } else { tex = None; } },
-            TextureType::AmbientEmissive => { if let Some(tex_state) = data.texture_ambient.as_mut() { tex = Some(tex_state) } else { tex = None; } },
+            TextureType::Emissive => { if let Some(tex_state) = data.texture_emissive.as_mut() { tex = Some(tex_state) } else { tex = None; } },
             TextureType::Specular => { if let Some(tex_state) = data.texture_specular.as_mut() { tex = Some(tex_state) } else { tex = None; } },
             TextureType::Normal => { if let Some(tex_state) = data.texture_normal.as_mut() { tex = Some(tex_state) } else { tex = None; } },
             TextureType::Alpha => { if let Some(tex_state) = data.texture_alpha.as_mut() { tex = Some(tex_state) } else { tex = None; } },
@@ -1145,6 +1172,8 @@ impl Component for Material
         let mut ambient_color;
         let mut base_color;
         let mut specular_color;
+        let mut emissive_color;
+        let mut emissive_strength;
         let mut highlight_color;
         let mut locked_color;
 
@@ -1192,6 +1221,13 @@ impl Component for Material
             let g = (data.specular_color.y * 255.0) as u8;
             let b = (data.specular_color.z * 255.0) as u8;
             specular_color = egui::Color32::from_rgb(r, g, b);
+
+            let r = (data.emissive_color.x * 255.0) as u8;
+            let g = (data.emissive_color.y * 255.0) as u8;
+            let b = (data.emissive_color.z * 255.0) as u8;
+            emissive_color = egui::Color32::from_rgb(r, g, b);
+
+            emissive_strength = data.emissive_strength;
 
             let r = (data.highlight_color.x * 255.0) as u8;
             let g = (data.highlight_color.y * 255.0) as u8;
@@ -1262,6 +1298,14 @@ impl Component for Material
             ui.label("specular color:");
             apply_settings = ui.color_edit_button_srgba(&mut specular_color).changed() || apply_settings;
         });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("emissive color:");
+            apply_settings = ui.color_edit_button_srgba(&mut emissive_color).changed() || apply_settings;
+        });
+
+        apply_settings = ui.add(egui::Slider::new(&mut emissive_strength, 0.0..=20.0).text("emissive strength").step_by(0.1)).changed() || apply_settings;
 
         ui.horizontal(|ui|
         {
@@ -1380,6 +1424,13 @@ impl Component for Material
             let g = ((specular_color.g() as f32) / 255.0).clamp(0.0, 1.0);
             let b = ((specular_color.b() as f32) / 255.0).clamp(0.0, 1.0);
             data.specular_color = Vector3::<f32>::new(r, g, b);
+
+            let r = ((emissive_color.r() as f32) / 255.0).clamp(0.0, 1.0);
+            let g = ((emissive_color.g() as f32) / 255.0).clamp(0.0, 1.0);
+            let b = ((emissive_color.b() as f32) / 255.0).clamp(0.0, 1.0);
+            data.emissive_color = Vector3::<f32>::new(r, g, b);
+
+            data.emissive_strength = emissive_strength;
 
             let r = ((highlight_color.r() as f32) / 255.0).clamp(0.0, 1.0);
             let g = ((highlight_color.g() as f32) / 255.0).clamp(0.0, 1.0);

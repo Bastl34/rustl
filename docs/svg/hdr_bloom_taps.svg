@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">The 13 tap downsample kernel</text>
+
+  <!-- grid -->
+  <rect x="70" y="90" width="220" height="220" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" rx="6"/>
+  <g stroke="#e2e8f0" stroke-width="1">
+    <line x1="114" y1="90" x2="114" y2="310"/>
+    <line x1="158" y1="90" x2="158" y2="310"/>
+    <line x1="202" y1="90" x2="202" y2="310"/>
+    <line x1="246" y1="90" x2="246" y2="310"/>
+    <line x1="70" y1="134" x2="290" y2="134"/>
+    <line x1="70" y1="178" x2="290" y2="178"/>
+    <line x1="70" y1="222" x2="290" y2="222"/>
+    <line x1="70" y1="266" x2="290" y2="266"/>
+  </g>
+
+  <!-- outer taps (a..i) on even texel offsets -->
+  <g fill="#dbeafe" stroke="#2563eb" stroke-width="2">
+    <circle cx="92" cy="112" r="13"/><circle cx="180" cy="112" r="13"/><circle cx="268" cy="112" r="13"/>
+    <circle cx="92" cy="200" r="13"/><circle cx="180" cy="200" r="15"/><circle cx="268" cy="200" r="13"/>
+    <circle cx="92" cy="288" r="13"/><circle cx="180" cy="288" r="13"/><circle cx="268" cy="288" r="13"/>
+  </g>
+  <g font-size="11" font-weight="600" fill="#1d4ed8" text-anchor="middle">
+    <text x="92" y="116">a</text><text x="180" y="116">b</text><text x="268" y="116">c</text>
+    <text x="92" y="204">d</text><text x="180" y="205">e</text><text x="268" y="204">f</text>
+    <text x="92" y="292">g</text><text x="180" y="292">h</text><text x="268" y="292">i</text>
+  </g>
+
+  <!-- inner taps (j..m) on odd texel offsets -->
+  <g fill="#ffedd5" stroke="#ea580c" stroke-width="2">
+    <circle cx="136" cy="156" r="13"/><circle cx="224" cy="156" r="13"/>
+    <circle cx="136" cy="244" r="13"/><circle cx="224" cy="244" r="13"/>
+  </g>
+  <g font-size="11" font-weight="600" fill="#c2410c" text-anchor="middle">
+    <text x="136" y="160">j</text><text x="224" y="160">k</text>
+    <text x="136" y="248">l</text><text x="224" y="248">m</text>
+  </g>
+
+  <text x="180" y="332" text-anchor="middle" font-size="11.5" fill="#64748b">offsets in source texels, ±1 and ±2 around the target pixel</text>
+
+  <!-- weights -->
+  <rect x="320" y="90" width="410" height="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="342" y="116" font-size="13" font-weight="700" fill="#1e293b">Five overlapping 2×2 blocks</text>
+
+  <rect x="342" y="130" width="16" height="16" fill="#ffedd5" stroke="#ea580c" stroke-width="2" rx="3"/>
+  <text x="370" y="143" font-size="12" fill="#334155">centre block  j k l m</text>
+  <text x="700" y="143" text-anchor="end" font-size="12" font-weight="700" fill="#c2410c">0.5</text>
+
+  <rect x="342" y="160" width="16" height="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="3"/>
+  <text x="370" y="173" font-size="12" fill="#334155">top left  a b d e</text>
+  <text x="700" y="173" text-anchor="end" font-size="12" font-weight="600" fill="#1d4ed8">0.125</text>
+
+  <rect x="342" y="184" width="16" height="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="3"/>
+  <text x="370" y="197" font-size="12" fill="#334155">top right  b c e f</text>
+  <text x="700" y="197" text-anchor="end" font-size="12" font-weight="600" fill="#1d4ed8">0.125</text>
+
+  <rect x="342" y="208" width="16" height="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="3"/>
+  <text x="370" y="221" font-size="12" fill="#334155">bottom left  d e g h</text>
+  <text x="700" y="221" text-anchor="end" font-size="12" font-weight="600" fill="#1d4ed8">0.125</text>
+
+  <rect x="342" y="232" width="16" height="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="3"/>
+  <text x="370" y="245" font-size="12" fill="#334155">bottom right  e f h i</text>
+  <text x="700" y="245" text-anchor="end" font-size="12" font-weight="600" fill="#1d4ed8">0.125</text>
+
+  <line x1="342" y1="260" x2="708" y2="260" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="370" y="280" font-size="12" font-weight="600" fill="#334155">sum</text>
+  <text x="700" y="280" text-anchor="end" font-size="12" font-weight="700" fill="#047857">1.0 — energy preserving</text>
+  <text x="342" y="299" font-size="11.5" fill="#64748b">the centre counts double, so the filter stays tight</text>
+
+  <!-- karis note -->
+  <rect x="30" y="352" width="700" height="56" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="50" y="374" font-size="12.5" font-weight="700" fill="#c2410c">First step only — Karis average</text>
+  <text x="50" y="394" font-size="12" fill="#334155">each block is additionally weighted by 1 / (1 + luma), so one blown-out pixel cannot dominate the whole chain and flicker</text>
+</svg>

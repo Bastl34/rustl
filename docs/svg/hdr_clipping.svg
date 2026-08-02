@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect width="760" height="420" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Why the scene needs a float target</text>
+
+  <!-- ldr panel -->
+  <rect x="30" y="52" width="340" height="294" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="50" y="76" font-size="13.5" font-weight="700" fill="#b91c1c">8 bit target — clipped</text>
+  <text x="50" y="94" font-size="11.5" fill="#64748b">Rgba8Unorm can only store 0.0 … 1.0</text>
+
+  <line x1="55" y1="282" x2="350" y2="282" stroke="#fca5a5" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="352" y="279" font-size="10.5" fill="#b91c1c">1.0</text>
+  <line x1="55" y1="312" x2="350" y2="312" stroke="#cbd5e1" stroke-width="2"/>
+
+  <rect x="65" y="303" width="40" height="9" fill="#93c5fd" rx="2"/>
+  <rect x="135" y="285" width="40" height="27" fill="#93c5fd" rx="2"/>
+  <rect x="205" y="282" width="40" height="30" fill="#ef4444" rx="2"/>
+  <rect x="275" y="282" width="40" height="30" fill="#ef4444" rx="2"/>
+
+  <text x="85" y="328" text-anchor="middle" font-size="11" fill="#64748b">0.3</text>
+  <text x="155" y="328" text-anchor="middle" font-size="11" fill="#64748b">0.9</text>
+  <text x="225" y="328" text-anchor="middle" font-size="11" font-weight="600" fill="#b91c1c">1.0</text>
+  <text x="295" y="328" text-anchor="middle" font-size="11" font-weight="600" fill="#b91c1c">1.0</text>
+
+  <text x="200" y="130" text-anchor="middle" font-size="12" fill="#b91c1c">the two bright pixels are indistinguishable —</text>
+  <text x="200" y="148" text-anchor="middle" font-size="12" fill="#b91c1c">&quot;how much brighter than white&quot; is gone</text>
+  <text x="200" y="176" text-anchor="middle" font-size="12" fill="#334155">bloom would have nothing to key off:</text>
+  <text x="200" y="194" text-anchor="middle" font-size="12" fill="#334155">a white sheet of paper and a lamp both</text>
+  <text x="200" y="212" text-anchor="middle" font-size="12" fill="#334155">read as exactly 1.0</text>
+
+  <!-- hdr panel -->
+  <rect x="390" y="52" width="340" height="294" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="410" y="76" font-size="13.5" font-weight="700" fill="#047857">16 bit float target — preserved</text>
+  <text x="410" y="94" font-size="11.5" fill="#64748b">Rgba16Float keeps everything above 1.0</text>
+
+  <line x1="415" y1="282" x2="710" y2="282" stroke="#a7f3d0" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="712" y="279" font-size="10.5" fill="#047857">1.0</text>
+  <line x1="415" y1="312" x2="710" y2="312" stroke="#cbd5e1" stroke-width="2"/>
+
+  <rect x="425" y="303" width="40" height="9" fill="#93c5fd" rx="2"/>
+  <rect x="495" y="285" width="40" height="27" fill="#93c5fd" rx="2"/>
+  <rect x="565" y="132" width="40" height="180" fill="#10b981" rx="2"/>
+  <rect x="635" y="237" width="40" height="75" fill="#10b981" rx="2"/>
+
+  <text x="445" y="328" text-anchor="middle" font-size="11" fill="#64748b">0.3</text>
+  <text x="515" y="328" text-anchor="middle" font-size="11" fill="#64748b">0.9</text>
+  <text x="585" y="328" text-anchor="middle" font-size="11" font-weight="600" fill="#047857">6.0</text>
+  <text x="655" y="328" text-anchor="middle" font-size="11" font-weight="600" fill="#047857">2.5</text>
+
+  <text x="585" y="124" text-anchor="middle" font-size="11" fill="#047857">emissive lamp</text>
+
+  <!-- caption -->
+  <rect x="30" y="356" width="700" height="50" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="380" y="377" text-anchor="middle" font-size="12.5" fill="#334155">The scene therefore renders into a float target and stays linear. Only the final composite pass decides</text>
+  <text x="380" y="395" text-anchor="middle" font-size="12.5" fill="#334155">how that range is squeezed into displayable 0…1 — that decision is called tone mapping.</text>
+</svg>
