@@ -395,7 +395,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.view_dir = camera.view_pos.xyz - out.position;
 
     // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the mapping projection)
-    out.object_position = object_position.xyz;
+    // divide by w: skinning accumulates w = sum(weights) - max() keeps a weightless vertex at (0,0,0) instead of NaN
+    out.object_position = object_position.xyz / max(object_position.w, 0.0001);
     out.object_normal = object_normal.xyz;
 
     // object -> world rotation (scale removed) as a quaternion - brings object space mapped normals into world space

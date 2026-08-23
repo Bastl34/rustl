@@ -55,8 +55,8 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
         {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui|
             {
-                let icon = if node.source.is_some() { "📦" }
-                    else if node.find_component::<Animation>().is_some() { "🎞" }
+                let icon = if node.find_component::<Animation>().is_some() { "🎞" }
+                    else if node.root_node { "📦" }
                     else if node.find_component::<Joint>().is_some() { "🕱" }
                     else if node.is_empty() { "👻" }
                     else if node.get_mesh().is_some() { "◼" }
@@ -517,16 +517,16 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     {
                         ui.separator();
 
-                        if ui.button("⏵ Start all animations").clicked()
-                        {
-                            ui.close();
-                            node.start_all_animations();
-                        }
-
                         if ui.button("⏵ Start first animation").clicked()
                         {
                             ui.close();
                             node.start_first_animation();
+                        }
+
+                        if ui.button("⏵ Start all animations").clicked()
+                        {
+                            ui.close();
+                            node.start_all_animations();
                         }
 
                         if ui.button("⏹ Stop all animations").clicked()
@@ -535,7 +535,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                             node.stop_all_animations();
                         }
 
-                        if ui.button("🗐 Copy and re-target animations").clicked()
+                        if ui.button("🗐 Copy and re-target animations to ...").on_hover_text("Pick a target").clicked()
                         {
                             ui.close();
 

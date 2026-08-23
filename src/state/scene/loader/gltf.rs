@@ -460,10 +460,24 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
                 //normalize
                 weights = weights.iter().map(|w|
                 {
+                    // skinning weights need to sum up to 1 -> normalize by the sum and not by the L2 norm
+                    let sum = w[0] + w[1] + w[2] + w[3];
+
+                    if !sum.is_finite() || sum <= 0.0
+                    {
+                        return [1.0, 0.0, 0.0, 0.0];
+                    }
+
+                    [w[0] / sum, w[1] / sum, w[2] / sum, w[3] / sum]
+                }).collect::<Vec<[f32; 4]>>();
+                /*
+                weights = weights.iter().map(|w|
+                {
                     let weight = Vector4::<f32>::new(w[0], w[1], w[2], w[3]);
                     let weight = weight / weight.norm();
                     [weight.x, weight.y, weight.z, weight.w]
                 }).collect::<Vec<[f32; 4]>>();
+                 */
             }
 
             // mopth_target names
@@ -831,6 +845,7 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
         }
 
         // sort by parent amount (to find parent with the fewest parent items)
+        /*
         target_nodes_vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
         // use the item with the fewest parent item as the animation node
@@ -857,6 +872,8 @@ pub fn read_animations(root_node: Arc<RwLock<Box<Node>>>, animations: Animations
         {
             root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
         }
+        */
+        root_node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(animation_component))));
     }
 }
 
