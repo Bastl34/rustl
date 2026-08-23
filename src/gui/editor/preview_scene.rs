@@ -33,6 +33,16 @@ pub fn get_preview_scene_id(state: &State) -> Option<u32>
     state.scenes.iter().find(|scene| scene.has_tag(PREVIEW_SCENE_TAG)).map(|scene| scene.id)
 }
 
+// the preview sphere loads async after the scene was created
+pub fn preview_scene_ready(state: &State) -> bool
+{
+    match state.scenes.iter().find(|scene| scene.has_tag(PREVIEW_SCENE_TAG))
+    {
+        Some(scene) => Scene::list_all_child_nodes(&scene.nodes).iter().any(|node| !node.read().unwrap().get_meshes_with_mesh_resource().is_empty()),
+        None => false
+    }
+}
+
 pub fn ensure_preview_scene(state: &mut State)
 {
     if get_preview_scene_id(state).is_some()

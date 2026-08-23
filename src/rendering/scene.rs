@@ -2194,9 +2194,21 @@ impl Scene
                 }
 
                 // ********** color pass **********
-                let color_batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 2] = [(&solid_data, None), (&transparent_data, None)];
+                if self.xray_mode
+                {
+                    // draw depth-tested transparents (grid) as backdrop - x-ray solids write no depth to occlude them
+                    let (backdrop_data, overlay_data): (Vec<RenderData>, Vec<RenderData>) = transparent_data.iter().copied().partition(|item| item.node.settings.depth_test);
 
-                render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                    let color_batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 3] = [(&backdrop_data, None), (&solid_data, None), (&overlay_data, None)];
+
+                    render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                }
+                else
+                {
+                    let color_batches: [(&Vec<RenderData>, Option<&wgpu::Buffer>); 2] = [(&solid_data, None), (&transparent_data, None)];
+
+                    render_result.draw_calls += self.render_color(wgpu, view, msaa_view, encoder, &color_batches, cam_data, &bind_group_render_item.bind_group, clear, gpu_timer.as_mut());
+                }
             }
 
             // ********** debug bounding volumes **********

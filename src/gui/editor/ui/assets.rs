@@ -71,7 +71,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                     let running = *editor_state.material_thumbnails_running.read().unwrap();
                     if ui.add_enabled(!running, egui::Button::new("🖼 Create Thumbnails")).on_hover_text("render preview thumbnails for materials without one").clicked()
                     {
-                        editor_state.generate_material_thumbnails = true;
+                        editor_state.generate_material_thumbnails = Some(true);
                     }
                 }
             });

@@ -104,6 +104,7 @@ mod state
             pub(crate) mod pan_controller;
             pub(crate) mod target_rotation_controller;
             pub(crate) mod follow_controller;
+            pub(crate) mod path_controller;
         }
 
         pub(crate) mod utilities
@@ -239,6 +240,7 @@ mod helper
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
     pub(crate) mod easing;
+    pub(crate) mod curve;
     pub(crate) mod stopwatch;
     pub(crate) mod asset_path_descriptor;
     pub(crate) mod option_or_id;
