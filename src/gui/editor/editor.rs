@@ -16,7 +16,7 @@ use crate::gui::editor::ui::main_frame;
 pub const MAX_NAME_LENGTH: usize = 24;
 
 pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
-pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
+pub use crate::state::project::project::RESUSE_MATERIALS_TAG;
 pub const EDITOR_UTILS_NODE_NAME: &str = "editor utils";
 pub const QUAD_CAM: &str = "quad";
 

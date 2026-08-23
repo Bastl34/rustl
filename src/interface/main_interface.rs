@@ -26,6 +26,7 @@ use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
+#[cfg(feature = "editor")]
 use crate::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
@@ -43,6 +44,7 @@ pub struct MainInterface
     app: Option<Box<dyn App>>,
 
     gilrs: Option<Gilrs>,
+    #[cfg(feature = "editor")]
     editor_gui: Option<Editor>,
 }
 
@@ -73,15 +75,11 @@ impl MainInterface
 
         let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
-        let use_editor = !env::args().any(|a| a == "--no-editor");
-
-        let editor_gui = if use_editor
+        #[cfg(feature = "editor")]
+        let editor_gui =
         {
-            Some(Editor::new())
-        }
-        else
-        {
-            None
+            let use_editor = !env::args().any(|a| a == "--no-editor");
+            if use_editor { Some(Editor::new()) } else { None }
         };
 
         let gilrs_res = Gilrs::new();
@@ -113,6 +111,7 @@ impl MainInterface
             app: None,
 
             gilrs,
+            #[cfg(feature = "editor")]
             editor_gui,
         };
 
@@ -134,6 +133,7 @@ impl MainInterface
             }
 
             // init editor
+            #[cfg(feature = "editor")]
             if let Some(editor_gui) = &mut self.editor_gui
             {
                 editor_gui.init(state, &self.context.egui, scene_id);
@@ -314,6 +314,7 @@ impl MainInterface
 
 
         // ******************** editor/ui update ********************
+        #[cfg(feature = "editor")]
         if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
@@ -370,6 +371,7 @@ impl MainInterface
         }
 
         // ******************** build ui ********************
+        #[cfg(feature = "editor")]
         if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
@@ -575,6 +577,7 @@ impl MainInterface
                 }
 
                 // render egui
+                #[cfg(feature = "editor")]
                 if let Some(editor_gui) = &mut self.editor_gui
                 {
                     let now = Instant::now();
@@ -662,6 +665,7 @@ impl MainInterface
                     }
 
                     // egui overlay
+                    #[cfg(feature = "editor")]
                     if let Some(editor_gui) = &mut self.editor_gui
                     {
                         if editor_gui.editor_state.visible
@@ -785,6 +789,7 @@ impl MainInterface
 
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
+        #[cfg(feature = "editor")]
         let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {
             editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
@@ -793,6 +798,9 @@ impl MainInterface
         {
             false
         };
+
+        #[cfg(not(feature = "editor"))]
+        let egui_consumed = false;
 
 
         // Always forward mouse button releases to the input manager, even if egui consumed the event.
@@ -950,6 +958,7 @@ impl MainInterface
                 {
                     if let Some(path) = path.to_str()
                     {
+                        #[cfg(feature = "editor")]
                         if let Some(editor_gui) = &mut self.editor_gui
                         {
                             editor_gui.apply_external_asset_drag(global_state, path.to_string());

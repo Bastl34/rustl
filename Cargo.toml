@@ -7,6 +7,10 @@ repository = "https://github.com/Bastl34/rustl"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["editor"]
+editor = ["dep:rfd", "dep:arboard", "dep:egui_plot"]
+
 [dependencies]
 simple_logger = "5.2.0"
 log = "0.4.33"
@@ -21,7 +25,7 @@ colored = "3.1.1"
 base64 = "0.23.0"
 strum = "0.28.0"
 strum_macros = "0.28.0"
-rfd = "0.17.2"
+rfd = { version = "0.17.2", optional = true }
 chrono = "0.4.45"
 urlencoding = "2.1.2"
 
@@ -40,7 +44,7 @@ xxhash-rust = { version = "0.8.16", features = [ "xxh3"] }
 
 parry3d = "0.28.0"
 
-arboard = "3.6.1"
+arboard = { version = "3.6.1", optional = true }
 
 tobj = { version = "4.0.4", features = ["async"]}
 
@@ -64,7 +68,7 @@ image = { version = "0.25.10", default-features = false, features = [ "png", "jp
 
 egui = "0.35.0"
 egui-wgpu = "0.35.0"
-egui_plot = "0.36.0"
+egui_plot = { version = "0.36.0", optional = true }
 egui_extras = { version = "0.35.0", features = ["svg"] }
 #egui = { git = "https://github.com/emilk/egui", branch = "main"  }
 #egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }

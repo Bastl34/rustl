@@ -2,7 +2,8 @@ use std::{env, sync::{Arc, RwLock}};
 use gltf::json::extensions::scene;
 use nalgebra::Vector3;
 
-use crate::{console_debug, console_error, gui::editor::editor_project::load_and_apply_project, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
+use crate::state::project::loader::load_and_apply_project;
+use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 

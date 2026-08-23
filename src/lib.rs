@@ -134,17 +134,27 @@ mod state
         pub(crate) mod mesh_resource;
     }
 
+    pub(crate) mod project
+    {
+        pub(crate) mod project;
+        pub(crate) mod loader;
+    }
+
 
 }
 
 mod gui
 {
+    // generic egui widgets - also used by scene components for their inspector UI,
+    // so this stays available without the editor
     pub(crate) mod helper
     {
         pub(crate) mod info_box;
+        #[cfg(feature = "editor")]
         pub(crate) mod generic_items;
     }
 
+    #[cfg(feature = "editor")]
     pub(crate) mod editor
     {
         pub(crate) mod editor;

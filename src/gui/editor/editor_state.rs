@@ -6,7 +6,8 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::state::project::project::EditorProjectData;
+use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -163,15 +164,7 @@ pub struct DebugImages
     pub hzb_image: Option<egui::TextureHandle>,
 }
 
-pub struct LoadingGuard(pub Arc<RwLock<bool>>);
-
-impl Drop for LoadingGuard
-{
-    fn drop(&mut self)
-    {
-        *self.0.write().unwrap() = false;
-    }
-}
+pub use crate::state::project::project::LoadingGuard;
 
 // generic "are you sure?" dialog - shown while present in EditorState, hidden when None
 pub struct ConfirmDialog
