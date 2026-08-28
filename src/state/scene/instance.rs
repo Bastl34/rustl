@@ -501,7 +501,19 @@ impl Instance
             if let Some(node) = self.node.as_ref()
             {
                 let node = node.read().unwrap();
-                node_trans = node.get_full_transform();
+
+                // skinning already placed the vertices via the joint matrices - inheriting the joints again would apply them twice
+                // "Only the joint transforms are applied to the skinned mesh; the transform of the skinned mesh node MUST be ignored."
+                // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skins
+                if node.skin.len() > 0
+                {
+                    node_trans = node.get_full_transform_without_joints();
+                }
+                else
+                {
+                    // this is for objects with no skinning, like a gun -> they should inherit the full transform of the node, including the joints
+                    node_trans = node.get_full_transform();
+                }
             }
             else
             {

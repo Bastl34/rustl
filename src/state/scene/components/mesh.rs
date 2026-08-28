@@ -161,7 +161,9 @@ impl Mesh
         if let Some(b_box_skin) = self.get_data().b_box_skin
         {
             let s = self.get_data().b_volume_skin_multiplier;
-            let b_box_skin_scaled = b_box_skin.scaled(Vec3::new(s, s, s));
+            // scaled_wrt_center and not scaled: scaled() multiplies mins/maxs, so it scales around the
+            // origin and moves the box off the mesh when the mesh is far away from it
+            let b_box_skin_scaled = b_box_skin.scaled_wrt_center(Vec3::new(s, s, s));
 
             return b_box_skin_scaled;
         }
@@ -184,7 +186,9 @@ impl Mesh
         if let Some(b_box_skin) = data.b_box_skin
         {
             let s = data.b_volume_skin_multiplier;
-            let b_box_skin_scaled = b_box_skin.scaled(Vec3::new(s, s, s));
+            // scaled_wrt_center and not scaled: scaled() multiplies mins/maxs, so it scales around the
+            // origin and moves the box off the mesh when the mesh is far away from it
+            let b_box_skin_scaled = b_box_skin.scaled_wrt_center(Vec3::new(s, s, s));
 
             return Some(b_box_skin_scaled);
         }

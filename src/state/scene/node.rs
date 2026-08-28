@@ -1216,6 +1216,34 @@ impl Node
         }
     }
 
+    pub fn get_full_transform_without_joints(&self) -> Matrix4<f32>
+    {
+        let mut parent_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = self.parent.as_ref()
+        {
+            let parent_node = parent_node.read().unwrap();
+            parent_trans = parent_node.get_full_transform_without_joints();
+        }
+
+        // the joints own transform is already part of its joint matrix
+        if self.find_component::<Joint>().is_some()
+        {
+            return parent_trans;
+        }
+
+        let (node_transform, node_parent_inheritance) = self.get_transform();
+
+        if node_parent_inheritance
+        {
+            parent_trans * node_transform
+        }
+        else
+        {
+            node_transform
+        }
+    }
+
     /*
     pub fn get_full_transform_inverse(&self) -> Matrix4<f32>
     {
