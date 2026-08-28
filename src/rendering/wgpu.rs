@@ -70,6 +70,8 @@ impl WGpu
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
+            // no limit bucketing: this is a trusted native/wasm app, so use the adapter's real limits
+            apply_limit_buckets: false,
         })
         .await
         .unwrap();
@@ -156,6 +158,8 @@ impl WGpu
             present_mode: present_mode,
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
+            // Auto reproduces the pre-wgpu-30 behaviour (sRGB, or extended linear sRGB for fp16 surfaces)
+            color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: vec![],
             desired_maximum_frame_latency: 1, // 1: lower latency, 2: higher throughput maybe check https://github.com/emilk/egui/blob/main/crates/egui-wgpu/src/lib.rs#L331 for ios issues
         };
@@ -329,7 +333,7 @@ impl WGpu
 
     pub fn end_render(&mut self, output: SurfaceTexture)
     {
-        output.present();
+        self.queue.present(output);
     }
 
 
@@ -431,7 +435,7 @@ impl WGpu
         self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
         // remove padding
-        let padded_data = slice.get_mapped_range();
+        let padded_data = slice.get_mapped_range().unwrap();
         let data = remove_padding(&padded_data, &buffer_dimensions);
         drop(padded_data);
 

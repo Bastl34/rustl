@@ -271,7 +271,7 @@ impl GpuTimer
         let timestamp_period = wgpu.queue_mut().get_timestamp_period(); // nanoseconds per timestamp tick
         let mut pass_times: [Option<f64>; GPU_TIMER_PASSES] = [None; GPU_TIMER_PASSES];
         {
-            let data = self.readback_buffer.slice(..).get_mapped_range();
+            let data = self.readback_buffer.slice(..).get_mapped_range().unwrap();
             let timestamps = bytemuck::cast_slice::<u8, u64>(&data[..self.pending_queries as usize * std::mem::size_of::<u64>()]);
 
             for (pass, begin, end) in &self.pending_segments
