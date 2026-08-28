@@ -66,6 +66,7 @@ impl Default for NodeSettings
 pub struct NodeUpdateResult
 {
     pub delete_nodes: Vec<u32>,
+    pub skinned_nodes: Vec<NodeItem>,
 }
 
 pub struct Node
@@ -714,7 +715,7 @@ impl Node
         {
             component_downcast!(mesh, Mesh);
 
-            if let Some(skin_sphere) = mesh.get_scaled_skin_bounding_sphere()
+            if let Some(skin_sphere) = mesh.get_skin_bounding_sphere()
             {
                 if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_mut()
                 {
@@ -849,7 +850,7 @@ impl Node
             component_downcast!(mesh, Mesh);
 
             let mut bounding_box = None;
-            if let Some(skin_box) = mesh.get_scaled_skin_bbox()
+            if let Some(skin_box) = mesh.get_skin_bbox()
             {
                 bounding_box = Some(skin_box);
             }
@@ -2047,11 +2048,18 @@ impl Node
 
         // check for delete later
         let mut delete_nodes = vec![];
+        let mut skinned_nodes = vec![];
         {
-            let node = node.read().unwrap();
-            if node.delete_later_request
+            let node_read = node.read().unwrap();
+            if node_read.delete_later_request
             {
-                delete_nodes.push(node.id);
+                delete_nodes.push(node_read.id);
+            }
+
+            // the scene rebuilds the bounding volume of these after all components ran
+            if node_read.skin.len() > 0
+            {
+                skinned_nodes.push(node.clone());
             }
         }
 
@@ -2066,12 +2074,17 @@ impl Node
                 {
                     delete_nodes.append(&mut update_result.delete_nodes);
                 }
+
+                if update_result.skinned_nodes.len() > 0
+                {
+                    skinned_nodes.append(&mut update_result.skinned_nodes);
+                }
             }
         }
 
         crate::notify_observable_arc!(&node, on_after_update);
 
-        NodeUpdateResult { delete_nodes:  delete_nodes}
+        NodeUpdateResult { delete_nodes: delete_nodes, skinned_nodes: skinned_nodes }
     }
 
     pub fn merge_mesh(&mut self, node: &NodeItem) -> bool

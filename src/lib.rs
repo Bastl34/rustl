@@ -93,7 +93,6 @@ mod state
         pub(crate) mod scene_controller
         {
             pub(crate) mod scene_controller;
-            pub(crate) mod generic_controller;
             pub(crate) mod char_controller;
         }
 

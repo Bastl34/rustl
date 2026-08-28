@@ -1048,6 +1048,7 @@ fn calc_bbox_skin(scene_nodes: &Vec<Arc<RwLock<Box<Node>>>>)
                 let mesh = node.find_component::<Mesh>().unwrap();
                 component_downcast_mut!(mesh, Mesh);
 
+                mesh.calc_skin_joint_bounds();
                 mesh.calc_bounding_volume_skin(&joint_transform_vec);
             }
         }

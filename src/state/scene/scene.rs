@@ -9,7 +9,7 @@ use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializ
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBox};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u32>) -> bool>;
@@ -317,6 +317,7 @@ impl Scene
 
         // update nodes
         let mut delete_nodes = vec![];
+        let mut skinned_nodes = vec![];
         for node in &self.nodes
         {
             let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame);
@@ -324,6 +325,61 @@ impl Scene
             if update_result.delete_nodes.len() > 0
             {
                 delete_nodes.append(&mut update_result.delete_nodes);
+            }
+
+            if update_result.skinned_nodes.len() > 0
+            {
+                skinned_nodes.append(&mut update_result.skinned_nodes);
+            }
+        }
+
+        // ***** skinned bounding volumes *****
+        // this has to run after all components updated, otherwise the joints would be one frame behind
+        // picking and frustum culling depend on it, so it is a fixed step and not a (removable) controller
+        for node in &skinned_nodes
+        {
+            let node = node.read().unwrap();
+
+            let meshes = node.find_components::<Mesh>();
+            if meshes.len() == 0
+            {
+                continue;
+            }
+
+            let joint_matrices = node.get_joint_transform_vec(true);
+            if let Some(joint_matrices) = joint_matrices
+            {
+                for mesh in meshes
+                {
+                    component_downcast_mut!(mesh, Mesh);
+
+                    if mesh.update_skin_bbox_on_animation
+                    {
+                        // exact, but touches every vertex
+                        mesh.calc_bounding_volume_skin(&joint_matrices);
+                    }
+                    else
+                    {
+                        // union of the per joint boxes - cheap enough for every pose change
+                        mesh.update_skin_bounding_volume_from_joints(&joint_matrices);
+                    }
+                }
+            }
+        }
+
+        // ***** spatial sound listener (based on the first camera) *****
+        {
+            let cam = self.cameras.first();
+            if let Some(cam) = cam
+            {
+                if cam.get_data_tracker().changed()
+                {
+                    let (left, right) = cam.get_left_right_ear_positions();
+
+                    let mut audio_device = io.audio_device.write().unwrap();
+                    audio_device.data.get_mut().left_ear_pos = left;
+                    audio_device.data.get_mut().right_ear_pos = right;
+                }
             }
         }
 
@@ -648,10 +704,6 @@ impl Scene
     pub fn add_defaults(&mut self)
     {
         self.add_default_material();
-
-        // post controller
-        let controller = GenericController::default();
-        self.post_controller.push(Box::new(controller));
     }
 
     pub fn add_default_lights_and_cam(&mut self)
