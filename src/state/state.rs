@@ -360,7 +360,7 @@ impl State
         {
             project: Project
             {
-                name: "Uknown".to_string(),
+                name: "Untitled".to_string(),
             },
             rendering_adapter: RenderingAdapterFeatures
             {

@@ -267,6 +267,12 @@ impl Editor
 
     pub fn update(&mut self, state: &mut State, wgpu: &mut WGpu, egui_ctx: &egui::Context)
     {
+        // keep the project name in sync (used for the window title)
+        if state.project.name != self.editor_state.project_data.name
+        {
+            state.project.name = self.editor_state.project_data.name.clone();
+        }
+
         // create editor nodes if needed
         {
             let scene_id = state.get_active_scene_id();

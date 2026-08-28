@@ -299,7 +299,16 @@ impl MainInterface
                     state.stats.fps_1_percent_low_chart.pop_front();
                 }
 
-                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", &self.context.window_title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
+                let title = if state.project.name.trim().is_empty()
+                {
+                    self.context.window_title.clone()
+                }
+                else
+                {
+                    format!("{} | {}", &self.context.window_title, state.project.name.trim())
+                };
+
+                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
                 state.stats.fps = 0;
                 state.stats.frame_times.clear();
             }
