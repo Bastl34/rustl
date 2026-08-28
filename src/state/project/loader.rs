@@ -202,6 +202,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                             node_write.name = name.clone();
                             node_write.settings.visible = options.visible;
                             node_write.settings.locked = options.locked;
+                            node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
                             node_write.settings.transient = false;
 
                             if let Some(reuse) = options.reuse_materials_by_name
@@ -251,6 +252,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                 let mut node_write = node.write().unwrap();
                 node_write.settings.visible = options.visible;
                 node_write.settings.locked = options.locked;
+                node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
             }
 
             let transform = Transformation::new

@@ -85,6 +85,7 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
         visible: node.settings.visible,
         locked: node.settings.locked,
         reuse_materials_by_name: node.extras.get::<bool>(RESUSE_MATERIALS_TAG).copied(),
+        color: node.color.map(|color| [color.x, color.y, color.z]),
     };
 
     let objects = node.nodes.iter()

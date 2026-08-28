@@ -113,6 +113,9 @@ pub struct EditorObjectOptions
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reuse_materials_by_name: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<[f32; 3]>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

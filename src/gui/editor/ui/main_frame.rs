@@ -859,8 +859,8 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
 
         if editor_state.selected_type == SelectionType::Object && !editor_state.selected_object.is_empty()
         {
-            settings_tab(ui, SettingsPanel::Components, " Components");
             settings_tab(ui, SettingsPanel::Object, "◼ Object");
+            settings_tab(ui, SettingsPanel::Components, " Components");
 
             object_settings = true;
         }

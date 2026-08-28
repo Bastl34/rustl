@@ -85,6 +85,8 @@ pub struct Node
 
     pub skin: Vec<OptionOrId<NodeItem>>,
 
+    pub color: Option::<Vector3::<f32>>,
+
     pub extras: Extras,
     pub tags: Tags,
 
@@ -117,6 +119,7 @@ impl Serialize for Node
         map.serialize_entry("settings", &self.settings)?;
         map.serialize_entry("extras", &self.extras)?;
         map.serialize_entry("tags", &self.tags)?;
+        map.serialize_entry("color", &self.color)?;
 
         if let Some(parent) = self.parent.as_ref()
         {
@@ -192,6 +195,7 @@ impl<'de> Deserialize<'de> for Node
                         "tags" => node.tags = map.next_value()?,
                         "skin" => node.skin = OptionOrId::from_id_vec(&map.next_value()?),
                         "source" => node.source = Some(map.next_value()?),
+                        "color" => node.color = map.next_value()?,
                         "instances" =>
                         {
                             node.instances = ChangeTracker::new
@@ -284,6 +288,8 @@ impl Node
 
             extras: Extras::new(),
             tags: Tags::new(),
+
+            color: None,
 
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),

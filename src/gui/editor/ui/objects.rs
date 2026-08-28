@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use egui::{Color32, RichText, Ui};
+use nalgebra::Vector3;
 
 use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
@@ -71,6 +72,15 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let (toggle, row_rect) = ui.horizontal(|ui|
                 {
                     ui.spacing_mut().item_spacing.x = 2.0;
+
+                    // *** color tag: user grouping, leftmost column so it scans as one strip ***
+                    // allocated even without a color, otherwise tagged and untagged rows would not line up
+                    let (color_rect, _) = ui.allocate_exact_size(egui::vec2(3.0, 16.0), egui::Sense::hover());
+                    if let Some(node_color) = node.color
+                    {
+                        let tag = Color32::from_rgb((node_color.x * 255.0) as u8, (node_color.y * 255.0) as u8, (node_color.z * 255.0) as u8);
+                        ui.painter().rect_filled(color_rect, 1.0, tag);
+                    }
 
                     // *** drag handle: dots — constant size avoids ghost jump ***
                     ui.dnd_drag_source(drag_id, node_id, |ui|
@@ -325,7 +335,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         }
 
                         editor_state.selected_object = id;
-                        editor_state.settings_panel = SettingsPanel::Components;
+                        editor_state.settings_panel = SettingsPanel::Object;
 
                         editor_state.pick_mode = PickType::None;
                     }
@@ -339,7 +349,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
 
                             if editor_state.settings_panel != SettingsPanel::Components && editor_state.settings_panel != SettingsPanel::Object
                             {
-                                editor_state.settings_panel = SettingsPanel::Components;
+                                editor_state.settings_panel = SettingsPanel::Object;
                             }
 
                             // highlight
@@ -955,6 +965,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut occlusion_culling;
         let mut layer_mask;
         let mut name;
+        let mut color;
 
         let has_mesh;
 
@@ -974,6 +985,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             occlusion_culling = node.settings.occlusion_culling;
             layer_mask = node.settings.layer_mask;
             name = node.name.clone();
+            color = node.color;
 
             has_mesh = node.has_mesh();
         }
@@ -984,6 +996,36 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             ui.set_max_width(225.0);
             changed = ui.text_edit_singleline(&mut name).changed() || changed;
         });
+
+        // color tag - drawn as a strip in the hierarchy, purely a grouping aid for the user
+        ui.horizontal(|ui|
+        {
+            ui.label("color: ");
+
+            let mut has_color = color.is_some();
+            if ui.checkbox(&mut has_color, "").changed()
+            {
+                color = if has_color { Some(Vector3::new(0.45, 0.62, 0.85)) } else { None };
+                changed = true;
+            }
+
+            if let Some(current) = color
+            {
+                let mut color_u8 = Color32::from_rgb((current.x * 255.0) as u8, (current.y * 255.0) as u8, (current.z * 255.0) as u8);
+
+                if ui.color_edit_button_srgba(&mut color_u8).changed()
+                {
+                    color = Some(Vector3::new
+                    (
+                        (color_u8.r() as f32 / 255.0).clamp(0.0, 1.0),
+                        (color_u8.g() as f32 / 255.0).clamp(0.0, 1.0),
+                        (color_u8.b() as f32 / 255.0).clamp(0.0, 1.0)
+                    ));
+                    changed = true;
+                }
+            }
+        });
+
         changed = ui.checkbox(&mut visible, "visible").changed() || changed;
         changed = ui.checkbox(&mut locked, "locked").changed() || changed;
         changed = ui.checkbox(&mut root_node, "root node").changed() || changed;
@@ -1026,6 +1068,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.visible = visible;
             node.settings.locked = locked;
             node.root_node = root_node;
+            node.settings.transient = transient;
             node.settings.render_children_first = render_children_first;
             node.settings.alpha_index = alpha_index;
             node.settings.depth_test = depth_test;
@@ -1036,6 +1079,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.occlusion_culling = occlusion_culling;
             node.settings.layer_mask = layer_mask;
             node.name = name;
+            node.color = color;
         }
 
         // parenting
