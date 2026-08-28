@@ -446,6 +446,68 @@ impl Node
         node.write().unwrap().force_instances_update();
     }
 
+    pub fn set_parent_and_remap_transform(node: NodeItem, new_parent: NodeItem)
+    {
+        if new_parent.read().unwrap().has_parent_or_is_equal(node.clone())
+        {
+            console_warning!("set_parent_and_remap_transform: the new parent can not be the node itself or one of its children");
+            return;
+        }
+
+        let world_transform = node.read().unwrap().get_full_transform();
+
+        Self::set_parent(node.clone(), new_parent.clone());
+        Self::remap_world_transform(node, world_transform);
+    }
+
+    pub fn remap_world_transform(node: NodeItem, world_transform: Matrix4<f32>)
+    {
+        let (_, parent_inheritance) = node.read().unwrap().get_transform();
+        let parent = node.read().unwrap().parent.clone();
+
+        let mut new_local_transform = world_transform;
+
+        // if there is no parent or if the parent transformation is not inherited: the local transformation is the world transformation
+        if parent_inheritance
+        {
+            if let Some(parent) = parent.as_ref()
+            {
+                let parent_transform_inverse = parent.read().unwrap().get_full_transform().try_inverse();
+
+                if parent_transform_inverse.is_none()
+                {
+                    console_warning!("remap_world_transform: the transformation of the parent can not be inverted");
+                    return;
+                }
+
+                new_local_transform = parent_transform_inverse.unwrap() * world_transform;
+            }
+        }
+
+        Self::set_local_transform(node, new_local_transform);
+    }
+
+    pub fn set_local_transform(node: NodeItem, transform: Matrix4<f32>)
+    {
+        let transformation_component = node.read().unwrap().find_component::<Transformation>();
+
+        if let Some(transformation_component) = transformation_component
+        {
+            component_downcast_mut!(transformation_component, Transformation);
+            transformation_component.set_local_transform(transform);
+        }
+        // if there is no transformation component: create one to be able to hold the transformation
+        else
+        {
+            let mut transformation = Transformation::identity("Transform");
+            transformation.set_local_transform(transform);
+
+            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+        }
+
+        node.write().unwrap().force_instances_update();
+    }
+
     pub fn add_component(&mut self, component: ComponentItem)
     {
         self.components.push(component);

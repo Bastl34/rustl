@@ -139,7 +139,60 @@ pub fn execute_on_state_mut_and_wait(main_queue: ExecutionQueueItem, func: Box<d
     res.join();
 }
 
-/// Move `source_nodes` to `target`: if `Some(node)` → set as parent, if `None` → make root-level.
+/// Set the parent of `node`: if `Some(node)` -> set as parent, if `None` -> make root-level (scene node).
+/// `keep_transform`: the world transformation of the node is kept (the local transformation is re-mapped).
+pub fn set_node_parent(scene: &mut Scene, node: NodeItem, target: Option<NodeItem>, keep_transform: bool)
+{
+    // the new parent can not be the node itself or one of its children
+    if let Some(target) = target.as_ref()
+    {
+        if target.read().unwrap().has_parent_or_is_equal(node.clone())
+        {
+            return;
+        }
+    }
+
+    // world transformation (before re-parenting)
+    let world_transform = node.read().unwrap().get_full_transform();
+
+    if let Some(target) = target
+    {
+        // if currently root-level, remove from scene.nodes
+        if node.read().unwrap().parent.is_none()
+        {
+            let id = node.read().unwrap().id;
+            scene.nodes.retain(|n| n.read().unwrap().id != id);
+        }
+
+        Node::set_parent(node.clone(), target);
+    }
+    else
+    {
+        // already root-level - nothing to do
+        if node.read().unwrap().parent.is_none()
+        {
+            return;
+        }
+
+        // detach from old parent
+        if let Some(old_parent) = node.read().unwrap().parent.as_ref()
+        {
+            let id = node.read().unwrap().id;
+            old_parent.write().unwrap().nodes.retain(|n| n.read().unwrap().id != id);
+        }
+
+        node.write().unwrap().parent = OptionOrId::None;
+        node.write().unwrap().force_instances_update();
+        scene.nodes.push(node.clone());
+    }
+
+    if keep_transform
+    {
+        Node::remap_world_transform(node, world_transform);
+    }
+}
+
+/// Move `source_nodes` to `target`: if `Some(node)` -> set as parent, if `None` -> make root-level.
 pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene_id: u32, source_ids: Vec<u32>, target: Option<NodeItem>)
 {
     if source_ids.len() == 0
@@ -150,45 +203,12 @@ pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene_id: u32, source_ids: 
     execute_on_scene_mut(exec_queue, scene_id, Box::new(move |scene|
     {
         let source_nodes: Vec<NodeItem> = source_ids.iter()
-            .filter(|&&id| target.as_ref().map_or(true, |t| t.read().unwrap().id != id))
             .filter_map(|&id| scene.find_node_by_id(id))
             .collect();
 
-        if source_nodes.is_empty() { return; }
-
-        let source_nodes = Arc::new(source_nodes);
-
-        if let Some(target_node) = &target
+        for source_node in source_nodes
         {
-            for source_node in source_nodes.iter()
-            {
-                // if currently root-level, remove from scene.nodes
-                if source_node.read().unwrap().parent.is_none()
-                {
-                    let id = source_node.read().unwrap().id;
-                    scene.nodes.retain(|n| n.read().unwrap().id != id);
-                }
-                Node::set_parent(source_node.clone(), target_node.clone());
-            }
-        }
-        else
-        {
-            for source_node in source_nodes.iter()
-            {
-                // already root-level — nothing to do
-                if source_node.read().unwrap().parent.is_none() { continue; }
-
-                // detach from old parent
-                if let Some(old_parent) = source_node.read().unwrap().parent.as_ref()
-                {
-                    let id = source_node.read().unwrap().id;
-                    old_parent.write().unwrap().nodes.retain(|n| n.read().unwrap().id != id);
-                }
-
-                source_node.write().unwrap().parent = OptionOrId::None;
-                source_node.write().unwrap().force_instances_update();
-                scene.nodes.push(source_node.clone());
-            }
+            set_node_parent(scene, source_node, target.clone(), false);
         }
     }));
 }

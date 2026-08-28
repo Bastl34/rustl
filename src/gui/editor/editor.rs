@@ -891,7 +891,7 @@ impl Editor
 
                         let (node_id, ..) = self.editor_state.get_object_ids();
 
-                        let scene = state.find_scene_by_id(scene_id);
+                        let scene = state.find_scene_by_id_mut(scene_id);
                         if scene.is_none() { return; }
 
                         let scene = scene.unwrap();
@@ -899,9 +899,31 @@ impl Editor
                         if node_id.is_none() { return; }
                         let node_id = node_id.unwrap();
 
-                        if let Some(node) = scene.find_node_by_id(node_id)
+                        let node = scene.find_node_by_id(node_id);
+                        if let Some(node) = node
                         {
-                            Node::set_parent(node, hit.node.clone());
+                            scene_utils::set_node_parent(scene, node, Some(hit.node.clone()), false);
+                        }
+                    }
+                    // pick parent target and re-map transformation
+                    else if self.editor_state.pick_mode == PickType::ParentRemap && self.editor_state.selected_scene_id.is_some()
+                    {
+                        let scene_id: u32 = self.editor_state.selected_scene_id.unwrap();
+
+                        let (node_id, ..) = self.editor_state.get_object_ids();
+
+                        let scene = state.find_scene_by_id_mut(scene_id);
+                        if scene.is_none() { return; }
+
+                        let scene = scene.unwrap();
+
+                        if node_id.is_none() { return; }
+                        let node_id = node_id.unwrap();
+
+                        let node = scene.find_node_by_id(node_id);
+                        if let Some(node) = node
+                        {
+                            scene_utils::set_node_parent(scene, node, Some(hit.node.clone()), true);
                         }
                     }
                     // animation re-targeting (copy)

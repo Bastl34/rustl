@@ -87,6 +87,7 @@ pub enum PickType
 {
     Camera,
     Parent,
+    ParentRemap,
     AnimationCopy,
     Texture,
     None

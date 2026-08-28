@@ -290,6 +290,72 @@ impl Transformation
         &self.data.get_ref().tran_inverse
     }
 
+    // re-maps the given transformation matrix into the transformation data
+    // if the transformation vectors are used: the matrix is decomposed into position/rotation/scale
+    pub fn set_local_transform(&mut self, transform: Matrix4::<f32>)
+    {
+        {
+            let data = self.data.get_mut();
+
+            if !data.transform_vectors
+            {
+                data.trans = transform;
+            }
+            else
+            {
+                // ********** translation **********
+                data.position = math::extract_translation_from_transform(&transform);
+
+                // ********** scale **********
+                let mut scale = math::extract_scale_from_transform(&transform);
+
+                // a negative determinant means there is a mirroring inside the matrix -> apply it to the x axis
+                if transform.fixed_view::<3, 3>(0, 0).into_owned().determinant() < 0.0
+                {
+                    scale.x = -scale.x;
+                }
+
+                // if its zero -> inverse matrix can not be calculated
+                if math::approx_zero(scale.x) { scale.x = 0.00000001; }
+                if math::approx_zero(scale.y) { scale.y = 0.00000001; }
+                if math::approx_zero(scale.z) { scale.z = 0.00000001; }
+
+                data.scale = scale;
+
+                // ********** rotation **********
+                // remove the scaling from the matrix to get the pure rotation
+                let mut rotation = Matrix4::<f32>::identity();
+                for i in 0..3
+                {
+                    let axis: Vector3<f32> = transform.fixed_view::<3, 1>(0, i).into_owned() / scale[i];
+                    rotation.fixed_view_mut::<3, 1>(0, i).copy_from(&axis);
+                }
+
+                // the euler angles and the quaternion rotation are multiplied in calc_transform
+                // --> only one of them should hold the rotation
+                if data.rotation_quat.is_some()
+                {
+                    let rotation_quat = math::extract_rotation_quat_from_transform(&rotation);
+                    let coords = rotation_quat.quaternion().coords;
+
+                    data.rotation = Vector3::<f32>::zeros();
+                    data.rotation_quat = Some(Vector4::<f32>::new(coords.x, coords.y, coords.z, coords.w));
+                }
+                else
+                {
+                    data.rotation = math::extract_rotation_as_euler_vec(&rotation);
+                }
+
+                // the animation values are overwriting the transformation vectors -> reset them
+                data.animation_position = None;
+                data.animation_rotation_quat = None;
+                data.animation_scale = None;
+            }
+        }
+
+        self.calc_transform();
+    }
+
     pub fn apply_transformation(&mut self, translation: Option<Vector3<f32>>, scale: Option<Vector3<f32>>, rotation: Option<Vector3<f32>>)
     {
         if translation.is_none() && scale.is_none() && rotation.is_none()

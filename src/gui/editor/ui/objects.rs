@@ -299,9 +299,27 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                                 let picking_node = scene.find_node_by_id(node_id).unwrap();
                                 let node = node.clone();
 
-                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |_scene|
+                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
                                 {
-                                    Node::set_parent(picking_node.clone(), node.clone());
+                                    scene_utils::set_node_parent(scene, picking_node.clone(), Some(node.clone()), false);
+                                }));
+                            }
+                        }
+                        editor_state.pick_mode = PickType::None;
+                    }
+                    else if editor_state.pick_mode == PickType::ParentRemap
+                    {
+                        if let Some(node) = scene.find_node_by_id(node_id)
+                        {
+                            let (node_id, ..) = editor_state.get_object_ids();
+                            if let Some(node_id) = node_id
+                            {
+                                let picking_node = scene.find_node_by_id(node_id).unwrap();
+                                let node = node.clone();
+
+                                execute_on_scene_mut(exec_queue.clone(), scene_id, Box::new(move |scene|
+                                {
+                                    scene_utils::set_node_parent(scene, picking_node.clone(), Some(node.clone()), true);
                                 }));
                             }
                         }
@@ -1082,8 +1100,10 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.color = color;
         }
 
+        ui.separator();
+
         // parenting
-        ui.horizontal(|ui|
+        ui.vertical(|ui|
         {
             let parent = node.read().unwrap().parent.clone();
             let mut parent_name = "".to_string();
@@ -1092,26 +1112,83 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 parent_name = parent.read().unwrap().name.clone();
             }
 
-            ui.label("Parent:");
-            ui.add_enabled_ui(false, |ui|
+            ui.horizontal(|ui|
             {
-                ui.set_max_width(225.0);
-                ui.text_edit_singleline(&mut parent_name);
+                ui.label("Parent:");
+
+                ui.add_enabled_ui(false, |ui|
+                {
+                    ui.set_max_width(225.0);
+                    ui.text_edit_singleline(&mut parent_name);
+                });
             });
 
-            let mut toggle_value = if editor_state.pick_mode == PickType::Parent { true } else { false };
-            if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick mode").changed()
+            ui.horizontal(|ui|
             {
-                if toggle_value
+                // pick new parent (without remapping transform)
+                ui.label(" ⚫ pick new parent (local transform untouched): ");
+
+                let mut toggle_value = if editor_state.pick_mode == PickType::Parent { true } else { false };
+                if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick a new parent - the local transformation stays untouched (the object moves with the new parent)").changed()
                 {
-                    editor_state.pick_mode = PickType::Parent;
+                    if toggle_value
+                    {
+                        editor_state.pick_mode = PickType::Parent;
+                    }
+                    else
+                    {
+                        editor_state.pick_mode = PickType::None;
+                    }
                 }
-                else
+            });
+
+            ui.horizontal(|ui|
+            {
+                // pick new parent and remap transform
+                ui.label(" ⚫ pick new parent (re-map transform): ");
+
+                let mut toggle_value = if editor_state.pick_mode == PickType::ParentRemap { true } else { false };
+                if ui.toggle_value(&mut toggle_value, RichText::new("👆")).on_hover_text("pick a new parent - the local transformation is re-mapped (the object stays at its current world position)").changed()
                 {
-                    editor_state.pick_mode = PickType::None;
+                    if toggle_value
+                    {
+                        editor_state.pick_mode = PickType::ParentRemap;
+                    }
+                    else
+                    {
+                        editor_state.pick_mode = PickType::None;
+                    }
                 }
-            }
+            });
+
+            ui.horizontal(|ui|
+            {
+                // reset parent (without remapping transform)
+                ui.label(" ⚫ reset parent (local transform untouched): ");
+
+                let button = egui::Button::new(RichText::new("🗑").color(Color32::LIGHT_RED));
+                if ui.add_enabled(parent.is_some(), button).on_hover_text("remove the parent (the node becomes a root node of the scene) - the local transformation stays untouched").clicked()
+                {
+                    let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                    scene_utils::set_node_parent(scene, node.clone(), None, false);
+                }
+            });
+
+            ui.horizontal(|ui|
+            {
+                // reset parent and remap transform
+                ui.label(" ⚫ reset parent (re-map transform): ");
+
+                let button = egui::Button::new(RichText::new("🗑").color(Color32::LIGHT_RED));
+                if ui.add_enabled(parent.is_some(), button).on_hover_text("remove the parent (the node becomes a root node of the scene) - the local transformation is re-mapped (the object stays at its current world position)").clicked()
+                {
+                    let scene = state.find_scene_by_id_mut(scene_id).unwrap();
+                    scene_utils::set_node_parent(scene, node.clone(), None, true);
+                }
+            });
         });
+
+        ui.separator();
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui|
         {
