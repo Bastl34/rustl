@@ -752,7 +752,7 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
     });
 
     // statistics
-    collapse_with_title(ui, "statistic", true, "ℹ Statistics", None, |ui|
+    collapse_with_title(ui, "statistic", false, "ℹ Statistics", None, |ui|
     {
         create_statistic(editor_state, state, ui);
     });
