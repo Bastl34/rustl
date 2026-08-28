@@ -606,6 +606,8 @@ impl Component for Joint
         //ui.label(format!("Animation Transf:\n{:?}", self.get_joint_transform()));
     }
 }
+
+
 #[cfg(test)]
 mod tests
 {

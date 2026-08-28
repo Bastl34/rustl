@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::{component_downcast, console_error, console_success};
 use rfd;
+use crate::helper::console_log::LogType;
 use crate::helper::file::{get_dirname, get_stem, make_relative_path, sanitize_filename, write_string_to_tile};
 use crate::gui::editor::editor::EDITOR_INTERNAL_TAG;
 use crate::gui::editor::editor_state::EditorState;
@@ -280,6 +281,11 @@ pub fn load_editor_project_from_path(editor_state: &mut EditorState, state: &mut
         editor_state.project_session_start = web_time::Instant::now();
         editor_state.recent_projects.add_and_save(path.clone());
         apply_editor_project(state, project, &path, loading_state, loading_progress_state, None);
+    }
+    else
+    {
+        // load_editor_project already logged the concrete reason (missing file or broken json)
+        editor_state.alert("Project", &format!("Project can not be loaded:\n{}\n\nSee the console for details.", path), LogType::Error);
     }
 }
 

@@ -26,8 +26,6 @@ use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
-#[cfg(feature = "editor")]
-use crate::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
@@ -37,6 +35,9 @@ use super::context::Context;
 use super::gilrs::{gilrs_event, gilrs_initialize};
 use super::winit::{winit_map_key, winit_map_physical_key};
 
+#[cfg(feature = "editor")]
+use crate::gui::editor::editor::Editor;
+
 pub struct MainInterface
 {
     pub context: Context,
@@ -44,6 +45,7 @@ pub struct MainInterface
     app: Option<Box<dyn App>>,
 
     gilrs: Option<Gilrs>,
+
     #[cfg(feature = "editor")]
     editor_gui: Option<Editor>,
 }
@@ -111,6 +113,7 @@ impl MainInterface
             app: None,
 
             gilrs,
+
             #[cfg(feature = "editor")]
             editor_gui,
         };

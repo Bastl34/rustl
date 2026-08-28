@@ -1,6 +1,7 @@
 use crate::{gui::{editor::ui::{help::create_modal_help_shortcuts, helper::ui_helper::fit_size}, helper::generic_items::modal_with_title}, helper::generic::cargo_dependencies, state::state::State};
 
 use super::super::editor_state::EditorState;
+use crate::helper::console_log::LogType;
 
 pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
@@ -8,41 +9,110 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     {
         create_modal_confirm(editor_state, state, ctx);
     }
-    else if editor_state.dialog_splash
+    if editor_state.dialog_splash
     {
         create_modal_splash(editor_state, state, ctx);
     }
-    else if editor_state.dialog_add_component
+    if editor_state.dialog_add_component
     {
         create_modal_component_add(editor_state, state, ctx);
     }
-    else if editor_state.dialog_add_camera_controller
+    if editor_state.dialog_add_camera_controller
     {
         create_modal_camera_controller(editor_state, state, ctx);
     }
-    else if editor_state.dialog_add_scene_controller
+    if editor_state.dialog_add_scene_controller
     {
         create_modal_scene_controller(editor_state, state, ctx);
     }
-    else if editor_state.dialog_debug_image
+    if editor_state.dialog_debug_image
     {
         create_modal_debug_image(editor_state, state, ctx);
     }
-    else if editor_state.dialog_settings
+    if editor_state.dialog_settings
     {
         create_modal_settings(editor_state, state, ctx);
     }
-    else if editor_state.dialog_help_shortcuts
+    if editor_state.dialog_help_shortcuts
     {
         create_modal_help_shortcuts(editor_state, ctx);
     }
-    else if editor_state.dialog_about
+    if editor_state.dialog_about
     {
         create_modal_about(editor_state, ctx);
     }
+    if editor_state.dialog_alert
+    {
+        create_alert_dialog(editor_state, state, ctx);
+    }
 }
 
-pub fn create_modal_confirm(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
+pub fn create_alert_dialog(editor_state: &mut EditorState, _state: &mut State, ctx: &egui::Context)
+{
+    if !editor_state.dialog_alert
+    {
+        return;
+    }
+
+    let title = editor_state.dialog_alert_title.clone();
+    let message = editor_state.dialog_alert_message.clone();
+
+    let (glyph, accent) = match editor_state.dialog_alert_type
+    {
+        LogType::Error => ("❌", egui::Color32::from_rgb(225, 95, 95)),
+        LogType::Warning => ("⚠", egui::Color32::from_rgb(235, 180, 80)),
+        LogType::Success => ("✅", egui::Color32::from_rgb(110, 195, 120)),
+        _ => ("ℹ", egui::Color32::from_rgb(120, 170, 235)),
+    };
+
+    let mut confirmed = false;
+
+    let response = egui::Modal::new(egui::Id::new("alert_dialog")).show(ctx, |ui|
+    {
+        ui.set_width(380.0);
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui|
+        {
+            ui.label(egui::RichText::new(glyph).size(26.0).color(accent));
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new(&title).size(16.0).strong().color(accent));
+        });
+
+        ui.add_space(12.0);
+
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+        ui.label(egui::RichText::new(&message).size(13.5));
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        ui.horizontal(|ui|
+        {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                if ui.add(egui::Button::new("OK").min_size(egui::vec2(78.0, 28.0))).clicked()
+                {
+                    confirmed = true;
+                }
+            });
+        });
+
+        ui.add_space(4.0);
+    });
+
+    // should_close covers a click on the backdrop and the escape key
+    if confirmed || response.should_close()
+    {
+        editor_state.dialog_alert = false;
+        editor_state.dialog_alert_title.clear();
+        editor_state.dialog_alert_message.clear();
+    }
+}
+
+pub fn create_modal_confirm(
+editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
     let (title, message) = match &editor_state.confirm_dialog
     {

@@ -277,6 +277,11 @@ pub struct EditorState
     pub add_scene_controller_id: usize,
     pub add_scene_controller_post: bool,
 
+    pub dialog_alert: bool,
+    pub dialog_alert_type: LogType,
+    pub dialog_alert_title: String,
+    pub dialog_alert_message: String,
+
     pub dialog_debug_image: bool,
     pub dialog_debug_image_id: Option<egui::TextureHandle>,
 
@@ -415,6 +420,11 @@ impl EditorState
             add_scene_controller_id: 0,
             add_scene_controller_post: false,
 
+            dialog_alert: false,
+            dialog_alert_type: LogType::All,
+            dialog_alert_title: String::new(),
+            dialog_alert_message: String::new(),
+
             dialog_debug_image: false,
             dialog_debug_image_id: None,
 
@@ -468,6 +478,16 @@ impl EditorState
             message: message.to_string(),
             callback: Box::new(callback),
         });
+    }
+
+    // shows a modal alert the user has to acknowledge
+    // for things that must not be missed - everything else belongs in the console
+    pub fn alert(&mut self, title: &str, message: &str, alert_type: LogType)
+    {
+        self.dialog_alert = true;
+        self.dialog_alert_type = alert_type;
+        self.dialog_alert_title = title.to_string();
+        self.dialog_alert_message = message.to_string();
     }
 
     pub fn accumulate_editing_time(&mut self)
