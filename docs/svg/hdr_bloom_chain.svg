@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="bc_down" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="bc_up" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="bc_plain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">The bloom mip chain — down, then additively back up</text>
+
+  <text x="60" y="66" font-size="13" font-weight="700" fill="#c2410c">downsample — 13 tap filter, each step halves the resolution</text>
+
+  <!-- mip labels -->
+  <text x="100" y="152" text-anchor="middle" font-size="11" fill="#64748b">scene (full)</text>
+  <text x="229" y="152" text-anchor="middle" font-size="11" font-weight="600" fill="#c2410c">mip 0 (½)</text>
+  <text x="342" y="152" text-anchor="middle" font-size="11" fill="#64748b">mip 1 (¼)</text>
+  <text x="439" y="152" text-anchor="middle" font-size="11" fill="#64748b">mip 2 (⅛)</text>
+  <text x="523" y="152" text-anchor="middle" font-size="11" fill="#64748b">mip 3</text>
+  <text x="597" y="152" text-anchor="middle" font-size="11" fill="#64748b">mip N</text>
+
+  <!-- boxes -->
+  <rect x="50" y="162" width="100" height="76" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2" rx="6"/>
+  <rect x="186" y="168" width="86" height="64" fill="#fff7ed" stroke="#f97316" stroke-width="2.5" rx="6"/>
+  <rect x="308" y="175" width="68" height="50" fill="#fff7ed" stroke="#fdba74" stroke-width="2" rx="5"/>
+  <rect x="412" y="181" width="54" height="38" fill="#fff7ed" stroke="#fdba74" stroke-width="2" rx="5"/>
+  <rect x="502" y="185" width="42" height="30" fill="#fff7ed" stroke="#fdba74" stroke-width="2" rx="4"/>
+  <rect x="580" y="188" width="34" height="24" fill="#fff7ed" stroke="#fdba74" stroke-width="2" rx="4"/>
+
+  <!-- downsample arrows -->
+  <line x1="152" y1="200" x2="182" y2="200" stroke="#c2410c" stroke-width="2" marker-end="url(#bc_down)"/>
+  <line x1="274" y1="200" x2="304" y2="200" stroke="#c2410c" stroke-width="2" marker-end="url(#bc_down)"/>
+  <line x1="378" y1="200" x2="408" y2="200" stroke="#c2410c" stroke-width="2" marker-end="url(#bc_down)"/>
+  <line x1="468" y1="200" x2="498" y2="200" stroke="#c2410c" stroke-width="2" marker-end="url(#bc_down)"/>
+  <line x1="546" y1="200" x2="576" y2="200" stroke="#c2410c" stroke-width="2" marker-end="url(#bc_down)"/>
+
+  <!-- upsample arcs -->
+  <path d="M597 214 Q560 288 525 217" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#bc_up)"/>
+  <path d="M521 217 Q481 292 441 221" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#bc_up)"/>
+  <path d="M437 221 Q390 300 344 227" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#bc_up)"/>
+  <path d="M340 227 Q285 308 231 234" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#bc_up)"/>
+
+  <text x="560" y="264" text-anchor="middle" font-size="14" font-weight="700" fill="#7c3aed">+</text>
+  <text x="481" y="268" text-anchor="middle" font-size="14" font-weight="700" fill="#7c3aed">+</text>
+  <text x="390" y="274" text-anchor="middle" font-size="14" font-weight="700" fill="#7c3aed">+</text>
+  <text x="285" y="280" text-anchor="middle" font-size="14" font-weight="700" fill="#7c3aed">+</text>
+
+  <text x="60" y="330" font-size="13" font-weight="700" fill="#7c3aed">upsample — 3×3 tent, blended additively into the bigger mip</text>
+
+  <!-- result callout -->
+  <path d="M229 236 L229 250 L45 250 L45 348" fill="none" stroke="#475569" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <rect x="30" y="352" width="330" height="54" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="195" y="374" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">mip 0 holds the finished glow</text>
+  <text x="195" y="392" text-anchor="middle" font-size="11.5" fill="#64748b">the composite pass samples exactly this</text>
+
+  <rect x="400" y="352" width="330" height="54" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="565" y="374" text-anchor="middle" font-size="12" fill="#334155">Each level contributes a wider, softer halo.</text>
+  <text x="565" y="392" text-anchor="middle" font-size="12" fill="#334155">Summing them is what makes the falloff smooth.</text>
+</svg>

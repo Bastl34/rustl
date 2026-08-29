@@ -9,6 +9,7 @@ mod rendering
     pub(crate) mod texture;
     pub(crate) mod state;
     pub(crate) mod scene;
+    pub(crate) mod post_process;
     pub(crate) mod camera;
     pub(crate) mod light;
     pub(crate) mod shadow;

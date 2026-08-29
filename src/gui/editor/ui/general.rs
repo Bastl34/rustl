@@ -473,6 +473,24 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             ui.add(egui::DragValue::new(&mut state.rendering.fog_density).speed(0.001).range(0.0..=1.0));
             ui.label("ℹ").on_hover_text("exponential density - at density d the visibility drops to ~37% at distance 1/d");
         });
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.checkbox(&mut state.rendering.bloom, "Bloom");
+            ui.label("ℹ").on_hover_text("hdr glow: bright parts of the image bleed over their edges - materials glow once their emissive strength pushes the color beyond 1.0");
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Bloom Intensity:");
+
+            // the composite mixes hdr and bloom, so an intensity near 1.0 would replace the
+            // image with the pure blur - cap it well below that
+            ui.add_enabled(state.rendering.bloom, egui::DragValue::new(&mut state.rendering.bloom_intensity).speed(0.005).range(0.0..=0.3));
+            ui.label("ℹ").on_hover_text("how much of the blurred highlights is mixed into the final image (typical: 0.03 - 0.15)");
+        });
     });
 }
 

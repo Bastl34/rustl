@@ -126,7 +126,9 @@ impl DebugVolumesBuffer
         let bind_group_layout = DebugVolumesBindGroup::bind_layout(wgpu);
 
         let device = wgpu.device();
-        let surface_format = wgpu.surface_config().format;
+
+        // the debug volumes draw on top of the color pass -> same (hdr) target format
+        let surface_format = crate::rendering::texture::Texture::HDR_FORMAT;
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor
         {

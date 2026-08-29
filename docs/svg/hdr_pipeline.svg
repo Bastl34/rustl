@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="hb_arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">One frame: from the scene passes to the surface</text>
+
+  <!-- scene passes -->
+  <rect x="30" y="52" width="700" height="96" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="50" y="76" font-size="13.5" font-weight="700" fill="#2563eb">1 — scene passes, all output linear HDR</text>
+
+  <rect x="50" y="88" width="150" height="44" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" rx="8"/>
+  <text x="125" y="108" text-anchor="middle" font-size="12" fill="#1e293b">shadow</text>
+  <text x="125" y="124" text-anchor="middle" font-size="11" fill="#64748b">depth atlas</text>
+
+  <rect x="220" y="88" width="150" height="44" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" rx="8"/>
+  <text x="295" y="108" text-anchor="middle" font-size="12" fill="#1e293b">depth prepass</text>
+  <text x="295" y="124" text-anchor="middle" font-size="11" fill="#64748b">+ HZB culling</text>
+
+  <rect x="390" y="88" width="150" height="44" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" rx="8"/>
+  <text x="465" y="108" text-anchor="middle" font-size="12" fill="#1e293b">ssao</text>
+  <text x="465" y="124" text-anchor="middle" font-size="11" fill="#64748b">R8Unorm</text>
+
+  <rect x="560" y="88" width="150" height="44" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="8"/>
+  <text x="635" y="108" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">color</text>
+  <text x="635" y="124" text-anchor="middle" font-size="11" fill="#2563eb">lighting + emissive</text>
+
+  <line x1="380" y1="148" x2="380" y2="172" stroke="#475569" stroke-width="2" marker-end="url(#hb_arrow)"/>
+
+  <!-- hdr target -->
+  <rect x="230" y="176" width="300" height="54" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2" rx="8"/>
+  <text x="380" y="200" text-anchor="middle" font-size="13" font-weight="600" fill="#1e293b">HDR scene color</text>
+  <text x="380" y="218" text-anchor="middle" font-size="11.5" fill="#7c3aed">Rgba16Float — values may exceed 1.0</text>
+
+  <path d="M300 230 L300 246 L195 246 L195 258" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#hb_arrow)"/>
+  <path d="M460 230 L460 246 L565 246 L565 258" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#hb_arrow)"/>
+
+  <!-- bloom -->
+  <rect x="30" y="262" width="330" height="88" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="50" y="285" font-size="13" font-weight="700" fill="#c2410c">2 — bloom mip chain</text>
+  <text x="50" y="305" font-size="11.5" fill="#334155">downsample to ½, ¼, ⅛ … then additively</text>
+  <text x="50" y="322" font-size="11.5" fill="#334155">upsample back up — result lands in mip 0</text>
+  <text x="50" y="340" font-size="11.5" fill="#94a3b8">skipped entirely when intensity = 0</text>
+
+  <line x1="360" y1="300" x2="394" y2="300" stroke="#475569" stroke-width="2" marker-end="url(#hb_arrow)"/>
+
+  <!-- composite -->
+  <rect x="400" y="262" width="330" height="88" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="420" y="285" font-size="13" font-weight="700" fill="#047857">3 — composite (fullscreen triangle)</text>
+  <text x="420" y="305" font-size="11.5" fill="#334155">mix(hdr, bloom, intensity)</text>
+  <text x="420" y="322" font-size="11.5" fill="#334155">→ exposure tone map → gamma</text>
+  <text x="420" y="340" font-size="11.5" fill="#94a3b8">the only place where HDR becomes LDR</text>
+
+  <line x1="565" y1="350" x2="565" y2="372" stroke="#475569" stroke-width="2" marker-end="url(#hb_arrow)"/>
+
+  <!-- surface -->
+  <rect x="400" y="376" width="330" height="46" fill="#ecfdf5" stroke="#10b981" stroke-width="2" rx="8"/>
+  <text x="565" y="396" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">surface (swapchain)</text>
+  <text x="565" y="413" text-anchor="middle" font-size="11.5" fill="#047857">Bgra8UnormSrgb</text>
+
+  <!-- egui -->
+  <rect x="30" y="376" width="330" height="46" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="10"/>
+  <text x="195" y="396" text-anchor="middle" font-size="12.5" font-weight="600" fill="#7c3aed">4 — egui editor UI</text>
+  <text x="195" y="413" text-anchor="middle" font-size="11" fill="#64748b">drawn after the composite → never tone mapped</text>
+
+  <line x1="360" y1="399" x2="394" y2="399" stroke="#475569" stroke-width="2" marker-end="url(#hb_arrow)"/>
+</svg>

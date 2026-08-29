@@ -7,7 +7,7 @@ use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, ut
 
 use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, debug_volumes::{DebugVolume, DebugVolumesBuffer, BOX_VERTICES, SPHERE_VERTICES}, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX}}};
 
-use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
+use super::{post_process::bloom_intensity, wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
 type MaterialComponent = crate::state::scene::components::material::Material;
 
@@ -565,11 +565,11 @@ impl Scene
 
             if !re_create
             {
-                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main", self.reverse_z));
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main", None, self.reverse_z));
             }
             else
             {
-                self.render_pipelines.get_mut(RenderPipelineType::Ssao as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main", self.reverse_z);
+                self.render_pipelines.get_mut(RenderPipelineType::Ssao as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_main", None, self.reverse_z);
             }
 
             // ********** ssao blur pass (raw occlusion -> blurred occlusion) **********
@@ -580,11 +580,11 @@ impl Scene
 
             if !re_create
             {
-                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao blur", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur", self.reverse_z));
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao blur", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur", None, self.reverse_z));
             }
             else
             {
-                self.render_pipelines.get_mut(RenderPipelineType::SsaoBlur as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur", self.reverse_z);
+                self.render_pipelines.get_mut(RenderPipelineType::SsaoBlur as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_blur", None, self.reverse_z);
             }
 
             // ********** ssao upsample pass (half res mode: blurred half res -> full res) **********
@@ -595,11 +595,11 @@ impl Scene
 
             if !re_create
             {
-                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao upsample", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample", self.reverse_z));
+                self.render_pipelines.push(Pipeline::new_fullscreen(wgpu, "ssao upsample", &self.ssao_shader, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample", None, self.reverse_z));
             }
             else
             {
-                self.render_pipelines.get_mut(RenderPipelineType::SsaoUpsample as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample", self.reverse_z);
+                self.render_pipelines.get_mut(RenderPipelineType::SsaoUpsample as usize).unwrap().re_create_fullscreen(wgpu, &bind_group_layouts, Texture::GRAY_FORMAT, "fs_upsample", None, self.reverse_z);
             }
         }
 
@@ -3055,9 +3055,20 @@ pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene
     render_scene.draw_bounding_boxes = false;
     render_scene.draw_bounding_spheres = false;
 
-    let (buffer_dimensions, output_buffer, texture, view, msaa_view) = wgpu.start_offscreen_render(Some((width, height)));
+    let (buffer_dimensions, output_buffer, texture, ldr_view, hdr_view, msaa_view) = wgpu.start_offscreen_render(Some((width, height)));
     let mut encoder = wgpu.create_command_encoder();
-    render_scene.render(wgpu, &view, &msaa_view, &mut encoder, scene);
+    render_scene.render(wgpu, &hdr_view, &msaa_view, &mut encoder, scene);
+
+    // post processing (bloom + tonemapping/gamma): hdr scene color -> ldr output texture
+    // (exposure/gamma come from the rendered scene itself, not from the first visible one)
+    {
+        let scene_data = scene.get_data();
+        let exposure = scene_data.exposure.unwrap_or(0.0);
+        let gamma = scene_data.gamma.unwrap_or(0.0);
+
+        wgpu.render_offscreen_post_process(&mut encoder, &hdr_view, &ldr_view, width, height, exposure, gamma, bloom_intensity(state));
+    }
+
     let img = wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
     scene.render_item = render_item;

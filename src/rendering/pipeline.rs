@@ -221,7 +221,6 @@ impl Pipeline
     pub fn create_std(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], depth_stencil: bool, depth_compare: bool, depth_write: bool, reverse_z: bool, fragment_attachment: bool, samples: u32, polygon_mode: wgpu::PolygonMode)
     {
         let device = wgpu.device();
-        let config = wgpu.surface_config();
 
         let layout_name = format!("{} Layout", self.name);
         let bind_group_layouts: Vec<Option<&BindGroupLayout>> = bind_group_layouts.iter().map(|l| Some(*l)).collect();
@@ -253,9 +252,11 @@ impl Pipeline
             });
         }
 
+        // the scene renders into the linear hdr buffer - the post processing composite
+        // pass (bloom + tonemapping/gamma) brings the result into the surface format
         let fragment_targets = &[Some(wgpu::ColorTargetState
         {
-            format: config.format,
+            format: texture::Texture::HDR_FORMAT,
             /*
             blend: Some(wgpu::BlendState
             {
@@ -411,9 +412,11 @@ impl Pipeline
         self.create_depth_export(wgpu, bind_group_layouts);
     }
 
-    // fullscreen triangle pass rendering into a single color target (no depth) - used by the ssao passes
-    // fs_entry selects the fragment entry point (the ssao shader module contains fs_main and fs_blur)
-    pub fn new_fullscreen(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str, reverse_z: bool) -> Pipeline
+    // fullscreen triangle pass rendering into a single color target (no depth) - used by the
+    // ssao and post processing (bloom/composite) passes
+    // fs_entry selects the fragment entry point (a shader module can contain multiple ones)
+    // blend: optional blend state (e.g. additive for the bloom upsample chain)
+    pub fn new_fullscreen(wgpu: &mut WGpu, name: &str, shader_source: &String, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str, blend: Option<wgpu::BlendState>, reverse_z: bool) -> Pipeline
     {
         let shader;
         {
@@ -435,12 +438,12 @@ impl Pipeline
             pipeline: None,
         };
 
-        pipe.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry, reverse_z);
+        pipe.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry, blend, reverse_z);
 
         pipe
     }
 
-    pub fn create_fullscreen(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str, reverse_z: bool)
+    pub fn create_fullscreen(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str, blend: Option<wgpu::BlendState>, reverse_z: bool)
     {
         let device = wgpu.device();
 
@@ -472,7 +475,7 @@ impl Pipeline
                 targets: &[Some(wgpu::ColorTargetState
                 {
                     format: target_format,
-                    blend: None,
+                    blend: blend,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions
@@ -502,10 +505,10 @@ impl Pipeline
         self.pipeline = Some(pipeline);
     }
 
-    pub fn re_create_fullscreen(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str, reverse_z: bool)
+    pub fn re_create_fullscreen(&mut self, wgpu: &mut WGpu, bind_group_layouts: &[&BindGroupLayout], target_format: wgpu::TextureFormat, fs_entry: &str, blend: Option<wgpu::BlendState>, reverse_z: bool)
     {
         console_log!("recreating fullscreen pipeline");
 
-        self.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry, reverse_z);
+        self.create_fullscreen(wgpu, bind_group_layouts, target_format, fs_entry, blend, reverse_z);
     }
 }

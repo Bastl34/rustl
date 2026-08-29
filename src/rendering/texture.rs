@@ -39,6 +39,11 @@ impl RenderItem for Texture
 impl Texture
 {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+    // linear hdr scene color target - the scene renders into this format, the post
+    // processing composite pass (bloom + tonemapping/gamma) converts it to the surface format
+    pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
     pub const SRGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
     pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub const GRAY_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;

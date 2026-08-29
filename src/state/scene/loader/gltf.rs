@@ -1417,22 +1417,25 @@ pub fn load_material(gltf_material: &gltf::Material<'_>, loaded_textures: &Vec<(
         }
     }
 
-    // emissive / ambient
+    // emissive
     let emissive = gltf_material.emissive_factor();
-    material_data.ambient_color = Vector3::<f32>::new(emissive[0], emissive[1], emissive[2]);
+    material_data.emissive_color = Vector3::<f32>::new(emissive[0], emissive[1], emissive[2]);
+
+    // KHR_materials_emissive_strength (hdr multiplier, defaults to 1.0)
+    material_data.emissive_strength = gltf_material.emissive_strength().unwrap_or(1.0);
 
     if let Some(tex) = gltf_material.emissive_texture()
     {
         if let Some(texture) = get_texture_by_index(&tex, &loaded_textures)
         {
-            set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::AmbientEmissive);
-            material_data.texture_ambient = Some(TextureState::new(texture));
+            set_texture_name(texture.clone(), material_name.clone(), resource_name.clone(), TextureType::Emissive);
+            material_data.texture_emissive = Some(TextureState::new(texture));
 
-            apply_texture_filtering_settings(material_data.texture_ambient.as_mut().unwrap(), &tex.texture());
+            apply_texture_filtering_settings(material_data.texture_emissive.as_mut().unwrap(), &tex.texture());
 
             if let Some(transform) = tex.texture_transform()
             {
-                let tex = material_data.texture_ambient.as_mut().unwrap();
+                let tex = material_data.texture_emissive.as_mut().unwrap();
                 apply_texture_transform(&transform, tex);
             }
         }

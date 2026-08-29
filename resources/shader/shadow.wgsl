@@ -50,6 +50,10 @@ struct MaterialUniform
     ambient_color: vec4<f32>,
     base_color: vec4<f32>,
     specular_color: vec4<f32>,
+
+    // rgb = emissive color, a = emissive strength (hdr multiplier)
+    emissive_color: vec4<f32>,
+
     highlight_color: vec4<f32>,
     locked_color: vec4<f32>,
 

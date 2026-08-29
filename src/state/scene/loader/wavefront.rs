@@ -247,6 +247,12 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
 
                         material_data.ambient_color = material_data.base_color * 0.01;
 
+                        // emissive color (Ke)
+                        if let Some(emissive) = mat.emissive
+                        {
+                            material_data.emissive_color = Vector3::<f32>::new(emissive[0], emissive[1], emissive[2]);
+                        }
+
                         if let Some(illumination) = mat.illumination_model
                         {
                             if illumination > 2
@@ -277,15 +283,14 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
                             material.set_texture(tex, TextureType::Normal);
                         }
 
-                        // ambient texture
-                        if mat.ambient_texture.is_some()
+                        // emissive texture (map_Ke is not part of the tobj material struct -> read it from unknown_param)
+                        if let Some(emissive_texture) = mat.unknown_param.get("map_Ke").cloned()
                         {
-                            console_log!("loading ambient texture {}", mat.ambient_texture.clone().unwrap());
-                            let ambient_texture = mat.ambient_texture.clone().unwrap();
-                            let tex_path = get_texture_path(&ambient_texture, options.path.as_str());
+                            console_log!("loading emissive texture {}", emissive_texture);
+                            let tex_path = get_texture_path(&emissive_texture, options.path.as_str());
                             let tex = load_texture_with_cache(options, tex_path.as_str())?;
                             asset_container.textures.push(tex.clone());
-                            material.set_texture(tex, TextureType::AmbientEmissive);
+                            material.set_texture(tex, TextureType::Emissive);
                         }
 
                         // specular texture

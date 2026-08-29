@@ -25,6 +25,7 @@ use crate::state::scene::loader::loader::play_and_forget_sound;
 use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
+use crate::rendering::post_process::post_process_params;
 use crate::rendering::scene::Scene;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
@@ -492,7 +493,7 @@ impl MainInterface
         // ******************** render ********************
         crate::notify_observable!(&mut self.context, on_before_render);
 
-        if let Some((output, view, msaa_view)) = self.context.wgpu.start_render()
+        if let Some((output, view, hdr_view, msaa_view)) = self.context.wgpu.start_render()
         {
             let mut engine_encoder = self.context.wgpu.create_command_encoder();
             let mut egui_encoder = self.context.wgpu.create_command_encoder();
@@ -537,8 +538,8 @@ impl MainInterface
 
                         scene.notify_before_render_all();
 
-                        // render scene
-                        let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+                        // render scene (into the hdr scene color target)
+                        let render_results =  render_scene.render(&mut self.context.wgpu, &hdr_view, &msaa_view, &mut engine_encoder, scene);
 
                         scene.notify_after_render_all();
 
@@ -586,6 +587,13 @@ impl MainInterface
                     }
 
                     state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
+                }
+
+                // post processing: bloom + tonemapping/gamma composite (hdr -> surface)
+                {
+                    let (exposure, gamma, bloom_intensity) = post_process_params(state);
+
+                    self.context.wgpu.render_post_process(&mut engine_encoder, &view, exposure, gamma, bloom_intensity);
                 }
 
                 // render egui
@@ -655,7 +663,7 @@ impl MainInterface
                     resize_scenes(&mut self.context.wgpu, state, render_size.0, render_size.1);
                 }
 
-                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_offscreen_render(target_size);
+                let (buffer_dimensions, output_buffer, texture, view, hdr_view, msaa_view) = self.context.wgpu.start_offscreen_render(target_size);
                 let mut encoder = self.context.wgpu.create_command_encoder();
                 {
                     for scene in &mut state.scenes
@@ -671,9 +679,16 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
-                        render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut encoder, scene);
+                        render_scene.render(&mut self.context.wgpu, &hdr_view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;
+                    }
+
+                    // post processing (bloom + tonemapping/gamma): hdr scene color -> ldr output texture
+                    {
+                        let (exposure, gamma, bloom_intensity) = post_process_params(state);
+
+                        self.context.wgpu.render_offscreen_post_process(&mut encoder, &hdr_view, &view, buffer_dimensions.width as u32, buffer_dimensions.height as u32, exposure, gamma, bloom_intensity);
                     }
 
                     // egui overlay
