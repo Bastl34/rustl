@@ -67,6 +67,11 @@ pub struct VertexBuffer
 impl RenderItem for VertexBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.vertex_buffer.size() + self.index_buffer.size()
+    }
 }
 
 impl VertexBuffer

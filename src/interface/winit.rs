@@ -1,4 +1,4 @@
-use winit::keyboard::KeyLocation;
+use winit::keyboard::{KeyLocation, KeyCode, PhysicalKey};
 
 use crate::input::{keyboard::Key, mouse::MouseButton};
 
@@ -423,6 +423,93 @@ pub fn winit_map_key(logical_key: &winit::keyboard::Key, location: winit::keyboa
     };
 
     Key::Unknown
+}
+
+// layout-independent mapping based on the physical key (scancode).
+// used as a fallback for shortcuts when the logical key is mangled by the
+// keyboard layout - e.g. on windows ctrl+alt is treated as altgr, so ctrl+alt+b
+// produces a dead/unidentified logical key on a german layout.
+pub fn winit_map_physical_key(physical_key: &PhysicalKey) -> Key
+{
+    let code = match physical_key
+    {
+        PhysicalKey::Code(code) => code,
+        PhysicalKey::Unidentified(_) => return Key::Unknown,
+    };
+
+    match code
+    {
+        KeyCode::KeyA => Key::A,
+        KeyCode::KeyB => Key::B,
+        KeyCode::KeyC => Key::C,
+        KeyCode::KeyD => Key::D,
+        KeyCode::KeyE => Key::E,
+        KeyCode::KeyF => Key::F,
+        KeyCode::KeyG => Key::G,
+        KeyCode::KeyH => Key::H,
+        KeyCode::KeyI => Key::I,
+        KeyCode::KeyJ => Key::J,
+        KeyCode::KeyK => Key::K,
+        KeyCode::KeyL => Key::L,
+        KeyCode::KeyM => Key::M,
+        KeyCode::KeyN => Key::N,
+        KeyCode::KeyO => Key::O,
+        KeyCode::KeyP => Key::P,
+        KeyCode::KeyQ => Key::Q,
+        KeyCode::KeyR => Key::R,
+        KeyCode::KeyS => Key::S,
+        KeyCode::KeyT => Key::T,
+        KeyCode::KeyU => Key::U,
+        KeyCode::KeyV => Key::V,
+        KeyCode::KeyW => Key::W,
+        KeyCode::KeyX => Key::X,
+        KeyCode::KeyY => Key::Y,
+        KeyCode::KeyZ => Key::Z,
+
+        KeyCode::Digit0 => Key::Key0,
+        KeyCode::Digit1 => Key::Key1,
+        KeyCode::Digit2 => Key::Key2,
+        KeyCode::Digit3 => Key::Key3,
+        KeyCode::Digit4 => Key::Key4,
+        KeyCode::Digit5 => Key::Key5,
+        KeyCode::Digit6 => Key::Key6,
+        KeyCode::Digit7 => Key::Key7,
+        KeyCode::Digit8 => Key::Key8,
+        KeyCode::Digit9 => Key::Key9,
+
+        KeyCode::Comma => Key::Comma,
+        KeyCode::Period => Key::Period,
+        KeyCode::Backquote => Key::Grave,
+        KeyCode::Minus => Key::Minus,
+        KeyCode::Equal => Key::Equals,
+        KeyCode::BracketLeft => Key::LeftBracket,
+        KeyCode::BracketRight => Key::RightBracket,
+        KeyCode::Backslash => Key::Backslash,
+        KeyCode::Semicolon => Key::Semicolon,
+        KeyCode::Quote => Key::Apostrophe,
+        KeyCode::Slash => Key::Slash,
+
+        KeyCode::Numpad0 => Key::Numpad0,
+        KeyCode::Numpad1 => Key::Numpad1,
+        KeyCode::Numpad2 => Key::Numpad2,
+        KeyCode::Numpad3 => Key::Numpad3,
+        KeyCode::Numpad4 => Key::Numpad4,
+        KeyCode::Numpad5 => Key::Numpad5,
+        KeyCode::Numpad6 => Key::Numpad6,
+        KeyCode::Numpad7 => Key::Numpad7,
+        KeyCode::Numpad8 => Key::Numpad8,
+        KeyCode::Numpad9 => Key::Numpad9,
+        KeyCode::NumpadAdd => Key::NumpadAdd,
+        KeyCode::NumpadDivide => Key::NumpadDivide,
+        KeyCode::NumpadDecimal => Key::NumpadDecimal,
+        KeyCode::NumpadComma => Key::NumpadComma,
+        KeyCode::NumpadEnter => Key::NumpadEnter,
+        KeyCode::NumpadEqual => Key::NumpadEquals,
+        KeyCode::NumpadMultiply => Key::NumpadMultiply,
+        KeyCode::NumpadSubtract => Key::NumpadSubtract,
+
+        _ => Key::Unknown,
+    }
 }
 
 pub fn winit_map_mouse_button(button: &winit::event::MouseButton) -> MouseButton

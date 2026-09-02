@@ -482,6 +482,11 @@ impl Keyboard
         }
     }
 
+    pub fn reset_key(&mut self, key: Key)
+    {
+        self.keys[key as usize].reset(true);
+    }
+
     pub fn is_any_key_holding(&self) -> bool
     {
         for key in &self.keys

@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use image::{DynamicImage, ImageBuffer, Rgba};
-use wgpu::{BindGroupEntry, BindGroupLayoutEntry, Sampler};
+use wgpu::{BindGroupEntry, BindGroupLayoutEntry};
 
-use crate::{render_item_impl_default, state::{helper::render_item::RenderItem, scene::components::material::TextureState}};
+use crate::{render_item_impl_default, state::helper::render_item::RenderItem};
 
 use super::{wgpu::WGpu, helper::buffer::{BufferDimensions, remove_padding}};
 
@@ -13,7 +13,8 @@ pub enum TextureFormat
     Srgba,
     Rgba,
     Gray,
-    Depth
+    Depth,
+    R32Float,
 }
 
 pub struct Texture
@@ -27,7 +28,7 @@ pub struct Texture
     is_depth_texture: bool,
 
     texture: wgpu::Texture,
-    view: wgpu::TextureView,
+    views: Vec<wgpu::TextureView>,
 }
 
 impl RenderItem for Texture
@@ -41,6 +42,7 @@ impl Texture
     pub const SRGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
     pub const RGBA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub const GRAY_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+    pub const R32_FLOAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 
     pub fn new_from_texture(wgpu: &mut WGpu, name: &str, scene_texture: &crate::state::resources::texture::Texture, format: TextureFormat) -> Texture
     {
@@ -153,7 +155,7 @@ impl Texture
             is_depth_texture: false,
 
             texture: texture,
-            view: texture_view,
+            views: vec![texture_view],
             //sampler: sampler
         }
     }
@@ -172,6 +174,7 @@ impl Texture
             TextureFormat::Rgba => wgpu_format = Self::RGBA_FORMAT,
             TextureFormat::Gray => wgpu_format = Self::GRAY_FORMAT,
             TextureFormat::Depth => wgpu_format = Self::DEPTH_FORMAT,
+            TextureFormat::R32Float => wgpu_format = Self::R32_FLOAT,
         }
 
         let texture_size = wgpu::Extent3d
@@ -212,23 +215,22 @@ impl Texture
             is_depth_texture: false,
 
             texture: texture,
-            view: texture_view,
+            views: vec![texture_view],
             //sampler: sampler
         }
     }
 
-    pub fn new_depth_texture(wgpu: &mut WGpu, samples: u32) -> Texture
+    pub fn new_depth_texture(wgpu: &mut WGpu, samples: u32, width: u32, height: u32) -> Texture
     {
         // shadow
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/shader.wgsl
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/examples/shadow/main.rs
-        let config = wgpu.surface_config();
         let device = wgpu.device();
 
         let size = wgpu::Extent3d
         {
-            width: config.width,
-            height: config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor
@@ -250,16 +252,108 @@ impl Texture
         {
             name: "depth texture".to_string(),
 
-            width: config.width,
-            height: config.height,
+            width,
+            height,
 
             format: TextureFormat::Depth,
             is_depth_texture: true,
 
             texture,
-            view
+            views: vec![view]
         }
+    }
 
+    pub fn new_hzb_texture(wgpu: &mut WGpu, width: u32, height: u32) -> Texture
+    {
+        let device = wgpu.device();
+
+        let mip_count = (width.max(height) as f32).log2().floor() as u32 + 1;
+
+        let size = wgpu::Extent3d
+        {
+            width: width,
+            height: height,
+            depth_or_array_layers: 1,
+        };
+
+        let desc = wgpu::TextureDescriptor
+        {
+            label: Some("HZB texture"),
+            size,
+            mip_level_count: mip_count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::R32_FLOAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
+            view_formats: &[Self::R32_FLOAT],
+        };
+        let texture = device.create_texture(&desc);
+
+        let views: Vec<wgpu::TextureView> = (0..mip_count).map(|mip| texture.create_view(&wgpu::TextureViewDescriptor
+        {
+            label: Some("HZB Mip View"),
+            format: Some(wgpu::TextureFormat::R32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            base_mip_level: mip,
+            mip_level_count: Some(1),
+            ..Default::default()
+        })).collect();
+
+        Self
+        {
+            name: "HZB texture".to_string(),
+
+            width: width,
+            height: height,
+
+            format: TextureFormat::R32Float,
+            is_depth_texture: false,
+
+            texture,
+            views
+        }
+    }
+
+    // single channel render target for the ssao passes (raw result and blurred result)
+    pub fn new_ssao_texture(wgpu: &mut WGpu, name: &str, width: u32, height: u32) -> Texture
+    {
+        let device = wgpu.device();
+
+        let size = wgpu::Extent3d
+        {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let desc = wgpu::TextureDescriptor
+        {
+            label: Some(name),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::GRAY_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[Self::GRAY_FORMAT],
+        };
+        let texture = device.create_texture(&desc);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self
+        {
+            name: name.to_string(),
+
+            width,
+            height,
+
+            format: TextureFormat::Gray,
+            is_depth_texture: false,
+
+            texture,
+            views: vec![view]
+        }
     }
 
     pub fn get_wgpu_format(format: &TextureFormat) -> wgpu::TextureFormat
@@ -270,103 +364,8 @@ impl Texture
             TextureFormat::Rgba => Self::RGBA_FORMAT,
             TextureFormat::Gray => Self::GRAY_FORMAT,
             TextureFormat::Depth => Self::DEPTH_FORMAT,
+            TextureFormat::R32Float => Self::R32_FLOAT,
         }
-    }
-
-    pub fn create_default_sampler(wgpu: &mut WGpu) -> Sampler
-    {
-        wgpu.device().create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        })
-    }
-
-    pub fn create_depth_sampler(wgpu: &mut WGpu) -> Sampler
-    {
-        wgpu.device().create_sampler
-        (
-            &wgpu::SamplerDescriptor
-            {
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                compare: Some(wgpu::CompareFunction::LessEqual),
-                ..Default::default()
-            }
-        )
-    }
-
-    pub fn create_sampler(wgpu: &mut WGpu, texture_state: &TextureState) -> Sampler
-    {
-        let address_mode_u;
-        match texture_state.sampler.address_mode_u
-        {
-            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_u = wgpu::AddressMode::ClampToEdge,
-            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_u = wgpu::AddressMode::Repeat,
-            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_u = wgpu::AddressMode::MirrorRepeat,
-            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_u = wgpu::AddressMode::ClampToBorder,
-        }
-
-        let address_mode_v;
-        match texture_state.sampler.address_mode_v
-        {
-            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_v = wgpu::AddressMode::ClampToEdge,
-            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_v = wgpu::AddressMode::Repeat,
-            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_v = wgpu::AddressMode::MirrorRepeat,
-            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_v = wgpu::AddressMode::ClampToBorder,
-        }
-
-        let address_mode_w;
-        match texture_state.sampler.address_mode_w
-        {
-            crate::state::scene::components::material::TextureAddressMode::ClampToEdge => address_mode_w = wgpu::AddressMode::ClampToEdge,
-            crate::state::scene::components::material::TextureAddressMode::Repeat => address_mode_w = wgpu::AddressMode::Repeat,
-            crate::state::scene::components::material::TextureAddressMode::MirrorRepeat => address_mode_w = wgpu::AddressMode::MirrorRepeat,
-            crate::state::scene::components::material::TextureAddressMode::ClampToBorder => address_mode_w = wgpu::AddressMode::ClampToBorder,
-        }
-
-        let mag_filter;
-        match texture_state.sampler.mag_filter
-        {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => mag_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => mag_filter = wgpu::FilterMode::Linear,
-        }
-
-        let min_filter;
-        match texture_state.sampler.min_filter
-        {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => min_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => min_filter = wgpu::FilterMode::Linear,
-        }
-
-        let mipmap_filter;
-        match texture_state.sampler.mipmap_filter
-        {
-            crate::state::scene::components::material::TextureFilterMode::Nearest => mipmap_filter = wgpu::FilterMode::Nearest,
-            crate::state::scene::components::material::TextureFilterMode::Linear => mipmap_filter = wgpu::FilterMode::Linear,
-        }
-
-        let sampler = wgpu.device().create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: address_mode_u,
-            address_mode_v: address_mode_v,
-            address_mode_w: address_mode_w,
-            mag_filter: mag_filter,
-            min_filter: min_filter,
-            mipmap_filter: mipmap_filter,
-            ..Default::default()
-        });
-
-        sampler
     }
 
     pub fn get_texture(&self) -> &wgpu::Texture
@@ -376,7 +375,12 @@ impl Texture
 
     pub fn get_view(&self) -> &wgpu::TextureView
     {
-        &self.view
+        &self.views[0]
+    }
+
+    pub fn get_views(&self) -> &Vec<wgpu::TextureView>
+    {
+        &self.views
     }
 
     pub fn get_bind_group_layout_entries(&self, index_start: u32) -> [BindGroupLayoutEntry; 2]
@@ -436,7 +440,12 @@ impl Texture
         ]
     }
 
-    pub fn to_image(&self, wgpu: &mut WGpu) -> DynamicImage
+    pub fn get_mip_level_count(&self) -> u32
+    {
+        self.texture.mip_level_count()
+    }
+
+    pub fn to_image(&self, wgpu: &mut WGpu, mip_level: Option<u32>) -> DynamicImage
     {
         // https://sotrh.github.io/learn-wgpu/showcase/gifs/#how-do-we-make-the-frames
         // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu/tests/write_texture.rs
@@ -499,7 +508,7 @@ impl Texture
                     wgpu::BindGroupEntry
                     {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&self.view), // <- multisample view
+                        resource: wgpu::BindingResource::TextureView(&self.views[0]), // <- multisample view
                     },
                 ],
             });
@@ -510,8 +519,8 @@ impl Texture
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
             {
                 label: Some("Depth Resolve PipelineLayout"),
-                bind_group_layouts: &[&depth_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&depth_bind_group_layout)],
+                ..Default::default()
             });
 
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
@@ -536,13 +545,13 @@ impl Texture
                 depth_stencil: Some(wgpu::DepthStencilState
                 {
                     format: Self::get_wgpu_format(&self.format),
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -564,6 +573,7 @@ impl Texture
                     }),
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
 
                 render_pass.set_pipeline(&pipeline);
@@ -575,8 +585,16 @@ impl Texture
             src_texture = &resolve_texture;
         }
 
+        let original_width = self.width;
+        let original_height = self.height;
+        let mip_level = mip_level.unwrap_or(0).clamp(0, self.texture.mip_level_count() - 1);
+
+        // Berechnen der Dimensionen für das spezifische Mip-Level
+        let mip_width = (original_width >> mip_level).max(1);
+        let mip_height = (original_height >> mip_level).max(1);
+
         // ********** create texture buffer **********
-        let buffer_dimensions = BufferDimensions::new(self.width as usize, self.height as usize);
+        let buffer_dimensions = BufferDimensions::new(mip_width as usize, mip_height as usize);
 
         let buffer_desc = wgpu::BufferDescriptor
         {
@@ -595,7 +613,7 @@ impl Texture
             wgpu::TexelCopyTextureInfo
             {
                 texture: src_texture,
-                mip_level: 0,
+                mip_level: mip_level,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
@@ -606,13 +624,13 @@ impl Texture
                 {
                     offset: 0,
                     bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),
-                    rows_per_image: Some(self.height),
+                    rows_per_image: Some(mip_height),
                 }
             },
             wgpu::Extent3d
             {
-                width: self.width,
-                height: self.height,
+                width: mip_width,
+                height: mip_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -625,11 +643,11 @@ impl Texture
         wgpu.device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
         // ********** remove padding **********
-        let padded_data = slice.get_mapped_range();
+        let padded_data = slice.get_mapped_range().unwrap();
         let data = remove_padding(&padded_data, &buffer_dimensions);
         drop(padded_data);
         output_buffer.unmap();
 
-        DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(self.width, self.height, data).unwrap())
+        DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(mip_width, mip_height, data).unwrap())
     }
 }

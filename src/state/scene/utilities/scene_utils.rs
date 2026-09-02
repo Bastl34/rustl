@@ -1,205 +1,15 @@
 #![allow(dead_code)]
 
-use std::{path::Path, sync::{Arc, Mutex, RwLock}};
+use std::sync::{Arc, Mutex};
 
-use crate::{component_downcast_mut, console_error, console_success, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{scene::{components::{animation::Animation, component::ComponentItem, material::{Material, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::wavefront, node::{Node, NodeItem}, scene::Scene}, state::State}};
-use crate::state::scene::loader::gltf;
+use nalgebra::{Point3, Vector3};
 
-pub fn load_object(path: &str, scene_id: u64, parent_node_id: Option<u64>, main_queue: ExecutionQueueItem, hide_root_node: bool, reuse_materials: bool, object_only: bool, create_mipmaps: bool, max_texture_resolution: u32) -> anyhow::Result<Vec<u64>>
-{
-    let extension = Path::new(path).extension();
+use crate::helper::math::yaw_pitch_to_direction;
+use crate::state::scene::camera::{Camera, CameraProjectionType};
+use crate::{helper::{concurrency::execution_queue::ExecutionQueueItem, option_or_id::OptionOrId}, state::{scene::{components::component::ComponentItem, node::{Node, NodeItem}, scene::Scene}, state::State}};
 
-    console_success!(path);
-
-    if extension.is_none()
-    {
-        console_error!("can not load {}", path);
-        return Ok(vec![]);
-    }
-    let extension = extension.unwrap();
-
-    if extension == "obj"
-    {
-        return wavefront::load(path, scene_id, parent_node_id, main_queue, hide_root_node, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
-    }
-    else if extension == "gltf" || extension == "glb"
-    {
-        return gltf::load(path, scene_id, parent_node_id, main_queue, hide_root_node, reuse_materials, object_only, create_mipmaps, max_texture_resolution);
-    }
-
-    Ok(vec![])
-}
-
-pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Option<TextureType>, scene_id: Option<u64>, material_id: Option<u64>, mipmapping: bool, max_tex_res: u32)
-{
-    let extension = get_extension(path);
-    let name = get_stem(path);
-
-    let bytes = load_binary(path).unwrap();
-
-    let texture_path = path.to_string();
-
-    let mut main_queue = main_queue.write().unwrap();
-    main_queue.add(Box::new(move |state|
-    {
-        let tex = state.load_texture_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()), max_tex_res);
-        {
-            tex.write().unwrap().get_data_mut().get_mut().mipmapping = mipmapping;
-
-            if tex.read().unwrap().source.is_none()
-            {
-                tex.write().unwrap().source = Some(AssetPathDesciptor::new_from_path(texture_path.clone()));
-            }
-        }
-
-        if let Some(scene_id) = scene_id
-        {
-            if let Some(scene) = state.find_scene_by_id_mut(scene_id)
-            {
-                if texture_type == Some(TextureType::Environment)
-                {
-                    let scene_data = scene.get_data_mut();
-                    let scene_data = scene_data.get_mut();
-                    scene_data.environment_texture = Some(TextureState::new(tex.clone()));
-                }
-            }
-        }
-        else if let Some(material_id) = material_id
-        {
-            if let Some(texture_type) = texture_type
-            {
-                for scene in &mut state.scenes
-                {
-                    if let Some(material) = scene.get_material_by_id(material_id)
-                    {
-                        component_downcast_mut!(material, Material);
-                        material.set_texture(tex.clone(), texture_type);
-                    }
-                }
-            }
-        }
-    }));
-}
-
-pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, sound_component_id: Option<u64>)
-{
-    let extension = get_extension(path);
-    let name = get_stem(path);
-
-    let bytes = load_binary(path).unwrap();
-
-    let mut main_queue = main_queue.write().unwrap();
-    main_queue.add(Box::new(move |state|
-    {
-        let sound_source = state.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
-
-        for scene in &mut state.scenes
-        {
-            // sound component specific file
-            if let Some(sound_component_id) = sound_component_id
-            {
-                if let Some(sound_component) = scene.get_sound_by_id(sound_component_id)
-                {
-                    component_downcast_mut!(sound_component, Sound);
-                    sound_component.set_sound_source(sound_source.clone());
-                }
-            }
-        }
-    }));
-}
-
-pub fn attach_sound_to_node(path: &str, node_name: &str, spund_type: SoundType,  main_queue: ExecutionQueueItem)
-{
-    let path: String = path.to_string();
-    let node_name = node_name.to_string();
-
-    let filename;
-    let extension;
-    {
-        let path = Path::new(&path);
-        filename = String::from(path.file_name().unwrap().to_string_lossy());
-        extension = String::from(path.extension().unwrap().to_string_lossy());
-    }
-
-    spawn_thread(move ||
-    {
-        let path = path.clone();
-        let node_name = node_name.clone();
-        let filename = filename.clone();
-        let extension = extension.clone();
-        let name = get_stem(&path);
-
-        execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
-        {
-            let sound_source_bytes = load_binary(path.as_str());
-            if let Ok(sound_source_bytes) = sound_source_bytes
-            {
-                let sound_source = state.load_sound_source_byte_or_reuse(&sound_source_bytes, name.as_str(), Some(extension.clone()));
-
-                for scene in &mut state.scenes
-                {
-                    let node = scene.find_node_by_name(node_name.as_str());
-
-                    if let Some(node) = node
-                    {
-                        let mut node = node.write().unwrap();
-
-                        let mut sound = Sound::new(filename.as_str(), sound_source.clone(), spund_type, true);
-                        sound.start();
-
-                        node.add_component(Arc::new(RwLock::new(Box::new(sound))));
-                    }
-                }
-            }
-        }));
-    });
-}
-
-pub fn load_and_re_target_animation(path: &str, scene_id: u64, target_id: u64, main_queue: ExecutionQueueItem, in_place_joint: Option<&str>) -> anyhow::Result<bool>
-{
-    let animations = load_object(path, scene_id, None, main_queue.clone(), false, false, true, false, 0);
-
-    if let Err(animations) = animations
-    {
-        return Err(animations);
-    }
-
-    let animation_id = animations.unwrap()[0];
-
-    let in_place_joint = in_place_joint.map(|s| s.to_string());
-
-    execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(move |scene|
-    {
-        let target_root = scene.find_node_by_id(target_id).unwrap();
-        let animation_root = scene.find_node_by_id(animation_id).unwrap();
-
-        let target_animation_node = Node::find_animation_node(target_root.clone());
-        let retarget_animation = animation_root.read().unwrap().find_child_node_by_name("Armature");
-
-        // copy animations
-        let new_animations = clone_all_animations(retarget_animation.clone().unwrap(), target_animation_node.unwrap());
-
-        // in place joint
-        if let Some(in_place_joint) = &in_place_joint
-        {
-            let in_place_joint_node = target_root.read().unwrap().find_child_node_by_name(in_place_joint.as_str());
-
-            if let Some(in_place_joint_node) = &in_place_joint_node
-            {
-                for animation in new_animations
-                {
-                    component_downcast_mut!(animation, Animation);
-                    animation.in_place_joint_node = OptionOrId::Some(in_place_joint_node.clone());
-                }
-            }
-        }
-
-        // delete old animation (not needed)
-        animation_root.write().unwrap().delete_later();
-    }));
-
-    Ok(true)
-}
+const DEFAULT_ALIGN_ALPHA: f32 = std::f32::consts::PI / 6.0; // 30° yaw
+const DEFAULT_ALIGN_BETA: f32 = std::f32::consts::PI / 8.0;  // 22.5° pitch
 
 pub fn clone_all_animations(from: NodeItem, to: NodeItem) -> Vec<ComponentItem>
 {
@@ -235,7 +45,28 @@ pub fn clone_animation(animation_component_from: ComponentItem, animation_compon
     None
 }
 
-pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
+pub fn highlight_and_unhighlight_scene_meshes(scene: &mut Scene, highlight_nodes: &Vec<u32>)
+{
+    let all_nodes = scene.list_all_nodes();
+
+    for node in &all_nodes
+    {
+        let highlight = highlight_nodes.contains(&(node.read().unwrap().id));
+
+        let node = node.write().unwrap();
+
+        for instance in node.instances.get_ref()
+        {
+            let mut instance = instance.write().unwrap();
+            if instance.get_data().highlight != highlight
+            {
+                instance.get_data_mut().get_mut().highlight = highlight;
+            }
+        }
+    }
+}
+
+pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u32, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
 {
     let res;
     {
@@ -251,7 +82,7 @@ pub fn execute_on_scene_mut_and_wait(main_queue: ExecutionQueueItem, scene_id: u
     res.join();
 }
 
-pub fn execute_on_scene_mut(main_queue: ExecutionQueueItem, scene_id: u64, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
+pub fn execute_on_scene_mut(main_queue: ExecutionQueueItem, scene_id: u32, func: Box<dyn Fn(&mut Scene) + Send + Sync>)
 {
     let mut main_queue = main_queue.write().unwrap();
     main_queue.add(Box::new(move |state|
@@ -306,4 +137,188 @@ pub fn execute_on_state_mut_and_wait(main_queue: ExecutionQueueItem, func: Box<d
         }));
     }
     res.join();
+}
+
+/// Set the parent of `node`: if `Some(node)` -> set as parent, if `None` -> make root-level (scene node).
+/// `keep_transform`: the world transformation of the node is kept (the local transformation is re-mapped).
+pub fn set_node_parent(scene: &mut Scene, node: NodeItem, target: Option<NodeItem>, keep_transform: bool)
+{
+    // the new parent can not be the node itself or one of its children
+    if let Some(target) = target.as_ref()
+    {
+        if target.read().unwrap().has_parent_or_is_equal(node.clone())
+        {
+            return;
+        }
+    }
+
+    // world transformation (before re-parenting)
+    let world_transform = node.read().unwrap().get_full_transform();
+
+    if let Some(target) = target
+    {
+        // if currently root-level, remove from scene.nodes
+        if node.read().unwrap().parent.is_none()
+        {
+            let id = node.read().unwrap().id;
+            scene.nodes.retain(|n| n.read().unwrap().id != id);
+        }
+
+        Node::set_parent(node.clone(), target);
+    }
+    else
+    {
+        // already root-level - nothing to do
+        if node.read().unwrap().parent.is_none()
+        {
+            return;
+        }
+
+        // detach from old parent
+        if let Some(old_parent) = node.read().unwrap().parent.as_ref()
+        {
+            let id = node.read().unwrap().id;
+            old_parent.write().unwrap().nodes.retain(|n| n.read().unwrap().id != id);
+        }
+
+        node.write().unwrap().parent = OptionOrId::None;
+        node.write().unwrap().force_instances_update();
+        scene.nodes.push(node.clone());
+    }
+
+    if keep_transform
+    {
+        Node::remap_world_transform(node, world_transform);
+    }
+}
+
+/// Move `source_nodes` to `target`: if `Some(node)` -> set as parent, if `None` -> make root-level.
+pub fn move_nodes_to(exec_queue: ExecutionQueueItem, scene_id: u32, source_ids: Vec<u32>, target: Option<NodeItem>)
+{
+    if source_ids.len() == 0
+    {
+        return;
+    }
+
+    execute_on_scene_mut(exec_queue, scene_id, Box::new(move |scene|
+    {
+        let source_nodes: Vec<NodeItem> = source_ids.iter()
+            .filter_map(|&id| scene.find_node_by_id(id))
+            .collect();
+
+        for source_node in source_nodes
+        {
+            set_node_parent(scene, source_node, target.clone(), false);
+        }
+    }));
+}
+
+pub fn get_scene_world_bounding_info(scene: &Scene, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+{
+    let mut min = Point3::<f32>::new(f32::MAX, f32::MAX, f32::MAX);
+    let mut max = Point3::<f32>::new(f32::MIN, f32::MIN, f32::MIN);
+    let mut found = false;
+
+    for node in &scene.nodes
+    {
+        if let Some(predicate) = &predicate
+        {
+            if !predicate(node.clone())
+            {
+                continue;
+            }
+        }
+
+        let bounds = node.read().unwrap().get_world_bounding_info(None, true, predicate.clone());
+
+        if let Some((node_min, node_max)) = bounds
+        {
+            min.x = min.x.min(node_min.x);
+            min.y = min.y.min(node_min.y);
+            min.z = min.z.min(node_min.z);
+
+            max.x = max.x.max(node_max.x);
+            max.y = max.y.max(node_max.y);
+            max.z = max.z.max(node_max.z);
+
+            found = true;
+        }
+    }
+
+    if found { Some((min, max)) } else { None }
+}
+
+
+pub fn align_camera_to_bounds(cam: &mut Camera, min: Point3<f32>, max: Point3<f32>, alpha: Option<f32>, beta: Option<f32>) -> bool
+{
+    // look at the center of the bounding box; the bounding sphere radius drives the distance
+    let center = Point3::<f32>::from((min.coords + max.coords) * 0.5);
+    let radius = (max - min).norm() * 0.5;
+
+    if radius <= 0.0
+    {
+        return false;
+    }
+
+    let alpha = alpha.unwrap_or(DEFAULT_ALIGN_ALPHA);
+    let beta = beta.unwrap_or(DEFAULT_ALIGN_BETA);
+
+    // direction from the center towards the camera (alpha = yaw, beta = pitch)
+    let dir = yaw_pitch_to_direction(alpha, beta).normalize();
+
+    let cam_data = cam.get_data_mut().get_mut();
+
+    // viewport aspect ratio (matches what init_matrices uses to build the projection)
+    let viewport = cam_data.get_viewport();
+    let aspect = (viewport.width * cam_data.resolution_width as f32).max(1.0)
+               / (viewport.height * cam_data.resolution_height as f32).max(1.0);
+
+    let distance;
+
+    if cam_data.projection_type == CameraProjectionType::Perspective
+    {
+        // back off far enough that the bounding sphere fits — the narrower of the two half-fovs binds
+        let half_fovy = cam_data.fovy * 0.5;
+        let half_fovx = (half_fovy.tan() * aspect).atan();
+        let half_fov = half_fovy.min(half_fovx);
+
+        distance = radius / (half_fov.sin());
+    }
+    else
+    {
+        // ortho: fit the sphere into the (aspect-corrected) extent
+        let half = radius / (1.0_f32).max(1.0 / aspect);
+        cam_data.top = half;
+        cam_data.bottom = -half;
+        cam_data.left = -half * aspect;
+        cam_data.right = half * aspect;
+
+        distance = radius * 2.0;
+    }
+
+    cam_data.eye_pos = center + dir * distance;
+    cam_data.dir = -dir;
+    cam_data.up = Vector3::<f32>::new(0.0, 1.0, 0.0);
+    cam_data.clipping_far = cam_data.clipping_far.max(distance + radius * 2.0);
+
+    cam.init_matrices();
+
+    true
+}
+
+pub fn align_camera_to_scene(scene: &mut Scene, cam_index: usize, alpha: Option<f32>, beta: Option<f32>, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> bool
+{
+    let Some((min, max)) = get_scene_world_bounding_info(scene, predicate) else
+    {
+        crate::console_warning!("align_camera_to_scene: no bounding info found (empty scene / nothing with a mesh?)");
+        return false;
+    };
+
+    let Some(cam) = scene.cameras.get_mut(cam_index) else
+    {
+        crate::console_warning!("align_camera_to_scene: camera index {} not found", cam_index);
+        return false;
+    };
+
+    align_camera_to_bounds(cam, min, max, alpha, beta)
 }

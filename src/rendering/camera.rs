@@ -12,6 +12,9 @@ pub struct CameraUniform
     pub view_position: [f32; 4],
     pub view: [[f32; 4]; 4],
     pub view_proj: [[f32; 4]; 4],
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+    pub _padding: u64,
 }
 
 impl CameraUniform
@@ -22,15 +25,20 @@ impl CameraUniform
         {
             view_position: [0.0; 4],
             view: nalgebra::Matrix4::<f32>::identity().into(),
-            view_proj: nalgebra::Matrix4::<f32>::identity().into()
+            view_proj: nalgebra::Matrix4::<f32>::identity().into(),
+            viewport_width: 0,
+            viewport_height: 0,
+            _padding: 0,
         }
     }
 
-    pub fn update_view_proj(&mut self, pos:Point3::<f32>, projection: Matrix4<f32>, view: Matrix4<f32>)
+    pub fn update_view_proj(&mut self, pos:Point3::<f32>, projection: Matrix4<f32>, view: Matrix4<f32>, viewport_width: u32, viewport_height: u32)
     {
         self.view_position = pos.to_homogeneous().into();
         self.view = view.into();
         self.view_proj = (projection * view).into();
+        self.viewport_width = viewport_width;
+        self.viewport_height = viewport_height;
     }
 }
 
@@ -43,11 +51,16 @@ pub struct CameraBuffer
 impl RenderItem for CameraBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl CameraBuffer
 {
-    pub fn new(wgpu: &mut WGpu, cam: &Camera) -> CameraBuffer
+    pub fn new(wgpu: &mut WGpu, cam: &Camera, reverse_z: bool) -> CameraBuffer
     {
         let empty_buffer = wgpu.device().create_buffer(&wgpu::BufferDescriptor
         {
@@ -63,17 +76,20 @@ impl CameraBuffer
             buffer: empty_buffer,
         };
 
-        buffer.to_buffer(wgpu, cam);
+        buffer.to_buffer(wgpu, cam, reverse_z);
 
         buffer
     }
 
-    pub fn to_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
+    pub fn to_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera, reverse_z: bool)
     {
+        let viewport_width = cam.get_viewport_width_in_px();
+        let viewport_height = cam.get_viewport_height_in_px();
+
         let data = cam.get_data();
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(reverse_z), data.view, viewport_width, viewport_height);
 
         self.buffer = wgpu.device().create_buffer_init
         (
@@ -86,12 +102,15 @@ impl CameraBuffer
         );
     }
 
-    pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera)
+    pub fn update_buffer(&mut self, wgpu: &mut WGpu, cam: &Camera, reverse_z: bool)
     {
+        let viewport_width = cam.get_viewport_width_in_px();
+        let viewport_height = cam.get_viewport_height_in_px();
+
         let data = cam.get_data();
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(), data.view);
+        camera_uniform.update_view_proj(data.eye_pos, cam.webgpu_projection(reverse_z), data.view, viewport_width, viewport_height);
 
         wgpu.queue_mut().write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
     }

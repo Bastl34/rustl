@@ -13,6 +13,7 @@ use crate::{component_impl_default, component_impl_no_cleanup_node, component_im
 use crate::state::scene::node::NodeItem;
 use crate::{state::resources::texture::TextureItem, helper};
 use crate::state::scene::exporter::serialization_helper;
+use crate::gui::helper::info_box::info_box;
 
 use super::component::{Component, ComponentItem, ComponentBase};
 
@@ -41,6 +42,63 @@ pub enum TextureType
     Custom1,
     Custom2,
     Custom3
+}
+
+impl TextureType
+{
+    // color textures are sampled as sRGB, data textures (normal, roughness, ao, ...) must be sampled linearly
+    pub fn is_srgb(&self) -> bool
+    {
+        match self
+        {
+            TextureType::Base
+            | TextureType::AmbientEmissive
+            | TextureType::Specular
+            | TextureType::Environment
+            | TextureType::Custom0
+            | TextureType::Custom1
+            | TextureType::Custom2
+            | TextureType::Custom3 => true,
+
+            TextureType::Normal
+            | TextureType::Roughness
+            | TextureType::AmbientOcclusion
+            | TextureType::Reflectivity
+            | TextureType::Shininess
+            | TextureType::Alpha => false,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum TextureMappingMode
+{
+    #[default]
+    Uv,
+    Triplanar,
+    Cube,
+    Planar,
+    Cylindrical,
+    Spherical
+}
+
+// projection space for all non-uv mapping modes
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum MappingSpace
+{
+    #[default]
+    Object,
+    World
+}
+
+// projection axis for planar, cylindrical and spherical mapping
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize, Default)]
+pub enum MappingAxis
+{
+    X,
+    #[default]
+    Y,
+    Z
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Display, EnumIter, Serialize, Deserialize)]
@@ -164,6 +222,10 @@ impl TextureState
     }
 }
 
+// serde defaults so material files saved before texture mapping modes were added still load
+fn default_mapping_scale() -> f32 { 1.0 }
+fn default_mapping_sharpness() -> f32 { 4.0 }
+
 #[derive(Serialize, Deserialize)]
 pub struct MaterialData
 {
@@ -174,26 +236,26 @@ pub struct MaterialData
     pub highlight_color: Vector3<f32>,
     pub locked_color: Vector3<f32>,
 
-    pub texture_ambient: Option<TextureState>,
-    pub texture_base: Option<TextureState>,
-    pub texture_specular: Option<TextureState>,
-    pub texture_normal: Option<TextureState>,
-    pub texture_alpha: Option<TextureState>,
-    pub texture_roughness: Option<TextureState>,
-    pub texture_ambient_occlusion: Option<TextureState>,
-    pub texture_reflectivity: Option<TextureState>,
-    pub texture_shininess: Option<TextureState>,
-    pub texture_environment: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_ambient: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_base: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_specular: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_normal: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_alpha: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_roughness: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_ambient_occlusion: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_reflectivity: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_shininess: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_environment: Option<TextureState>,
 
-    pub texture_custom0: Option<TextureState>,
-    pub texture_custom1: Option<TextureState>,
-    pub texture_custom2: Option<TextureState>,
-    pub texture_custom3: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom0: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom1: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom2: Option<TextureState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub texture_custom3: Option<TextureState>,
 
     pub blend_mode: BlendMode,
 
     pub alpha: f32,
-    pub alpha_cutoff: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub alpha_cutoff: Option<f32>,
     pub shininess: f32,
     pub reflectivity: f32,
     pub refraction_index: f32,
@@ -211,7 +273,18 @@ pub struct MaterialData
     pub smooth_shading: bool,
 
     pub reflection_only: bool,
-    pub backface_culling: bool
+    pub backface_culling: bool,
+
+    #[serde(default)] pub mapping_mode: TextureMappingMode,
+    #[serde(default)] pub mapping_space: MappingSpace,
+    #[serde(default)] pub mapping_axis: MappingAxis,
+    #[serde(default = "default_mapping_scale")] pub mapping_scale: f32,
+    #[serde(default = "default_mapping_sharpness")] pub mapping_sharpness: f32,
+
+    pub allow_xray: bool, // when false, this material is excluded from x-ray mode (gizmos, grid, etc.)
+
+    #[serde(default)]
+    pub no_fog: bool, // when true, this material is excluded from the distance fog (sky spheres, editor helpers, etc.)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,6 +345,15 @@ impl Material
 
             reflection_only: false,
             backface_culling: true,
+
+            mapping_mode: TextureMappingMode::Uv,
+            mapping_space: MappingSpace::Object,
+            mapping_axis: MappingAxis::Y,
+            mapping_scale: 1.0,
+            mapping_sharpness: 4.0,
+
+            allow_xray: true,
+            no_fog: false,
         };
 
         Material
@@ -354,6 +436,12 @@ impl Material
 
         if default_material_data.reflection_only != new_mat_data.reflection_only { data.reflection_only = new_mat_data.reflection_only; }
         if default_material_data.backface_culling != new_mat_data.backface_culling { data.backface_culling = new_mat_data.backface_culling; }
+
+        if default_material_data.mapping_mode != new_mat_data.mapping_mode { data.mapping_mode = new_mat_data.mapping_mode; }
+        if default_material_data.mapping_space != new_mat_data.mapping_space { data.mapping_space = new_mat_data.mapping_space; }
+        if default_material_data.mapping_axis != new_mat_data.mapping_axis { data.mapping_axis = new_mat_data.mapping_axis; }
+        if !helper::math::approx_equal(default_material_data.mapping_scale, new_mat_data.mapping_scale) { data.mapping_scale = new_mat_data.mapping_scale; }
+        if !helper::math::approx_equal(default_material_data.mapping_sharpness, new_mat_data.mapping_sharpness) { data.mapping_sharpness = new_mat_data.mapping_sharpness; }
     }
 
     pub fn apply_diff(&mut self, new_mat: &Material)
@@ -446,6 +534,12 @@ impl Material
 
         console_log!("reflection_only: {:?}", data.reflection_only);
         console_log!("backface_culling: {:?}", data.backface_culling);
+
+        console_log!("mapping_mode: {:?}", data.mapping_mode);
+        console_log!("mapping_space: {:?}", data.mapping_space);
+        console_log!("mapping_axis: {:?}", data.mapping_axis);
+        console_log!("mapping_scale: {:?}", data.mapping_scale);
+        console_log!("mapping_sharpness: {:?}", data.mapping_sharpness);
     }
 
     pub fn remove_texture(&mut self, tex_type: TextureType)
@@ -482,6 +576,16 @@ impl Material
 
     pub fn set_texture(&mut self, tex: TextureItem, tex_type: TextureType)
     {
+        // mark the texture as linear (data) or sRGB (color) depending on the slot it is assigned to
+        {
+            let linear = !tex_type.is_srgb();
+            let mut texture = tex.write().unwrap();
+            if texture.get_data().linear != linear
+            {
+                texture.get_data_mut().get_mut().linear = linear;
+            }
+        }
+
         let data = self.data.get_mut();
 
         match tex_type
@@ -528,7 +632,7 @@ impl Material
         self.get_texture_by_type_mut(tex_type).unwrap().enabled = state;
     }
 
-    pub fn has_texture_id(&self, texture_id: u64) -> bool
+    pub fn has_texture_id(&self, texture_id: u32) -> bool
     {
         for texture_type in ALL_TEXTURE_TYPES
         {
@@ -559,6 +663,18 @@ impl Material
 
     pub fn has_transparency(&self) -> bool
     {
+        if self.has_alpha_texture_transparency()
+        {
+            return true;
+        }
+
+        !approx_equal(self.get_data().alpha, 1.0)
+    }
+
+    // transparency driven by a texture (alpha texture or base texture alpha channel)
+    // these materials cast cutout shadows - uniform alpha only materials cast none
+    pub fn has_alpha_texture_transparency(&self) -> bool
+    {
         let data = self.get_data();
 
         // alpha texture
@@ -574,11 +690,6 @@ impl Material
             {
                 return true;
             }
-        }
-
-        if !approx_equal(data.alpha, 1.0)
-        {
-            return true;
         }
 
         false
@@ -671,7 +782,7 @@ impl Material
         tex.is_some() && tex.unwrap().enabled
     }
 
-    pub fn remove_texture_by_id(&mut self, id: u64) -> bool
+    pub fn remove_texture_by_id(&mut self, id: u32) -> bool
     {
         let mut removed = false;
         for texture_type in ALL_TEXTURE_TYPES
@@ -970,6 +1081,16 @@ impl Component for Material
                     let texture_found = context.textures.iter().find(|tex| tex.read().unwrap().uuid == texture.item.id().unwrap());
                     if let Some(tex) = texture_found
                     {
+                        // ensure the correct color space for the slot (also fixes textures from saves made before the linear flag existed)
+                        let linear = !texture_type.is_srgb();
+                        {
+                            let mut t = tex.write().unwrap();
+                            if t.get_data().linear != linear
+                            {
+                                t.get_data_mut().get_mut().linear = linear;
+                            }
+                        }
+
                         texture.item = OptionOrId::Some(tex.clone());
                     }
                     else
@@ -1013,6 +1134,7 @@ impl Component for Material
         let mut unlit_shading;
         let mut cast_shadow;
         let mut receive_shadow;
+        let mut no_fog;
 
         let mut shadow_softness;
         let mut roughness;
@@ -1025,6 +1147,12 @@ impl Component for Material
         let mut specular_color;
         let mut highlight_color;
         let mut locked_color;
+
+        let mut mapping_mode;
+        let mut mapping_space;
+        let mut mapping_axis;
+        let mut mapping_scale;
+        let mut mapping_sharpness;
 
         {
             let data = self.data.get_ref();
@@ -1042,6 +1170,7 @@ impl Component for Material
             unlit_shading = data.unlit_shading;
             cast_shadow = data.cast_shadow;
             receive_shadow = data.receive_shadow;
+            no_fog = data.no_fog;
 
             shadow_softness = data.shadow_softness;
             roughness = data.roughness;
@@ -1073,6 +1202,12 @@ impl Component for Material
             let g = (data.locked_color.y * 255.0) as u8;
             let b = (data.locked_color.z * 255.0) as u8;
             locked_color = egui::Color32::from_rgb(r, g, b);
+
+            mapping_mode = data.mapping_mode;
+            mapping_space = data.mapping_space;
+            mapping_axis = data.mapping_axis;
+            mapping_scale = data.mapping_scale;
+            mapping_sharpness = data.mapping_sharpness;
         }
 
         let mut apply_settings = false;
@@ -1102,6 +1237,7 @@ impl Component for Material
         apply_settings = ui.checkbox(&mut unlit_shading, "unlit shading (just base color and base texture)").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut cast_shadow, "cast shadow").changed() || apply_settings;
         apply_settings = ui.checkbox(&mut receive_shadow, "receive shadow").changed() || apply_settings;
+        apply_settings = ui.checkbox(&mut no_fog, "no fog (excluded from distance fog)").changed() || apply_settings;
 
         apply_settings = ui.add(egui::Slider::new(&mut shadow_softness, 0.0..=100.0).text("shadow softness")).changed() || apply_settings;
         apply_settings = ui.add(egui::Slider::new(&mut roughness, 0.0..=5.0).text("roughness")).changed() || apply_settings;
@@ -1139,6 +1275,64 @@ impl Component for Material
             apply_settings = ui.color_edit_button_srgba(&mut locked_color).changed() || apply_settings;
         });
 
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Mapping Mode:");
+
+            let mapping_mode_name = match mapping_mode
+            {
+                TextureMappingMode::Uv => "UV",
+                TextureMappingMode::Triplanar => "Triplanar",
+                TextureMappingMode::Cube => "Cube",
+                TextureMappingMode::Planar => "Planar",
+                TextureMappingMode::Cylindrical => "Cylindrical",
+                TextureMappingMode::Spherical => "Spherical",
+            };
+
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("mapping_mode")).selected_text(mapping_mode_name).show_ui(ui, |ui|
+            {
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Uv, "UV").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Triplanar, "Triplanar").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Cube, "Cube").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Planar, "Planar").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Cylindrical, "Cylindrical").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_mode, TextureMappingMode::Spherical, "Spherical").changed() || apply_settings;
+            });
+        });
+
+        if mapping_mode != TextureMappingMode::Uv
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Mapping Space:");
+                apply_settings = ui.selectable_value(& mut mapping_space, MappingSpace::Object, "Object").changed() || apply_settings;
+                apply_settings = ui.selectable_value(& mut mapping_space, MappingSpace::World, "World").changed() || apply_settings;
+            });
+
+            // triplanar and cube project along all three axes - no axis needed
+            if mapping_mode == TextureMappingMode::Planar || mapping_mode == TextureMappingMode::Cylindrical || mapping_mode == TextureMappingMode::Spherical
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("Mapping Axis:");
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::X, "X").changed() || apply_settings;
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::Y, "Y").changed() || apply_settings;
+                    apply_settings = ui.selectable_value(& mut mapping_axis, MappingAxis::Z, "Z").changed() || apply_settings;
+                });
+            }
+
+            apply_settings = ui.add(egui::Slider::new(&mut mapping_scale, 0.01..=100.0).logarithmic(true).text("Mapping Scale")).changed() || apply_settings;
+
+            if mapping_mode == TextureMappingMode::Triplanar
+            {
+                apply_settings = ui.add(egui::Slider::new(&mut mapping_sharpness, 1.0..=32.0).text("Triplanar Sharpness")).changed() || apply_settings;
+            }
+
+            info_box(ui, "Projected texture mapping is active: the Address Mode is automatically forced to 'Repeat' for all textures of this material.");
+        }
+
         if apply_settings
         {
             let data = self.get_data_mut().get_mut();
@@ -1164,6 +1358,7 @@ impl Component for Material
             data.unlit_shading = unlit_shading;
             data.cast_shadow = cast_shadow;
             data.receive_shadow = receive_shadow;
+            data.no_fog = no_fog;
 
             data.shadow_softness = shadow_softness;
             data.roughness = roughness;
@@ -1190,6 +1385,12 @@ impl Component for Material
             let g = ((highlight_color.g() as f32) / 255.0).clamp(0.0, 1.0);
             let b = ((highlight_color.b() as f32) / 255.0).clamp(0.0, 1.0);
             data.highlight_color = Vector3::<f32>::new(r, g, b);
+
+            data.mapping_mode = mapping_mode;
+            data.mapping_space = mapping_space;
+            data.mapping_axis = mapping_axis;
+            data.mapping_scale = mapping_scale;
+            data.mapping_sharpness = mapping_sharpness;
         }
     }
 }

@@ -6,9 +6,9 @@ use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, 
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::utilities::tags::Tags, state::InputOutput}};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{camera_controller::pan_controller::PanController, utilities::tags::Tags}, state::InputOutput}};
 
-use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, manager::id_manager, node::NodeItem};
+use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, layers::LAYER_MASK_ALL, manager::id_manager, node::NodeItem};
 
 use crate::state::scene::exporter::serialization_helper;
 
@@ -25,7 +25,9 @@ const DEFAULT_RIGHT_EAR_POS: Point3<f32> = Point3::<f32>::new(1.0, 0.0, 0.0);
 pub const DEFAULT_FOVY: f32 = 90.0f32;
 
 const DEFAULT_CLIPPING_NEAR: f32 = 0.1;
-const DEFAULT_CLIPPING_FAR: f32 = 1000.0;
+pub const DEFAULT_CLIPPING_FAR: f32 = 1000.0;
+
+const FRUSTUM_CULLING_EPSILON: f32 = 0.0001;
 
 /*
 pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
@@ -46,6 +48,14 @@ pub const OPENGL_TO_WGPU_MATRIX: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
     0.0, 0.0, 0.0, 1.0,
 );
 
+pub const OPENGL_TO_WGPU_MATRIX_REVERSE_Z: nalgebra::Matrix4<f32> = nalgebra::Matrix4::new
+(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, -0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+);
+
 pub type CameraItem = Box<Camera>;
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
@@ -55,13 +65,74 @@ pub enum CameraProjectionType
     Orthogonal
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct FrustumPlanes
+{
+    pub left: Vector4<f32>,
+    pub right: Vector4<f32>,
+    pub bottom: Vector4<f32>,
+    pub top: Vector4<f32>,
+    pub near: Vector4<f32>,
+    pub far: Vector4<f32>,
+}
+
+impl Default for FrustumPlanes
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            left: Vector4::zeros(),
+            right: Vector4::zeros(),
+            bottom: Vector4::zeros(),
+            top: Vector4::zeros(),
+            near: Vector4::zeros(),
+            far: Vector4::zeros(),
+        }
+    }
+}
+
+impl FrustumPlanes
+{
+    pub fn is_sphere_visible(&self, center: &Point3<f32>, radius: f32) -> bool
+    {
+        let planes =
+        [
+            &self.left,
+            &self.right,
+            &self.bottom,
+            &self.top,
+            &self.near,
+            &self.far
+        ];
+
+        for plane in &planes
+        {
+            let distance = plane.x * center.x + plane.y * center.y + plane.z * center.z + plane.w;
+
+            if distance + FRUSTUM_CULLING_EPSILON < -radius
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Viewport
+{
+    pub x: f32,      // 0.0-1.0
+    pub y: f32,      // 0.0-1.0
+    pub width: f32,  // 0.0-1.0
+    pub height: f32, // 0.0-1.0
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct CameraData
 {
-    pub viewport_x: f32,    // 0.0-1.0
-    pub viewport_y: f32, // 0.0-1.0
-    pub viewport_width: f32, // 0.0-1.0
-    pub viewport_height: f32, // 0.0-1.0
+    viewport: Viewport,
 
     pub resolution_aspect_ratio: f32,
 
@@ -89,11 +160,47 @@ pub struct CameraData
 
     pub projection_type: CameraProjectionType,
 
+    pub culling_mask: u32, // bitmask, matched against node layer_mask
+
+    #[serde(skip)]
     pub projection: Matrix4<f32>,
+    #[serde(skip)]
     pub projection_inverse: Matrix4<f32>,
 
+    #[serde(skip)]
     pub view: Matrix4<f32>,
+    #[serde(skip)]
     pub view_inverse: Matrix4<f32>,
+
+    #[serde(skip)]
+    pub frustum_planes: FrustumPlanes,
+}
+
+impl CameraData
+{
+    pub fn get_viewport(&self) -> Viewport
+    {
+        self.viewport.clone()
+    }
+
+    // camera viewport in surface pixels (top-left origin): [x, y, width, height]
+    // rounded to whole pixels via the viewport edges so that rasterization (set_viewport),
+    // the ssao pixel clamp and adjacent camera viewports agree on pixel ownership
+    // (fractional viewport splits would otherwise bleed one pixel row/column between cameras)
+    pub fn viewport_px(&self) -> [f32; 4]
+    {
+        let res_width = self.resolution_width as f32;
+        let res_height = self.resolution_height as f32;
+
+        let x0 = (self.viewport.x * res_width).round();
+        let x1 = ((self.viewport.x + self.viewport.width) * res_width).round();
+
+        // set_viewport uses top-left origin (the viewport values use bottom-left origin)
+        let y0 = ((1.0 - self.viewport.y - self.viewport.height) * res_height).round();
+        let y1 = ((1.0 - self.viewport.y) * res_height).round();
+
+        [x0, y0, x1 - x0, y1 - y0]
+    }
 }
 
 
@@ -122,7 +229,7 @@ where
 #[derive(Serialize, Deserialize)]
 pub struct Camera
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub name: String,
@@ -143,6 +250,33 @@ pub struct Camera
 
     #[serde(skip, default)]
     pub bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub hzb_texture_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub hzb_downsample_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub visibility_buffer_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub hzb_occlusion_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub depth_export_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub ssao_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub debug_volumes_bind_group_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub indirect_args_render_item: RenderItemOption,
+
+    #[serde(skip, default)]
+    pub visible_nodes_last_frame: Vec<u32>,
 }
 
 impl Default for Camera
@@ -167,11 +301,14 @@ impl Camera
 
             data: ChangeTracker::new(CameraData
             {
-                viewport_x: 0.0,
-                viewport_y: 0.0,
-                viewport_width: 1.0,
-                viewport_height: 1.0,
 
+                viewport: Viewport
+                {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 1.0,
+                },
                 resolution_aspect_ratio: 1.0,
 
                 resolution_width: 0,
@@ -198,11 +335,15 @@ impl Camera
 
                 projection_type: CameraProjectionType::Perspective,
 
+                culling_mask: LAYER_MASK_ALL,
+
                 projection: Perspective3::<f32>::new(1.0f32, 0.0f32, DEFAULT_CLIPPING_NEAR, DEFAULT_CLIPPING_FAR).to_homogeneous(),
                 projection_inverse: Matrix4::<f32>::identity(),
 
                 view: Matrix4::<f32>::identity(),
                 view_inverse: Matrix4::<f32>::identity(),
+
+                frustum_planes: FrustumPlanes::default(),
             }),
 
             tags: Tags::new(),
@@ -211,7 +352,17 @@ impl Camera
             node: OptionOrId::None,
 
             render_item: None,
-            bind_group_render_item: None
+            bind_group_render_item: None,
+            hzb_texture_render_item: None,
+            hzb_downsample_bind_group_render_item: None,
+            visibility_buffer_render_item: None,
+            hzb_occlusion_bind_group_render_item: None,
+            depth_export_bind_group_render_item: None,
+            ssao_bind_group_render_item: None,
+            debug_volumes_bind_group_render_item: None,
+            indirect_args_render_item: None,
+
+            visible_nodes_last_frame: Vec::new(),
         }
     }
 
@@ -259,10 +410,10 @@ impl Camera
     {
         let data = self.data.get_mut();
 
-        data.viewport_x = viewport_x;
-        data.viewport_y = viewport_y;
-        data.viewport_width = viewport_width;
-        data.viewport_height = viewport_height;
+        data.viewport.x = viewport_x;
+        data.viewport.y = viewport_y;
+        data.viewport.width = viewport_width;
+        data.viewport.height = viewport_height;
 
         data.resolution_width = resolution_width;
         data.resolution_height = resolution_height;
@@ -274,6 +425,11 @@ impl Camera
 
     pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
     {
+        if !self.enabled
+        {
+            return false;
+        }
+
         let mut changed = false;
         let mut controller: Option<CameraControllerBox> = None;
         swap(&mut self.controller, &mut controller);
@@ -311,31 +467,113 @@ impl Camera
         data.resolution_aspect_ratio = resolution_width as f32 / resolution_height as f32;
     }
 
+    pub fn update_viewport(&mut self, viewport_x: f32, viewport_y: f32, viewport_width: f32, viewport_height: f32)
+    {
+        let data = self.data.get_mut();
+
+        data.viewport.x = viewport_x;
+        data.viewport.y = viewport_y;
+        data.viewport.width = viewport_width;
+        data.viewport.height = viewport_height;
+    }
+
     pub fn init_matrices(&mut self)
     {
         let data = self.data.get_mut();
 
+        let viewport_w_px = (data.viewport.width  * data.resolution_width  as f32).max(1.0);
+        let viewport_h_px = (data.viewport.height * data.resolution_height as f32).max(1.0);
+        let viewport_aspect = viewport_w_px / viewport_h_px;
+
         if data.projection_type == CameraProjectionType::Perspective
         {
-            data.projection = Perspective3::new(data.resolution_aspect_ratio, data.fovy, data.clipping_near, data.clipping_far).to_homogeneous();
+            data.projection = Perspective3::new(viewport_aspect, data.fovy, data.clipping_near, data.clipping_far).to_homogeneous();
         }
         else
         {
-            data.projection = Orthographic3::new(data.left, data.right, data.bottom, data.top, data.clipping_near, data.clipping_far).to_homogeneous();
+            // keep vertical extent (top/bottom) as authored, scale horizontal to viewport aspect
+            let half_h = (data.top - data.bottom) * 0.5;
+            let center_y = (data.top + data.bottom) * 0.5;
+            let half_w = half_h * viewport_aspect;
+            let center_x = (data.left + data.right) * 0.5;
+
+            let left   = center_x - half_w;
+            let right  = center_x + half_w;
+            let bottom = center_y - half_h;
+            let top    = center_y + half_h;
+
+            data.projection = Orthographic3::new(left, right, bottom, top, data.clipping_near, data.clipping_far).to_homogeneous();
         }
 
-        //let target = Point3::<f32>::new(self.dir.x, self.dir.y, self.dir.z);
         let target = data.eye_pos + data.dir;
 
         data.view = Isometry3::look_at_rh(&data.eye_pos, &target, &data.up).to_homogeneous();
 
         data.projection_inverse = data.projection.try_inverse().unwrap();
         data.view_inverse = data.view.try_inverse().unwrap();
+
+        self.update_frustum_planes();
     }
 
-    pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32)
+    fn update_frustum_planes(&mut self)
     {
-        self.controller = Some(Box::new(FlyController::new(collision, mouse_sensitivity, move_speed, move_speed_shift)));
+        let data = self.data.get_mut();
+        let view_projection = data.projection * data.view;
+
+        // Each plane is represented as a Vector4 (a, b, c, d) where ax + by + cz + d = 0
+
+        // Left plane: row4 + row1
+        let left = (view_projection.row(3) + view_projection.row(0)).transpose();
+
+        // Right plane: row4 - row1
+        let right = (view_projection.row(3) - view_projection.row(0)).transpose();
+
+        // Bottom plane: row4 + row2
+        let bottom = (view_projection.row(3) + view_projection.row(1)).transpose();
+
+        // Top plane: row4 - row2
+        let top = (view_projection.row(3) - view_projection.row(1)).transpose();
+
+        // Near plane: row4 + row3
+        let near = (view_projection.row(3) + view_projection.row(2)).transpose();
+
+        // Far plane: row4 - row3
+        let far = (view_projection.row(3) - view_projection.row(2)).transpose();
+
+        let normalize_plane = |plane: Vector4<f32>| -> Vector4<f32>
+        {
+            let normal = Vector3::new(plane.x, plane.y, plane.z);
+            let length = normal.norm();
+
+            if length > 1e-6
+            {
+                plane / length
+            }
+            else
+            {
+                plane
+            }
+        };
+
+        data.frustum_planes = FrustumPlanes
+        {
+            left: normalize_plane(left),
+            right: normalize_plane(right),
+            bottom: normalize_plane(bottom),
+            top: normalize_plane(top),
+            near: normalize_plane(near),
+            far: normalize_plane(far),
+        };
+    }
+
+    pub fn add_controller_fly(&mut self, collision: bool, mouse_sensitivity: Vector2::<f32>, move_speed: f32, move_speed_shift: f32, viewport_only: bool)
+    {
+        self.controller = Some(Box::new(FlyController::new(collision, mouse_sensitivity, move_speed, move_speed_shift, viewport_only)));
+    }
+
+    pub fn add_controller_pan(&mut self, mouse_wheel_sensitivity: f32, move_speed: f32, move_speed_shift: f32, viewport_only: bool)
+    {
+        self.controller = Some(Box::new(PanController::new(mouse_wheel_sensitivity, move_speed, move_speed_shift, viewport_only)));
     }
 
     pub fn add_controller_target_rotation(&mut self, radius: f32, mouse_sensitivity: Vector2::<f32>, mouse_wheel_sensitivity: f32)
@@ -393,11 +631,20 @@ impl Camera
         self.init_matrices();
     }
 
-    pub fn webgpu_projection(&self) -> nalgebra::Matrix4<f32>
+    // the internal projection stays in opengl convention (frustum extraction, picking, ...) -
+    // only the matrix handed to the gpu bakes the wgpu depth range (reverse or forward)
+    pub fn webgpu_projection(&self, reverse_z: bool) -> nalgebra::Matrix4<f32>
     {
         let data = self.data.get_ref();
 
-        OPENGL_TO_WGPU_MATRIX * data.projection
+        if reverse_z
+        {
+            OPENGL_TO_WGPU_MATRIX_REVERSE_Z * data.projection
+        }
+        else
+        {
+            OPENGL_TO_WGPU_MATRIX * data.projection
+        }
     }
 
     pub fn is_point_in_frustum(&self, point: &Point3<f32>) -> bool
@@ -411,15 +658,25 @@ impl Camera
         point_clip.x.abs() <= point_clip.w && point_clip.y.abs() <= point_clip.w && point_clip.z.abs() <= point_clip.w
     }
 
+    pub fn is_sphere_in_frustum(&self, center: &Point3<f32>, radius: f32) -> bool
+    {
+        let data = self.data.get_ref();
+        let result = data.frustum_planes.is_sphere_visible(center, radius);
+        result
+    }
+
     pub fn is_point_in_viewport(&self, point: &Point2<f32>) -> bool
     {
-        let data = self.get_data();
+        Self::is_point_in_viewport_data(self.get_data(), point)
+    }
 
-        let x0 = data.viewport_x * data.resolution_width as f32;
-        let y0 = data.viewport_y * data.resolution_height as f32;
+    pub fn is_point_in_viewport_data(data: &CameraData, point: &Point2<f32>) -> bool
+    {
+        let x0 = data.viewport.x * data.resolution_width as f32;
+        let y0 = data.viewport.y * data.resolution_height as f32;
 
-        let width = data.viewport_width * data.resolution_width as f32;
-        let height = data.viewport_height * data.resolution_height as f32;
+        let width = data.viewport.width * data.resolution_width as f32;
+        let height = data.viewport.height * data.resolution_height as f32;
 
         let x1 = x0 + width;
         let y1 = y0 + height;
@@ -439,11 +696,16 @@ impl Camera
     {
         let data = self.get_data();
 
-        let x_f = point.x as f32 - (data.viewport_x * data.resolution_width as f32);
-        let y_f = point.y as f32 - (data.viewport_y * data.resolution_height as f32);
+        Self::screen_to_world_data(data, point)
+    }
 
-        let w = data.viewport_width as f32 * data.resolution_width as f32;
-        let h = data.viewport_height as f32 * data.resolution_height as f32;
+    pub fn screen_to_world_data(data: &CameraData, point: &Point2<f32>) -> Vector3<f32>
+    {
+        let x_f = point.x as f32 - (data.viewport.x * data.resolution_width as f32);
+        let y_f = point.y as f32 - (data.viewport.y * data.resolution_height as f32);
+
+        let w = data.viewport.width as f32 * data.resolution_width as f32;
+        let h = data.viewport.height as f32 * data.resolution_height as f32;
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
@@ -459,15 +721,53 @@ impl Camera
         world_space.xyz()
     }
 
+    pub fn world_to_screen(&self, world: &Point3<f32>) -> Option<Point2<f32>>
+    {
+        Self::world_to_screen_data(self.get_data(), world)
+    }
+
+    pub fn world_to_screen_data(data: &CameraData, world: &Point3<f32>) -> Option<Point2<f32>>
+    {
+        let clip = data.projection * data.view * world.to_homogeneous();
+
+        // behind the camera
+        // the projection uses the opengl convention (ndc z in [-1, 1], near plane at -1)
+        // perspective: w <= 0, orthogonal: w is always 1 -> check z against the near plane
+        if data.projection_type == CameraProjectionType::Perspective && clip.w <= 0.00001
+        {
+            return None;
+        }
+
+        if data.projection_type == CameraProjectionType::Orthogonal && clip.z < -1.0
+        {
+            return None;
+        }
+
+        if approx_zero(clip.w)
+        {
+            return None;
+        }
+
+        let ndc_x = clip.x / clip.w;
+        let ndc_y = clip.y / clip.w;
+
+        let x0 = data.viewport.x * data.resolution_width as f32;
+        let y0 = data.viewport.y * data.resolution_height as f32;
+        let width = data.viewport.width * data.resolution_width as f32;
+        let height = data.viewport.height * data.resolution_height as f32;
+
+        Some(Point2::<f32>::new(x0 + (ndc_x + 1.0) * 0.5 * width, y0 + (ndc_y + 1.0) * 0.5 * height))
+    }
+
     pub fn get_ray_from_viewport_coordinates(&self, point: &Point2<f32>) -> Ray
     {
         let data = self.get_data();
 
-        let x_f = point.x as f32 - (data.viewport_x * data.resolution_width as f32);
-        let y_f = point.y as f32 - (data.viewport_y * data.resolution_height as f32);
+        let x_f = point.x as f32 - (data.viewport.x * data.resolution_width as f32);
+        let y_f = point.y as f32 - (data.viewport.y * data.resolution_height as f32);
 
-        let w = data.viewport_width as f32 * data.resolution_width as f32;
-        let h = data.viewport_height as f32 * data.resolution_height as f32;
+        let w = data.viewport.width as f32 * data.resolution_width as f32;
+        let h = data.viewport.height as f32 * data.resolution_height as f32;
 
         //map x/y to -1 <=> +1
         let sensor_x = ((x_f + 0.5) / w) * 2.0 - 1.0;
@@ -484,7 +784,7 @@ impl Camera
 
         let ray_dir = (far_point - near_point).normalize();
 
-        let mut ray = Ray::new(near_point, Vector3::<f32>::from(ray_dir.xyz()));
+        let mut ray = Ray::new(near_point.into(), parry3d::math::Vec3::new(ray_dir.x, ray_dir.y, ray_dir.z));
         ray.dir = ray.dir.normalize();
 
         ray
@@ -494,17 +794,29 @@ impl Camera
     {
         let data = self.get_data();
 
-        let w = data.viewport_width as f32 * data.resolution_width as f32;
-        let h = data.viewport_height as f32 * data.resolution_height as f32;
+        let w = data.viewport.width as f32 * data.resolution_width as f32;
+        let h = data.viewport.height as f32 * data.resolution_height as f32;
 
         let camera_point = data.view.transform_point(&point);
         let clip_space_point = data.projection.transform_point(&camera_point);
 
-        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32 + (data.viewport_x * data.resolution_width as f32);
-        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32 + (data.viewport_y * data.resolution_height as f32);
+        let screen_x = ((clip_space_point.x + 1.0) * 0.5 * w as f32) as f32 + (data.viewport.x * data.resolution_width as f32);
+        let screen_y = ((clip_space_point.y + 1.0) * 0.5 * h as f32) as f32 + (data.viewport.y * data.resolution_height as f32);
 
         // reduce by 0.5 because the point was the center of the pixel
         Point2::new(screen_x - 0.5, screen_y - 0.5)
+    }
+
+    pub fn get_viewport_width_in_px(&self) -> u32
+    {
+        let data = self.get_data();
+        (data.viewport.width * data.resolution_width as f32).ceil() as u32
+    }
+
+    pub fn get_viewport_height_in_px(&self) -> u32
+    {
+        let data = self.get_data();
+        (data.viewport.height * data.resolution_height as f32).ceil() as u32
     }
 
     pub fn get_left_right_ear_positions(&self) -> (Point3::<f32>, Point3<f32>)
@@ -561,10 +873,10 @@ impl Camera
         {
             let data = self.data.get_ref();
 
-            viewport_x = data.viewport_x;
-            viewport_y = data.viewport_y;
-            viewport_width = data.viewport_width;
-            viewport_height = data.viewport_height;
+            viewport_x = data.viewport.x;
+            viewport_y = data.viewport.y;
+            viewport_width = data.viewport.width;
+            viewport_height = data.viewport.height;
 
             fovy = data.fovy.to_degrees();
 
@@ -686,10 +998,10 @@ impl Camera
         {
             let data = self.get_data_mut().get_mut();
 
-            data.viewport_x = viewport_x;
-            data.viewport_y = viewport_y;
-            data.viewport_width = viewport_width;
-            data.viewport_height = viewport_height;
+            data.viewport.x = viewport_x;
+            data.viewport.y = viewport_y;
+            data.viewport.width = viewport_width;
+            data.viewport.height = viewport_height;
             data.fovy = fovy.to_radians();
 
             data.eye_pos = eye_pos;
@@ -730,10 +1042,10 @@ impl Camera
         console_log!("name: {:?}", self.name);
         console_log!("enabled: {:?}", self.enabled);
 
-        console_log!("viewport x: {:?}", data.viewport_x);
-        console_log!("viewport y: {:?}", data.viewport_y);
-        console_log!("viewport width: {:?}", data.viewport_width);
-        console_log!("viewport height: {:?}", data.viewport_height);
+        console_log!("viewport x: {:?}", data.viewport.x);
+        console_log!("viewport y: {:?}", data.viewport.y);
+        console_log!("viewport width: {:?}", data.viewport.width);
+        console_log!("viewport height: {:?}", data.viewport.height);
 
         console_log!("resolution aspect_ratio: {:?}", data.resolution_aspect_ratio);
 
@@ -758,6 +1070,6 @@ impl Camera
     {
         let data = self.data.get_ref();
 
-        console_log!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport_x, data.viewport_y, data.viewport_width, data.viewport_height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
+        console_log!(" - (CAMERA): id={} name={} enabled={} viewport=[x={}, y={}], [{}x{}], resolution={}x{}, fovy={} eye_pos={:?} near={}, far={}", self.id, self.name, self.enabled, data.viewport.x, data.viewport.y, data.viewport.width, data.viewport.height, data.resolution_width, data.resolution_height, data.fovy, data.eye_pos, data.clipping_near, data.clipping_far);
     }
 }

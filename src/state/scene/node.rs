@@ -1,22 +1,30 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
-use nalgebra::{Matrix4, Point3, Vector4};
+use nalgebra::{Matrix4, Point3, Vector3, Vector4};
+use parry3d::bounding_volume::{Aabb, BoundingSphere};
+use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merge
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components}, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::InputOutput}};
 
-use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
+use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct NodeSettings
 {
+    pub transient: bool, // not saved
+
+    pub visible: bool,
+    pub locked: bool,
+    pub pickable: bool,
+
     pub render_children_first: bool,
     pub alpha_index: i64, // this can be used to influence the alpha sorting (for transparent objects rendering)
     pub render_group_id: i64, // this can be used to influence the sorting (for rendering) -> higher number means later rendering
@@ -25,24 +33,50 @@ pub struct NodeSettings
     pub depth_write: bool,
 
     pub pick_bbox_first: bool,
+
+    pub frustum_culling: bool,
+    pub occlusion_culling: bool,
+
+    pub layer_mask: u32, // bitmask, matched against camera culling_mask
+}
+
+impl Default for NodeSettings
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            transient: false,
+            visible: false,
+            locked: false,
+            pickable: false,
+            render_children_first: false,
+            alpha_index: 0,
+            render_group_id: 0,
+            depth_test: false,
+            depth_write: false,
+            pick_bbox_first: false,
+            frustum_culling: false,
+            occlusion_culling: false,
+            layer_mask: LAYER_DEFAULT,
+        }
+    }
 }
 
 pub struct NodeUpdateResult
 {
-    pub delete_nodes: Vec<u64>,
+    pub delete_nodes: Vec<u32>,
+    pub skinned_nodes: Vec<NodeItem>,
 }
 
 pub struct Node
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
-    pub visible: bool,
-    pub locked: bool,
-    pub pickable: bool,
     pub root_node: bool,
 
     pub settings: NodeSettings,
@@ -50,6 +84,8 @@ pub struct Node
     pub parent: OptionOrId<NodeItem>,
 
     pub skin: Vec<OptionOrId<NodeItem>>,
+
+    pub color: Option::<Vector3::<f32>>,
 
     pub extras: Extras,
     pub tags: Tags,
@@ -61,6 +97,11 @@ pub struct Node
     pub instance_render_item: RenderItemOption,
     pub skeleton_render_item: RenderItemOption,
     pub skeleton_morph_target_bind_group_render_item: RenderItemOption,
+
+    pub on_before_update: Observable<Node>,
+    pub on_after_update: Observable<Node>,
+    pub on_before_render: Observable<Node>,
+    pub on_after_render: Observable<Node>,
 
     delete_later_request: bool,
 }
@@ -74,13 +115,11 @@ impl Serialize for Node
 
         map.serialize_entry("uuid", &self.uuid)?;
         map.serialize_entry("name", &self.name)?;
-        map.serialize_entry("visible", &self.visible)?;
-        map.serialize_entry("locked", &self.locked)?;
-        map.serialize_entry("pickable", &self.pickable)?;
         map.serialize_entry("root_node", &self.root_node)?;
         map.serialize_entry("settings", &self.settings)?;
         map.serialize_entry("extras", &self.extras)?;
         map.serialize_entry("tags", &self.tags)?;
+        map.serialize_entry("color", &self.color)?;
 
         if let Some(parent) = self.parent.as_ref()
         {
@@ -149,9 +188,6 @@ impl<'de> Deserialize<'de> for Node
                     {
                         "uuid" => node.uuid = map.next_value()?,
                         "name" => node.name = map.next_value()?,
-                        "visible" => node.visible = map.next_value()?,
-                        "locked" => node.locked = map.next_value()?,
-                        "pickable" => node.pickable = map.next_value()?,
                         "root_node" => node.root_node = map.next_value()?,
                         "parent" => node.parent = OptionOrId::from_id_or_none(map.next_value()?),
                         "settings" => node.settings = map.next_value()?,
@@ -159,6 +195,7 @@ impl<'de> Deserialize<'de> for Node
                         "tags" => node.tags = map.next_value()?,
                         "skin" => node.skin = OptionOrId::from_id_vec(&map.next_value()?),
                         "source" => node.source = Some(map.next_value()?),
+                        "color" => node.color = map.next_value()?,
                         "instances" =>
                         {
                             node.instances = ChangeTracker::new
@@ -220,13 +257,15 @@ impl Node
             source: None,
 
             name: "default".to_string(),
-            visible: true,
-            locked: false,
-            pickable: true,
             root_node: false,
 
             settings: NodeSettings
             {
+                transient: true,
+                visible: true,
+                locked: false,
+                pickable: true,
+
                 render_children_first: false,
                 alpha_index: 0,
                 render_group_id: 0,
@@ -235,6 +274,10 @@ impl Node
                 depth_test: true,
 
                 pick_bbox_first: true,
+                frustum_culling: true,
+                occlusion_culling: true,
+
+                layer_mask: LAYER_DEFAULT,
             },
 
             components: vec![],
@@ -246,12 +289,19 @@ impl Node
             extras: Extras::new(),
             tags: Tags::new(),
 
+            color: None,
+
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
 
             instance_render_item: None,
             skeleton_render_item: None,
             skeleton_morph_target_bind_group_render_item: None,
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
 
             delete_later_request: false
         }
@@ -311,6 +361,19 @@ impl Node
         {
             let mut node = node.write().unwrap();
             node.nodes.push(child_node.clone());
+        }
+
+        {
+            let mut child_node = child_node.write().unwrap();
+            child_node.parent = OptionOrId::Some(node.clone());
+        }
+    }
+
+    pub fn add_node_front(node: NodeItem, child_node: NodeItem)
+    {
+        {
+            let mut node = node.write().unwrap();
+            node.nodes.insert(0, child_node.clone());
         }
 
         {
@@ -383,6 +446,68 @@ impl Node
         node.write().unwrap().force_instances_update();
     }
 
+    pub fn set_parent_and_remap_transform(node: NodeItem, new_parent: NodeItem)
+    {
+        if new_parent.read().unwrap().has_parent_or_is_equal(node.clone())
+        {
+            console_warning!("set_parent_and_remap_transform: the new parent can not be the node itself or one of its children");
+            return;
+        }
+
+        let world_transform = node.read().unwrap().get_full_transform();
+
+        Self::set_parent(node.clone(), new_parent.clone());
+        Self::remap_world_transform(node, world_transform);
+    }
+
+    pub fn remap_world_transform(node: NodeItem, world_transform: Matrix4<f32>)
+    {
+        let (_, parent_inheritance) = node.read().unwrap().get_transform();
+        let parent = node.read().unwrap().parent.clone();
+
+        let mut new_local_transform = world_transform;
+
+        // if there is no parent or if the parent transformation is not inherited: the local transformation is the world transformation
+        if parent_inheritance
+        {
+            if let Some(parent) = parent.as_ref()
+            {
+                let parent_transform_inverse = parent.read().unwrap().get_full_transform().try_inverse();
+
+                if parent_transform_inverse.is_none()
+                {
+                    console_warning!("remap_world_transform: the transformation of the parent can not be inverted");
+                    return;
+                }
+
+                new_local_transform = parent_transform_inverse.unwrap() * world_transform;
+            }
+        }
+
+        Self::set_local_transform(node, new_local_transform);
+    }
+
+    pub fn set_local_transform(node: NodeItem, transform: Matrix4<f32>)
+    {
+        let transformation_component = node.read().unwrap().find_component::<Transformation>();
+
+        if let Some(transformation_component) = transformation_component
+        {
+            component_downcast_mut!(transformation_component, Transformation);
+            transformation_component.set_local_transform(transform);
+        }
+        // if there is no transformation component: create one to be able to hold the transformation
+        else
+        {
+            let mut transformation = Transformation::identity("Transform");
+            transformation.set_local_transform(transform);
+
+            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+        }
+
+        node.write().unwrap().force_instances_update();
+    }
+
     pub fn add_component(&mut self, component: ComponentItem)
     {
         self.components.push(component);
@@ -403,7 +528,7 @@ impl Node
         find_component::<T>(&self.components).is_some()
     }
 
-    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn find_component_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         find_component_by_id(&self.components, id)
     }
@@ -421,7 +546,15 @@ impl Node
         }
     }
 
-    pub fn remove_component_by_id(&mut self, id: u64)
+    pub fn remove_components_by_type<T>(&mut self) where T: 'static
+    {
+        if remove_components_by_type::<T>(&mut self.components)
+        {
+            self.force_instances_update();
+        }
+    }
+
+    pub fn remove_component_by_id(&mut self, id: u32)
     {
         if remove_component_by_id(&mut self.components, id)
         {
@@ -429,7 +562,7 @@ impl Node
         }
     }
 
-    pub fn remove_components_by_ids(&mut self, ids: &Vec<u64>)
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u32>)
     {
         if remove_components_by_ids(&mut self.components, &ids)
         {
@@ -505,7 +638,7 @@ impl Node
         self.tags.contains(tag)
     }
 
-    pub fn get_world_bounding_info(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
+    pub fn get_world_bounding_info(&self, instance_id: Option<u32>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<(Point3<f32>, Point3<f32>)>
     {
         let meshes = self.get_meshes();
 
@@ -613,7 +746,7 @@ impl Node
         None
     }
 
-    pub fn get_world_bbox_center(&self, instance_id: Option<u64>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
+    pub fn get_world_bbox_center(&self, instance_id: Option<u32>, recursive: bool, predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>) -> Option<Point3<f32>>
     {
         let bounding_info = self.get_world_bounding_info(instance_id, recursive, predicate);
 
@@ -622,6 +755,252 @@ impl Node
             let (min, max) = bounding_info;
 
             return Some(min + (max - min) / 2.0);
+        }
+
+        None
+    }
+
+    pub fn get_bounding_sphere_for_all_instances(&self, transformations: &Vec::<Matrix4::<f32>>) -> Option<(Point3<f32>, f32)>
+    {
+        if transformations.len() != self.instances.get_ref().len()
+        {
+            console_warning!("get_bounding_sphere_for_all_instances: transformations length does not match instances length - which is not supported");
+            return None;
+        }
+
+        let meshes = self.get_meshes();
+
+        // non-skinned meshes: collect the local aabb - the world sphere is built per instance
+        // from the per axis scaled half extents (scaling a pre-merged local sphere by the max
+        // axis scale massively overestimates non-uniformly scaled meshes - like kit assets
+        // which are just heavily squashed cubes)
+        let mut bounding_box_mesh: Option<Aabb> = None;
+
+        // skinned meshes: keep the (intentionally padded) skin sphere
+        let mut bounding_sphere_skin: Option<BoundingSphere> = None;
+
+        for mesh in &meshes
+        {
+            component_downcast!(mesh, Mesh);
+
+            if let Some(skin_sphere) = mesh.get_skin_bounding_sphere()
+            {
+                if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_mut()
+                {
+                    bounding_sphere_skin.merge(&skin_sphere);
+                }
+                else
+                {
+                    bounding_sphere_skin = Some(skin_sphere);
+                }
+            }
+            else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+            {
+                let b_box = mesh_resource.read().unwrap().get_data().b_box;
+
+                // not yet calculated
+                if b_box.maxs.x < b_box.mins.x
+                {
+                    continue;
+                }
+
+                if let Some(bounding_box_mesh) = bounding_box_mesh.as_mut()
+                {
+                    bounding_box_mesh.merge(&b_box);
+                }
+                else
+                {
+                    bounding_box_mesh = Some(b_box);
+                }
+            }
+        }
+
+        let mut bounding_sphere_result: Option<BoundingSphere> = None;
+
+        if bounding_box_mesh.is_some() || bounding_sphere_skin.is_some()
+        {
+            for (instance_id, _) in self.instances.get_ref().iter().enumerate()
+            {
+                let transform = transformations.get(instance_id).unwrap();
+
+                // aabb based sphere: the scaled half extents are enough for the radius,
+                // because a sphere is rotation invariant (assumes no shear - as everywhere)
+                if let Some(bounding_box_mesh) = bounding_box_mesh.as_ref()
+                {
+                    let scale = extract_scale_from_transform(transform);
+
+                    let half_extents = Vector3::<f32>::new
+                    (
+                        (bounding_box_mesh.maxs.x - bounding_box_mesh.mins.x) / 2.0,
+                        (bounding_box_mesh.maxs.y - bounding_box_mesh.mins.y) / 2.0,
+                        (bounding_box_mesh.maxs.z - bounding_box_mesh.mins.z) / 2.0,
+                    );
+
+                    let transformed_radius = half_extents.component_mul(&scale).norm();
+
+                    let center = Vector4::<f32>::new
+                    (
+                        (bounding_box_mesh.mins.x + bounding_box_mesh.maxs.x) / 2.0,
+                        (bounding_box_mesh.mins.y + bounding_box_mesh.maxs.y) / 2.0,
+                        (bounding_box_mesh.mins.z + bounding_box_mesh.maxs.z) / 2.0,
+                        1.0
+                    );
+
+                    let transformed_center = transform * center;
+
+                    let instance_sphere = BoundingSphere::new
+                    (
+                        Point3::<f32>::new
+                        (
+                            transformed_center.x / transformed_center.w,
+                            transformed_center.y / transformed_center.w,
+                            transformed_center.z / transformed_center.w,
+                        ).into(),
+                        transformed_radius
+                    );
+
+                    if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                    {
+                        bounding_sphere_all.merge(&instance_sphere);
+                    }
+                    else
+                    {
+                        bounding_sphere_result = Some(instance_sphere);
+                    }
+                }
+
+                // skin sphere: radius scaled by the max axis scale (padded anyway)
+                if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_ref()
+                {
+                    let max_scale = extract_max_scale_from_transform(transform);
+
+                    let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_skin.center.x, bounding_sphere_skin.center.y, bounding_sphere_skin.center.z, 1.0);
+
+                    let instance_sphere = BoundingSphere::new
+                    (
+                        Point3::<f32>::new
+                        (
+                            transformed_center.x / transformed_center.w,
+                            transformed_center.y / transformed_center.w,
+                            transformed_center.z / transformed_center.w,
+                        ).into(),
+                        bounding_sphere_skin.radius * max_scale
+                    );
+
+                    if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                    {
+                        bounding_sphere_all.merge(&instance_sphere);
+                    }
+                    else
+                    {
+                        bounding_sphere_result = Some(instance_sphere);
+                    }
+                }
+            }
+        }
+
+        if let Some(bounding_sphere_result) = bounding_sphere_result
+        {
+            return Some((bounding_sphere_result.center.into(), bounding_sphere_result.radius));
+        }
+
+        None
+    }
+
+    pub fn get_bounding_box_for_all_instances_from_cached_transform(&self) -> Option<(Point3<f32>, Point3<f32>)>
+    {
+        let meshes = self.get_meshes();
+
+        let mut bounding_box_mesh: Option<Aabb> = None;
+
+        for mesh in &meshes
+        {
+            component_downcast!(mesh, Mesh);
+
+            let mut bounding_box = None;
+            if let Some(skin_box) = mesh.get_skin_bbox()
+            {
+                bounding_box = Some(skin_box);
+            }
+            else if let Some(mesh_resource) = mesh.mesh_resource.as_ref()
+            {
+                bounding_box = Some(mesh_resource.read().unwrap().get_data().b_box);
+            }
+
+            if let Some(bounding_box) = bounding_box
+            {
+                if let Some(bounding_box_mesh) = bounding_box_mesh.as_mut()
+                {
+                    bounding_box_mesh.merge(&bounding_box);
+                }
+                else
+                {
+                    bounding_box_mesh = Some(bounding_box);
+                }
+            }
+        }
+
+        let mut bounding_box_result: Option<Aabb> = None;
+
+        if let Some(bounding_box_mesh) = bounding_box_mesh
+        {
+            for instance in self.instances.get_ref()
+            {
+                let instance = instance.read().unwrap();
+                let transform = instance.get_cached_world_transform();
+
+                // hole die min und max punkte aus der Aabb
+                let min = bounding_box_mesh.mins;
+                let max = bounding_box_mesh.maxs;
+
+                // berechne die 8 eckpunkte
+                let corners =
+                [
+                    Point3::new(min.x, min.y, min.z),
+                    Point3::new(min.x, min.y, max.z),
+                    Point3::new(min.x, max.y, min.z),
+                    Point3::new(min.x, max.y, max.z),
+                    Point3::new(max.x, min.y, min.z),
+                    Point3::new(max.x, min.y, max.z),
+                    Point3::new(max.x, max.y, min.z),
+                    Point3::new(max.x, max.y, max.z),
+                ];
+
+                // transformiere alle punkte
+                let mut new_min = Point3::new(f32::MAX, f32::MAX, f32::MAX);
+                let mut new_max = Point3::new(f32::MIN, f32::MIN, f32::MIN);
+
+                for corner in &corners
+                {
+                    let v = transform * Vector4::new(corner.x, corner.y, corner.z, 1.0);
+                    let p = Point3::new(v.x / v.w, v.y / v.w, v.z / v.w);
+
+                    new_min.x = new_min.x.min(p.x);
+                    new_min.y = new_min.y.min(p.y);
+                    new_min.z = new_min.z.min(p.z);
+
+                    new_max.x = new_max.x.max(p.x);
+                    new_max.y = new_max.y.max(p.y);
+                    new_max.z = new_max.z.max(p.z);
+                }
+
+                // neue transformierte box
+                let instance_box = Aabb::new(new_min.into(), new_max.into());
+
+                if let Some(bounding_box_all) = bounding_box_result.as_mut()
+                {
+                    bounding_box_all.merge(&instance_box);
+                }
+                else
+                {
+                    bounding_box_result = Some(instance_box);
+                }
+            }
+        }
+
+        if let Some(bounding_box_result) = bounding_box_result
+        {
+            return Some((bounding_box_result.mins.into(), bounding_box_result.maxs.into()));
         }
 
         None
@@ -679,7 +1058,7 @@ impl Node
         self.has_parent(node)
     }
 
-    pub fn has_parent_id(&self, parent_node_id: u64) -> bool
+    pub fn has_parent_id(&self, parent_node_id: u32) -> bool
     {
         let mut parent = self.parent.clone();
         while parent.is_some()
@@ -700,7 +1079,7 @@ impl Node
         false
     }
 
-    pub fn has_parent_id_or_is_equal(&self, node_id: u64) -> bool
+    pub fn has_parent_id_or_is_equal(&self, node_id: u32) -> bool
     {
         if self.id == node_id
         {
@@ -712,7 +1091,7 @@ impl Node
 
     pub fn is_locked(&self) -> bool
     {
-        if self.locked
+        if self.settings.locked
         {
             return true;
         }
@@ -722,7 +1101,7 @@ impl Node
         {
             {
                 let parent = parent.clone().unwrap();
-                if parent.read().unwrap().locked
+                if parent.read().unwrap().settings.locked
                 {
                     return true;
                 }
@@ -734,14 +1113,38 @@ impl Node
         false
     }
 
+    pub fn is_visible(&self) -> bool
+    {
+        if !self.settings.visible
+        {
+            return false;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if !parent.read().unwrap().settings.visible
+                {
+                    return false;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        true
+    }
+
     pub fn set_pickable(&mut self, pickable: bool)
     {
-        self.pickable = pickable;
+        self.settings.pickable = pickable;
         let all_childs = Scene::list_all_child_nodes(&self.nodes);
         for child_node in all_childs
         {
             let mut child_node = child_node.write().unwrap();
-            child_node.pickable = pickable;
+            child_node.settings.pickable = pickable;
 
             for instance in child_node.instances.get_ref()
             {
@@ -882,6 +1285,34 @@ impl Node
         }
     }
 
+    pub fn get_full_transform_without_joints(&self) -> Matrix4<f32>
+    {
+        let mut parent_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = self.parent.as_ref()
+        {
+            let parent_node = parent_node.read().unwrap();
+            parent_trans = parent_node.get_full_transform_without_joints();
+        }
+
+        // the joints own transform is already part of its joint matrix
+        if self.find_component::<Joint>().is_some()
+        {
+            return parent_trans;
+        }
+
+        let (node_transform, node_parent_inheritance) = self.get_transform();
+
+        if node_parent_inheritance
+        {
+            parent_trans * node_transform
+        }
+        else
+        {
+            node_transform
+        }
+    }
+
     /*
     pub fn get_full_transform_inverse(&self) -> Matrix4<f32>
     {
@@ -934,7 +1365,7 @@ impl Node
         self.transform_vec_global_to_local(&global_vec)
     }
 
-    pub fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u64, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
+    pub fn get_full_joint_transform(&self, transform_cache: Option<&HashMap<u32, Matrix4::<f32>>>, animated: bool) -> Matrix4<f32>
     {
         let joint_component = self.find_component::<Joint>();
 
@@ -988,7 +1419,7 @@ impl Node
         }
 
         // store transforms in a cache -> no complete parent traversal needed for each joint
-        let mut transform_cache: HashMap<u64, Matrix4::<f32>> = HashMap::new();
+        let mut transform_cache: HashMap<u32, Matrix4::<f32>> = HashMap::new();
 
         let mut joints = vec![];
         for joint in &self.skin
@@ -1049,7 +1480,7 @@ impl Node
         Some(morph_targets)
     }
 
-    pub fn find_child_node_by_id(&self, id: u64) -> Option<NodeItem>
+    pub fn find_child_node_by_id(&self, id: u32) -> Option<NodeItem>
     {
         for node in &self.nodes
         {
@@ -1109,7 +1540,7 @@ impl Node
         None
     }
 
-    pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u64) -> Option<NodeItem>
+    pub fn find_node_by_id(nodes: &Vec<NodeItem>, id: u32) -> Option<NodeItem>
     {
         for node in nodes
         {
@@ -1169,7 +1600,7 @@ impl Node
         None
     }
 
-    pub fn find_mesh_node_by_ids(nodes: &Vec<NodeItem>, ids: &Vec<u64>) -> Option<NodeItem>
+    pub fn find_mesh_node_by_ids(nodes: &Vec<NodeItem>, ids: &Vec<u32>) -> Option<NodeItem>
     {
         for node in nodes
         {
@@ -1584,6 +2015,8 @@ impl Node
 
     pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
     {
+        crate::notify_observable_arc!(&node, on_before_update);
+
         // ***** copy all components *****
         let mut all_components;
         {
@@ -1593,8 +2026,11 @@ impl Node
 
         let mut delete_components = vec![];
 
-        for (component_id, component) in all_components.clone().iter_mut().enumerate()
+        let all_components_len = all_components.len();
+        for component_id in 0..all_components_len
         {
+            let component = all_components[component_id].clone();
+
             if component.read().unwrap().get_base().delete_later_request
             {
                 delete_components.push(component.read().unwrap().id());
@@ -1611,8 +2047,9 @@ impl Node
             // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut node = node.write().unwrap();
-                node.components = all_components.clone();
-                node.components.remove(component_id);
+                node.components.clear();
+                node.components.extend(all_components[..component_id].iter().cloned());
+                node.components.extend(all_components[component_id + 1..].iter().cloned());
             }
 
             // component update
@@ -1622,8 +2059,25 @@ impl Node
             }
 
             // after each update, check if new components were added during the update --> add
-            let maybe_new_components = &node.read().unwrap().components;
-            find_and_add_new_components(&mut all_components, maybe_new_components);
+            // only check if the component count changed (optimization: skip expensive scan when nothing was added)
+            {
+                let new_node_components =
+                {
+                    let node_read = node.read().unwrap();
+                    if node_read.components.len() > all_components_len - 1
+                    {
+                        Some(node_read.components.clone())
+                    }
+                    else
+                    {
+                        None
+                    }
+                };
+                if let Some(maybe_new_components) = new_node_components
+                {
+                    find_and_add_new_components(&mut all_components, &maybe_new_components);
+                }
+            }
         }
 
         // ***** reassign components *****
@@ -1662,27 +2116,43 @@ impl Node
 
         // check for delete later
         let mut delete_nodes = vec![];
+        let mut skinned_nodes = vec![];
         {
-            let node = node.read().unwrap();
-            if node.delete_later_request
+            let node_read = node.read().unwrap();
+            if node_read.delete_later_request
             {
-                delete_nodes.push(node.id);
+                delete_nodes.push(node_read.id);
+            }
+
+            // the scene rebuilds the bounding volume of these after all components ran
+            if node_read.skin.len() > 0
+            {
+                skinned_nodes.push(node.clone());
             }
         }
 
         // ***** update childs *****
-        let node_read = node.read().unwrap();
-        for child_node in &node_read.nodes
         {
-            let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame);
-
-            if update_result.delete_nodes.len() > 0
+            let node_read = node.read().unwrap();
+            for child_node in &node_read.nodes
             {
-                delete_nodes.append(&mut update_result.delete_nodes);
+                let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame);
+
+                if update_result.delete_nodes.len() > 0
+                {
+                    delete_nodes.append(&mut update_result.delete_nodes);
+                }
+
+                if update_result.skinned_nodes.len() > 0
+                {
+                    skinned_nodes.append(&mut update_result.skinned_nodes);
+                }
             }
         }
 
-        NodeUpdateResult { delete_nodes:  delete_nodes}
+        crate::notify_observable_arc!(&node, on_after_update);
+
+        NodeUpdateResult { delete_nodes: delete_nodes, skinned_nodes: skinned_nodes }
     }
 
     pub fn merge_mesh(&mut self, node: &NodeItem) -> bool
@@ -1812,7 +2282,7 @@ impl Node
         }
     }
 
-    pub fn find_instance_by_id(&self, id: u64) -> Option<&InstanceItemArc>
+    pub fn find_instance_by_id(&self, id: u32) -> Option<&InstanceItemArc>
     {
         for instance in self.instances.get_ref()
         {
@@ -1825,7 +2295,7 @@ impl Node
         None
     }
 
-    pub fn delete_instance_by_id(&mut self, id: u64) -> bool
+    pub fn delete_instance_by_id(&mut self, id: u32) -> bool
     {
         let len = self.instances.get_ref().len();
         self.instances.get_mut().retain(|instance|
@@ -1841,7 +2311,7 @@ impl Node
         self.instances.get_mut().clear();
     }
 
-    pub fn delete_child_node_by_id(&mut self, id: u64) -> bool
+    pub fn delete_child_node_by_id(&mut self, id: u32) -> bool
     {
         {
             let node = Node::find_node_by_id(&self.nodes, id);
@@ -1957,7 +2427,7 @@ impl Node
     pub fn print(&self, level: usize)
     {
         let spaces = " ".repeat(level * 2);
-        console_log!("{} - (NODE) id={} name={} visible={} components={}, instances={}", spaces, self.id, self.name, self.visible, self.components.len(), self.instances.get_ref().len());
+        console_log!("{} - (NODE) id={} name={} components={}, instances={}", spaces, self.id, self.name, self.components.len(), self.instances.get_ref().len());
 
         for node in &self.nodes
         {

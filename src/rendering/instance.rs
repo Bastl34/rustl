@@ -95,7 +95,7 @@ impl Instance
 pub struct InstanceBuffer
 {
     pub name: String,
-    count: u32,
+    pub count: u32,
     buffer: wgpu::Buffer,
 
     pub transformations: Vec::<Matrix4::<f32>>
@@ -104,6 +104,11 @@ pub struct InstanceBuffer
 impl RenderItem for InstanceBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl InstanceBuffer
@@ -163,6 +168,43 @@ impl InstanceBuffer
         );
 
         self.count = instances.len() as u32;
+    }
+
+    // Update all instance data in-place via queue.write_buffer (no GPU buffer reallocation).
+    // Only call when instance count has NOT changed.
+    pub fn write_all_to_buffer(&mut self, wgpu: &mut WGpu, instances: &Vec<Arc<RwLock<InstanceItem>>>)
+    {
+        self.transformations.clear();
+        self.transformations.reserve(instances.len());
+
+        let buffer_data = instances.iter().map(|instance|
+        {
+            let instance = instance.read().unwrap();
+            let transform = instance.get_cached_world_transform();
+            let alpha = instance.get_cached_alpha();
+            let locked = instance.get_cached_is_locked();
+            let instance_data = instance.get_data();
+
+            let mut color = instance_data.color.clone();
+            color.w = alpha;
+
+            self.transformations.push(transform);
+
+            Instance
+            {
+                transform: transform.into(),
+                color: color.into(),
+                highlight: f32::from(instance_data.highlight),
+                locked: f32::from(locked),
+            }
+        }).collect::<Vec<_>>();
+
+        wgpu.queue_mut().write_buffer
+        (
+            &self.buffer,
+            0,
+            bytemuck::cast_slice(&buffer_data),
+        );
     }
 
     pub fn update_buffer(&mut self, wgpu: &mut WGpu, instance: &InstanceItem, index: usize)

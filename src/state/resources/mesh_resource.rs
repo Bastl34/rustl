@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock};
 
 use bytemuck::cast_slice;
 use colored::Colorize;
-use nalgebra::{Isometry3, Matrix4, Point2, Point3, Vector3};
-use parry3d::{bounding_volume::{Aabb, BoundingSphere}, shape::TriMesh};
+use nalgebra::{Matrix4, Point2, Point3, Vector3};
+use parry3d::{bounding_volume::{Aabb, BoundingSphere}, math::{Pose3, Vec3}, shape::TriMesh};
 use serde::{Deserialize, Serialize};
 
 use crate::{console_error, helper::{self, asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::{point2_as_array, point3_as_array, vec3_as_array}, math::calculate_normal}, state::{helper::render_item::RenderItemOption, scene::{manager::id_manager, utilities::tags::Tags}}};
@@ -26,7 +26,7 @@ fn default_aabb() -> Aabb
 
 fn default_sphere() -> BoundingSphere
 {
-    BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+    BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -100,7 +100,7 @@ impl MeshResourceData
         self.morph_target_tangents.clear();
 
         // "empty" triangle
-        let triangle = [Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0), Point3::<f32>::new(0.0, 0.0, 0.0)];
+        let triangle = [Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0)];
         let indices: [u32; 3] = [0, 1, 2];
 
         let mesh_res = TriMesh::new(triangle.to_vec(), [indices].to_vec());
@@ -123,7 +123,7 @@ impl MeshResourceData
 pub struct MeshResource
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
     pub source: Option<AssetPathDesciptor>,
 
@@ -178,7 +178,7 @@ impl Default for MeshResource
                 morph_target_tangents: vec![],
 
                 b_box: Aabb::new_invalid(),
-                b_sphere: BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+                b_sphere: BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
             }),
 
             render_item: None,
@@ -192,7 +192,8 @@ impl MeshResource
 {
     pub fn new_with_data(name: &str, vertices: Vec<Point3<f32>>, indices: Vec<[u32; 3]>, uvs: Vec<Point2<f32>>, uv_indices: Vec<[u32; 3]>, normals: Vec<Vector3<f32>>, normals_indices: Vec<[u32; 3]>) -> MeshResource
     {
-        let tri_mesh_res = TriMesh::new(vertices.clone(), indices.clone());
+        let vertices_vec3: Vec<Vec3> = vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+        let tri_mesh_res = TriMesh::new(vertices_vec3, indices.clone());
 
         let tri_mesh = match tri_mesh_res
         {
@@ -238,7 +239,7 @@ impl MeshResource
                 morph_target_tangents: vec![],
 
                 b_box: Aabb::new_invalid(),
-                b_sphere: BoundingSphere::new(Point3::new(0.0, 0.0, 0.0), 0.0)
+                b_sphere: BoundingSphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
             }),
 
             render_item: None,
@@ -337,6 +338,38 @@ impl MeshResource
         }
     }
 
+    pub fn flip_faces(&mut self)
+    {
+        {
+            let data = self.get_data_mut().get_mut();
+
+            // reverse the winding order [i0, i1, i2] --> [i0, i2, i1]
+            for face in &mut data.indices         { face.swap(1, 2); }
+            for face in &mut data.normals_indices { face.swap(1, 2); }
+            for face in &mut data.uv_indices      { face.swap(1, 2); }
+
+            // invert normals
+            for n in &mut data.normals { *n = -*n; }
+
+            // morph targets store deltas relative to the base data -> invert them too
+            for morph in &mut data.morph_target_normals
+            {
+                for n in morph { *n = -*n; }
+            }
+
+            for morph in &mut data.morph_target_tangents
+            {
+                for t in morph { *t = -*t; }
+            }
+
+            // rebuild trimesh
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+            data.mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
+        }
+
+        self.calc_bounding_volumes();
+    }
+
     pub fn calc_hash(&mut self)
     {
         let mesh_data = self.get_data();
@@ -422,7 +455,7 @@ impl MeshResource
 
     fn calc_bounding_volumes(&mut self)
     {
-        let trans = Isometry3::<f32>::identity();
+        let trans = Pose3::identity();
         let data = self.data.get_mut();
         data.b_box = data.mesh.aabb(&trans);
         data.b_sphere = data.mesh.bounding_sphere(&trans);
@@ -449,7 +482,8 @@ impl MeshResource
         }
 
         // clear trimesh and rebuild
-        data.mesh = TriMesh::new(data.vertices.clone(), data.indices.clone()).unwrap();
+        let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+        data.mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
 
         self.calc_bounding_volumes();
     }
@@ -498,7 +532,8 @@ impl MeshResource
             data.normals_indices.push([i0, i1, i2]);
         }
 
-        let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());
+        let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+        let mesh_res = TriMesh::new(vertices_vec3, data.indices.clone());
         let mesh = match mesh_res
         {
             Ok(mesh) => mesh,
@@ -605,7 +640,8 @@ impl MeshResource
             }
 
             // create mesh
-            let mesh_res = TriMesh::new(data.vertices.clone(), data.indices.clone());
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+            let mesh_res = TriMesh::new(vertices_vec3, data.indices.clone());
             let mesh = match mesh_res
             {
                 Ok(mesh) => mesh,
@@ -709,5 +745,16 @@ impl MeshResource
         ui.label(format!(" ⚫ bbox max: [{:.3}, {:.3}, {:.3}]", data.b_box.maxs.x, data.b_box.maxs.z, data.b_box.maxs.z));
 
         ui.label(format!(" ⚫ b sphere: [{:.3}, {:.3}, {:.3}] r={:.3}", data.b_sphere.center.x, data.b_sphere.center.y, data.b_sphere.center.z, data.b_sphere.radius));
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui)
+    {
+        ui.horizontal(|ui|
+        {
+            if ui.button("Flip Faces").on_hover_text("Flip all faces ot the mesh").clicked()
+            {
+                self.flip_faces();
+            };
+        });
     }
 }

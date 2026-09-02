@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock, Mutex};
 
 use nalgebra::Point3;
-use rodio::{OutputStream, OutputStreamBuilder, mixer::Mixer};
+use rodio::{MixerDeviceSink, DeviceSinkBuilder, mixer::Mixer};
 
 use crate::{console_error, helper::change_tracker::ChangeTracker};
 
@@ -22,7 +22,7 @@ pub struct AudioDeviceData
 /// 2. We only access it through a Mutex, ensuring exclusive access
 /// 3. The underlying audio system handles thread safety internally
 /// 4. This is a known limitation of CoreAudio on macOS that affects cpal/rodio
-pub struct SafeOutputStream(OutputStream);
+pub struct SafeOutputStream(MixerDeviceSink);
 
 // SAFETY: OutputStream is designed to be thread-safe in practice.
 // The underlying audio system (CoreAudio on macOS) handles thread safety.
@@ -33,7 +33,7 @@ unsafe impl Sync for SafeOutputStream {}
 
 impl SafeOutputStream
 {
-    pub fn new(stream: OutputStream) -> Self
+    pub fn new(stream: MixerDeviceSink) -> Self
     {
         Self(stream)
     }
@@ -61,7 +61,7 @@ impl Default for AudioDevice
             right_ear_pos: Point3::<f32>::new(1.0, 0.0, 0.0),
         });
 
-        if let Ok(stream) = OutputStreamBuilder::open_default_stream()
+        if let Ok(stream) = DeviceSinkBuilder::open_default_sink()
         {
             Self
             {

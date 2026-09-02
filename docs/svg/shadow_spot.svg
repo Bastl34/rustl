@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect width="760" height="400" fill="#f8fafc" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">Spot light: one perspective view = the light cone</text>
+
+  <!-- cone -->
+  <polygon points="110,200 640,78 640,322" fill="#f6b73c" opacity="0.18"/>
+  <line x1="110" y1="200" x2="640" y2="78"  stroke="#d97706" stroke-width="2.5"/>
+  <line x1="110" y1="200" x2="640" y2="322" stroke="#d97706" stroke-width="2.5"/>
+  <line x1="110" y1="200" x2="640" y2="200" stroke="#d97706" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+  <!-- light -->
+  <circle cx="110" cy="200" r="11" fill="#f6b73c" stroke="#b45309" stroke-width="2.5"/>
+  <text x="110" y="238" text-anchor="middle" font-size="12.5" font-weight="600" fill="#b45309">spot light</text>
+
+  <!-- fov angle arc -->
+  <path d="M 175 185 A 66 66 0 0 1 175 215" fill="none" stroke="#b45309" stroke-width="2"/>
+  <text x="196" y="216" font-size="12.5" fill="#b45309" paint-order="stroke" stroke="#faf3e3" stroke-width="3.5" stroke-linejoin="round">fov = 2 × half angle</text>
+
+  <!-- shadow map plane -->
+  <line x1="330" y1="150" x2="330" y2="251" stroke="#8b5cf6" stroke-width="4" stroke-linecap="round"/>
+  <g stroke="#8b5cf6" stroke-width="1.5" opacity="0.5">
+    <line x1="323" y1="168" x2="337" y2="168"/>
+    <line x1="323" y1="188" x2="337" y2="188"/>
+    <line x1="323" y1="208" x2="337" y2="208"/>
+    <line x1="323" y1="228" x2="337" y2="228"/>
+  </g>
+  <text x="330" y="276" text-anchor="middle" font-size="12" fill="#7c3aed">shadow map</text>
+
+  <!-- occluder + shadow wedge -->
+  <rect x="440" y="180" width="40" height="40" fill="#64748b" rx="5"/>
+  <polygon points="480,183 640,148 640,255 480,217" fill="#334155" opacity="0.35"/>
+  <text x="460" y="170" text-anchor="middle" font-size="12" fill="#475569">occluder</text>
+  <text x="560" y="276" font-size="12" fill="#334155">shadow</text>
+
+  <!-- far plane -->
+  <line x1="640" y1="78" x2="640" y2="322" stroke="#d97706" stroke-width="2" stroke-dasharray="4 5"/>
+  <text x="655" y="204" font-size="12.5" fill="#b45309">far = range</text>
+
+  <text x="380" y="366" text-anchor="middle" font-size="12.5" fill="#334155">the shadow projection matches the cone exactly — everything the light can reach is on the map</text>
+  <text x="380" y="384" text-anchor="middle" font-size="12.5" fill="#64748b">simplest case: one map, one perspective matrix (like a camera sitting in the light)</text>
+</svg>

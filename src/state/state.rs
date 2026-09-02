@@ -8,13 +8,25 @@ use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializ
 
 use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
-use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox, utilities::scene_utils::load_texture};
+use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
 pub type StateItem = Rc<RefCell<State>>;
 
 pub const FPS_CHART_VALUES: usize = 100;
 pub const DEFAULT_MAX_TEXTURE_RESOLUTION: u32 = 16384;
 pub const DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION: u32 = 4096;
+
+pub const DEFAULT_SHADOW_MAP_SIZE: u32 = 2048;
+pub const DEFAULT_SHADOW_MAX_DISTANCE: f32 = 100.0;
+
+pub const DEFAULT_SSAO_RADIUS: f32 = 0.5;
+pub const DEFAULT_SSAO_BIAS: f32 = 0.025;
+pub const DEFAULT_SSAO_STRENGTH: f32 = 1.0;
+
+pub const DEFAULT_XRAY_ALPHA: f32 = 0.5;
+
+pub const DEFAULT_FOG_COLOR: Vector3<f32> = Vector3::new(0.6, 0.7, 0.8);
+pub const DEFAULT_FOG_DENSITY: f32 = 0.02;
 
 pub const REFERENCE_UPDATE_FRAMES: f32 = 60.0;
 
@@ -40,40 +52,108 @@ pub struct RenderingAdapterFeatures
     pub backend: String,
 
     pub storage_buffer_array_support: bool,
+    pub wireframe_mode_support: bool,
+    pub occlusion_culling_support: bool, // compute shaders + indirect draws (not available on WebGL)
+    pub ssao_support: bool, // textureLoad on depth textures is not supported by naga's GLSL backend (WebGL/GL)
     pub max_msaa_samples: u32,
     pub max_texture_resolution: u32,
     pub max_supported_texture_resolution: u32
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentModeSetting
+{
+    VSync,     // Fifo: vblank-paced, tear-free
+    FastVSync, // Mailbox: tear-free, no CPU stall on acquire
+    VSyncOff,  // Immediate: may tear, uncapped
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Rendering
 {
     pub clear_color: ChangeTracker<Vector3<f32>>,
-    pub v_sync: ChangeTracker<bool>,
+    pub present_mode: ChangeTracker<PresentModeSetting>,
 
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
 
+    pub shadow: ChangeTracker<bool>,
+    pub shadow_map_resolution: ChangeTracker<u32>,
+    pub shadow_max_distance: f32,
+
+    pub ssao: bool,
+    pub ssao_half_res: bool,
+    pub ssao_radius: f32,
+    pub ssao_bias: f32,
+    pub ssao_strength: f32,
+
+    // distance based fog (world space)
+    #[serde(default)]
+    pub fog: bool,
+    #[serde(default = "default_fog_color")]
+    pub fog_color: Vector3<f32>,
+    #[serde(default = "default_fog_density")]
+    pub fog_density: f32,
+
     pub distance_sorting: bool,
+    pub frustum_culling: bool,
+    pub occlusion_culling: bool,
     pub create_mipmaps: bool,
     pub max_texture_resolution: Option<u32>,
+
+    pub wireframe_mode: bool,
+
+    // reverse z depth buffer (near = 1, far = 0): near-uniform depth precision, less z-fighting
+    #[serde(default)]
+    pub reverse_z: bool,
+
+    // debug rendering of the culling bounding volumes (lines)
+    #[serde(default)]
+    pub draw_bounding_boxes: bool,
+    #[serde(default)]
+    pub draw_bounding_spheres: bool,
+
+    pub xray_mode: bool,
+    pub xray_alpha: f32,
 }
+
+fn default_fog_color() -> Vector3<f32> { DEFAULT_FOG_COLOR }
+fn default_fog_density() -> f32 { DEFAULT_FOG_DENSITY }
 
 pub struct SupportedFileTypes
 {
     pub objects: Vec<String>,
-    pub textures: Vec<String>
+    pub scenes: Vec<String>,
+    pub textures: Vec<String>,
+    pub materials: Vec<String>,
+}
+
+impl Default for SupportedFileTypes
+{
+    fn default() -> Self
+    {
+        Self
+        {
+             objects: vec![String::from("obj"), String::from("gltf"), String::from("glb")],
+             scenes: vec![String::from("scene")],
+             textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png"), String::from("webp")],
+             materials: vec![String::from("mat")],
+        }
+    }
 }
 
 pub struct Statistics
 {
     pub draw_calls: u32,
+    pub occlusion_culled_objects: u32, // objects culled by the gpu occlusion check (async readback - a few frames behind)
+    pub frustum_culled_objects: u32,   // objects dropped by the cpu frustum culling
     pub fps_timer: Instant,
     pub last_time: u128,
     pub fps: u32,
     pub last_fps: u32,
     pub last_fps_1_percent_low: u32, //1% low
-    pub fps_absolute: u32,
+    pub fps_cpu_absolute: u32,
+    pub fps_gpu_absolute: Option<u32>, // None if the adapter does not support timestamp queries
     pub fps_average_chart: VecDeque<u32>,
     pub fps_1_percent_low_chart: VecDeque<u32>,
 
@@ -92,6 +172,16 @@ pub struct Statistics
 
     pub egui_update_time: f32,
     pub egui_render_time: f32,
+
+    pub shadow_views: u32,
+    pub shadow_draw_calls: u32,
+
+    pub gpu_shadow_time: Option<f32>,
+    pub gpu_depth_time: Option<f32>,
+    pub gpu_ssao_time: Option<f32>,
+    pub gpu_color_time: Option<f32>,
+    pub gpu_hzb_time: Option<f32>,
+    pub gpu_egui_time: Option<f32>,
 
     pub frame: u64,
 }
@@ -185,6 +275,23 @@ impl<'de> Deserialize<'de> for Resources
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Debug
+{
+    pub save_image: bool,
+    pub save_depth_pass_image: bool,
+    pub save_depth_buffer_image: bool,
+    pub save_hzb_image: bool,
+
+    pub save_screenshot: bool,
+
+    pub show_depth_pass_image: Option<u32>,
+    pub show_depth_buffer_image: Option<u32>,
+    pub show_hzb_image: Option<u32>,
+
+    pub highlight_visible_occlusions: bool,
+}
+
 pub struct State
 {
     pub project: Project,
@@ -200,7 +307,11 @@ pub struct State
 
     pub running: bool,
     pub pause: bool,
+    pub exit: bool,
+
     pub scenes: Vec<SceneItem>,
+
+    pub oneshot_sounds: Vec<Sound>,
 
     pub registered_components: Vec<(String, bool, fn(&str) -> ComponentItem)>,
     pub registered_camera_controller: Vec<(String, fn() -> CameraControllerBox)>,
@@ -214,15 +325,9 @@ pub struct State
     pub height: u32,
     pub scale_factor: f32,
 
-    pub save_image: bool,
-    pub save_depth_pass_image: bool,
-    pub save_depth_buffer_image: bool,
-
-    pub save_screenshot: bool,
+    pub debug: Debug,
 
     pub stats: Statistics,
-
-    pub exit: bool,
 }
 
 impl State
@@ -244,17 +349,18 @@ impl State
 
         let mut cam_controller: Vec<(String, fn() -> CameraControllerBox)> = vec![];
         cam_controller.push(("Fly Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::fly_controller::FlyController::default()) }));
+        cam_controller.push(("Pan Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::pan_controller::PanController::default()) }));
         cam_controller.push(("Target Rotation Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::target_rotation_controller::TargetRotationController::default()) }));
+        cam_controller.push(("Path Controller".to_string(), || { Box::new(crate::state::scene::camera_controller::path_controller::PathController::default()) }));
 
         let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];
         scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::char_controller::CharacterController::default()) }));
-        scene_controller.push(("Generic Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::generic_controller::GenericController::default()) }));
 
         Self
         {
             project: Project
             {
-                name: "Uknown".to_string(),
+                name: "Untitled".to_string(),
             },
             rendering_adapter: RenderingAdapterFeatures
             {
@@ -263,6 +369,9 @@ impl State
                 driver_info: String::new(),
                 backend: String::new(),
                 storage_buffer_array_support: false,
+                wireframe_mode_support: false,
+                occlusion_culling_support: false,
+                ssao_support: false,
                 max_msaa_samples: 1,
                 max_texture_resolution: DEFAULT_MAX_TEXTURE_RESOLUTION,
                 max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
@@ -271,14 +380,38 @@ impl State
             rendering: Rendering
             {
                 clear_color: ChangeTracker::new(Vector3::<f32>::new(0.0, 0.0, 0.0)),
-                v_sync: ChangeTracker::new(true),
+                present_mode: ChangeTracker::new(PresentModeSetting::VSync),
 
                 fullscreen: ChangeTracker::new(false),
                 msaa: ChangeTracker::new(8),
+                shadow: ChangeTracker::new(true),
+                shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
+                shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
+
+                ssao: true,
+                ssao_half_res: false,
+                ssao_radius: DEFAULT_SSAO_RADIUS,
+                ssao_bias: DEFAULT_SSAO_BIAS,
+                ssao_strength: DEFAULT_SSAO_STRENGTH,
+
+                fog: false,
+                fog_color: DEFAULT_FOG_COLOR,
+                fog_density: DEFAULT_FOG_DENSITY,
 
                 distance_sorting: true,
+                frustum_culling: true,
+                occlusion_culling: true,
                 create_mipmaps: true,
-                max_texture_resolution: None
+                max_texture_resolution: None,
+
+                wireframe_mode: false,
+                reverse_z: false,
+
+                draw_bounding_boxes: false,
+                draw_bounding_spheres: false,
+
+                xray_mode: false,
+                xray_alpha: DEFAULT_XRAY_ALPHA,
             },
 
             io: InputOutput
@@ -298,17 +431,17 @@ impl State
 
             running: false,
             pause: false,
+            exit: false,
+
             scenes: vec![],
+
+            oneshot_sounds: vec![],
 
             registered_components: components,
             registered_camera_controller: cam_controller,
             registered_scene_controller: scene_controller,
 
-            supported_file_types: SupportedFileTypes
-            {
-                objects: vec![String::from("obj"), String::from("gltf"), String::from("glb")],
-                textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png")],
-            },
+            supported_file_types: SupportedFileTypes::default(),
 
             in_focus: true,
 
@@ -316,20 +449,34 @@ impl State
             height: 0,
             scale_factor: 1.0,
 
-            save_image: false,
-            save_depth_pass_image: false,
-            save_depth_buffer_image: false,
-            save_screenshot: false,
+            debug: Debug
+            {
+                save_image: false,
+                save_depth_pass_image: false,
+                save_depth_buffer_image: false,
+                save_hzb_image: false,
+
+                save_screenshot: false,
+
+                show_depth_pass_image: None,
+                show_depth_buffer_image: None,
+                show_hzb_image: None,
+
+                highlight_visible_occlusions: false,
+            },
 
             stats: Statistics
             {
                 draw_calls: 0,
+                occlusion_culled_objects: 0,
+                frustum_culled_objects: 0,
                 fps_timer: Instant::now(),
                 last_time: 0,
                 fps: 0,
                 last_fps: 0,
                 last_fps_1_percent_low: 0,
-                fps_absolute: 0,
+                fps_cpu_absolute: 0,
+                fps_gpu_absolute: None,
                 fps_average_chart: VecDeque::from(vec![0; 100]),
                 fps_1_percent_low_chart: VecDeque::from(vec![0; 100]),
                 frame_times: VecDeque::from(vec![]),
@@ -349,10 +496,18 @@ impl State
                 egui_update_time: 0.0,
                 egui_render_time: 0.0,
 
+                shadow_views: 0,
+                shadow_draw_calls: 0,
+
+                gpu_shadow_time: None,
+                gpu_depth_time: None,
+                gpu_ssao_time: None,
+                gpu_color_time: None,
+                gpu_hzb_time: None,
+                gpu_egui_time: None,
+
                 frame: 0,
             },
-
-            exit: false
         }
     }
 
@@ -408,9 +563,9 @@ impl State
         arc
     }
 
-    pub fn insert_texture_or_reuse(&mut self, texture: Texture, name: &str) -> TextureItem
+    pub fn insert_texture_or_reuse(&mut self, texture: TextureItem, name: &str) -> TextureItem
     {
-        let hash = texture.hash.clone();
+        let hash = texture.read().unwrap().hash.clone();
 
         if self.resources.textures.contains_key(&hash)
         {
@@ -418,16 +573,15 @@ impl State
             return self.resources.textures.get_mut(&hash).unwrap().clone();
         }
 
-        let arc = Arc::new(RwLock::new(Box::new(texture)));
 
-        self.resources.textures.insert(hash, arc.clone());
+        self.resources.textures.insert(hash, texture.clone());
 
-        arc
+        texture
     }
 
-    pub fn insert_mesh_resource_or_reuse(&mut self, mesh_resource: MeshResource, name: &str) -> MeshResourceItem
+    pub fn insert_mesh_resource_or_reuse(&mut self, mesh_resource: MeshResourceItem, name: &str) -> MeshResourceItem
     {
-        let hash = mesh_resource.hash.clone();
+        let hash = mesh_resource.read().unwrap().hash.clone();
 
         if self.resources.mesh_resources.contains_key(&hash)
         {
@@ -435,14 +589,12 @@ impl State
             return self.resources.mesh_resources.get_mut(&hash).unwrap().clone();
         }
 
-        let arc = Arc::new(RwLock::new(Box::new(mesh_resource)));
+        self.resources.mesh_resources.insert(hash, mesh_resource.clone());
 
-        self.resources.mesh_resources.insert(hash, arc.clone());
-
-        arc
+        mesh_resource
     }
 
-    pub fn get_texture_by_id(&self, id: u64) -> Option<TextureItem>
+    pub fn get_texture_by_id(&self, id: u32) -> Option<TextureItem>
     {
         for texture_arc in self.resources.textures.values()
         {
@@ -456,7 +608,7 @@ impl State
         None
     }
 
-    pub fn delete_texture_by_id(&mut self, id: u64) -> bool
+    pub fn delete_texture_by_id(&mut self, id: u32) -> bool
     {
         for scene in &mut self.scenes
         {
@@ -497,7 +649,7 @@ impl State
         self.resources.textures.len() != len
     }
 
-    pub fn get_sound_source_by_id(&self, id: u64) -> Option<SoundSourceItem>
+    pub fn get_sound_source_by_id(&self, id: u32) -> Option<SoundSourceItem>
     {
         for sound_arc in self.resources.sound_sources.values()
         {
@@ -511,7 +663,7 @@ impl State
         None
     }
 
-    pub fn delete_sound_source_by_id(&mut self, id: u64) -> bool
+    pub fn delete_sound_source_by_id(&mut self, id: u32) -> bool
     {
         // remove sound source from all node and instance components
         for scene in &mut self.scenes
@@ -578,7 +730,7 @@ impl State
         self.resources.sound_sources.len() != len
     }
 
-    pub fn get_mesh_resource_by_id(&self, id: u64) -> Option<MeshResourceItem>
+    pub fn get_mesh_resource_by_id(&self, id: u32) -> Option<MeshResourceItem>
     {
         for mesh_arc in self.resources.mesh_resources.values()
         {
@@ -592,7 +744,7 @@ impl State
         None
     }
 
-    pub fn delete_mesh_resource_by_id(&mut self, id: u64) -> bool
+    pub fn delete_mesh_resource_by_id(&mut self, id: u32) -> bool
     {
         // remove mesh resource from all node components
         for scene in &mut self.scenes
@@ -635,7 +787,7 @@ impl State
         self.resources.mesh_resources.len() != len
     }
 
-    pub fn load_scene_env_map(&mut self, path: &str, scene_id: u64)
+    pub fn load_scene_env_map(&mut self, path: &str, scene_id: u32)
     {
         let path = path.to_string().clone();
 
@@ -648,11 +800,28 @@ impl State
         });
     }
 
-    pub fn get_main_scene(&self) -> Option<&SceneItem>
+    pub fn add_scene(&mut self, name: &str) -> &mut SceneItem
+    {
+        let scenes_amount = self.scenes.len();
+
+        let mut scene = crate::state::scene::scene::Scene::new(name);
+
+        if scenes_amount == 0
+        {
+            scene.active = true;
+        }
+
+        scene.add_defaults();
+        self.scenes.push(Box::new(scene));
+
+        self.scenes.last_mut().unwrap()
+    }
+
+    pub fn get_active_scene(&self) -> Option<&SceneItem>
     {
         for scene in &self.scenes
         {
-            if scene.main
+            if scene.active
             {
                 return Some(&scene);
             }
@@ -661,11 +830,11 @@ impl State
         None
     }
 
-    pub fn get_main_scene_mut(&mut self) -> Option<&mut SceneItem>
+    pub fn get_active_scene_mut(&mut self) -> Option<&mut SceneItem>
     {
         for scene in &mut self.scenes
         {
-            if scene.main
+            if scene.active
             {
                 return Some(scene);
             }
@@ -674,9 +843,9 @@ impl State
         None
     }
 
-    pub fn get_main_scene_id(&self) -> Option<u64>
+    pub fn get_active_scene_id(&self) -> Option<u32>
     {
-        let scene = self.get_main_scene();
+        let scene = self.get_active_scene();
         if let Some(scene) = scene
         {
             return Some(scene.id);
@@ -684,7 +853,22 @@ impl State
         None
     }
 
-    pub fn find_scene_by_id(&self, id: u64) -> Option<&SceneItem>
+    pub fn set_active_scene(&mut self, id: u32)
+    {
+        for scene in &mut self.scenes
+        {
+            if scene.id == id
+            {
+                scene.active = true;
+            }
+            else
+            {
+                scene.active = false;
+            }
+        }
+    }
+
+    pub fn find_scene_by_id(&self, id: u32) -> Option<&SceneItem>
     {
         for scene in &self.scenes
         {
@@ -697,7 +881,7 @@ impl State
         None
     }
 
-    pub fn find_scene_by_id_mut(&mut self, id: u64) -> Option<&mut SceneItem>
+    pub fn find_scene_by_id_mut(&mut self, id: u32) -> Option<&mut SceneItem>
     {
         for scene in &mut self.scenes
         {
@@ -708,6 +892,56 @@ impl State
         }
 
         None
+    }
+
+    pub fn delete_scene_by_id(&mut self, id: u32, clear_resouces: bool) -> bool
+    {
+        let mut was_active = false;
+        {
+            for scene in &mut self.scenes
+            {
+                if scene.id == id
+                {
+                    if clear_resouces
+                    {
+                        scene.clear(true, true);
+                    }
+
+                    if scene.active
+                    {
+                        was_active = true;
+                    }
+                }
+            }
+        }
+
+        let len = self.scenes.len();
+        self.scenes.retain(|scene| scene.id != id);
+        let success = self.scenes.len() != len;
+
+        // mark another scene as active if the deleted one was active
+        if was_active && self.scenes.len() > 0 && self.get_active_scene().is_none()
+        {
+            self.scenes[0].active = true;
+        }
+
+        success
+    }
+
+    pub fn delete_all_scenes(&mut self, clear_resouces: bool) -> bool
+    {
+        if clear_resouces
+        {
+            for scene in &mut self.scenes
+            {
+                scene.clear(true, true);
+            }
+        }
+
+        let len = self.scenes.len();
+        self.scenes.clear();
+
+        len > 0 && self.scenes.is_empty()
     }
 
     pub fn max_texture_resolution(&self) -> u32
@@ -725,6 +959,11 @@ impl State
         // ********** update scenes **********
         for scene in &mut self.scenes
         {
+            if !scene.active
+            {
+                continue;
+            }
+
             scene.update(&mut self.io, time, time_delta, frame);
         }
 
@@ -783,11 +1022,35 @@ impl State
             }
             true
         });
+
+        // ********** fire-and-forget sounds **********
+        let mut finished_sound_sources: HashMap<u32, SoundSourceItem> = HashMap::new();
+        self.oneshot_sounds.retain(|sound|
+        {
+            if sound.stopped()
+            {
+                if let Some(sound_source) = sound.sound_source.as_ref()
+                {
+                    finished_sound_sources.insert(sound_source.read().unwrap().id, sound_source.clone());
+                }
+                return false;
+            }
+            true
+        });
+
+        for (_, sound_source) in finished_sound_sources
+        {
+            if Arc::strong_count(&sound_source) == 2
+            {
+                sound_source.write().unwrap().delete_later();
+            }
+        }
     }
 
     pub fn clear(&mut self)
     {
         self.resources.textures.clear();
+        self.oneshot_sounds.clear();
     }
 
     pub fn print(&self)
@@ -799,6 +1062,8 @@ impl State
         println!(" - driver info: {}", self.rendering_adapter.driver_info);
         println!(" - backend: {}", self.rendering_adapter.backend);
         println!(" - storage_buffer_array_support: {}", self.rendering_adapter.storage_buffer_array_support);
+        println!(" - occlusion_culling_support: {}", self.rendering_adapter.occlusion_culling_support);
+        println!(" - ssao_support: {}", self.rendering_adapter.ssao_support);
         println!(" - max msaa_samples: {}", self.rendering_adapter.max_msaa_samples);
 
         println!("");

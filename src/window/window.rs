@@ -139,7 +139,6 @@ impl ApplicationHandler<CustomEvent> for AppState
             AppState::Initialized(app) => app,
             AppState::Uninitialized(_) => return,
         };
-
         match event
         {
             winit::event::WindowEvent::Resized(size) => app.interface.resize(Some(size.clone()), None),

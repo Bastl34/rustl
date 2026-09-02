@@ -1,0 +1,235 @@
+use egui::{Ui, ScrollArea, Id, Color32, RichText};
+
+use crate::{gui::helper::generic_items::separator_colored, state::state::State};
+
+use super::super::editor_state::{EditorState, AssetType};
+
+pub fn create_asset_section(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    ui.set_min_height(220.0);
+
+    ui.horizontal_top(|ui|
+    {
+        create_asset_tree(editor_state, state, ui);
+        create_asset_list(editor_state, state, ui);
+    });
+}
+
+pub fn create_asset_tree(editor_state: &mut EditorState, _state: &mut State, ui: &mut Ui)
+{
+    ui.scope(|ui|
+    {
+        ui.set_min_width(100.0);
+        //ui.set_max_width(100.0);
+
+        ui.vertical(|ui|
+        {
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Scene, "🎬 Scenes");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Object, "📦 Objects");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Textures");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Material, "🎨 Materials");
+        });
+    });
+}
+
+pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    let items = match editor_state.asset_type
+    {
+        AssetType::Scene => Some(&editor_state.assets_scenes),
+        AssetType::Object => Some(&editor_state.assets_objects),
+        AssetType::Texture => None,
+        AssetType::Material => Some(&editor_state.assets_materials),
+    };
+
+    if items.is_none() { return; }
+    let items = items.unwrap();
+
+    let mut reload_assets = false;
+
+    ui.vertical(|ui|
+    {
+        ui.horizontal(|ui|
+        {
+            ui.label("🔍");
+            ui.add(egui::TextEdit::singleline(&mut editor_state.asset_filter).desired_width(100.0));
+
+            if editor_state.asset_type == AssetType::Object || editor_state.asset_type == AssetType::Material
+            {
+                ui.checkbox(&mut editor_state.reuse_materials_by_name, "Reuse Materials by name");
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+            {
+                if ui.button("⟳").clicked()
+                {
+                    reload_assets = true;
+                }
+
+                if editor_state.asset_type == AssetType::Material
+                {
+                    let running = *editor_state.material_thumbnails_running.read().unwrap();
+                    if ui.add_enabled(!running, egui::Button::new("🖼 Create Thumbnails")).on_hover_text("render preview thumbnails for materials without one").clicked()
+                    {
+                        editor_state.generate_material_thumbnails = Some(true);
+                    }
+                }
+            });
+        });
+
+        ScrollArea::vertical().show(ui, |ui|
+        {
+            ui.set_min_width(ui.available_width());
+            ui.set_max_width(ui.available_width());
+
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui|
+            {
+                ui.spacing_mut().item_spacing = egui::Vec2::new(2.0, 2.0);
+                for asset in items
+                {
+                    let filter = editor_state.asset_filter.to_lowercase();
+
+                    if !filter.is_empty() && asset.name.to_lowercase().find(filter.as_str()).is_none()
+                    {
+                        continue;
+                    }
+
+                    let str_id = format!("{} asset", asset.path);
+                    let item_id = Id::new(str_id.clone());
+                    let name = asset.name.clone();
+                    let str_id_inner = format!("{}_inner", str_id.clone());
+
+                    let width = 100.0;
+                    let height = 150.0;
+                    let margin = 2.0;
+                    let image_size = width - 20.0;
+
+                    let bg_color = Color32::from_white_alpha(3);
+                    let highlight_color = egui::Color32::from_rgba_premultiplied(0, 100, 210, 50);
+                    let separator_color = Color32::LIGHT_GRAY;
+                    let image_background_color = Color32::from_rgba_premultiplied(0, 0, 0, 150);
+
+                    let shadow = egui::Shadow
+                    {
+                        offset: [2, 2].into(),
+                        blur: 4,
+                        spread: 2,
+                        color: egui::Color32::from_black_alpha(180),
+                        //color: egui::Color32::from_white_alpha(180)
+                    };
+
+                    let apply_size = |ui: &mut Ui|
+                    {
+                        ui.set_min_width(width);
+                        ui.set_max_width(width);
+                        ui.set_min_height(height);
+                        ui.set_max_height(height);
+                    };
+
+                    let apply_available_size = |ui: &mut Ui|
+                    {
+                        ui.set_min_width(ui.available_width());
+                        ui.set_max_width(ui.available_width());
+                        ui.set_min_height(ui.available_height());
+                        ui.set_max_height(ui.available_height());
+                    };
+
+                    // if is_being_dragged
+                    let is_being_dragged = ui.ctx().is_being_dragged(item_id);
+                    if is_being_dragged
+                    {
+                        editor_state.drag_id = Some(asset.path.clone());
+                    }
+
+                    ui.allocate_ui(egui::Vec2::new(width + (margin * 2.0), height + (margin * 2.0)), |ui|
+                    {
+                        apply_available_size(ui);
+
+                        ui.dnd_drag_source(item_id, asset.path.clone(), |ui|
+                        {
+                            apply_available_size(ui);
+
+                            ui.push_id(str_id_inner, |ui|
+                            {
+                                apply_available_size(ui);
+
+                                let stroke_color = if is_being_dragged { highlight_color } else { Color32::TRANSPARENT };
+                                let fill_color = if is_being_dragged { highlight_color } else { bg_color };
+                                let frame = egui::Frame::default().fill(fill_color).corner_radius(2.0).shadow(shadow).outer_margin(margin).stroke(egui::Stroke::new(2.0, stroke_color));
+
+                                frame.show(ui, |ui|
+                                {
+                                    ui.style_mut().interaction.selectable_labels = false;
+                                    apply_size(ui);
+
+                                    ui.vertical(|ui|
+                                    {
+                                        ui.vertical_centered(|ui|
+                                        {
+                                            egui::Frame::default().fill(image_background_color).show(ui, |ui|
+                                            {
+                                                ui.set_min_width(ui.available_width());
+                                                ui.set_max_width(ui.available_width());
+
+                                                ui.allocate_ui(egui::Vec2::new(image_size, image_size), |ui|
+                                                {
+                                                    apply_available_size(ui);
+
+                                                    if let Some(egui_preview) = &asset.egui_preview
+                                                    {
+                                                        ui.image((egui_preview.id(), egui::Vec2::new(ui.available_width(), ui.available_height())));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Scene
+                                                    {
+                                                        ui.label(RichText::new("🎬").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Object
+                                                    {
+                                                        ui.label(RichText::new("📦").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Texture
+                                                    {
+                                                        ui.label(RichText::new("🖼").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Material
+                                                    {
+                                                        ui.label(RichText::new("🎨").size(60.0));
+                                                    }
+                                                });
+                                            });
+                                        });
+
+                                        separator_colored(ui, separator_color, 2.0);
+
+                                        ui.vertical(|ui|
+                                        {
+                                            apply_available_size(ui);
+
+                                            egui::Frame::default().outer_margin(margin).show(ui, |ui|
+                                            {
+                                                if is_being_dragged
+                                                {
+                                                    ui.label(RichText::new(name).color(egui::Color32::WHITE));
+                                                }
+                                                else
+                                                {
+                                                    ui.label(name);
+                                                }
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                }
+            });
+        });
+    });
+
+    if reload_assets
+    {
+        editor_state.load_all_asset_entries(state, ui.ctx());
+    }
+
+}

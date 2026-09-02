@@ -61,6 +61,11 @@ pub struct MorphTarget
 impl RenderItem for MorphTarget
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl MorphTarget
@@ -328,6 +333,16 @@ impl MorphTarget
     pub fn get_buffer(&self) -> &wgpu::Buffer
     {
         &self.buffer
+    }
+
+    pub fn texture_gpu_usage(&self) -> u64
+    {
+        let bytes_per_texel = (FLOATS_PER_PIXEL * std::mem::size_of::<f32>()) as u64;
+
+        self.texture.width() as u64
+        * self.texture.height() as u64
+        * self.texture.depth_or_array_layers() as u64
+        * bytes_per_texel
     }
 
     pub fn get_bind_group_layout_entry(index_start: u32) -> BindGroupLayoutEntry

@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 
 use std::cell::RefCell;
+use std::env;
 use std::mem::swap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{vec, cmp};
+use std::{cmp, vec};
 
 use gilrs::Gilrs;
 use nalgebra::{Vector2, Point2};
@@ -17,13 +18,14 @@ use winit::window::{Window, Fullscreen, CursorGrabMode};
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::platform::is_mac;
 use crate::input::input_point::PointState;
-use crate::input::keyboard::Modifier;
+use crate::input::keyboard::{Key, Modifier};
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
-use crate::{console_error, console_log, rendering};
+use crate::state::scene::loader::loader::play_and_forget_sound;
+use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene_meshes;
+use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
-use crate::state::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
@@ -31,7 +33,10 @@ use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
 use super::app::App;
 use super::context::Context;
 use super::gilrs::{gilrs_event, gilrs_initialize};
-use super::winit::winit_map_key;
+use super::winit::{winit_map_key, winit_map_physical_key};
+
+#[cfg(feature = "editor")]
+use crate::gui::editor::editor::Editor;
 
 pub struct MainInterface
 {
@@ -40,7 +45,9 @@ pub struct MainInterface
     app: Option<Box<dyn App>>,
 
     gilrs: Option<Gilrs>,
-    editor_gui: Editor,
+
+    #[cfg(feature = "editor")]
+    editor_gui: Option<Editor>,
 }
 
 impl MainInterface
@@ -70,7 +77,12 @@ impl MainInterface
 
         let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
-        let editor_gui = Editor::new();
+        #[cfg(feature = "editor")]
+        let editor_gui =
+        {
+            let use_editor = !env::args().any(|a| a == "--no-editor");
+            if use_editor { Some(Editor::new()) } else { None }
+        };
 
         let gilrs_res = Gilrs::new();
         let mut gilrs = None;
@@ -90,38 +102,32 @@ impl MainInterface
 
                 wgpu,
                 window,
-                egui
+                egui,
+
+                on_before_render: crate::helper::observable::Observable::new(),
+                on_after_render: crate::helper::observable::Observable::new(),
+                on_resize: crate::helper::observable::Observable::new(),
+                on_exit: crate::helper::observable::Observable::new(),
             },
 
             app: None,
 
             gilrs,
+
+            #[cfg(feature = "editor")]
             editor_gui,
         };
 
-        interface.scene_init();
-        interface.init();
+        let main_scene_id = interface.scene_init();
+        interface.init(main_scene_id);
 
         interface
     }
 
-    pub fn init(&mut self)
+    pub fn init(&mut self, scene_id: u32)
     {
         {
             let state = &mut *(self.context.state.borrow_mut());
-            let samlpes = *(state.rendering.msaa.get_ref());
-
-            // move out scenes from state to prevent using multiple mut borrows
-            let mut scenes = vec![];
-            swap(&mut state.scenes, &mut scenes);
-
-            for scene in &mut scenes
-            {
-                let render_item = Scene::new(&mut self.context.wgpu, state, scene, samlpes);
-                scene.render_item = Some(Box::new(render_item));
-            }
-
-            swap(&mut scenes, &mut state.scenes);
 
             // gamepad init
             if let Some(gilrs) = &mut self.gilrs
@@ -130,7 +136,11 @@ impl MainInterface
             }
 
             // init editor
-            self.editor_gui.init(state, &self.context.egui);
+            #[cfg(feature = "editor")]
+            if let Some(editor_gui) = &mut self.editor_gui
+            {
+                editor_gui.init(state, &self.context.egui, scene_id);
+            }
         }
 
         // create dummy app
@@ -176,6 +186,8 @@ impl MainInterface
         self.context.wgpu.resize(width, height);
         self.context.egui.resize(width, height, scale_factor);
 
+        crate::notify_observable!(&mut self.context, on_resize);
+
         {
             let state = &mut *(self.context.state.borrow_mut());
 
@@ -190,7 +202,7 @@ impl MainInterface
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.resize(&mut self.context.wgpu, scene);
+                render_scene.resize(&mut self.context.wgpu, scene, width, height);
 
                 scene.render_item = render_item;
             }
@@ -205,16 +217,15 @@ impl MainInterface
         }
     }
 
-    pub fn scene_init(&mut self)
+    pub fn scene_init(&mut self) -> u32
     {
         //init scene
         let state = &mut *(self.context.state.borrow_mut());
 
-        let mut scene = crate::state::scene::scene::Scene::new("main scene");
-        scene.add_defaults();
-        scene.main = true;
+        let scene_id = state.add_scene("main scene").id;
+        state.set_active_scene(scene_id);
 
-        state.scenes.push(Box::new(scene));
+        scene_id
     }
 
     pub fn app_update(&mut self)
@@ -233,7 +244,20 @@ impl MainInterface
             return;
         }
 
-        // ******************** update states ********************
+        let frame_time = Instant::now();
+
+        // ******************** key bindings ********************
+        {
+            // screenshot
+            let state = &mut *(self.context.state.borrow_mut());
+            if state.io.input_manager.keyboard.is_pressed_no_wait(Key::F12)
+            {
+                play_and_forget_sound("resources/sounds/screenshot.ogg", state.main_thread_execution_queue.clone());
+                state.debug.save_screenshot = true;
+            }
+        }
+
+        // ******************** update game controller ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             if let Some(gilrs) = &mut self.gilrs
@@ -242,27 +266,10 @@ impl MainInterface
             }
         }
 
-        let frame_time = Instant::now();
 
-        // ******************** update states ********************
+        // ******************** update stats ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
-
-            // vsync
-            let (v_sync, vsync_changed) = state.rendering.v_sync.consume_clone();
-            if vsync_changed
-            {
-                self.context.wgpu.set_vsync(v_sync);
-            }
-
-            // full screen
-            let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
-            if fullscreen_changed
-            {
-                let mut fullscreen_mode = None;
-                if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
-                self.context.window.set_fullscreen(fullscreen_mode);
-            }
 
             // fps
             let current_time = state.stats.fps_timer.elapsed().as_millis();
@@ -292,7 +299,16 @@ impl MainInterface
                     state.stats.fps_1_percent_low_chart.pop_front();
                 }
 
-                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", &self.context.window_title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
+                let title = if state.project.name.trim().is_empty()
+                {
+                    self.context.window_title.clone()
+                }
+                else
+                {
+                    format!("{} | {}", &self.context.window_title, state.project.name.trim())
+                };
+
+                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
                 state.stats.fps = 0;
                 state.stats.frame_times.clear();
             }
@@ -308,30 +324,83 @@ impl MainInterface
             state.stats.frame_update_time = now;
         }
 
+
         // ******************** editor/ui update ********************
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
             let state = &mut *(self.context.state.borrow_mut());
-            self.editor_gui.update(state);
+            editor_gui.update(state, &mut self.context.wgpu, &self.context.egui.ctx);
 
             state.stats.editor_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
+
+        // ******************** create render items if needed ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+            let samlpes = *(state.rendering.msaa.get_ref());
+
+            // move out scenes from state to prevent using multiple mut borrows
+            let mut scenes = vec![];
+            swap(&mut state.scenes, &mut scenes);
+
+            for scene in &mut scenes
+            {
+                if scene.render_item.is_some()
+                {
+                    continue;
+                }
+
+                let render_item = Scene::new(&mut self.context.wgpu, state, scene, samlpes);
+                scene.render_item = Some(Box::new(render_item));
+            }
+
+            swap(&mut scenes, &mut state.scenes);
+        }
+
+
+        // ******************** update rendering states ********************
+        {
+            let state = &mut *(self.context.state.borrow_mut());
+
+            // present mode
+            let (present_mode, present_mode_changed) = state.rendering.present_mode.consume_clone();
+            if present_mode_changed
+            {
+                self.context.wgpu.set_present_mode(present_mode);
+            }
+
+            // full screen
+            let (fullscreen, fullscreen_changed) = state.rendering.fullscreen.consume_clone();
+            if fullscreen_changed
+            {
+                let mut fullscreen_mode = None;
+                if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
+                self.context.window.set_fullscreen(fullscreen_mode);
+            }
+        }
+
         // ******************** build ui ********************
-        if self.editor_gui.editor_state.visible
+        #[cfg(feature = "editor")]
+        if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
             let state = &mut *(self.context.state.borrow_mut());
 
-            let gui_output = self.editor_gui.build_gui(state, &self.context.window, &mut self.context.egui);
-            self.context.egui.output = Some(gui_output);
+            if editor_gui.editor_state.visible
+            {
+                let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, None);
+                self.context.egui.set_output(gui_output);
 
-            //self.gui.request_repaint();
+                //self.gui.request_repaint();
+            }
             state.stats.egui_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
-        // ******************** app update ********************
 
+        // ******************** app update ********************
         if !self.context.state.borrow().pause
         {
             let now = Instant::now();
@@ -341,12 +410,14 @@ impl MainInterface
             state.stats.app_update_time = now.elapsed().as_micros() as f32 / 1000.0;
         }
 
+
         // ******************** update main thread queue ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             let main_queue = state.main_thread_execution_queue.clone();
             ExecutionQueue::run_all(main_queue, state);
         }
+
 
         // ******************** update scene and rendering ********************
         if !self.context.state.borrow().pause
@@ -373,6 +444,16 @@ impl MainInterface
 
             for scene in &mut scenes
             {
+                if !scene.active
+                {
+                    continue;
+                }
+
+                if scene.render_item.is_none()
+                {
+                    continue;
+                }
+
                 let mut render_item = scene.render_item.take();
 
                 let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
@@ -381,6 +462,22 @@ impl MainInterface
                 {
                     render_scene.msaa_sample_size_update(&mut self.context.wgpu, scene, msaa_samples);
                 }
+
+                if state.rendering.wireframe_mode != render_scene.wireframe_mode
+                {
+                    render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.wireframe_mode);
+                }
+
+                if state.rendering.reverse_z != render_scene.reverse_z
+                {
+                    render_scene.reverse_z_update(&mut self.context.wgpu, scene, state.rendering.reverse_z);
+                }
+
+                if state.rendering.xray_mode != render_scene.xray_mode || (state.rendering.xray_mode && state.rendering.xray_alpha != render_scene.xray_alpha)
+                {
+                    render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.xray_mode, state.rendering.xray_alpha);
+                }
+
                 render_scene.update(&mut self.context.wgpu, state, scene);
 
                 scene.render_item = render_item;
@@ -391,84 +488,240 @@ impl MainInterface
             state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
         }
 
+
         // ******************** render ********************
-        let (output, view, msaa_view) = self.context.wgpu.start_render();
-        let mut engine_encoder = self.context.wgpu.create_command_encoder();
-        let mut egui_encoder = self.context.wgpu.create_command_encoder();
+        crate::notify_observable!(&mut self.context, on_before_render);
+
+        if let Some((output, view, msaa_view)) = self.context.wgpu.start_render()
         {
-            let state = &mut *(self.context.state.borrow_mut());
-
-            // render scenes
+            let mut engine_encoder = self.context.wgpu.create_command_encoder();
+            let mut egui_encoder = self.context.wgpu.create_command_encoder();
             {
-                let engine_render_time = Instant::now();
+                let state = &mut *(self.context.state.borrow_mut());
 
-                state.stats.draw_calls = 0;
-
-                for scene in &mut state.scenes
+                // render scenes
                 {
-                    if !scene.visible
+                    let engine_render_time = Instant::now();
+
+                    state.stats.draw_calls = 0;
+                    state.stats.occlusion_culled_objects = 0;
+                    state.stats.frustum_culled_objects = 0;
+                    state.stats.shadow_views = 0;
+                    state.stats.shadow_draw_calls = 0;
+
+                    state.stats.gpu_shadow_time = None;
+                    state.stats.gpu_depth_time = None;
+                    state.stats.gpu_ssao_time = None;
+                    state.stats.gpu_color_time = None;
+                    state.stats.gpu_hzb_time = None;
+                    state.stats.gpu_egui_time = None;
+
+                    for scene in &mut state.scenes
                     {
-                        continue;
+                        if !scene.visible || !scene.active
+                        {
+                            continue;
+                        }
+
+                        if scene.render_item.is_none()
+                        {
+                            continue;
+                        }
+
+                        let mut render_item = scene.render_item.take();
+
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.distance_sorting = state.rendering.distance_sorting;
+                        render_scene.frustum_culling = state.rendering.frustum_culling;
+                        render_scene.occlusion_culling = state.rendering.occlusion_culling;
+
+                        scene.notify_before_render_all();
+
+                        // render scene
+                        let render_results =  render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
+
+                        scene.notify_after_render_all();
+
+                        // update visibility info for cameras
+                        let mut enabled_index = 0;
+                        for cam in scene.cameras.iter_mut()
+                        {
+                            if !cam.enabled { continue; }
+                            cam.visible_nodes_last_frame = render_results[enabled_index].objects_visible.clone();
+                            enabled_index += 1;
+                        }
+
+                        // all draw calls (camera passes + shadow passes)
+                        state.stats.draw_calls += render_results.iter().map(|r| r.draw_calls).sum::<u32>() + render_scene.shadow_draw_calls;
+
+                        // objects culled by the gpu occlusion check (async readback - a few frames behind)
+                        state.stats.occlusion_culled_objects += render_results.iter().map(|r| r.objects_invisible.len() as u32).sum::<u32>();
+
+                        // objects dropped by the cpu frustum culling
+                        state.stats.frustum_culled_objects += render_results.iter().map(|r| r.objects_frustum_culled).sum::<u32>();
+
+                        // shadow stats
+                        state.stats.shadow_views += render_scene.shadow_views;
+                        state.stats.shadow_draw_calls += render_scene.shadow_draw_calls;
+
+                        // gpu pass timings (read back from the previous frame)
+                        if let Some(gpu_times) = render_scene.gpu_pass_times()
+                        {
+                            if let Some(time) = gpu_times.shadow { state.stats.gpu_shadow_time = Some(state.stats.gpu_shadow_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.depth { state.stats.gpu_depth_time = Some(state.stats.gpu_depth_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.ssao { state.stats.gpu_ssao_time = Some(state.stats.gpu_ssao_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.color { state.stats.gpu_color_time = Some(state.stats.gpu_color_time.unwrap_or(0.0) + time); }
+                            if let Some(time) = gpu_times.hzb { state.stats.gpu_hzb_time = Some(state.stats.gpu_hzb_time.unwrap_or(0.0) + time); }
+                        }
+
+                        // debug highlight visible occlusions
+                        if state.debug.highlight_visible_occlusions
+                        {
+                            let all_highlighted = render_results.iter().flat_map(|r| r.objects_visible.iter()).cloned().collect();
+                            highlight_and_unhighlight_scene_meshes(scene, &all_highlighted);
+                            console_debug!("Highlighted {} visible occluded objects", all_highlighted.len());
+                        }
+
+                        scene.render_item = render_item;
                     }
 
-                    let mut render_item = scene.render_item.take();
-
-                    let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                    render_scene.distance_sorting = state.rendering.distance_sorting;
-                    state.stats.draw_calls += render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut engine_encoder, scene);
-
-                    scene.render_item = render_item;
+                    state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
                 }
 
-                state.stats.engine_render_time = engine_render_time.elapsed().as_micros() as f32 / 1000.0;
-            }
+                // render egui
+                #[cfg(feature = "editor")]
+                if let Some(editor_gui) = &mut self.editor_gui
+                {
+                    let now = Instant::now();
 
-            // render egui
-            if self.editor_gui.editor_state.visible
-            {
-                let now = Instant::now();
-                self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
+                    if editor_gui.editor_state.visible
+                    {
+                        self.context.egui.render(&mut self.context.wgpu, &view, &mut egui_encoder);
 
-                state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                        // gpu time of the egui pass (read back from the previous frame)
+                        state.stats.gpu_egui_time = self.context.egui.gpu_render_time();
+                    }
+                    state.stats.egui_render_time = now.elapsed().as_micros() as f32 / 1000.0;
+                }
             }
+            self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
+            self.context.wgpu.end_render(output);
+
+            crate::notify_observable!(&mut self.context, on_after_render);
         }
-        self.context.wgpu.submit_commands(vec![engine_encoder, egui_encoder]);
-        self.context.wgpu.end_render(output);
+
 
         // ******************** screenshot ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
 
-            if state.save_screenshot
+            if state.debug.save_screenshot
             {
-                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_screenshot_render();
+                //let target_size: Option<(u32, u32)> = Some((256, 256));
+                let target_size: Option<(u32, u32)> = None;
+
+                let original_size = (state.width, state.height);
+                let render_size = target_size.unwrap_or(original_size);
+
+                // resize all scenes (depth buffer, cameras, hzb) to the given resolution
+                let resize_scenes = |wgpu: &mut WGpu, state: &mut State, width: u32, height: u32|
+                {
+                    // move scenes out of state to avoid multiple mut borrows during update
+                    let mut scenes = vec![];
+                    swap(&mut state.scenes, &mut scenes);
+
+                    for scene in &mut scenes
+                    {
+                        if scene.render_item.is_none()
+                        {
+                            continue;
+                        }
+
+                        scene.update_resolution(width, height);
+
+                        let mut render_item = scene.render_item.take();
+                        let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
+                        render_scene.resize(wgpu, scene, width, height);
+                        render_scene.update(wgpu, state, scene);
+                        scene.render_item = render_item;
+                    }
+
+                    swap(&mut scenes, &mut state.scenes);
+                };
+
+                // switch to the custom render resolution
+                if target_size.is_some()
+                {
+                    resize_scenes(&mut self.context.wgpu, state, render_size.0, render_size.1);
+                }
+
+                let (buffer_dimensions, output_buffer, texture, view, msaa_view) = self.context.wgpu.start_offscreen_render(target_size);
                 let mut encoder = self.context.wgpu.create_command_encoder();
                 {
                     for scene in &mut state.scenes
                     {
+                        if !scene.visible || !scene.active
+                        {
+                            continue;
+                        }
+
                         let mut render_item = scene.render_item.take();
 
                         let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
                         render_scene.distance_sorting = state.rendering.distance_sorting;
+                        render_scene.frustum_culling = state.rendering.frustum_culling;
+                        render_scene.occlusion_culling = state.rendering.occlusion_culling;
                         render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;
                     }
 
-                    self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+                    // egui overlay
+                    #[cfg(feature = "editor")]
+                    if let Some(editor_gui) = &mut self.editor_gui
+                    {
+                        if editor_gui.editor_state.visible
+                        {
+                            // when rendering off-screen at a custom size, the egui layout and its scissor rects
+                            // must match the render target, so temporarily switch the screen descriptor size.
+                            let prev_egui_size = self.context.egui.screen_descriptor.size_in_pixels;
+                            if target_size.is_some()
+                            {
+                                self.context.egui.screen_descriptor.size_in_pixels = [render_size.0, render_size.1];
+                            }
+
+                            // re-create the GUI output for the new render target size and render
+                            let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, target_size);
+                            self.context.egui.set_output(gui_output);
+                            self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
+
+                            // restore the window size for the normal frames
+                            self.context.egui.screen_descriptor.size_in_pixels = prev_egui_size;
+                        }
+                    }
                 }
-                let img_data = self.context.wgpu.end_screenshot_render(buffer_dimensions, output_buffer, texture, encoder);
+                let img_data = self.context.wgpu.end_offscreen_render(buffer_dimensions, output_buffer, texture, encoder);
 
                 img_data.save("data/screenshot.png").unwrap();
-                state.save_screenshot = false;
+                img_data.save("data/screenshot.webp").unwrap();
+
+                // restore the original (window) resolution
+                if target_size.is_some()
+                {
+                    resize_scenes(&mut self.context.wgpu, state, original_size.0, original_size.1);
+                }
+
+                state.debug.save_screenshot = false;
             }
         }
+
 
         // ******************** update inputs ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             state.io.input_manager.update();
         }
+
 
         // ******************** mouse visibility ********************
         {
@@ -494,11 +747,13 @@ impl MainInterface
             }
         }
 
+
         // ******************** reset global change tracker ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
             state.io.audio_device.write().unwrap().data.consume_change();
         }
+
 
         // ******************** frame time ********************
         {
@@ -506,7 +761,13 @@ impl MainInterface
             state.stats.frame_time = frame_time.elapsed().as_micros() as f32 / 1000.0;
             state.stats.frame_times.push_back(frame_time.elapsed().as_micros() as f32);
 
-            state.stats.fps_absolute = (1000.0 / (state.stats.engine_render_time + state.stats.engine_update_time)) as u32;
+            // cpu-only fps estimate without the editor overhead (the editor is not part of a game build)
+            state.stats.fps_cpu_absolute = (1000.0 / (state.stats.engine_update_time + state.stats.engine_render_time + state.stats.app_update_time)) as u32;
+
+            // gpu-only fps estimate without the editor overhead (egui pass excluded)
+            // based on the summed pass times of the last read back frame
+            let gpu_total = state.stats.gpu_shadow_time.unwrap_or(0.0) + state.stats.gpu_depth_time.unwrap_or(0.0) + state.stats.gpu_color_time.unwrap_or(0.0) + state.stats.gpu_hzb_time.unwrap_or(0.0);
+            state.stats.fps_gpu_absolute = if gpu_total > 0.0 { Some((1000.0 / gpu_total) as u32) } else { None };
 
             // frame update
             state.stats.frame += 1;
@@ -519,6 +780,8 @@ impl MainInterface
         {
             app.exit(&mut self.context);
         }
+
+        crate::notify_observable!(&mut self.context, on_exit);
     }
 
     pub fn check_exit(&mut self) -> bool
@@ -538,8 +801,41 @@ impl MainInterface
 
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
-        if self.editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
+        #[cfg(feature = "editor")]
+        let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {
+            editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
+        }
+        else
+        {
+            false
+        };
+
+        #[cfg(not(feature = "editor"))]
+        let egui_consumed = false;
+
+
+        // Always forward mouse button releases to the input manager, even if egui consumed the event.
+        // Otherwise, if the user presses in the scene and releases over egui, the scene gets stuck
+        // thinking a button is held, causing unwanted camera rotation.
+        if egui_consumed
+        {
+            let global_state = &mut *(self.context.state.borrow_mut());
+
+            match event
+            {
+                winit::event::WindowEvent::MouseInput { state: ElementState::Released, button, .. } =>
+                {
+                    let button = winit_map_mouse_button(button);
+                    global_state.io.input_manager.mouse.set_button(button, false, global_state.stats.frame);
+                },
+                winit::event::WindowEvent::CursorMoved { .. } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
+                },
+                _ => {}
+            }
+
             return;
         }
         else
@@ -551,7 +847,13 @@ impl MainInterface
             {
                 winit::event::WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } =>
                 {
-                    let key = winit_map_key(&event.logical_key, event.location);
+                    let mut key = winit_map_key(&event.logical_key, event.location);
+
+                    // fall back to the physical (layout-independent) key when the logical key is mangled by the layout - e.g. ctrl+alt is treated as altgr on windows, breaking shortcuts like ctrl+alt+b
+                    if key == Key::Unknown
+                    {
+                        key = winit_map_physical_key(&event.physical_key);
+                    }
 
                     if event.state == ElementState::Pressed
                     {
@@ -632,6 +934,10 @@ impl MainInterface
 
                     global_state.io.input_manager.mouse.set_pos(pos, global_state.stats.frame, global_state.width, global_state.height);
                 },
+                winit::event::WindowEvent::CursorLeft { device_id: _ } =>
+                {
+                    global_state.io.input_manager.mouse.invalidate_pos();
+                },
                 winit::event::WindowEvent::Touch(touch) =>
                 {
                     let mut pos = Point2::<f32>::new(touch.location.x as f32, touch.location.y as f32);
@@ -664,7 +970,12 @@ impl MainInterface
                 {
                     if let Some(path) = path.to_str()
                     {
-                        self.editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        #[cfg(feature = "editor")]
+                        if let Some(editor_gui) = &mut self.editor_gui
+                        {
+                            editor_gui.apply_external_asset_drag(global_state, path.to_string());
+                        }
+
                         self.context.window.request_redraw();
                     }
                 },

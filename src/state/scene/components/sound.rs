@@ -4,7 +4,7 @@ use std::{sync::{Arc, RwLock}};
 
 use egui::RichText;
 use nalgebra::{distance, Point3};
-use rodio::{Sink, Source, SpatialSink};
+use rodio::{Player, Source, SpatialPlayer};
 use serde::{Deserialize, Serialize};
 use web_time::Duration;
 
@@ -49,10 +49,10 @@ pub struct Sound
     audio_device: Option<AudioDeviceItem>,
 
     #[serde(skip, default)]
-    sink: Option<Sink>,
+    player: Option<Player>,
 
     #[serde(skip, default)]
-    sink_spatial: Option<SpatialSink>,
+    player_spatial: Option<SpatialPlayer>,
 }
 
 impl Sound
@@ -80,8 +80,8 @@ impl Sound
 
             audio_device: None,
 
-            sink: None,
-            sink_spatial: None,
+            player: None,
+            player_spatial: None,
         };
 
         sound.set_sound_source(sound_source.clone());
@@ -112,8 +112,8 @@ impl Sound
 
             audio_device: None,
 
-            sink: None,
-            sink_spatial: None,
+            player: None,
+            player_spatial: None,
         };
 
         sound
@@ -136,18 +136,18 @@ impl Sound
 
     pub fn reset(&mut self)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.stop();
+            player.stop();
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.stop();
+            player.stop();
         }
 
-        self.sink = None;
-        self.sink_spatial = None;
+        self.player = None;
+        self.player_spatial = None;
     }
 
     pub fn set_sound_source(&mut self, sound_source: SoundSourceItem)
@@ -170,7 +170,7 @@ impl Sound
 
             if data.sound_type == SoundType::Stereo
             {
-                let s = rodio::Sink::connect_new(stream.mixer());
+                let s = rodio::Player::connect_new(stream.mixer());
                 if let Some(decoder) = sound_source.decoder()
                 {
                     if let Some(total_duration) = decoder.total_duration()
@@ -196,7 +196,7 @@ impl Sound
             }
             else
             {
-                let s = rodio::SpatialSink::connect_new(stream.mixer(), [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+                let s = rodio::SpatialPlayer::connect_new(stream.mixer(), [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
                 if let Some(decoder) = sound_source.decoder()
                 {
                     if let Some(total_duration) = decoder.total_duration()
@@ -222,22 +222,22 @@ impl Sound
             }
         }
 
-        self.sink = sink;
-        self.sink_spatial = sink_spatial;
+        self.player = sink;
+        self.player_spatial = sink_spatial;
 
         self._update(None, None, true);
     }
 
     pub fn running(&self) -> bool
     {
-        if let Some(sink) = &self.sink
+        if let Some(player) = &self.player
         {
-            return !sink.is_paused() && !sink.empty();
+            return !player.is_paused() && !player.empty();
         }
 
-        if let Some(sink) = &self.sink_spatial
+        if let Some(player) = &self.player_spatial
         {
-            return !sink.is_paused() && !sink.empty();
+            return !player.is_paused() && !player.empty();
         }
 
         false
@@ -245,14 +245,14 @@ impl Sound
 
     pub fn stopped(&self) -> bool
     {
-        if let Some(sink) = &self.sink
+        if let Some(player) = &self.player
         {
-            return sink.empty();
+            return player.empty();
         }
 
-        if let Some(sink) = &self.sink_spatial
+        if let Some(player) = &self.player_spatial
         {
-            return sink.empty();
+            return player.empty();
         }
 
         false
@@ -265,48 +265,48 @@ impl Sound
             self.set_sound_source(self.sound_source.clone().unwrap());
         }
 
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.play();
+            player.play();
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.play();
+            player.play();
         }
     }
 
     pub fn stop(&mut self)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.stop()
+            player.stop()
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.stop();
+            player.stop();
         }
     }
 
     pub fn pause(&mut self)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
-            sink.pause()
+            player.pause()
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
-            sink.pause();
+            player.pause();
         }
     }
 
     pub fn sound_time(&self) -> f32
     {
-        if let Some(sink) = &self.sink
+        if let Some(player) = &self.player
         {
-            let pos = sink.get_pos();
+            let pos = player.get_pos();
 
             if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
             {
@@ -316,9 +316,9 @@ impl Sound
             return pos.as_secs_f32();
         }
 
-        if let Some(sink) = &self.sink_spatial
+        if let Some(player) = &self.player_spatial
         {
-            let pos = sink.get_pos();
+            let pos = player.get_pos();
 
             if self.get_data().looped && !approx_zero(self.duration) && pos >= Duration::from_secs_f32(self.duration)
             {
@@ -333,10 +333,10 @@ impl Sound
 
     pub fn set_current_time(&mut self, time: f32)
     {
-        if let Some(sink) = &mut self.sink
+        if let Some(player) = &mut self.player
         {
             let pos = Duration::from_secs_f32(time);
-            let res = sink.try_seek(pos);
+            let res = player.try_seek(pos);
             if res.is_err()
             {
                 console_warning!("can not seek, because its not supported for this file");
@@ -344,10 +344,10 @@ impl Sound
             }
         }
 
-        if let Some(sink) = &mut self.sink_spatial
+        if let Some(player) = &mut self.player_spatial
         {
             let pos = Duration::from_secs_f32(time);
-            let res = sink.try_seek(pos);
+            let res = player.try_seek(pos);
             if res.is_err()
             {
                 console_warning!("can not seek, because its not supported for this file");
@@ -376,7 +376,7 @@ impl Sound
 
         let (data, change) = self.data.consume_borrow();
 
-        let is_spatial = self.sink_spatial.is_some();
+        let is_spatial = self.player_spatial.is_some();
 
         if !audio_device_change && !change && !force && !is_spatial
         {
@@ -385,18 +385,18 @@ impl Sound
 
         let volume = audio_device.data.get_ref().volume * data.volume;
 
-        // default sink
-        if let Some(sink) = &self.sink
+        // default player
+        if let Some(player) = &self.player
         {
-            sink.set_volume(volume);
-            sink.set_speed(data.speed);
+            player.set_volume(volume);
+            player.set_speed(data.speed);
         }
 
-        // spatial sink
-        if let Some(sink) = &self.sink_spatial
+        // spatial player
+        if let Some(player) = &self.player_spatial
         {
-            sink.set_volume(audio_device.data.get_ref().volume * data.volume);
-            sink.set_speed(data.speed);
+            player.set_volume(audio_device.data.get_ref().volume * data.volume);
+            player.set_speed(data.speed);
 
             let mut position = None;
             if let Some(instance) = instance
@@ -439,9 +439,9 @@ impl Sound
                 let left = [left_pos.x, left_pos.y, left_pos.z];
                 let right = [right_pos.x, right_pos.y, right_pos.z];
 
-                sink.set_emitter_position(pos);
-                sink.set_left_ear_position(left);
-                sink.set_right_ear_position(right);
+                player.set_emitter_position(pos);
+                player.set_left_ear_position(left);
+                player.set_right_ear_position(right);
             }
         }
     }
@@ -524,8 +524,8 @@ impl Component for Sound
 
             audio_device: None,
 
-            sink: None,
-            sink_spatial: None,
+            player: None,
+            player_spatial: None,
         };
 
         if let Some(sound_source) = source.sound_source.as_ref()

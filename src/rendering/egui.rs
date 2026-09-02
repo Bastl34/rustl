@@ -7,7 +7,7 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::winit;
 use wgpu::{TextureView, CommandEncoder};
 
-use crate::rendering::wgpu::WGpu;
+use crate::rendering::{gpu_timer::{GpuTimer, GpuTimerPass}, wgpu::WGpu};
 
 pub struct EGui
 {
@@ -16,7 +16,11 @@ pub struct EGui
     pub ui_state: egui_winit::State,
     pub screen_descriptor: egui_wgpu::ScreenDescriptor,
 
-    pub output: Option<FullOutput>
+    pub output: Option<FullOutput>,
+    pub pending_textures_delta: egui::TexturesDelta,
+
+    // gpu time of the egui render pass (None if the adapter does not support timestamp queries)
+    gpu_timer: Option<GpuTimer>,
 }
 
 impl EGui
@@ -26,6 +30,7 @@ impl EGui
         let size = window.inner_size();
 
         let ctx: egui::Context = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
         let viewport_id = ctx.viewport_id();
 
         let native_pixels_per_point = window.scale_factor() as f32;
@@ -47,8 +52,20 @@ impl EGui
                 pixels_per_point: window.scale_factor() as f32,
                 size_in_pixels: [size.width, size.height],
             },
-            output: None
+            output: None,
+            pending_textures_delta: egui::TexturesDelta::default(),
+
+            gpu_timer: GpuTimer::new(device),
         }
+    }
+
+    // accumulates the texture delta of the current frame so it survives a skipped render
+    // (e.g. when wgpu.start_render() returns None during resize/surface reconfigure)
+    pub fn set_output(&mut self, mut output: FullOutput)
+    {
+        let delta = std::mem::take(&mut output.textures_delta);
+        self.pending_textures_delta.append(delta);
+        self.output = Some(output);
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder) -> Vec<egui::ClippedPrimitive>
@@ -58,15 +75,22 @@ impl EGui
 
         self.renderer.update_buffers(device, queue, encoder, &clipped_primitives, &self.screen_descriptor);
 
-        for (tex_id, img_delta) in output.textures_delta.set
+        let mut textures_delta = std::mem::take(&mut self.pending_textures_delta);
+
+        for (tex_id, img_deltas) in &textures_delta.set
         {
-            self.renderer.update_texture(&device, &queue, tex_id, &img_delta);
+            for img_delta in img_deltas
+            {
+                self.renderer.update_texture(&device, &queue, *tex_id, img_delta);
+            }
         }
 
-        for tex_id in output.textures_delta.free
+        for tex_id in &textures_delta.free
         {
-            self.renderer.free_texture(&tex_id);
+            self.renderer.free_texture(tex_id);
         }
+
+        textures_delta.clear();
 
         clipped_primitives
     }
@@ -94,9 +118,17 @@ impl EGui
 
     pub fn render(&mut self, wgpu: &mut WGpu, view: &TextureView, encoder: &mut CommandEncoder)
     {
+        // read back the gpu timing of the previous egui pass
+        if let Some(gpu_timer) = self.gpu_timer.as_mut()
+        {
+            gpu_timer.read_back_results(wgpu);
+        }
+
         let primitives = self.prepare(wgpu.device(), wgpu.queue_mut(), encoder);
 
         {
+            let timer_segment = self.gpu_timer.as_mut().and_then(|gpu_timer| gpu_timer.begin_segment(GpuTimerPass::Egui));
+
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
             {
                 label: None,
@@ -115,13 +147,26 @@ impl EGui
                     })
                 ],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: timer_segment.map(|timer_segment| timer_segment.full_render_writes()),
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             // forget_lifetime is intentional -> see render description
             // https://github.com/emilk/egui/pull/5149
             self.renderer.render(&mut pass.forget_lifetime(), &primitives, &self.screen_descriptor);
         }
+
+        // resolve the gpu timestamps into the readback buffer (read back in the next frame)
+        if let Some(gpu_timer) = self.gpu_timer.as_mut()
+        {
+            gpu_timer.resolve(encoder);
+        }
+    }
+
+    // averaged gpu time of the egui render pass in ms
+    pub fn gpu_render_time(&self) -> Option<f32>
+    {
+        self.gpu_timer.as_ref().and_then(|gpu_timer| gpu_timer.pass_times().egui)
     }
 }

@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components, remove_components_by_type}, state::InputOutput}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -50,7 +50,7 @@ pub struct InstanceData
 #[derive(Serialize, Deserialize)]
 pub struct Instance
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
     pub is_default: bool,
 
@@ -65,7 +65,19 @@ pub struct Instance
 
     force_update: bool,
 
-    data: ChangeTracker<InstanceData>
+    data: ChangeTracker<InstanceData>,
+
+    #[serde(skip, default)]
+    pub on_before_update: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_after_update: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_before_render: Observable<Instance>,
+
+    #[serde(skip, default)]
+    pub on_after_render: Observable<Instance>,
 }
 
 impl Instance
@@ -95,7 +107,12 @@ impl Instance
                 collision: true,
                 locked: false,
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            })
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance
@@ -126,7 +143,12 @@ impl Instance
                 collision: true,
                 locked: false,
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            })
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance
@@ -157,7 +179,12 @@ impl Instance
                 collision: true,
                 locked: false,
                 color: Vector4::<f32>::new(1.0, 1.0, 1.0, 1.0)
-            })
+            }),
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
+            on_before_render: Observable::new(),
+            on_after_render: Observable::new(),
         };
 
         instance.add_component(Arc::new(RwLock::new(Box::new(transform))));
@@ -195,7 +222,7 @@ impl Instance
         find_component::<T>(&self.components)
     }
 
-    pub fn find_component_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn find_component_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         find_component_by_id(&self.components, id)
     }
@@ -213,7 +240,15 @@ impl Instance
         }
     }
 
-    pub fn remove_component_by_id(&mut self, id: u64)
+    pub fn remove_components_by_type<T>(&mut self) where T: 'static
+    {
+        if remove_components_by_type::<T>(&mut self.components)
+        {
+            self.force_update = true;
+        }
+    }
+
+    pub fn remove_component_by_id(&mut self, id: u32)
     {
         if remove_component_by_id(&mut self.components, id)
         {
@@ -221,7 +256,7 @@ impl Instance
         }
     }
 
-    pub fn remove_components_by_ids(&mut self, ids: &Vec<u64>)
+    pub fn remove_components_by_ids(&mut self, ids: &Vec<u32>)
     {
         if remove_components_by_ids(&mut self.components, &ids)
         {
@@ -259,6 +294,8 @@ impl Instance
 
     pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> bool
     {
+        crate::notify_observable_arc!(instance, on_before_update);
+
         let node;
         {
             let instance = instance.read().unwrap();
@@ -274,8 +311,11 @@ impl Instance
 
         let mut delete_components = vec![];
 
-        for (component_id, component) in all_components.clone().iter_mut().enumerate()
+        let all_components_len = all_components.len();
+        for component_id in 0..all_components_len
         {
+            let component = all_components[component_id].clone();
+
             if component.read().unwrap().get_base().delete_later_request
             {
                 delete_components.push(component.read().unwrap().id());
@@ -290,8 +330,9 @@ impl Instance
             // otherwise this can cause read/write issues (its opened as write and it maybe is requested as read in a loop)
             {
                 let mut instance = instance.write().unwrap();
-                instance.components = all_components.clone();
-                instance.components.remove(component_id);
+                instance.components.clear();
+                instance.components.extend(all_components[..component_id].iter().cloned());
+                instance.components.extend(all_components[component_id + 1..].iter().cloned());
             }
 
             {
@@ -300,8 +341,25 @@ impl Instance
             }
 
             // after each update, check if new components were added during the update --> add
-            let maybe_new_components = &instance.read().unwrap().components;
-            find_and_add_new_components(&mut all_components, maybe_new_components);
+            // only check if the component count changed (optimization: skip expensive scan when nothing was added)
+            {
+                let new_instance_components =
+                {
+                    let instance_read = instance.read().unwrap();
+                    if instance_read.components.len() > all_components_len - 1
+                    {
+                        Some(instance_read.components.clone())
+                    }
+                    else
+                    {
+                        None
+                    }
+                };
+                if let Some(maybe_new_components) = new_instance_components
+                {
+                    find_and_add_new_components(&mut all_components, &maybe_new_components);
+                }
+            }
         }
 
         // ***** reassign components *****
@@ -341,6 +399,8 @@ impl Instance
             let mut instance = instance.write().unwrap();
             instance.force_update = false;
         }
+
+        crate::notify_observable_arc!(instance, on_after_update);
 
         has_changed_data
     }
@@ -441,7 +501,19 @@ impl Instance
             if let Some(node) = self.node.as_ref()
             {
                 let node = node.read().unwrap();
-                node_trans = node.get_full_transform();
+
+                // skinning already placed the vertices via the joint matrices - inheriting the joints again would apply them twice
+                // "Only the joint transforms are applied to the skinned mesh; the transform of the skinned mesh node MUST be ignored."
+                // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skins
+                if node.skin.len() > 0
+                {
+                    node_trans = node.get_full_transform_without_joints();
+                }
+                else
+                {
+                    // this is for objects with no skinning, like a gun -> they should inherit the full transform of the node, including the joints
+                    node_trans = node.get_full_transform();
+                }
             }
             else
             {
@@ -551,6 +623,26 @@ impl Instance
         }
 
         false
+    }
+
+    pub fn accumulate_visible(&self) -> bool
+    {
+        if !self.get_data().visible
+        {
+            return false;
+        }
+
+        if let Some(node) = self.node.as_ref()
+        {
+            let node = node.read().unwrap();
+
+            if !node.is_visible()
+            {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn get_cached_world_transform(&self) -> Matrix4::<f32>

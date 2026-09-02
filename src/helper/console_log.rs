@@ -6,7 +6,7 @@ use std::{sync::{LazyLock, Mutex}};
 
 const MAX_LOGS: usize = 10_000;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LogType
 {
     All, // <- just used as identfier

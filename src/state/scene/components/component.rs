@@ -48,7 +48,7 @@ pub trait Component: Any + Send + Sync
 
     fn duplicatable(&self) -> bool;
 
-    fn id(&self) -> u64
+    fn id(&self) -> u32
     {
         self.get_base().id
     }
@@ -90,7 +90,7 @@ pub struct DeserializationContext<'a>
 pub struct ComponentBase
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub is_enabled: bool,
@@ -309,7 +309,7 @@ pub fn find_component<T>(components: &Vec<ComponentItem>) -> Option<ComponentIte
     Some(value.unwrap().clone())
 }
 
-pub fn find_component_by_id(components: &Vec<ComponentItem>, id: u64) -> Option<ComponentItem>
+pub fn find_component_by_id(components: &Vec<ComponentItem>, id: u32) -> Option<ComponentItem>
 {
     if components.len() == 0
     {
@@ -379,7 +379,23 @@ pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) -> bool 
     false
 }
 
-pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> bool
+pub fn remove_components_by_type<T>(components: &mut Vec<ComponentItem>) -> bool where T: 'static
+{
+    let prev_len = components.len();
+    components.retain
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            let component_item = component.as_any();
+            !component_item.is::<T>()
+        }
+    );
+
+    components.len() != prev_len
+}
+
+pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u32) -> bool
 {
     let index = components.iter().position
     (
@@ -399,9 +415,9 @@ pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> b
     false
 }
 
-pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u64>) -> bool
+pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u32>) -> bool
 {
-    let set: HashSet<u64> = ids.iter().cloned().collect();
+    let set: HashSet<u32> = ids.iter().cloned().collect();
     let prev_len = components.len();
 
     components.retain(|component|
@@ -415,7 +431,7 @@ pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u
 
 pub fn find_new_components_with_position(old_list: &Vec<ComponentItem>, new_list: &Vec<ComponentItem>) -> Vec<(ComponentItem, bool)>
 {
-    let old_ids: Vec<u64> = old_list.iter()
+    let old_ids: Vec<u32> = old_list.iter()
         .map(|c| c.read().unwrap().id())
         .collect();
 

@@ -2,7 +2,7 @@
 
 use wgpu::{BindGroupLayout, BindGroup};
 
-use crate::{rendering::{wgpu::WGpu, uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer}, state::helper::render_item::RenderItem, render_item_impl_default};
+use crate::{render_item_impl_default, rendering::{bind_groups::uniform, morph_target::MorphTarget, skeleton::SkeletonBuffer, wgpu::WGpu}, state::helper::render_item::RenderItem};
 
 pub struct SkeletonMorphTargetBindGroup
 {
@@ -21,7 +21,7 @@ impl SkeletonMorphTargetBindGroup
     {
         let morph_layout_entry = MorphTarget::get_bind_group_layout_entry(2);
 
-        let bind_group_layout = wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        wgpu.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             entries:
             &[
@@ -35,9 +35,7 @@ impl SkeletonMorphTargetBindGroup
                 morph_layout_entry
             ],
             label: Some("skeleton_morph_target_bind_group_layout"),
-        });
-
-        bind_group_layout
+        })
     }
 
     pub fn new(wgpu: &mut WGpu, name: &str, skeleton_buffer: &SkeletonBuffer, morph_target: &MorphTarget) -> SkeletonMorphTargetBindGroup
@@ -53,10 +51,10 @@ impl SkeletonMorphTargetBindGroup
             entries:
             &[
                 // skeleton
-                uniform::uniform_bind_group(0, &skeleton_buffer.get_buffer()),
+                wgpu::BindGroupEntry { binding: 0, resource: skeleton_buffer.get_buffer().as_entire_binding() },
 
                 // morph targets buffer
-                uniform::uniform_bind_group(1, &morph_target.get_buffer()),
+                wgpu::BindGroupEntry { binding: 1, resource: morph_target.get_buffer().as_entire_binding() },
 
                 // morph targets (texture array)
                 morph_target_tex_bind_group.clone(), // ????

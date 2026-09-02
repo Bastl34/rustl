@@ -136,27 +136,45 @@ impl JointTransformationData
         }
     }
 
+    // fill every property the animation does not supply with the joints bind pose value
+    // glTF: a missing channel means "keep the nodes own TRS" - not identity
+    // (identity would zero the translation and collapse the joint onto its parent)
+    pub fn fill_missing_with_bind_pose(&self, bind_pose: &JointTransformationData) -> Self
+    {
+        JointTransformationData
+        {
+            translation: self.translation.or(bind_pose.translation),
+            rotation_quat: self.rotation_quat.or(bind_pose.rotation_quat),
+            scale: self.scale.or(bind_pose.scale),
+        }
+    }
+
     pub fn blend_with(&self, other: &JointTransformationData, weight: f32) -> Self
     {
         JointTransformationData
         {
-            translation:
+            // a property that is unset on one side must not pull the other side towards zero/identity
+            // -> keep the side that has a value and stay None if neither has one
+            translation: match (self.translation, other.translation)
             {
-                let self_trans = self.translation.unwrap_or(Vector3::zeros());
-                let other_trans = other.translation.unwrap_or(Vector3::zeros());
-                Some(self_trans.lerp(&other_trans, weight))
+                (Some(self_trans), Some(other_trans)) => Some(self_trans.lerp(&other_trans, weight)),
+                (Some(self_trans), None) => Some(self_trans),
+                (None, Some(other_trans)) => Some(other_trans),
+                (None, None) => None,
             },
-            rotation_quat:
+            rotation_quat: match (self.rotation_quat, other.rotation_quat)
             {
-                let self_rot = self.rotation_quat.unwrap_or(nalgebra::Unit::new_normalize(Quaternion::identity()));
-                let other_rot = other.rotation_quat.unwrap_or(nalgebra::Unit::new_normalize(Quaternion::identity()));
-                Some(self_rot.slerp(&other_rot, weight))
+                (Some(self_rot), Some(other_rot)) => Some(self_rot.slerp(&other_rot, weight)),
+                (Some(self_rot), None) => Some(self_rot),
+                (None, Some(other_rot)) => Some(other_rot),
+                (None, None) => None,
             },
-            scale:
+            scale: match (self.scale, other.scale)
             {
-                let self_scale = self.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
-                let other_scale = other.scale.unwrap_or(Vector3::new(1.0, 1.0, 1.0));
-                Some(self_scale.lerp(&other_scale, weight))
+                (Some(self_scale), Some(other_scale)) => Some(self_scale.lerp(&other_scale, weight)),
+                (Some(self_scale), None) => Some(self_scale),
+                (None, Some(other_scale)) => Some(other_scale),
+                (None, None) => None,
             },
         }
     }
@@ -448,7 +466,8 @@ impl Joint
         }
         else
         {
-            result_transformation
+            // properties without an animation channel fall back to the bind pose instead of identity
+            result_transformation.fill_missing_with_bind_pose(&joint_data.local_trans)
         };
 
         // Build matrix from final transformation
@@ -585,5 +604,79 @@ impl Component for Joint
         ui.label(format!("Bind Trans:\n{:?}", bind_transform));
         //ui.label(format!("Inverse Bind Trans Calculated:\n{:?}", self.get_data().inverse_bind_trans_calculated));
         //ui.label(format!("Animation Transf:\n{:?}", self.get_joint_transform()));
+    }
+}
+
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    // Neck joint of resourcesLocal/objects/temp/Alien.gltf - the animation only has a rotation channel there
+    fn alien_neck_bind_pose() -> JointTransformationData
+    {
+        JointTransformationData
+        {
+            translation: Some(Vector3::new(0.0, 0.156, -0.081)),
+            rotation_quat: Some(UnitQuaternion::identity()),
+            scale: Some(Vector3::new(1.0, 1.0, 1.0)),
+        }
+    }
+
+    // a channel set that only animates the rotation - translation and scale stay unset
+    fn rotation_only_animation() -> JointTransformationData
+    {
+        JointTransformationData
+        {
+            translation: None,
+            rotation_quat: Some(UnitQuaternion::from_euler_angles(0.3, 0.0, 0.0)),
+            scale: None,
+        }
+    }
+
+    #[test]
+    fn unanimated_translation_keeps_the_bind_pose()
+    {
+        let result = rotation_only_animation().fill_missing_with_bind_pose(&alien_neck_bind_pose());
+        let bind = alien_neck_bind_pose();
+
+        assert_eq!(result.translation, bind.translation, "the joint offset must survive a rotation only animation");
+        assert_eq!(result.scale, bind.scale, "the scale must survive a rotation only animation");
+        assert_eq!(result.rotation_quat, rotation_only_animation().rotation_quat, "the animated rotation must win");
+    }
+
+    #[test]
+    fn unanimated_translation_survives_the_matrix()
+    {
+        let matrix = rotation_only_animation().fill_missing_with_bind_pose(&alien_neck_bind_pose()).to_matrix();
+
+        // without the bind pose fallback this collapses onto the parent origin -> the mesh gets squashed
+        assert!((matrix[(0, 3)] - 0.0).abs() < 1.0e-6, "x was {}", matrix[(0, 3)]);
+        assert!((matrix[(1, 3)] - 0.156).abs() < 1.0e-6, "y was {}", matrix[(1, 3)]);
+        assert!((matrix[(2, 3)] - (-0.081)).abs() < 1.0e-6, "z was {}", matrix[(2, 3)]);
+    }
+
+    #[test]
+    fn blending_does_not_pull_unanimated_properties_to_zero()
+    {
+        let bind = alien_neck_bind_pose();
+
+        // half weight: the rotation blends, but translation and scale have nothing to blend towards
+        let result = bind.blend_with(&rotation_only_animation(), 0.5);
+
+        assert_eq!(result.translation, bind.translation, "a half weighted animation must not move an unanimated joint");
+        assert_eq!(result.scale, bind.scale, "a half weighted animation must not scale an unanimated joint");
+    }
+
+    #[test]
+    fn blending_two_unset_properties_stays_unset()
+    {
+        let empty = JointTransformationData::identity();
+        let result = empty.blend_with(&rotation_only_animation(), 0.5);
+
+        // must stay None so that the bind pose fallback can still fill it in later
+        assert_eq!(result.translation, None);
+        assert_eq!(result.scale, None);
     }
 }

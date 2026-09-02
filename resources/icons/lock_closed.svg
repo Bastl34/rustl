@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="100%" height="100%" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
+    <rect x="4.5" y="10.5" width="15" height="10.5" rx="2.2" style="fill:none;stroke:white;stroke-width:1.8px;"/>
+    <path d="M7.5,10.5L7.5,7C7.5,4.515 9.515,2.5 12,2.5C14.485,2.5 16.5,4.515 16.5,7L16.5,10.5" style="fill:none;stroke:white;stroke-width:1.8px;"/>
+    <path d="M12,14.5L12,17" style="fill:none;stroke:white;stroke-width:1.8px;"/>
+    <circle cx="12" cy="14.2" r="1.1" style="fill:white;"/>
+</svg>

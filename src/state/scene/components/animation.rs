@@ -462,7 +462,7 @@ impl Animation
     }
 }
 
-fn apply_transformation_to_target(target_map: &mut HashMap<u64, TargetMapItem>, target_id: u64, transform: &(Option<Vector3<f32>>, Option<nalgebra::Unit<Quaternion<f32>>>, Option<Vector3<f32>>))
+fn apply_transformation_to_target(target_map: &mut HashMap<u32, TargetMapItem>, target_id: u32, transform: &(Option<Vector3<f32>>, Option<nalgebra::Unit<Quaternion<f32>>>, Option<Vector3<f32>>))
 {
     // transformation
     if let Some(animation_position) = transform.0
@@ -762,7 +762,7 @@ impl Component for Animation
             t = 0.0;
         }
 
-        let mut target_map: HashMap<u64, TargetMapItem> = HashMap::new();
+        let mut target_map: HashMap<u32, TargetMapItem> = HashMap::new();
 
         // ********** reset joints and transforms (if needed) **********
         for channel in &self.channels

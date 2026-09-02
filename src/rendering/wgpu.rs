@@ -3,9 +3,22 @@ use std::sync::Arc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, CommandEncoder, TextureView, SurfaceTexture, Buffer, Texture};
 
-use crate::{console_error, console_log, helper::{concurrency::thread::sleep_millis, image::brga_to_rgba, platform::is_windows}, state::state::State};
+use crate::{console_error, console_log, helper::{image::brga_to_rgba, platform::is_windows}, state::state::{PresentModeSetting, State}};
 
 use super::helper::buffer::{BufferDimensions, remove_padding};
+
+fn resolve_present_mode(setting: PresentModeSetting, supports_mailbox: bool) -> wgpu::PresentMode
+{
+    match setting
+    {
+        PresentModeSetting::VSync => wgpu::PresentMode::AutoVsync,
+        PresentModeSetting::FastVSync =>
+        {
+            if supports_mailbox { wgpu::PresentMode::Mailbox } else { wgpu::PresentMode::AutoVsync }
+        },
+        PresentModeSetting::VSyncOff => wgpu::PresentMode::AutoNoVsync,
+    }
+}
 
 pub struct WGpu
 {
@@ -17,6 +30,7 @@ pub struct WGpu
     msaa_texture: Option<wgpu::Texture>,
 
     surface_config: SurfaceConfiguration,
+    supports_mailbox: bool,
 }
 
 impl WGpu
@@ -25,15 +39,21 @@ impl WGpu
     {
         let dimensions = window.inner_size();
 
-        let mut instance_desc = wgpu::InstanceDescriptor::default();
+        let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+
+        // disable debug/validation flags — DX12 debug layer requires Windows "Graphics Tools"
+        // component to be installed, otherwise request_device fails with Device(Lost)
+        instance_desc.flags = wgpu::InstanceFlags::empty();
 
         if is_windows()
         {
-            instance_desc.backends = wgpu::Backends::VULKAN;
-            //instance_desc.backends = wgpu::Backends::DX12;
+            instance_desc.backends = wgpu::Backends::VULKAN | wgpu::Backends::DX12;
+            // FXC: ships with Windows, no extra DLLs needed. Switch to StaticDxc once MSVC >= 14.40
+            // TODO: check if this is still needed with newer MSVC versions
+            instance_desc.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::Fxc;
         }
 
-        let instance = wgpu::Instance::new(&instance_desc);
+        let instance = wgpu::Instance::new(instance_desc);
         //let surface = unsafe { instance.create_surface(window) }.unwrap();
         let surface = instance.create_surface(window.clone());
 
@@ -47,8 +67,11 @@ impl WGpu
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions
         {
+            power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
-            ..Default::default()
+            force_fallback_adapter: false,
+            // no limit bucketing: this is a trusted native/wasm app, so use the adapter's real limits
+            apply_limit_buckets: false,
         })
         .await
         .unwrap();
@@ -63,13 +86,17 @@ impl WGpu
         console_log!(" ********** limits possible **********");
         console_log!(adapter.limits());
 
-        let (device, queue) = adapter.request_device
+        let adapter_features = adapter.features();
+        let polygon_mode_features = wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::POLYGON_MODE_POINT;
+        let supported_polygon_mode_features = adapter_features & polygon_mode_features;
+        let timestamp_query_features = adapter_features & wgpu::Features::TIMESTAMP_QUERY;
+
+        let device_result = adapter.request_device
         (
             &wgpu::DeviceDescriptor
             {
                 label: None,
-                //features: wgpu::Features::empty(),
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // for multisampling
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | supported_polygon_mode_features | timestamp_query_features, // for multisampling + wireframe + gpu timing (if supported)
                 // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
                 required_limits: if cfg!(target_arch = "wasm32")
                 {
@@ -77,15 +104,39 @@ impl WGpu
                 }
                 else
                 {
-                    wgpu::Limits::default()
+                    adapter.limits()
                 },
                 memory_hints: Default::default(),
                 experimental_features: Default::default(),
                 trace: wgpu::Trace::Off,
             },
         )
-        .await
-        .unwrap();
+        .await;
+
+        let (device, queue) = match device_result
+        {
+            Ok(dq) => dq,
+            Err(err) =>
+            {
+                console_error!(format!("request_device failed: {:?}", err));
+                console_error!("retrying with minimal features and downlevel limits");
+
+                adapter.request_device
+                (
+                    &wgpu::DeviceDescriptor
+                    {
+                        label: None,
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::downlevel_defaults(),
+                        memory_hints: Default::default(),
+                        experimental_features: Default::default(),
+                        trace: wgpu::Trace::Off,
+                    },
+                )
+                .await
+                .expect("request_device failed even with minimal config")
+            }
+        };
 
         console_log!(" ********** features used **********");
         console_log!(device.features());
@@ -95,11 +146,9 @@ impl WGpu
 
         let surface_caps = surface.get_capabilities(&adapter);
 
-        let mut present_mode = wgpu::PresentMode::Fifo;
-        if !state.rendering.v_sync.get_ref()
-        {
-            present_mode = wgpu::PresentMode::Immediate;
-        }
+        let supports_mailbox = surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox);
+
+        let present_mode = resolve_present_mode(*state.rendering.present_mode.get_ref(), supports_mailbox);
 
         let surface_config = wgpu::SurfaceConfiguration
         {
@@ -109,8 +158,10 @@ impl WGpu
             present_mode: present_mode,
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
             format: surface_caps.formats[0],
+            // Auto reproduces the pre-wgpu-30 behaviour (sRGB, or extended linear sRGB for fp16 surfaces)
+            color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2, // 1: lower latency, 2: higher throughput
+            desired_maximum_frame_latency: 1, // 1: lower latency, 2: higher throughput maybe check https://github.com/emilk/egui/blob/main/crates/egui-wgpu/src/lib.rs#L331 for ios issues
         };
 
         surface.configure(&device, &surface_config);
@@ -131,6 +182,22 @@ impl WGpu
         // storage support
         let supports_storage_resources = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VERTEX_STORAGE) && device.limits().max_storage_buffers_per_shader_stage > 0;
         state.rendering_adapter.storage_buffer_array_support = supports_storage_resources;
+
+        // wireframe support
+        state.rendering_adapter.wireframe_mode_support = device.features().contains(wgpu::Features::POLYGON_MODE_LINE);
+
+        // occlusion culling support: the hzb culling needs compute shaders, indirect draws
+        // and r32float storage texture writes (all missing on WebGL)
+        let downlevel_flags = adapter.get_downlevel_capabilities().flags;
+        let r32_float_usages = adapter.get_texture_format_features(wgpu::TextureFormat::R32Float).allowed_usages;
+        state.rendering_adapter.occlusion_culling_support =
+            downlevel_flags.contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+            && downlevel_flags.contains(wgpu::DownlevelFlags::INDIRECT_EXECUTION)
+            && r32_float_usages.contains(wgpu::TextureUsages::STORAGE_BINDING);
+
+        // ssao support: the ssao shader does textureLoad on a depth texture, which naga's
+        // GLSL backend does not support -> the ssao pipelines must not even be created there
+        state.rendering_adapter.ssao_support = adapter_info.backend != wgpu::Backend::Gl;
 
         // apply adapter infos
         state.rendering_adapter.name = adapter_info.name.clone();
@@ -154,7 +221,8 @@ impl WGpu
             msaa_samples,
             msaa_texture: None,
             queue,
-            surface_config
+            surface_config,
+            supports_mailbox,
         };
 
         wgpu.create_msaa_texture(1);
@@ -216,43 +284,26 @@ impl WGpu
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn set_vsync(&mut self, v_sync: bool)
+    pub fn set_present_mode(&mut self, setting: PresentModeSetting)
     {
-        let mut present_mode = wgpu::PresentMode::Fifo;
-        if !v_sync
-        {
-            present_mode = wgpu::PresentMode::Immediate;
-        }
-
-        self.surface_config.present_mode = present_mode;
+        self.surface_config.present_mode = resolve_present_mode(setting, self.supports_mailbox);
 
         self.surface.configure(&self.device, &self.surface_config);
         self.create_msaa_texture(self.msaa_samples);
     }
 
-    pub fn start_render(&mut self) -> (SurfaceTexture, TextureView, Option<TextureView>)
+    pub fn start_render(&mut self) -> Option<(SurfaceTexture, TextureView, Option<TextureView>)>
     {
-        // TODO: this can timeout
-        // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Timeout', src\rendering\wgpu.rs:200:57
-        //let output = self.surface.get_current_texture().unwrap();
-
-        let mut output: Result<wgpu::SurfaceTexture, wgpu::SurfaceError>;
-        loop
+        let output = match self.surface.get_current_texture()
         {
-            output = self.surface.get_current_texture();
-
-            if output.is_ok()
+            wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+            wgpu::CurrentSurfaceTexture::Occluded => return None,
+            other =>
             {
-                break;
+                console_error!(format!("{:?}", other));
+                return None;
             }
-
-            console_error!(output.err());
-
-            // wait on error and retry
-            sleep_millis(100);
-            console_log!("retry get surface texture");
-        }
-        let output = output.unwrap();
+        };
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -262,7 +313,7 @@ impl WGpu
             msaa_view = Some(self.msaa_texture.as_ref().unwrap().create_view(&wgpu::TextureViewDescriptor::default()));
         }
 
-        (output, view, msaa_view)
+        Some((output, view, msaa_view))
     }
 
     pub fn create_command_encoder(&mut self) -> CommandEncoder
@@ -282,13 +333,16 @@ impl WGpu
 
     pub fn end_render(&mut self, output: SurfaceTexture)
     {
-        output.present();
+        self.queue.present(output);
     }
 
 
-    pub fn start_screenshot_render(&mut self) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
+    pub fn start_offscreen_render(&mut self, resolution: Option<(u32, u32)>) -> (BufferDimensions, Buffer, Texture, TextureView, Option<TextureView>)
     {
-        let buffer_dimensions = BufferDimensions::new(self.surface_config.width as usize, self.surface_config.height as usize);
+        // when a custom resolution is given the scene must be rendered natively at that size
+        // (the caller is responsible for resizing the scene's depth buffer / camera / hzb accordingly).
+        let (width, height) = resolution.unwrap_or((self.surface_config.width, self.surface_config.height));
+        let buffer_dimensions = BufferDimensions::new(width as usize, height as usize);
 
         // The output buffer lets us retrieve the data as an array
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor
@@ -347,7 +401,7 @@ impl WGpu
         (buffer_dimensions, output_buffer, texture, view, msaa_texture_view)
     }
 
-    pub fn end_screenshot_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
+    pub fn end_offscreen_render(&mut self, buffer_dimensions: BufferDimensions, output_buffer: Buffer, texture: Texture, mut encoder: CommandEncoder) -> DynamicImage
     {
         let texture_extent = wgpu::Extent3d
         {
@@ -381,7 +435,7 @@ impl WGpu
         self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
         // remove padding
-        let padded_data = slice.get_mapped_range();
+        let padded_data = slice.get_mapped_range().unwrap();
         let data = remove_padding(&padded_data, &buffer_dimensions);
         drop(padded_data);
 

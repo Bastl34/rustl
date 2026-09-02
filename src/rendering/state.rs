@@ -29,7 +29,11 @@ pub fn update_textures(wgpu: &mut WGpu, state: &mut State)
                 let mut format = TextureFormat::Srgba;
                 if texture.channels() == 1
                 {
-                    format = TextureFormat::Gray;
+                    format = TextureFormat::Gray; // R8Unorm is already linear
+                }
+                else if texture.get_data().linear
+                {
+                    format = TextureFormat::Rgba; // linear data textures (normal / roughness / ao / ...)
                 }
 
                 let render_item = Texture::new_from_texture(wgpu, texture.name.as_str(), &texture, format);

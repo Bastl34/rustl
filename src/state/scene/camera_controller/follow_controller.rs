@@ -8,7 +8,7 @@ use crate::{camera_controller_impl_default, component_downcast, helper::{change_
 use super::camera_controller::{CameraController, CameraControllerBase};
 
 #[derive(Serialize, Deserialize)]
-pub struct FollowControllerControllerData
+pub struct FollowControllerData
 {
     pub offset: Vector3::<f32>,
 }
@@ -18,7 +18,7 @@ pub struct FollowController
 {
     base: CameraControllerBase,
 
-    pub data: ChangeTracker<FollowControllerControllerData>,
+    pub data: ChangeTracker<FollowControllerData>,
 }
 
 impl FollowController
@@ -29,7 +29,7 @@ impl FollowController
         {
             base: CameraControllerBase::new("Follow Controller".to_string(), "👣".to_string()),
 
-            data: ChangeTracker::new(FollowControllerControllerData
+            data: ChangeTracker::new(FollowControllerData
             {
                 offset: Vector3::<f32>::zeros()
             }),

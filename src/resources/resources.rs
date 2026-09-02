@@ -5,6 +5,7 @@ use std::{env, fs};
 use cfg_if::cfg_if;
 
 pub const RESOURCES_DIR: &str = "resources";
+pub const RESOURCE_SCHEME: &str = "resources://";
 
 #[cfg(target_arch = "wasm32")]
 fn format_url(file_name: &str) -> reqwest::Url

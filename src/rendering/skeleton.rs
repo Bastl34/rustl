@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use nalgebra::Matrix4;
-use wgpu::{BindGroup, util::DeviceExt};
+use wgpu::{util::DeviceExt};
 use colored::Colorize;
 
 use crate::{console_error, render_item_impl_default, state::helper::render_item::RenderItem};
@@ -53,14 +53,17 @@ pub struct SkeletonBuffer
 {
     pub name: String,
 
-    buffer: wgpu::Buffer,
-
-    pub bind_group: Option<BindGroup>
+    buffer: wgpu::Buffer
 }
 
 impl RenderItem for SkeletonBuffer
 {
     render_item_impl_default!();
+
+    fn gpu_usage(&self) -> u64
+    {
+        self.buffer.size()
+    }
 }
 
 impl SkeletonBuffer
@@ -72,8 +75,7 @@ impl SkeletonBuffer
         let mut buffer = SkeletonBuffer
         {
             name: name.to_string(),
-            buffer: empty_buffer,
-            bind_group: None
+            buffer: empty_buffer
         };
 
         buffer.to_buffer(wgpu, joint_matrices);
@@ -88,8 +90,7 @@ impl SkeletonBuffer
         let mut buffer = SkeletonBuffer
         {
             name: "empty".to_string(),
-            buffer: empty_buffer,
-            bind_group: None
+            buffer: empty_buffer
         };
 
         let joint_matrices: Vec<Matrix4<f32>> = vec![];

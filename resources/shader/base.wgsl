@@ -3,10 +3,12 @@ const PI: f32 = 3.141592653589793;
 const MAX_LIGHTS = [MAX_LIGHTS];
 const MAX_JOINTS = [MAX_JOINTS];
 const MAX_MORPH_TARGETS: u32 = [MAX_MORPH_TARGETS]u;
+const MAX_SHADOW_VIEWS = [MAX_SHADOW_VIEWS];
 
 const LIGHT_TYPE_DIRECTIONAL: u32 = 0u;
 const LIGHT_TYPE_POINT: u32 = 1u;
 const LIGHT_TYPE_SPOT: u32 = 2u;
+const JOINTS_LIMIT: u32 = 4u;
 
 // ****************************** structs ******************************
 
@@ -15,6 +17,8 @@ struct CameraUniform
     view_pos: vec4<f32>,
     view: mat4x4<f32>,
     view_proj: mat4x4<f32>,
+    viewport_width: u32,
+    viewport_height: u32,
 };
 
 struct LightUniform
@@ -24,9 +28,23 @@ struct LightUniform
     color: vec4<f32>,
     ground_color: vec4<f32>,
     intensity: f32,
+    range: f32,
     light_type: u32,
     max_angle: f32,
     distance_based_intensity: u32,
+
+    // first layer in the shadow atlas (-1 = light casts no shadow)
+    shadow_index: i32,
+    shadow_views: u32,
+    shadow_bias: f32,
+
+    // how much light the shadow removes (1.0 = fully dark, 0.0 = no visible shadow)
+    shadow_strength: f32,
+};
+
+struct ShadowView
+{
+    view_proj: mat4x4<f32>,
 };
 
 struct SceneUniform
@@ -34,6 +52,16 @@ struct SceneUniform
     gamma: f32,
     exposure: f32,
     ibl_diffuse_intensity: f32,
+    xray_alpha: f32,
+    shadow_max_distance: f32,
+
+    // 0.0 = ssao disabled
+    ssao_strength: f32,
+
+    // 0.0 = fog disabled
+    fog_density: f32,
+    _padding: f32,
+    fog_color: vec4<f32>,
 };
 
 struct SkeletonUniform
@@ -91,6 +119,10 @@ struct VertexOutput
     @location(9) locked: f32,
 
     @location(10) weights: vec4<f32>, // just for debugging
+
+    @location(11) object_position: vec3<f32>, // object/local space (pre model matrix) - for object space texture mapping
+    @location(12) object_normal: vec3<f32>,   // object/local space geometric normal - for object space texture mapping
+    @location(13) model_rotation: vec4<f32>,  // object -> world rotation (quaternion) - for object space mapped normals
 };
 
 // ****************************** inputs / bindings ******************************
@@ -106,6 +138,15 @@ var<uniform> light_amount: i32;
 
 @group(1) @binding(3)
 var<uniform> lights: array<LightUniform, MAX_LIGHTS>;
+
+@group(1) @binding(4)
+var<uniform> shadow_views: array<ShadowView, MAX_SHADOW_VIEWS>;
+
+@group(1) @binding(5) var t_shadow: texture_depth_2d_array;
+@group(1) @binding(6) var s_shadow: sampler_comparison;
+
+// blurred ssao result (1:1 with the framebuffer pixels)
+@group(1) @binding(7) var t_ssao: texture_2d<f32>;
 
 @group(2) @binding(0)
 var<uniform> skeleton: SkeletonUniform;
@@ -128,6 +169,53 @@ fn read_vec_from_texture_array(vertex_index: u32, tex_id: u32, offset: u32, text
     let y = pos / dimensions.x;
 
     return textureLoad(texture, vec2<u32>(x, y), tex_id, 0);
+}
+
+// converts an orthonormal rotation (given as its 3 column vectors) to a quaternion (x, y, z, w)
+// assumes a proper rotation (uniform scale, no reflection) - same assumption as the normal matrix handling
+fn rotation_to_quat(c0: vec3<f32>, c1: vec3<f32>, c2: vec3<f32>) -> vec4<f32>
+{
+    let m00 = c0.x; let m10 = c0.y; let m20 = c0.z;
+    let m01 = c1.x; let m11 = c1.y; let m21 = c1.z;
+    let m02 = c2.x; let m12 = c2.y; let m22 = c2.z;
+
+    let trace = m00 + m11 + m22;
+
+    var q: vec4<f32>;
+    if (trace > 0.0)
+    {
+        let s = sqrt(trace + 1.0) * 2.0; // s = 4 * w
+        q.w = 0.25 * s;
+        q.x = (m21 - m12) / s;
+        q.y = (m02 - m20) / s;
+        q.z = (m10 - m01) / s;
+    }
+    else if (m00 > m11 && m00 > m22)
+    {
+        let s = sqrt(1.0 + m00 - m11 - m22) * 2.0; // s = 4 * x
+        q.w = (m21 - m12) / s;
+        q.x = 0.25 * s;
+        q.y = (m01 + m10) / s;
+        q.z = (m02 + m20) / s;
+    }
+    else if (m11 > m22)
+    {
+        let s = sqrt(1.0 + m11 - m00 - m22) * 2.0; // s = 4 * y
+        q.w = (m02 - m20) / s;
+        q.x = (m01 + m10) / s;
+        q.y = 0.25 * s;
+        q.z = (m12 + m21) / s;
+    }
+    else
+    {
+        let s = sqrt(1.0 + m22 - m00 - m11) * 2.0; // s = 4 * z
+        q.w = (m10 - m01) / s;
+        q.x = (m02 + m20) / s;
+        q.y = (m12 + m21) / s;
+        q.z = 0.25 * s;
+    }
+
+    return normalize(q);
 }
 
 // ****************************** vertex ******************************
@@ -196,9 +284,13 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     var world_tangent = vec4<f32>(0.0);
     var world_bitangent = vec4<f32>(0.0);
 
+    // object/local space position and normal (pre model matrix) - used for object space texture mapping
+    var object_position = vec4<f32>(0.0);
+    var object_normal = vec4<f32>(0.0);
+
     if (skeleton.joints_amount > 0u)
     {
-        for (var i: u32 = 0u; i < 4u; i = i + 1u)
+        for (var i: u32 = 0u; i < JOINTS_LIMIT; i = i + 1u)
         {
             let joint_transform = skeleton.joint_transforms[model.joints[i]];
             world_position += joint_transform * model_pos * model.weights[i];
@@ -214,6 +306,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
             world_bitangent += bitangent * model.weights[i];
         }
 
+        // skinned position/normal in object space (before model matrix is applied)
+        object_position = world_position;
+        object_normal = world_normal;
+
         world_position = model_matrix * world_position;
     }
     else
@@ -223,6 +319,9 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
         world_normal = model_normal;
         world_tangent = model_tangent;
         world_bitangent = model_bitangent;
+
+        object_position = model_pos;
+        object_normal = model_normal;
     }
 
 
@@ -295,6 +394,14 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.bitangent = bitangent;
     out.view_dir = camera.view_pos.xyz - out.position;
 
+    // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the mapping projection)
+    // divide by w: skinning accumulates w = sum(weights) - max() keeps a weightless vertex at (0,0,0) instead of NaN
+    out.object_position = object_position.xyz / max(object_position.w, 0.0001);
+    out.object_normal = object_normal.xyz;
+
+    // object -> world rotation (scale removed) as a quaternion - brings object space mapped normals into world space
+    out.model_rotation = rotation_to_quat(normalize(model_matrix[0].xyz), normalize(model_matrix[1].xyz), normalize(model_matrix[2].xyz));
+
     out.color = instance.color;
     out.highlight = instance.highlight;
     out.locked = instance.locked;
@@ -343,11 +450,20 @@ struct MaterialUniform
 
     ibl_diffuse_intensity: f32,
 
-    //_padding1: vec2<u32>,
-    _padding1: u32,
+    allow_xray: u32,
 
     texture_transforms: array<TextureTransform, TEXTURE_AMOUNT>,
-    textures_used: u32
+    textures_used: u32,
+
+    mapping_mode: u32,
+    mapping_space: u32,
+    mapping_axis: u32,
+    mapping_scale: f32,
+    mapping_sharpness: f32,
+
+    shadow_softness: f32,
+
+    no_fog: u32,
 };
 
 @group(0) @binding(0) var<uniform> material: MaterialUniform;
@@ -517,6 +633,397 @@ fn transform_uv(uv: vec2<f32>, texture_index: u32) -> vec2<f32>
 }
 
 
+// ****************************** texture mapping (triplanar / cube / planar / cylindrical / spherical) ******************************
+
+const MAPPING_MODE_UV: u32 = 0u;
+const MAPPING_MODE_TRIPLANAR: u32 = 1u;
+const MAPPING_MODE_CUBE: u32 = 2u;
+const MAPPING_MODE_PLANAR: u32 = 3u;
+const MAPPING_MODE_CYLINDRICAL: u32 = 4u;
+const MAPPING_MODE_SPHERICAL: u32 = 5u;
+
+const MAPPING_SPACE_OBJECT: u32 = 0u;
+const MAPPING_SPACE_WORLD: u32 = 1u;
+
+// position in the chosen projection space (object or world)
+fn mapping_position(in: VertexOutput) -> vec3<f32>
+{
+    if (material.mapping_space == MAPPING_SPACE_WORLD)
+    {
+        return in.position;
+    }
+    return in.object_position;
+}
+
+// geometric normal in the chosen projection space (object or world)
+fn mapping_normal(in: VertexOutput) -> vec3<f32>
+{
+    if (material.mapping_space == MAPPING_SPACE_WORLD)
+    {
+        return in.normal;
+    }
+    return in.object_normal;
+}
+
+// swizzles p so that the configured mapping axis becomes the y ("up") axis
+fn axis_align(p: vec3<f32>) -> vec3<f32>
+{
+    if (material.mapping_axis == 0u) { return vec3<f32>(p.z, p.x, p.y); } // x
+    if (material.mapping_axis == 2u) { return vec3<f32>(p.x, p.z, p.y); } // z
+    return p; // y (default)
+}
+
+// inverse of axis_align - brings an axis aligned vector back into the projection space
+fn axis_unalign(p: vec3<f32>) -> vec3<f32>
+{
+    if (material.mapping_axis == 0u) { return vec3<f32>(p.y, p.z, p.x); } // x
+    if (material.mapping_axis == 2u) { return vec3<f32>(p.x, p.z, p.y); } // z
+    return p; // y (default)
+}
+
+// blend weights from a geometric normal (in the chosen projection space)
+fn triplanar_blend(n: vec3<f32>, sharpness: f32) -> vec3<f32>
+{
+    var blend = pow(abs(normalize(n)), vec3<f32>(sharpness));
+    let sum = blend.x + blend.y + blend.z;
+    return blend / max(sum, 0.0001);
+}
+
+// rotates a vector by a (unit) quaternion (x, y, z, w)
+fn rotate_by_quat(q: vec4<f32>, v: vec3<f32>) -> vec3<f32>
+{
+    let u = q.xyz;
+    return v + 2.0 * cross(u, cross(u, v) + q.w * v);
+}
+
+// linear part (rotation * scale) of the texture transform - used to bring uv gradients into the transformed uv space
+fn transform_uv_dir(v: vec2<f32>, texture_index: u32) -> vec2<f32>
+{
+    let transform = material.texture_transforms[texture_index];
+    let scaled = v * transform.scale;
+    let c = cos(transform.rotation);
+    let s = sin(transform.rotation);
+    return vec2<f32>(c * scaled.x - s * scaled.y, s * scaled.x + c * scaled.y);
+}
+
+// unscaled projected uv for cube / planar / cylindrical / spherical mapping (p / n in the chosen projection space).
+// the angle based u of cylindrical/spherical is in [0,1] - its seam jump is exactly 1 (see sample_projected)
+fn projected_uv(p: vec3<f32>, n: vec3<f32>) -> vec2<f32>
+{
+    if (material.mapping_mode == MAPPING_MODE_CUBE)
+    {
+        // dominant axis of the normal picks the projection plane (like triplanar without blending)
+        let an = abs(n);
+        if (an.x >= an.y && an.x >= an.z) { return p.zy; }
+        if (an.y >= an.z) { return p.xz; }
+        return p.xy;
+    }
+
+    let pa = axis_align(p);
+
+    if (material.mapping_mode == MAPPING_MODE_CYLINDRICAL)
+    {
+        let u = atan2(pa.x, pa.z) / (2.0 * PI) + 0.5;
+        return vec2<f32>(u, pa.y);
+    }
+
+    if (material.mapping_mode == MAPPING_MODE_SPHERICAL)
+    {
+        let dir = normalize(pa);
+        let u = atan2(dir.x, dir.z) / (2.0 * PI) + 0.5;
+        let v = acos(clamp(dir.y, -1.0, 1.0)) / PI;
+        return vec2<f32>(u, v);
+    }
+
+    // planar
+    return pa.xz;
+}
+
+// samples a projected uv with explicit gradients: the angle based uvs jump at the atan2 seam which
+// would break the mip level selection there - wrapping the gradients removes the seam line.
+// mapping scale and the per texture 2d transform are applied on top of the projected uv.
+fn sample_projected(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, texture_index: u32) -> vec4<f32>
+{
+    let scale = material.mapping_scale;
+
+    var gx = dpdx(uv);
+    var gy = dpdy(uv);
+    gx.x = gx.x - round(gx.x);
+    gy.x = gy.x - round(gy.x);
+
+    return textureSampleGrad(tex, samp, transform_uv(uv * scale, texture_index), transform_uv_dir(gx * scale, texture_index), transform_uv_dir(gy * scale, texture_index));
+}
+
+// triplanar color sample (p / n in the chosen projection space - world or object)
+fn sample_triplanar(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32, texture_index: u32) -> vec4<f32>
+{
+    let blend = triplanar_blend(n, sharpness);
+
+    let cx = textureSample(tex, samp, transform_uv(p.zy * scale, texture_index));
+    let cy = textureSample(tex, samp, transform_uv(p.xz * scale, texture_index));
+    let cz = textureSample(tex, samp, transform_uv(p.xy * scale, texture_index));
+
+    return cx * blend.x + cy * blend.y + cz * blend.z;
+}
+
+// samples a material texture with the active mapping mode (uv / triplanar / cube / planar / cylindrical / spherical)
+fn sample_material_texture(tex: texture_2d<f32>, samp: sampler, in: VertexOutput, texture_index: u32) -> vec4<f32>
+{
+    if (material.mapping_mode == MAPPING_MODE_TRIPLANAR)
+    {
+        return sample_triplanar(tex, samp, mapping_position(in), mapping_normal(in), material.mapping_scale, material.mapping_sharpness, texture_index);
+    }
+    if (material.mapping_mode != MAPPING_MODE_UV)
+    {
+        return sample_projected(tex, samp, projected_uv(mapping_position(in), mapping_normal(in)), texture_index);
+    }
+
+    return textureSample(tex, samp, get_uv(in, texture_index));
+}
+
+// samples a tangent space normal at the given (already scaled) plane uv, applying the texture transform;
+// the sampled xy is rotated back by the transform rotation so the normal stays aligned with the plane axes
+fn sample_plane_normal(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    var tn = textureSample(tex, samp, transform_uv(uv, texture_index)).xyz * 2.0 - 1.0;
+    tn = vec3<f32>(tn.xy * strength, tn.z);
+
+    let rot = material.texture_transforms[texture_index].rotation;
+    let c = cos(rot);
+    let s = sin(rot);
+    return vec3<f32>(c * tn.x + s * tn.y, -s * tn.x + c * tn.y, tn.z);
+}
+
+// like sample_plane_normal but for an unscaled projected uv with seam wrapped gradients (see sample_projected)
+fn sample_projected_normal(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let scale = material.mapping_scale;
+
+    var gx = dpdx(uv);
+    var gy = dpdy(uv);
+    gx.x = gx.x - round(gx.x);
+    gy.x = gy.x - round(gy.x);
+
+    var tn = textureSampleGrad(tex, samp, transform_uv(uv * scale, texture_index), transform_uv_dir(gx * scale, texture_index), transform_uv_dir(gy * scale, texture_index)).xyz * 2.0 - 1.0;
+    tn = vec3<f32>(tn.xy * strength, tn.z);
+
+    let rot = material.texture_transforms[texture_index].rotation;
+    let c = cos(rot);
+    let s = sin(rot);
+    return vec3<f32>(c * tn.x + s * tn.y, -s * tn.x + c * tn.y, tn.z);
+}
+
+// triplanar normal mapping (whiteout blend). p / n in the chosen projection space; result is a normal in that same space.
+fn sample_triplanar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, scale: f32, sharpness: f32, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let blend = triplanar_blend(gn, sharpness);
+
+    var tnx = sample_plane_normal(tex, samp, p.zy * scale, strength, texture_index);
+    var tny = sample_plane_normal(tex, samp, p.xz * scale, strength, texture_index);
+    var tnz = sample_plane_normal(tex, samp, p.xy * scale, strength, texture_index);
+
+    // whiteout blend - reorient each projected normal by the geometric normal
+    tnx = vec3<f32>(tnx.xy + gn.zy, gn.x);
+    tny = vec3<f32>(tny.xy + gn.xz, gn.y);
+    tnz = vec3<f32>(tnz.xy + gn.xy, gn.z);
+
+    // swizzle to world/object orientation and blend
+    let result = tnx.zyx * blend.x + tny.xzy * blend.y + tnz.xyz * blend.z;
+    return normalize(result);
+}
+
+// cube mapping normal - hard pick of the dominant plane, whiteout reorientation like triplanar (no blend).
+// p / n in the chosen projection space; result is a normal in that same space.
+fn sample_cube_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let an = abs(gn);
+
+    let tn = sample_projected_normal(tex, samp, projected_uv(p, gn), strength, texture_index);
+
+    if (an.x >= an.y && an.x >= an.z)
+    {
+        return normalize(vec3<f32>(tn.xy + gn.zy, gn.x).zyx);
+    }
+    if (an.y >= an.z)
+    {
+        return normalize(vec3<f32>(tn.xy + gn.xz, gn.y).xzy);
+    }
+    return normalize(vec3<f32>(tn.xy + gn.xy, gn.z));
+}
+
+// planar mapping normal - fixed projection plane selected by the mapping axis (whiteout reorientation).
+// p / n in the chosen projection space; result is a normal in that same space.
+fn sample_planar_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let tn = sample_projected_normal(tex, samp, projected_uv(p, gn), strength, texture_index);
+
+    if (material.mapping_axis == 0u) // x
+    {
+        return normalize(vec3<f32>(tn.xy + gn.zy, gn.x).zyx);
+    }
+    if (material.mapping_axis == 2u) // z
+    {
+        return normalize(vec3<f32>(tn.xy + gn.xy, gn.z));
+    }
+    // y (default)
+    return normalize(vec3<f32>(tn.xy + gn.xz, gn.y).xzy);
+}
+
+// cylindrical / spherical normal mapping - analytic tangent frame from the parametrization.
+// p / n in the chosen projection space; result is a normal in that same space.
+fn sample_wrapped_normal(tex: texture_2d<f32>, samp: sampler, p: vec3<f32>, n: vec3<f32>, strength: f32, texture_index: u32) -> vec3<f32>
+{
+    let gn = normalize(n);
+    let tn = sample_projected_normal(tex, samp, projected_uv(p, gn), strength, texture_index);
+
+    let pa = axis_align(p);
+
+    // tangent along the angle (u) direction
+    let flat_len = max(length(pa.xz), 0.0001);
+    let sin_theta = pa.x / flat_len;
+    let cos_theta = pa.z / flat_len;
+    let tangent = axis_unalign(vec3<f32>(cos_theta, 0.0, -sin_theta));
+
+    // bitangent along the v direction
+    var bitangent_aligned = vec3<f32>(0.0, 1.0, 0.0); // cylindrical: v runs along the axis
+    if (material.mapping_mode == MAPPING_MODE_SPHERICAL)
+    {
+        // spherical: v runs from the +axis pole to the -axis pole
+        let dir = normalize(pa);
+        let sin_phi = max(sqrt(max(1.0 - dir.y * dir.y, 0.0)), 0.0001);
+        bitangent_aligned = normalize(vec3<f32>(dir.y * sin_theta, -sin_phi, dir.y * cos_theta));
+    }
+    let bitangent = axis_unalign(bitangent_aligned);
+
+    return normalize(tangent * tn.x + bitangent * tn.y + gn * tn.z);
+}
+
+
+// ****************************** shadow mapping ******************************
+
+// sample one shadow atlas layer with a 3x3 PCF kernel
+// (the comparison sampler adds hardware 2x2 PCF per tap)
+fn shadow_sample_view(view_index: u32, world_pos: vec3<f32>, bias: f32) -> f32
+{
+    let clip = shadow_views[view_index].view_proj * vec4<f32>(world_pos, 1.0);
+    if (clip.w <= 0.0)
+    {
+        return 1.0;
+    }
+
+    let ndc = clip.xyz / clip.w;
+
+    // shadow map uv (y flipped: texture origin is top-left)
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 1.0 - (ndc.y * 0.5 + 0.5));
+
+    // outside of the shadow map -> not shadowed
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0)
+    {
+        return 1.0;
+    }
+
+    let depth_ref = ndc.z - bias;
+
+    let texel = 1.0 / f32(textureDimensions(t_shadow).x);
+    let spread = max(material.shadow_softness, 0.5) * texel;
+
+    var shadow = 0.0;
+    for (var y = -1; y <= 1; y = y + 1)
+    {
+        for (var x = -1; x <= 1; x = x + 1)
+        {
+            let offset = vec2<f32>(f32(x), f32(y)) * spread;
+            shadow += textureSampleCompareLevel(t_shadow, s_shadow, uv + offset, view_index, depth_ref);
+        }
+    }
+
+    return shadow / 9.0;
+}
+
+// 1.0 = fully lit, 0.0 = fully shadowed
+fn shadow_factor(light_index: i32, world_pos: vec3<f32>) -> f32
+{
+    let shadow_index = lights[light_index].shadow_index;
+    if (shadow_index < 0)
+    {
+        return 1.0;
+    }
+
+    let first_view = u32(shadow_index);
+    let bias = lights[light_index].shadow_bias;
+
+    switch lights[light_index].light_type
+    {
+        case 1u //LIGHT_TYPE_DIRECTIONAL -> cascaded shadow maps
+        {
+            // fade the shadow out over the last 15% of the shadow distance (instead of a hard cutoff)
+            var fade = 0.0;
+            if (scene.shadow_max_distance > 0.0)
+            {
+                let fade_start = scene.shadow_max_distance * 0.85;
+                let view_distance = length(camera.view_pos.xyz - world_pos);
+                fade = clamp((view_distance - fade_start) / max(scene.shadow_max_distance - fade_start, 0.0001), 0.0, 1.0);
+            }
+
+            if (fade >= 1.0)
+            {
+                return 1.0;
+            }
+
+            // use the first (smallest) cascade that contains the position
+            for (var cascade = 0u; cascade < lights[light_index].shadow_views; cascade = cascade + 1u)
+            {
+                let clip = shadow_views[first_view + cascade].view_proj * vec4<f32>(world_pos, 1.0);
+                if (clip.w <= 0.0)
+                {
+                    continue;
+                }
+
+                let ndc = clip.xyz / clip.w;
+                if (abs(ndc.x) < 0.99 && abs(ndc.y) < 0.99 && ndc.z > 0.0 && ndc.z < 1.0)
+                {
+                    return mix(shadow_sample_view(first_view + cascade, world_pos, bias), 1.0, fade);
+                }
+            }
+
+            return 1.0;
+        }
+        case 2u //LIGHT_TYPE_POINT -> pick the cube face by the major axis
+        {
+            let to_frag = world_pos - lights[light_index].position.xyz;
+            let abs_dir = abs(to_frag);
+
+            var face = 0u;
+            if (abs_dir.x >= abs_dir.y && abs_dir.x >= abs_dir.z)
+            {
+                face = select(1u, 0u, to_frag.x > 0.0);
+            }
+            else if (abs_dir.y >= abs_dir.z)
+            {
+                face = select(3u, 2u, to_frag.y > 0.0);
+            }
+            else
+            {
+                face = select(5u, 4u, to_frag.z > 0.0);
+            }
+
+            return shadow_sample_view(first_view + face, world_pos, bias);
+        }
+        case 3u //LIGHT_TYPE_SPOT
+        {
+            return shadow_sample_view(first_view, world_pos, bias);
+        }
+        default
+        {
+            return 1.0;
+        }
+    }
+}
+
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
@@ -524,8 +1031,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var object_color = material.base_color * in.color;
     if (has_base_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_BASE);
-        let tex_color = textureSample(tex_base, tex_base_sampler, uv);
+        let tex_color = sample_material_texture(tex_base, tex_base_sampler, in, TEXTURE_INDEX_BASE);
         object_color *= tex_color;
     }
 
@@ -533,8 +1039,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var ambient_color = material.ambient_color;
     if (has_ambient_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_AMBIENT);
-        let tex_color = textureSample(tex_ambient, tex_ambient_sampler, uv);
+        let tex_color = sample_material_texture(tex_ambient, tex_ambient_sampler, in, TEXTURE_INDEX_AMBIENT);
         ambient_color *= tex_color;
     }
 
@@ -546,20 +1051,54 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // normal mapping
     if (has_normal_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_NORMAL);
-        var normal_map = textureSample(tex_normal, tex_normal_Sampler, uv).xyz;
-        normal_map = normal_map * 2.0 - 1.0;
+        if (material.mapping_mode != MAPPING_MODE_UV) // projected normal mapping
+        {
+            let p = mapping_position(in);
+            let n = mapping_normal(in);
 
-        normal_map.x *= material.normal_map_strength;
-        normal_map.y *= material.normal_map_strength;
+            var mapped_normal: vec3<f32>;
+            if (material.mapping_mode == MAPPING_MODE_TRIPLANAR)
+            {
+                mapped_normal = sample_triplanar_normal(tex_normal, tex_normal_Sampler, p, n, material.mapping_scale, material.mapping_sharpness, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+            else if (material.mapping_mode == MAPPING_MODE_CUBE)
+            {
+                mapped_normal = sample_cube_normal(tex_normal, tex_normal_Sampler, p, n, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+            else if (material.mapping_mode == MAPPING_MODE_PLANAR)
+            {
+                mapped_normal = sample_planar_normal(tex_normal, tex_normal_Sampler, p, n, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
+            else // cylindrical / spherical
+            {
+                mapped_normal = sample_wrapped_normal(tex_normal, tex_normal_Sampler, p, n, material.normal_map_strength, TEXTURE_INDEX_NORMAL);
+            }
 
-        let T = tangent;
-        let B = bitangent;
-        let N = normal;
+            if (material.mapping_space == MAPPING_SPACE_OBJECT)
+            {
+                // bring the object space normal into world space (handles object rotation incl. twist) for correct lighting
+                mapped_normal = rotate_by_quat(normalize(in.model_rotation), mapped_normal);
+            }
 
-        // https://lettier.github.io/3d-game-shaders-for-beginners/normal-mapping.html
-        normal = normalize(T * normal_map.x + B * normal_map.y + N * normal_map.z);
-        //normal = normalize(mat3x3<f32>(T, B, N) * normal_map);
+            normal = normalize(mapped_normal);
+        }
+        else // UV normal mapping
+        {
+            let uv = get_uv(in, TEXTURE_INDEX_NORMAL);
+            var normal_map = textureSample(tex_normal, tex_normal_Sampler, uv).xyz;
+            normal_map = normal_map * 2.0 - 1.0;
+
+            normal_map.x *= material.normal_map_strength;
+            normal_map.y *= material.normal_map_strength;
+
+            let T = tangent;
+            let B = bitangent;
+            let N = normal;
+
+            // https://lettier.github.io/3d-game-shaders-for-beginners/normal-mapping.html
+            normal = normalize(T * normal_map.x + B * normal_map.y + N * normal_map.z);
+            //normal = normalize(mat3x3<f32>(T, B, N) * normal_map);
+        }
     }
     else
     {
@@ -567,6 +1106,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     }
 
     var color = vec3<f32>(0.0, 0.0, 0.0);
+
+    // screen space ambient occlusion (sampled 1:1 via the framebuffer pixel position)
+    // applied to the ambient/indirect terms only (hemispheric light, IBL, ambient color) -
+    // direct light is already occluded by the shadow maps. transparent materials
+    // (blend mode 2) are excluded: the ssao texture holds the occlusion of the
+    // opaque geometry behind them
+    var ssao_factor = 1.0;
+    if (scene.ssao_strength > 0.0001 && material.unlit_shading == 0u && material.blend_mode != 2u)
+    {
+        let ssao_value = textureLoad(t_ssao, vec2<i32>(in.clip_position.xy), 0).r;
+        ssao_factor = 1.0 - (1.0 - ssao_value) * scene.ssao_strength;
+    }
 
     if (material.unlit_shading != 0u || light_amount == 0)
     {
@@ -579,8 +1130,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
         var specular = material.specular_color;
         if (has_specular_texture())
         {
-            let uv = get_uv(in, TEXTURE_INDEX_SPECULAR);
-            let tex_color = textureSample(tex_specular, tex_specular_sampler, uv);
+            let tex_color = sample_material_texture(tex_specular, tex_specular_sampler, in, TEXTURE_INDEX_SPECULAR);
             specular *= tex_color;
         }
 
@@ -641,6 +1191,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
             intensity = min(intensity, 1.0);
 
+            // range attenuation (point and spot lights only, glTF punctual lights spec)
+            // formula: max(min(1 - (d/range)^4, 1), 0) -- smooth fade to zero at range boundary
+            // NOTE: intentionally NO division by d² here, even though the glTF spec includes it.
+            // Reason: the distance-based falloff (1/d) is already handled above via distance_based_intensity.
+            // Adding /d² here would double-attenuate the intensity and make everything too dark.
+            // range == 0 means infinite range (e.g. loaded from glTF where range was undefined/None).
+            let range = lights[i].range;
+            if range > 0.0 && (lights[i].light_type == 2u || lights[i].light_type == 3u)
+            {
+                let current_distance = length(lights[i].position.xyz - in.position);
+                if current_distance >= range
+                {
+                    continue; // hard cutoff -- no contribution beyond range (glTF spec requirement)
+                }
+                let attenuation = max(min(1.0 - pow(current_distance / range, 4.0), 1.0), 0.0);
+                intensity *= attenuation;
+            }
+
             if (lights[i].light_type == 4u) //LIGHT_TYPE_HEMISPHERIC
             {
                 let dir = normalize(lights[i].dir.xyz);
@@ -649,7 +1217,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
                 let light_contrib = clamp(normal_dot_light_dir, -1.0, 1.0) * 0.5 + 0.5;
                 let light_color = mix(lights[i].ground_color, lights[i].color, light_contrib);
 
-                color += (light_color * object_color * intensity).rgb;
+                // hemispheric light is an ambient term -> occluded by ssao
+                color += (light_color * object_color * intensity).rgb * ssao_factor;
             }
             else
             {
@@ -680,15 +1249,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
                 let specular_color = (lights[i].color * specular * specular_strength).rgb;
 
-                color += (diffuse_color + specular_color) * intensity;
+                // shadow mapping (skip surfaces facing away from the light - they are dark anyway)
+                var shadow = 1.0;
+                if (material.receive_shadow != 0u && lights[i].shadow_index >= 0 && diffuse_strength > 0.0)
+                {
+                    shadow = shadow_factor(i, in.position);
+
+                    // shadow strength: lift the shadow so it never removes more than shadow_strength of the light
+                    shadow = mix(1.0, shadow, lights[i].shadow_strength);
+                }
+
+                color += (diffuse_color + specular_color) * intensity * shadow;
             }
         }
 
         // ambient occlusion
         if (has_ambient_occlusion_texture())
         {
-            let uv = get_uv(in, TEXTURE_INDEX_AMBIENT_OCCLUSION);
-            let ambient_occlusion = textureSample(tex_ambient_occlusion, tex_ambient_occlusion_sampler, uv);
+            let ambient_occlusion = sample_material_texture(tex_ambient_occlusion, tex_ambient_occlusion_sampler, in, TEXTURE_INDEX_AMBIENT_OCCLUSION);
             color.x *= ambient_occlusion.x;
             color.y *= ambient_occlusion.x;
             color.z *= ambient_occlusion.x;
@@ -700,16 +1278,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             var reflectivity = material.reflectivity;
             if (has_reflectivity_texture())
             {
-                let uv = get_uv(in, TEXTURE_INDEX_REFLECTIVITY);
-                let reflectivity_value = textureSample(tex_reflectivity, tex_reflectivity_sampler, uv);
+                let reflectivity_value = sample_material_texture(tex_reflectivity, tex_reflectivity_sampler, in, TEXTURE_INDEX_REFLECTIVITY);
                 reflectivity *= reflectivity_value.x;
             }
 
             var roughness = material.roughness;
             if (has_roughness_texture())
             {
-                let uv = get_uv(in, TEXTURE_INDEX_ROUGHNESS);
-                let roughness_value = textureSample(tex_roughness, tex_roughness_sampler, uv);
+                let roughness_value = sample_material_texture(tex_roughness, tex_roughness_sampler, in, TEXTURE_INDEX_ROUGHNESS);
                 roughness *= roughness_value.x;
             }
 
@@ -721,9 +1297,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
             let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
             let reflection_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
-            color.x += reflection_color.x * reflectivity;
-            color.y += reflection_color.y * reflectivity;
-            color.z += reflection_color.z * reflectivity;
+            color.x += reflection_color.x * reflectivity * ssao_factor;
+            color.y += reflection_color.y * reflectivity * ssao_factor;
+            color.z += reflection_color.z * reflectivity * ssao_factor;
         }
 
         // Diffuse IBL (Irradiance)
@@ -738,14 +1314,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
             let sphere_coords_transformed = transform_uv(sphere_coords, TEXTURE_INDEX_ENVIRONMENT);
             let ibl_color = textureSampleLevel(tex_environment, tex_environment_sampler, sphere_coords_transformed, mipmap_level);
 
-            color += ibl_color.rgb * object_color.rgb * ibl_diffuse_intensity;
+            color += ibl_color.rgb * object_color.rgb * ibl_diffuse_intensity * ssao_factor;
         }
     }
 
-    // ambient color
-    color.x += ambient_color.x;
-    color.y += ambient_color.y;
-    color.z += ambient_color.z;
+    // ambient color (occluded by ssao)
+    color.x += ambient_color.x * ssao_factor;
+    color.y += ambient_color.y * ssao_factor;
+    color.z += ambient_color.z * ssao_factor;
+
+    // distance based fog (world space distance -> independent of the depth convention),
+    // applied in linear hdr space so tone mapping/gamma treat the fog color consistently.
+    // materials with no_fog (sky spheres, editor helpers like grid/gizmos, ...) are excluded
+    if (scene.fog_density > 0.0001 && material.no_fog == 0u)
+    {
+        let fog_distance = length(in.view_dir);
+        let fog_factor = 1.0 - exp(-scene.fog_density * fog_distance);
+        color = mix(color, scene.fog_color.rgb, fog_factor);
+    }
 
     // TODO: tone mapping and gamma can be done in post
 
@@ -782,8 +1368,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     var alpha = in.color.a * object_color.a * material.alpha;
     if (has_alpha_texture())
     {
-        let uv = get_uv(in, TEXTURE_INDEX_ALPHA);
-        let tex_color = textureSample(tex_alpha, tex_alpha_sampler, uv);
+        let tex_color = sample_material_texture(tex_alpha, tex_alpha_sampler, in, TEXTURE_INDEX_ALPHA);
         alpha *= tex_color.x;
     }
 
@@ -805,7 +1390,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     // distance based blending out
     /*
-    let max_distance: f32 = 50.0;
+    let max_distance: f32 = 100.0;
     let view_dir = camera.view_pos.xyz - in.position;
 
     let distance = length(view_dir);
@@ -814,7 +1399,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let distance_fading_factor = 1.0 - easeInQuint(dist_scaled);
 
     alpha *= distance_fading_factor;
-        */
+    */
+
+    // x-ray mode: clamp alpha to xray_alpha so opaque objects become see-through
+    // materials with allow_xray=0 (gizmos, grid, etc.) are excluded
+    if (material.allow_xray != 0u)
+    {
+        alpha = min(alpha, scene.xray_alpha);
+    }
 
     if (alpha < 0.000001)
     {

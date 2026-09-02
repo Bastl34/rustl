@@ -3,22 +3,37 @@ mod rendering
     pub(crate) mod wgpu;
     pub(crate) mod egui;
     pub(crate) mod pipeline;
+    pub(crate) mod compute_pipeline;
     pub(crate) mod vertex_buffer;
     pub(crate) mod instance;
     pub(crate) mod texture;
     pub(crate) mod state;
     pub(crate) mod scene;
     pub(crate) mod camera;
-    pub(crate) mod uniform;
     pub(crate) mod light;
+    pub(crate) mod shadow;
     pub(crate) mod material;
     pub(crate) mod skeleton;
     pub(crate) mod morph_target;
+    pub(crate) mod bounding_boxes;
+    pub(crate) mod debug_volumes;
+    pub(crate) mod visibility;
+    pub(crate) mod hzb_cull_buffer;
+    pub(crate) mod draw_slots;
+    pub(crate) mod gpu_timer;
 
     pub(crate) mod bind_groups
     {
+        pub(crate) mod uniform;
+        pub(crate) mod storage;
         pub(crate) mod light_cam_scene;
         pub(crate) mod skeleton_morph_target;
+        pub(crate) mod single_binding_group;
+        pub(crate) mod debug_volumes;
+        pub(crate) mod depth_export;
+        pub(crate) mod hzb_downsample;
+        pub(crate) mod hzb_occlusion_check;
+        pub(crate) mod ssao;
     }
 
     pub(crate) mod helper
@@ -47,6 +62,8 @@ mod state
         {
             pub(crate) mod wavefront;
             pub(crate) mod gltf;
+            pub(crate) mod asset_container;
+            pub(crate) mod loader;
         }
 
         pub(crate) mod exporter
@@ -76,7 +93,6 @@ mod state
         pub(crate) mod scene_controller
         {
             pub(crate) mod scene_controller;
-            pub(crate) mod generic_controller;
             pub(crate) mod char_controller;
         }
 
@@ -84,8 +100,10 @@ mod state
         {
             pub(crate) mod camera_controller;
             pub(crate) mod fly_controller;
+            pub(crate) mod pan_controller;
             pub(crate) mod target_rotation_controller;
             pub(crate) mod follow_controller;
+            pub(crate) mod path_controller;
         }
 
         pub(crate) mod utilities
@@ -98,6 +116,7 @@ mod state
         pub(crate) mod camera;
         pub(crate) mod light;
         pub(crate) mod instance;
+        pub(crate) mod layers;
         pub(crate) mod node;
         pub(crate) mod scene;
     }
@@ -114,40 +133,66 @@ mod state
         pub(crate) mod mesh_resource;
     }
 
-    pub(crate) mod gui
+    pub(crate) mod project
     {
-        pub(crate) mod helper
-        {
-            pub(crate) mod info_box;
-            pub(crate) mod generic_items;
-        }
+        pub(crate) mod project;
+        pub(crate) mod loader;
+    }
 
-        pub(crate) mod editor
-        {
-            pub(crate) mod editor;
-            pub(crate) mod editor_state;
-            pub(crate) mod helper;
-            pub(crate) mod gizmo;
-            pub(crate) mod grid;
 
-            pub(crate) mod ui
+}
+
+mod gui
+{
+    // generic egui widgets - also used by scene components for their inspector UI,
+    // so this stays available without the editor
+    pub(crate) mod helper
+    {
+        pub(crate) mod info_box;
+        #[cfg(feature = "editor")]
+        pub(crate) mod generic_items;
+    }
+
+    #[cfg(feature = "editor")]
+    pub(crate) mod editor
+    {
+        pub(crate) mod editor;
+        pub(crate) mod editor_state;
+        pub(crate) mod editor_project;
+        pub(crate) mod recent_projects;
+        pub(crate) mod settings;
+        pub(crate) mod helper;
+        pub(crate) mod gizmo;
+        pub(crate) mod grid;
+        pub(crate) mod box_select;
+        pub(crate) mod preview_scene;
+
+        pub(crate) mod ui
+        {
+            pub(crate) mod helper
             {
-                pub(crate) mod main_frame;
-                pub(crate) mod modals;
-                pub(crate) mod dialogs;
-                pub(crate) mod statistics;
-                pub(crate) mod cameras;
-                pub(crate) mod objects;
-                pub(crate) mod materials;
-                pub(crate) mod lights;
-                pub(crate) mod scenes;
-                pub(crate) mod general;
-                pub(crate) mod textures;
-                pub(crate) mod sound;
-                pub(crate) mod mesh;
-                pub(crate) mod assets;
-                pub(crate) mod console;
+                pub(crate) mod ui_helper;
             }
+
+            pub(crate) mod main_frame;
+            pub(crate) mod modals;
+            pub(crate) mod dialogs;
+            pub(crate) mod statistics;
+            pub(crate) mod cameras;
+            pub(crate) mod objects;
+            pub(crate) mod materials;
+            pub(crate) mod lights;
+            pub(crate) mod scenes;
+            pub(crate) mod scene_tabs;
+            pub(crate) mod general;
+            pub(crate) mod project;
+            pub(crate) mod debug;
+            pub(crate) mod textures;
+            pub(crate) mod sound;
+            pub(crate) mod mesh;
+            pub(crate) mod assets;
+            pub(crate) mod console;
+            pub(crate) mod help;
         }
     }
 }
@@ -204,10 +249,12 @@ mod helper
     pub(crate) mod change_tracker;
     pub(crate) mod platform;
     pub(crate) mod easing;
+    pub(crate) mod curve;
     pub(crate) mod stopwatch;
     pub(crate) mod asset_path_descriptor;
     pub(crate) mod option_or_id;
     pub(crate) mod console_log;
+    pub(crate) mod observable;
 }
 
 mod resources
