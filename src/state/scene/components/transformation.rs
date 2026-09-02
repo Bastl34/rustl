@@ -541,6 +541,44 @@ impl Transformation
         self.calc_transform();
     }
 
+    pub fn apply_rotation_parent_space(&mut self, rotation: Vector3<f32>)
+    {
+        {
+            let data = self.data.get_mut();
+
+            if data.transform_vectors
+            {
+                // the euler angles and the quaternion rotation are multiplied in calc_transform (euler * quat)
+                // --> merge them into one rotation to be able to apply the new rotation on the left side (= parent space)
+                let euler_rotation = UnitQuaternion::from_euler_angles(data.rotation.x, data.rotation.y, data.rotation.z);
+
+                let current_rotation = if let Some(rotation_quat) = data.rotation_quat.as_ref()
+                {
+                    let quaternion = UnitQuaternion::new_normalize(Quaternion::new(rotation_quat.w, rotation_quat.x, rotation_quat.y, rotation_quat.z));
+                    euler_rotation * quaternion
+                }
+                else
+                {
+                    euler_rotation
+                };
+
+                let new_rotation = UnitQuaternion::from_euler_angles(rotation.x, rotation.y, rotation.z) * current_rotation;
+
+                let (x, y, z) = new_rotation.euler_angles();
+
+                data.rotation = Vector3::<f32>::new(x, y, z);
+                data.rotation_quat = None;
+            }
+            else
+            {
+                let rotation = Self::get_rotation_matrix_from_vector(rotation);
+                data.trans = rotation * data.trans;
+            }
+        }
+
+        self.calc_transform();
+    }
+
     pub fn set_rotation(&mut self, rotation: Vector3<f32>)
     {
         let data = self.data.get_mut();

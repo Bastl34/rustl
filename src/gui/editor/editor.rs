@@ -1494,9 +1494,6 @@ impl Editor
         let mut use_rotation_vec = false;
         let mut rotation_vec = Vector3::<f32>::zeros();
 
-        let mut use_rotation_pos = false;
-        let mut rotation_pos = Vector3::<f32>::zeros();
-
         if apply_x
         {
             if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
@@ -1516,10 +1513,11 @@ impl Editor
                 if movement.z.abs() >= angle_steps || !movement_check
                 {
                     let sign = movement.z.signum();
-                    rotation_pos.x = edit_transformation.get_data().rotation.x + angle_steps * sign;
-                    rotation_pos.x = snap_to_grid(rotation_pos.x, angle_steps);
+                    let current = edit_transformation.get_data().rotation.x;
 
-                    use_rotation_pos = true;
+                    rotation_vec.x = snap_to_grid(current + angle_steps * sign, angle_steps) - current;
+
+                    use_rotation_vec = true;
                 }
             }
             else
@@ -1548,10 +1546,11 @@ impl Editor
                 if movement.x.abs() >= angle_steps || !movement_check
                 {
                     let sign = movement.x.signum();
-                    rotation_pos.y = edit_transformation.get_data().rotation.y + angle_steps * sign;
-                    rotation_pos.y = snap_to_grid(rotation_pos.y, angle_steps);
+                    let current = edit_transformation.get_data().rotation.y;
 
-                    use_rotation_pos = true;
+                    rotation_vec.y = snap_to_grid(current + angle_steps * sign, angle_steps) - current;
+
+                    use_rotation_vec = true;
                 }
             }
             else
@@ -1578,11 +1577,12 @@ impl Editor
 
                 if movement.x.abs() >= angle_steps || !movement_check
                 {
-                    let sign = movement.x.signum();
-                    rotation_pos.z = edit_transformation.get_data().rotation.z + angle_steps * sign;
-                    rotation_pos.z = snap_to_grid(rotation_pos.z, angle_steps);
+                    let sign = -movement.x.signum();
+                    let current = edit_transformation.get_data().rotation.z;
 
-                    use_rotation_pos = true;
+                    rotation_vec.z = snap_to_grid(current + angle_steps * sign, angle_steps) - current;
+
+                    use_rotation_vec = true;
                 }
             }
             else
@@ -1595,15 +1595,12 @@ impl Editor
         if use_rotation_vec
         {
             component_downcast_mut!(edit_transformation, Transformation);
-            edit_transformation.apply_rotation(rotation_vec);
-        }
-        else if use_rotation_pos
-        {
-            component_downcast_mut!(edit_transformation, Transformation);
-            edit_transformation.set_rotation(rotation_pos);
+
+            // rotate around the axes of the parent space - not around the object's own axes
+            edit_transformation.apply_rotation_parent_space(rotation_vec);
         }
 
-        use_rotation_vec || use_rotation_pos
+        use_rotation_vec
     }
 
     pub fn drag_and_drop_object(&mut self, state: &mut State, apply_x: bool, apply_y: bool, apply_z: bool)
