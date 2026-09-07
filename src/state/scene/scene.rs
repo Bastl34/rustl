@@ -9,7 +9,7 @@ use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializ
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::scene_controller::SceneControllerBox};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u32>) -> bool>;
@@ -75,6 +75,9 @@ pub struct Scene
 
     pub pre_controller: Vec<SceneControllerBox>, // before scene updates
     pub post_controller: Vec<SceneControllerBox>, // after scene updates
+
+    // collision world for gameplay queries - not serialized, it is rebuilt from the nodes
+    pub physics: PhysicsWorld,
 
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
@@ -244,6 +247,8 @@ impl Scene
             pre_controller: vec![],
             post_controller: vec![],
 
+            physics: PhysicsWorld::new(),
+
             render_item: None,
             lights_render_item: None,
 
@@ -302,7 +307,17 @@ impl Scene
             });
         }
 
-        // update pre controller
+        // ********** physics colliders (structure) **********
+        if !self.physics.is_empty()
+        {
+            if self.physics.auto_add_nodes && self.physics.scan_due()
+            {
+                let nodes = self.nodes.clone();
+                self.physics.scan_nodes(&nodes);
+            }
+        }
+
+        // ********** update pre controller **********
         let mut pre_controller = vec![];
         swap(&mut self.pre_controller, &mut pre_controller);
         for controller_item in &mut pre_controller
@@ -315,7 +330,7 @@ impl Scene
 
         swap(&mut pre_controller, &mut self.pre_controller);
 
-        // update nodes
+        // ********** update nodes **********
         let mut delete_nodes = vec![];
         let mut skinned_nodes = vec![];
         for node in &self.nodes
@@ -333,9 +348,7 @@ impl Scene
             }
         }
 
-        // ***** skinned bounding volumes *****
-        // this has to run after all components updated, otherwise the joints would be one frame behind
-        // picking and frustum culling depend on it, so it is a fixed step and not a (removable) controller
+        // ********** skinned bounding volumes **********
         for node in &skinned_nodes
         {
             let node = node.read().unwrap();
@@ -367,7 +380,7 @@ impl Scene
             }
         }
 
-        // ***** spatial sound listener (based on the first camera) *****
+        // ********** spatial sound listener (based on the first camera) **********
         {
             let cam = self.cameras.first();
             if let Some(cam) = cam
@@ -383,7 +396,7 @@ impl Scene
             }
         }
 
-        // cameras
+        // ********** cameras **********
         let mut cameras = vec![];
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
@@ -393,7 +406,14 @@ impl Scene
 
         swap(&mut cameras, &mut self.cameras);
 
-        // update post controller
+        // ********** physics colliders (transforms) **********
+        // after the node update on purpose - animations move nodes there
+        if !self.physics.is_empty()
+        {
+            self.physics.sync_transformations();
+        }
+
+        // ********** update post controller **********
         let mut post_controller = vec![];
         swap(&mut self.post_controller, &mut post_controller);
         for controller_item in &mut post_controller
@@ -406,7 +426,7 @@ impl Scene
 
         swap(&mut post_controller, &mut self.post_controller);
 
-        // delete requested "delete_later" nodes
+        // ********** delete requested "delete_later" nodes **********
         for node_id in delete_nodes
         {
             self.delete_node_by_id(node_id, false, false, false, false);
@@ -1055,6 +1075,13 @@ impl Scene
         }
 
         all_nodes
+    }
+
+    // (Re)builds the collision world from every collidable mesh instance in the scene.
+    pub fn build_physics(&mut self) -> usize
+    {
+        let nodes = self.nodes.clone();
+        self.physics.build_from_nodes(&nodes)
     }
 
     pub fn find_node_by_id(&self, id: u32) -> Option<NodeItem>

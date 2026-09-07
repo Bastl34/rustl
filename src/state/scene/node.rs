@@ -7,7 +7,9 @@ use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merg
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, state::state::ENGINE_INTERNAL_TAG_PREFX, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::InputOutput}};
+
+use crate::state::scene::exporter::serialization_helper::default_true;
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -37,6 +39,9 @@ pub struct NodeSettings
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
 
+    #[serde(default = "default_true")]
+    pub collision: bool,
+
     pub layer_mask: u32, // bitmask, matched against camera culling_mask
 }
 
@@ -58,6 +63,7 @@ impl Default for NodeSettings
             pick_bbox_first: false,
             frustum_culling: false,
             occlusion_culling: false,
+            collision: true,
             layer_mask: LAYER_DEFAULT,
         }
     }
@@ -276,6 +282,7 @@ impl Node
                 pick_bbox_first: true,
                 frustum_culling: true,
                 occlusion_culling: true,
+                collision: true,
 
                 layer_mask: LAYER_DEFAULT,
             },
@@ -1135,6 +1142,55 @@ impl Node
         }
 
         true
+    }
+
+    // inherited like visibility: off on an object root disables every mesh below it
+    pub fn has_collision(&self) -> bool
+    {
+        if !self.settings.collision
+        {
+            return false;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if !parent.read().unwrap().settings.collision
+                {
+                    return false;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        true
+    }
+
+    pub fn is_engine_internal(&self) -> bool
+    {
+        if self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            return true;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if parent.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                {
+                    return true;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
     }
 
     pub fn set_pickable(&mut self, pickable: bool)

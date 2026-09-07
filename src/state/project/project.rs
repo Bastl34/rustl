@@ -116,6 +116,9 @@ pub struct EditorObjectOptions
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 3]>,
+
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub collision: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

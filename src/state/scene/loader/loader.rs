@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex, RwLock}};
-use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::{Node, NodeItem}, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, execute_on_state_mut_and_wait}}}};
+use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, execute_on_state_mut_and_wait}}}};
 
 pub type TextureCache = HashMap<String, TextureItem>;
 pub type MaterialCache = HashMap<String, MaterialItem>;

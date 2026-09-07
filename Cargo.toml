@@ -43,6 +43,7 @@ uuid = {version = "1.26.0", features = ["v4"] }
 xxhash-rust = { version = "0.8.18", features = [ "xxh3"] }
 
 parry3d = "0.30.2"
+rapier3d = { version = "0.35.3", default-features = false, features = ["dim3", "f32", "std"] }
 
 arboard = { version = "3.6.1", optional = true }
 
@@ -91,6 +92,9 @@ reqwest = "0.13.4"
 wgpu = { version = "30.0.1", features = ["webgl"]}
 wasm-bindgen = "0.2.127"
 wasm-bindgen-futures = "0.4.77"
+
+uuid = { version = "1.26.0", features = ["js"] }
+getrandom = { version = "0.3.4", features = ["wasm_js"] } # needed for ahash (egui, tobj)
 web-sys = { version = "0.3.104", features = [
     "Document",
     "Window",

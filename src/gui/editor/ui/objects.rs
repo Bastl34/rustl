@@ -981,6 +981,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut pick_bbox_first;
         let mut frustum_culling;
         let mut occlusion_culling;
+        let mut collision;
         let mut layer_mask;
         let mut name;
         let mut color;
@@ -1001,6 +1002,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             pick_bbox_first = node.settings.pick_bbox_first;
             frustum_culling = node.settings.frustum_culling;
             occlusion_culling = node.settings.occlusion_culling;
+            collision = node.settings.collision;
             layer_mask = node.settings.layer_mask;
             name = node.name.clone();
             color = node.color;
@@ -1069,6 +1071,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
         changed = ui.checkbox(&mut frustum_culling, "frustum culling").changed() || changed;
         changed = ui.checkbox(&mut occlusion_culling, "occlusion culling").changed() || changed;
+        changed = ui.checkbox(&mut collision, "collision").changed() || changed;
 
         if has_mesh
         {
@@ -1096,6 +1099,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.frustum_culling = frustum_culling;
             node.settings.occlusion_culling = occlusion_culling;
             node.settings.layer_mask = layer_mask;
+            node.settings.collision = collision;
             node.name = name;
             node.color = color;
         }

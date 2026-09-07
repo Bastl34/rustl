@@ -90,6 +90,11 @@ mod state
             pub(crate) mod delay;
         }
 
+        pub(crate) mod physics
+        {
+            pub(crate) mod physics_world;
+        }
+
         pub(crate) mod scene_controller
         {
             pub(crate) mod scene_controller;

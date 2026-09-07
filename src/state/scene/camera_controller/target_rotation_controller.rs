@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::mouse::MouseButton, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::InputOutput}};
 
+use crate::state::scene::exporter::serialization_helper::default_true;
+
 use super::camera_controller::{CameraController, CameraControllerBase};
 
 const DEFAULT_TARGET_POS: Point3::<f32> = Point3::new(0.0, 0.0, 0.0);
@@ -43,6 +45,10 @@ pub struct TargetRotationController
     #[serde(skip, default)]
     pub object_center_predicate: Option<Arc<dyn Fn(NodeItem) -> bool + Send + Sync>>, // TODO -> find a better way to handle this
 
+    // off = follow the node transform - an animated bbox center makes the camera tremble
+    #[serde(default = "default_true")]
+    pub use_bbox_center: bool,
+
     pub collision_check: bool,
     pub collision_check_offset: f32,
     pub collision_zoom_speed: f32,
@@ -77,6 +83,8 @@ impl TargetRotationController
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
 
             object_center_predicate: None,
+
+            use_bbox_center: true,
 
             collision_check: false,
             collision_check_offset: 0.1,
@@ -115,6 +123,8 @@ impl TargetRotationController
 
             object_center_predicate: None,
 
+            use_bbox_center: true,
+
             collision_check: false,
             collision_check_offset: 0.1,
             collision_zoom_speed: DEFAULT_ZOOM_SPEED,
@@ -132,9 +142,19 @@ impl TargetRotationController
         {
             let node = node.read().unwrap();
 
-            if let Some(center) = node.get_world_bbox_center(None, true, self.object_center_predicate.clone())
+            if self.use_bbox_center
             {
-                target_pos = center;
+                if let Some(center) = node.get_world_bbox_center(None, true, self.object_center_predicate.clone())
+                {
+                    target_pos = center;
+                }
+            }
+            else
+            {
+                let transform = node.get_full_transform();
+                let translation = math::extract_translation_from_transform(&transform);
+
+                target_pos = Point3::new(translation.x, translation.y, translation.z);
             }
         }
 

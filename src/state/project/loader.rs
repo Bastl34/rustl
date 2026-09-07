@@ -204,6 +204,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                             node_write.settings.locked = options.locked;
                             node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
                             node_write.settings.transient = false;
+                            node_write.settings.collision = options.collision;
 
                             if let Some(reuse) = options.reuse_materials_by_name
                             {
