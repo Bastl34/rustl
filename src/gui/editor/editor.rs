@@ -1429,18 +1429,33 @@ impl Editor
 
         // get camera transform
         let (scene, _, _) = self.editor_state.get_selected_node(state);
-        let mut cam_inverse = Matrix4::<f32>::identity();
-        let mut cam_culling_mask = 0;
+        let mut start_cam: Option<(Matrix4<f32>, u32)> = None;
+        let mut hovered_culling_mask: Option<u32> = None;
         for camera in &scene.unwrap().cameras
         {
-            if camera.enabled && camera.is_point_in_viewport(&start_pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+            if !camera.enabled || !camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+            {
+                continue;
+            }
+
+            if start_cam.is_none() && camera.is_point_in_viewport(&start_pos)
             {
                 let cam_data = camera.get_data();
-                cam_inverse = cam_data.view_inverse.clone();
-                cam_culling_mask = cam_data.culling_mask;
-                break;
+                start_cam = Some((cam_data.view_inverse.clone(), cam_data.culling_mask));
+            }
+
+            // the mouse wheel rotates around the axis of the view the pointer is hovering right now
+            // --> it must not stay bound to the view the edit mode was started in
+            if hovered_culling_mask.is_none() && camera.is_point_in_viewport(&pointer_pos)
+            {
+                hovered_culling_mask = Some(camera.get_data().culling_mask);
             }
         }
+
+        let (cam_inverse, start_culling_mask) = start_cam.unwrap_or((Matrix4::<f32>::identity(), 0));
+
+        // if the pointer left the viewports (ui panels, ...): keep the view the edit mode was started in
+        let cam_culling_mask = hovered_culling_mask.unwrap_or(start_culling_mask);
 
         // transform by inverse camera matrix
         movement = (cam_inverse * movement.to_homogeneous()).xyz();
