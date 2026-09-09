@@ -6,8 +6,8 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::state::project::project::EditorProjectData;
-use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{gui::editor::gizmo::hide_gizmos, state::project::project::EditorProjectData};
+use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -181,7 +181,6 @@ pub struct EditorState
     pub loading: Arc<RwLock<bool>>,
     pub loading_progress: Arc<RwLock<f32>>,
 
-    pub try_mode: bool,
     pub selectable: bool,
     pub fly_camera: bool,
 
@@ -325,7 +324,6 @@ impl EditorState
             loading: Arc::new(RwLock::new(false)),
             loading_progress: Arc::new(RwLock::new(0.0)),
 
-            try_mode: false,
             selectable: true,
             fly_camera: true,
 
@@ -1017,16 +1015,46 @@ impl EditorState
         false
     }
 
-    pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)
+    pub fn set_run_mode(&mut self, state: &mut State, run_mode: RunMode, fullscreen: bool)
     {
-        self.try_mode = try_out;
-        self.visible = !try_out;
-        state.rendering.fullscreen.set(try_out);
-        state.io.input_manager.mouse.visible.set(!try_out);
+        let was_running = state.run_mode.is_running();
 
-        if try_out
+        state.set_run_mode(run_mode);
+
+        let play_mode = run_mode == RunMode::Play;
+
+        self.visible = !play_mode;
+        state.io.input_manager.mouse.visible.set(!play_mode);
+
+        if run_mode.is_running()
         {
-            self.de_select_current_item(state);
+            if fullscreen && !*state.rendering.fullscreen.get_ref()
+            {
+                state.rendering.fullscreen.set(true);
+            }
+
+            if play_mode
+            {
+                self.de_select_current_item(state);
+                hide_gizmos(state); // TODO: hide grid and other editor stuff too
+            }
+        }
+        // end fullscreen if needed
+        else if was_running && *state.rendering.fullscreen.get_ref()
+        {
+            state.rendering.fullscreen.set(false);
+        }
+    }
+
+    // Freezing means you want to look around, so the editor comes back while it lasts.
+    pub fn set_paused(&mut self, state: &mut State, paused: bool)
+    {
+        state.pause = paused;
+
+        if state.run_mode == RunMode::Play
+        {
+            self.visible = paused;
+            state.io.input_manager.mouse.visible.set(paused);
         }
     }
 

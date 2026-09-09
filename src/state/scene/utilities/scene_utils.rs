@@ -2,9 +2,16 @@
 
 use std::sync::{Arc, Mutex};
 
-use nalgebra::{Point3, Vector3};
+use nalgebra::{Matrix4, Point3, Vector3};
 
+use std::sync::RwLock;
+
+use crate::{component_downcast, component_downcast_mut};
+use crate::helper::math;
 use crate::helper::math::yaw_pitch_to_direction;
+use crate::state::resources::mesh_resource::MeshResource;
+use crate::state::scene::components::mesh::Mesh;
+use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::camera::{Camera, CameraProjectionType};
 use crate::{helper::{concurrency::execution_queue::ExecutionQueueItem, option_or_id::OptionOrId}, state::{scene::{components::component::ComponentItem, node::{Node, NodeItem}, scene::Scene}, state::State}};
 
@@ -321,4 +328,185 @@ pub fn align_camera_to_scene(scene: &mut Scene, cam_index: usize, alpha: Option<
     };
 
     align_camera_to_bounds(cam, min, max, alpha, beta)
+}
+// ********** baking a node transform into its mesh **********
+
+// A rigid body under a non-uniform scale is stretched by a different amount for every
+// orientation, so it visibly changes shape as it rotates. The scale is applied by the scene
+// graph after the transform of whatever sits below it, which means no physics write back can
+// undo it. Baking moves the scale into the vertices, leaving the node at a scale of one.
+//
+// Returns the messages worth showing the user, empty when nothing had to be said.
+pub fn bake_scale(node: NodeItem, state: &mut State) -> Vec<String>
+{
+    bake_node_transform(node, state, false)
+}
+
+// The same, for the whole node transform. Translation and rotation are rigid, so this fixes
+// nothing a physics body cares about - it is for tidying an object up. The price is the
+// pivot: the node ends up on identity, so rotating it afterwards turns it around the origin
+// of its parent rather than around itself, and its geometry can no longer be shared with
+// another placement.
+pub fn bake_transform(node: NodeItem, state: &mut State) -> Vec<String>
+{
+    bake_node_transform(node, state, true)
+}
+
+fn bake_node_transform(node: NodeItem, state: &mut State, full: bool) -> Vec<String>
+{
+    let mut notes = vec![];
+
+    let (matrix, scale) =
+    {
+        let node_read = node.read().unwrap();
+        let Some(transformation) = node_read.find_component::<Transformation>() else
+        {
+            notes.push("this node has no transformation, so there is nothing to bake".to_string());
+            return notes;
+        };
+
+        component_downcast!(transformation, Transformation);
+
+        let local = *transformation.get_transform();
+        let scale = math::extract_scale_from_transform(&local);
+
+        let matrix = if full { local } else { Matrix4::new_nonuniform_scaling(&scale) };
+
+        (matrix, scale)
+    };
+
+    if math::approx_zero(scale.x) || math::approx_zero(scale.y) || math::approx_zero(scale.z)
+    {
+        notes.push("a scale of zero cannot be baked, the geometry would collapse".to_string());
+        return notes;
+    }
+
+    let Some(matrix_inverse) = matrix.try_inverse() else
+    {
+        notes.push("this transform has no inverse, so it cannot be baked".to_string());
+        return notes;
+    };
+
+    if (matrix - Matrix4::identity()).abs().max() < 0.0001
+    {
+        notes.push("the transform is already identity, nothing to bake".to_string());
+        return notes;
+    }
+
+    // ********** the geometry **********
+    let mesh_component =
+    {
+        let node_read = node.read().unwrap();
+        node_read.find_component::<Mesh>()
+    };
+
+    if let Some(mesh_component) = mesh_component
+    {
+        let resource =
+        {
+            component_downcast!(mesh_component, Mesh);
+            mesh_component.mesh_resource.as_ref().cloned()
+        };
+
+        if let Some(resource) = resource
+        {
+            // The resource is shared by hash, so writing into it would change every other
+            // object built from the same geometry. Baking always works on a copy.
+            let mut baked = resource.read().unwrap().duplicate();
+            baked.apply_transform(&matrix);
+
+            let baked = state.insert_mesh_resource_or_reuse(Arc::new(RwLock::new(Box::new(baked))), "baked");
+
+            component_downcast_mut!(mesh_component, Mesh);
+            mesh_component.mesh_resource = OptionOrId::Some(baked);
+        }
+    }
+    else
+    {
+        notes.push("this node has no mesh, so only the transform below it was adjusted".to_string());
+    }
+
+    // A rotation below a non-uniform scale needs shear to stay identical, and a transform
+    // component stores a position, a rotation and a scale - nothing else. Those cases are
+    // counted and reported rather than quietly coming out wrong.
+    let uniform = math::approx_equal(scale.x, scale.y) && math::approx_equal(scale.y, scale.z);
+    let mut rotated_below = 0;
+
+    let is_rotated = |transform: &Matrix4<f32>| -> bool
+    {
+        !uniform && !math::approx_zero_vec3(&math::extract_rotation_as_euler_vec(transform))
+    };
+
+    {
+        let node_read = node.read().unwrap();
+
+        // The instances carry the geometry that was just baked, so their transform has to be
+        // conjugated: what they did after the bake, they now have to do before it as well.
+        for instance in node_read.instances.get_ref()
+        {
+            let instance = instance.read().unwrap();
+
+            let Some(transformation) = instance.find_component::<Transformation>() else { continue; };
+
+            component_downcast_mut!(transformation, Transformation);
+
+            let local = *transformation.get_transform();
+
+            if is_rotated(&local) { rotated_below += 1; }
+
+            transformation.set_local_transform(matrix * local * matrix_inverse);
+        }
+
+        // The children keep their own geometry, so the transform is simply handed down.
+        for child in &node_read.nodes
+        {
+            let child_read = child.read().unwrap();
+
+            let Some(transformation) = child_read.find_component::<Transformation>() else { continue; };
+
+            component_downcast_mut!(transformation, Transformation);
+
+            let local = *transformation.get_transform();
+
+            if is_rotated(&local) { rotated_below += 1; }
+
+            transformation.set_local_transform(matrix * local);
+        }
+    }
+
+    if rotated_below > 0
+    {
+        notes.push(format!("{} rotated instances or children sit below this node - a rotation under a non-uniform scale cannot be preserved exactly, check them", rotated_below));
+    }
+
+    // ********** the node itself **********
+    {
+        let node_read = node.read().unwrap();
+        let transformation = node_read.find_component::<Transformation>().unwrap();
+
+        component_downcast_mut!(transformation, Transformation);
+
+        if full
+        {
+            transformation.set_local_transform(Matrix4::identity());
+        }
+        else
+        {
+            transformation.set_scale(Vector3::new(1.0, 1.0, 1.0));
+        }
+    }
+
+    // ********** the collider was built from the old geometry **********
+    let node_id = node.read().unwrap().id;
+
+    for scene in &mut state.scenes
+    {
+        if scene.find_node_by_id(node_id).is_some()
+        {
+            scene.build_physics();
+            break;
+        }
+    }
+
+    notes
 }

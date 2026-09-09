@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::{RunMode, State}}};
 
 use super::{editor_state::{EditorState, GizmoTranslationAnchor, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
@@ -248,6 +248,31 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
         if let Some(gizmo_scale) = gizmo_scale
         {
             gizmo_scale.write().unwrap().settings.visible = editor_state.gizmo_scale && node.is_some() && !node_is_locked && node_is_visible && !is_multi_select_active && has_meshes;
+        }
+    }
+}
+
+pub fn hide_gizmos(state: &mut State)
+{
+    for scene in &mut state.scenes
+    {
+        let gizmo_translation = scene.find_node_by_name("gizmo_position");
+        let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
+        let gizmo_scale = scene.find_node_by_name("gizmo_scale");
+
+        if let Some(gizmo_translation) = gizmo_translation
+        {
+            gizmo_translation.write().unwrap().settings.visible = false;
+        }
+
+        if let Some(gizmo_rotation) = gizmo_rotation
+        {
+            gizmo_rotation.write().unwrap().settings.visible = false;
+        }
+
+        if let Some(gizmo_scale) = gizmo_scale
+        {
+            gizmo_scale.write().unwrap().settings.visible = false;
         }
     }
 }

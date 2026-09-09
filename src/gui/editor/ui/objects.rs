@@ -3,7 +3,10 @@ use std::sync::Arc;
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
+use crate::console_warning;
+use crate::helper::math::{approx_equal, extract_scale_from_transform};
+use crate::state::scene::components::transformation::Transformation;
+use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, hierarchy_button_reserve, hierarchy_eye_button, hierarchy_lock_button, hierarchy_row_spacer, layer_mask_user_checkboxes, rename_hierarchy_item_or_toggle_selection}}, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::{sleep_millis, spawn_thread}}, generic::cut_string_to_length}, state::{scene::{components::{animation::Animation, component::{ComponentItem, find_and_add_new_components}, joint::Joint, material::Material, mesh::Mesh, sound::Sound}, node::{Node, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene, utilities::scene_utils::{self, execute_on_scene_mut, execute_on_state_mut, move_nodes_to}}, state::{ENGINE_INTERNAL_TAG, State}}};
 
 use super::super::editor_state::{EditorState, PickType, SelectionType, SettingsPanel};
 
@@ -422,6 +425,38 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                         editor_state.hierarchy_rename_value = name.clone();
                     }
 
+                    // only worth offering where there is geometry to bake it into
+                    if node_arc.read().unwrap().find_component::<Mesh>().is_some()
+                    {
+                        if ui.button("⚖ Bake Scale Into Mesh").on_hover_text("moves the node scale into the vertices and sets the scale back to one - a rigid body under a non-uniform scale is stretched differently for every orientation, so it changes shape while it rotates").clicked()
+                        {
+                            ui.close();
+
+                            let node_arc = node_arc.clone();
+                            execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                            {
+                                for note in scene_utils::bake_scale(node_arc.clone(), state)
+                                {
+                                    console_warning!("bake scale: {}", note);
+                                }
+                            }));
+                        }
+
+                        if ui.button("⚖ Bake Full Transform Into Mesh").on_hover_text("moves position, rotation and scale into the vertices and puts the node on identity. Only the scale part matters to physics - the pivot moves to the origin of the parent, so rotating this node afterwards turns it around that instead of around itself, and its geometry can no longer be shared with another placement").clicked()
+                        {
+                            ui.close();
+
+                            let node_arc = node_arc.clone();
+                            execute_on_state_mut(exec_queue.clone(), Box::new(move |state|
+                            {
+                                for note in scene_utils::bake_transform(node_arc.clone(), state)
+                                {
+                                    console_warning!("bake transform: {}", note);
+                                }
+                            }));
+                        }
+                    }
+
                     ui.separator();
 
                     if ui.button("⊞ Add New Node").clicked()
@@ -728,6 +763,17 @@ pub fn build_instances_list(editor_state: &mut EditorState, ui: &mut Ui, node: N
     });
 }
 
+fn node_scale(node: &NodeItem) -> nalgebra::Vector3<f32>
+{
+    let node = node.read().unwrap();
+
+    let Some(transformation) = node.find_component::<Transformation>() else { return nalgebra::Vector3::new(1.0, 1.0, 1.0); };
+
+    component_downcast!(transformation, Transformation);
+
+    extract_scale_from_transform(transformation.get_transform())
+}
+
 pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let (node_id, instance_id) = editor_state.get_object_ids();
@@ -964,6 +1010,54 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         ui.label(format!(" ⚫ indices: {}", all_faces_amout * 3));
     });
 
+    // Geometry
+    let main_queue = state.main_thread_execution_queue.clone();
+
+    if node.read().unwrap().find_component::<Mesh>().is_some()
+    {
+        collapse_with_title(ui, "object_geometry", true, "⚖ Geometry", None, |ui|
+        {
+            let scale = node_scale(&node);
+
+            ui.label(format!("node scale: {:.3} / {:.3} / {:.3}", scale.x, scale.y, scale.z));
+
+            let uniform = approx_equal(scale.x, scale.y) && approx_equal(scale.y, scale.z);
+            let baked = approx_equal(scale.x, 1.0) && uniform;
+
+            if !uniform
+            {
+                ui.label(RichText::new("a rigid body under a non-uniform scale is stretched differently for every orientation, so it changes shape while it rotates").color(Color32::LIGHT_YELLOW));
+            }
+
+            ui.add_enabled_ui(!baked, |ui|
+            {
+                if ui.button("⚖ Bake Scale Into Mesh").on_hover_text("moves the node scale into the vertices and sets the scale back to one. The geometry is copied first, so objects sharing it stay as they are").clicked()
+                {
+                    let node = node.clone();
+                    execute_on_state_mut(main_queue.clone(), Box::new(move |state|
+                    {
+                        for note in scene_utils::bake_scale(node.clone(), state)
+                        {
+                            console_warning!("bake scale: {}", note);
+                        }
+                    }));
+                }
+            });
+
+            if ui.button("⚖ Bake Full Transform Into Mesh").on_hover_text("moves position, rotation and scale into the vertices and puts the node on identity. Only the scale part matters to physics - the pivot moves to the origin of the parent, so rotating this node afterwards turns it around that instead of around itself, and its geometry can no longer be shared with another placement").clicked()
+            {
+                let node = node.clone();
+                execute_on_state_mut(main_queue.clone(), Box::new(move |state|
+                {
+                    for note in scene_utils::bake_transform(node.clone(), state)
+                    {
+                        console_warning!("bake transform: {}", note);
+                    }
+                }));
+            }
+        });
+    }
+
     // Settings
     collapse_with_title(ui, "object_settings", true, "⛭ Object Settings", None, |ui|
     {
@@ -981,6 +1075,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut pick_bbox_first;
         let mut frustum_culling;
         let mut occlusion_culling;
+        let mut physics;
         let mut collision;
         let mut layer_mask;
         let mut name;
@@ -1003,6 +1098,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             frustum_culling = node.settings.frustum_culling;
             occlusion_culling = node.settings.occlusion_culling;
             collision = node.settings.collision;
+            physics = node.settings.physics;
             layer_mask = node.settings.layer_mask;
             name = node.name.clone();
             color = node.color;
@@ -1073,6 +1169,112 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         changed = ui.checkbox(&mut occlusion_culling, "occlusion culling").changed() || changed;
         changed = ui.checkbox(&mut collision, "collision").changed() || changed;
 
+        ui.separator();
+
+        ui.add_enabled_ui(collision, |ui|
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("body: ");
+                changed = egui::ComboBox::from_id_salt("physics_body_type")
+                    .selected_text(format!("{:?}", physics.body_type))
+                    .show_ui(ui, |ui|
+                    {
+                        let mut hit = false;
+                        hit |= ui.selectable_value(&mut physics.body_type, PhysicsBodyType::Static, "Static").changed();
+                        hit |= ui.selectable_value(&mut physics.body_type, PhysicsBodyType::Dynamic, "Dynamic").changed();
+                        hit |= ui.selectable_value(&mut physics.body_type, PhysicsBodyType::Kinematic, "Kinematic").changed();
+                        hit
+                    }).inner.unwrap_or(false) || changed;
+
+                ui.label("ℹ").on_hover_text("Static: mirrored from the scene. Dynamic: moved by the solver, the scene follows. Kinematic: moved by you, pushes dynamic bodies.");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("shape: ");
+                changed = egui::ComboBox::from_id_salt("physics_shape")
+                    .selected_text(format!("{:?}", physics.shape))
+                    .show_ui(ui, |ui|
+                    {
+                        let mut hit = false;
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::Auto, "Auto").changed();
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::TriMesh, "TriMesh").changed();
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::ConvexHull, "ConvexHull").changed();
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::ConvexDecomposition, "ConvexDecomposition").changed();
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::Box, "Box").changed();
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::Sphere, "Sphere").changed();
+                        hit |= ui.selectable_value(&mut physics.shape, PhysicsShape::Capsule, "Capsule").changed();
+                        hit
+                    }).inner.unwrap_or(false) || changed;
+
+                ui.label("ℹ").on_hover_text("Auto: TriMesh when static, ConvexHull otherwise - a dynamic body needs volume, which a TriMesh does not have. ConvexDecomposition is accurate for concave props but slow to build.");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("density: ");
+                changed = ui.add(egui::Slider::new(&mut physics.density, 0.01..=20.0).fixed_decimals(2)).changed() || changed;
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("friction: ");
+                changed = ui.add(egui::Slider::new(&mut physics.friction, 0.0..=2.0).fixed_decimals(2)).changed() || changed;
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("restitution: ");
+                changed = ui.add(egui::Slider::new(&mut physics.restitution, 0.0..=1.0).fixed_decimals(2)).changed() || changed;
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("linear damping: ");
+                changed = ui.add(egui::Slider::new(&mut physics.linear_damping, 0.0..=5.0).fixed_decimals(2)).changed() || changed;
+                ui.label("ℹ").on_hover_text("bleeds off travel over time - 0.05 to 0.5 settles a prop without visibly slowing a fall");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("angular damping: ");
+                changed = ui.add(egui::Slider::new(&mut physics.angular_damping, 0.0..=5.0).fixed_decimals(2)).changed() || changed;
+                ui.label("ℹ").on_hover_text("bleeds off spin over time - the usual cure for an object that rocks forever, try 0.5 to 1.0");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("start velocity: ");
+                changed = ui.add(egui::DragValue::new(&mut physics.linear_velocity.x).speed(0.1).prefix("x: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut physics.linear_velocity.y).speed(0.1).prefix("y: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut physics.linear_velocity.z).speed(0.1).prefix("z: ")).changed() || changed;
+                ui.label("ℹ").on_hover_text("applied at the start of every run, so an object can be shot into the scene");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("start spin: ");
+                changed = ui.add(egui::DragValue::new(&mut physics.angular_velocity.x).speed(0.1).prefix("x: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut physics.angular_velocity.y).speed(0.1).prefix("y: ")).changed() || changed;
+                changed = ui.add(egui::DragValue::new(&mut physics.angular_velocity.z).speed(0.1).prefix("z: ")).changed() || changed;
+            });
+
+            changed = ui.checkbox(&mut physics.center_of_mass_auto, "auto center of mass").changed() || changed;
+
+            ui.add_enabled_ui(!physics.center_of_mass_auto, |ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("center of mass: ");
+                    changed = ui.add(egui::DragValue::new(&mut physics.center_of_mass.x).speed(0.05).prefix("x: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut physics.center_of_mass.y).speed(0.05).prefix("y: ")).changed() || changed;
+                    changed = ui.add(egui::DragValue::new(&mut physics.center_of_mass.z).speed(0.05).prefix("z: ")).changed() || changed;
+                    ui.label("ℹ").on_hover_text("local to the object - low puts weight at the bottom so it rights itself, off centre makes it tip over");
+                });
+            });
+        });
+
         if has_mesh
         {
             ui.separator();
@@ -1100,6 +1302,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.occlusion_culling = occlusion_culling;
             node.settings.layer_mask = layer_mask;
             node.settings.collision = collision;
+            node.settings.physics = physics;
             node.name = name;
             node.color = color;
         }

@@ -7,7 +7,8 @@ use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterCo
 use rapier3d::prelude::{Capsule, Collider, ColliderHandle, Pose, QueryFilter, Vector};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput}}};
+use crate::console_warning;
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use super::scene_controller::SceneController;
 
@@ -37,6 +38,9 @@ const CAPSULE_CENTER_OFFSET: f32 = 0.8;
 
 const COLLISION_OFFSET: f32 = 0.001;
 const SNAP_TO_GROUND: f32 = crate::state::scene::physics::physics_world::SNAP_TO_GROUND_LIMIT;
+
+// A standing character moving more than this in a frame is a hop, not settling.
+const STANDING_HOP_LIMIT: f32 = 0.002;
 
 const EYE_OFFSET: f32 = 1.6;
 const FOLLOW_OFFSET: f32 = 1.0;
@@ -217,9 +221,18 @@ pub struct CharCollisionSettings
     pub max_slope_climb_angle: f32,
     pub min_slope_slide_angle: f32,
 
-    pub ground_plane: bool,
-    pub ground_plane_y: f32,
+    // The character is a shape cast, not a rigid body, so it has no mass of its own and
+    // nothing it walks into ever moves. These turn the hits it already reports into impulses.
+    #[serde(default = "default_push_bodies")]
+    pub push_bodies: bool,
+    #[serde(default = "default_push_mass")]
+    pub push_mass: f32,
 }
+
+fn default_push_bodies() -> bool { true }
+
+// roughly a person, in the same units the rest of the physics uses
+fn default_push_mass() -> f32 { 70.0 }
 
 impl Default for CharCollisionSettings
 {
@@ -240,8 +253,8 @@ impl Default for CharCollisionSettings
             max_slope_climb_angle: MAX_SLOPE_CLIMB_ANGLE,
             min_slope_slide_angle: MIN_SLOPE_SLIDE_ANGLE,
 
-            ground_plane: true,
-            ground_plane_y: 0.0,
+            push_bodies: default_push_bodies(),
+            push_mass: default_push_mass(),
         }
     }
 }
@@ -295,6 +308,12 @@ pub struct CharacterController
     // collider under the feet + its last position, so moving platforms carry the character
     #[serde(skip, default)]
     ground_collider: Option<(ColliderHandle, Vector3<f32>)>,
+
+    // one report per cause, so an intermittent hop can be traced without flooding the console
+    #[serde(skip, default)]
+    reported_platform_hop: bool,
+    #[serde(skip, default)]
+    reported_ground_loss: bool,
 
     #[serde(skip, default)]
     current_y_velocity: f32,
@@ -373,6 +392,8 @@ impl CharacterController
             excluded_node_ids: HashSet::new(),
             capsule_setup_pending: false,
             ground_collider: None,
+            reported_platform_hop: false,
+            reported_ground_loss: false,
 
             current_y_velocity: 0.0,
             gravity: EARTH_GRAVITY,
@@ -557,8 +578,6 @@ impl CharacterController
 
         self.refresh_excluded_nodes();
 
-        self.apply_ground_plane(scene);
-
         // without colliders the shape cast finds no ground and the character falls forever
         if scene.physics.is_empty()
         {
@@ -572,13 +591,6 @@ impl CharacterController
         self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, 1.0, true, false, false);
 
         None
-    }
-
-    pub fn apply_ground_plane(&self, scene: &mut crate::state::scene::scene::Scene)
-    {
-        let y = if self.collision.ground_plane { Some(self.collision.ground_plane_y) } else { None };
-
-        scene.physics.set_ground_plane(y);
     }
 
     // Head joint, for the first person eye height. Ordered like find_root_joint_node.
@@ -1137,6 +1149,11 @@ impl SceneController for CharacterController
 {
     scene_controller_impl_default!();
 
+    fn runs_in_mode(&self, run_mode: RunMode) -> bool
+    {
+        run_mode.runs_game_logic()
+    }
+
     fn cleanup(&mut self)
     {
         // disable animation blending to prevent automatic animation restart
@@ -1625,6 +1642,14 @@ impl SceneController for CharacterController
                 }
             }
 
+            // A standing character should not move at all. If it does, it came either from
+            // something under its feet moving, or from losing the ground for a frame.
+            if self.grounded && platform_delta.y.abs() > STANDING_HOP_LIMIT && !self.reported_platform_hop
+            {
+                self.reported_platform_hop = true;
+                console_warning!("character: carried {:.3} up or down by the collider under its feet while grounded - whatever it stands on is moving", platform_delta.y);
+            }
+
             let world_pos = world_pos + platform_delta;
 
             let capsule = Capsule::new_y(self.collision.capsule_half_height, self.collision.capsule_radius);
@@ -1669,17 +1694,34 @@ impl SceneController for CharacterController
             };
 
             let filter = QueryFilter::default().predicate(&predicate);
-            let queries = scene.physics.query_pipeline(filter);
 
-            let movement_res = char_controller.move_shape
-            (
-                delta_t,
-                &queries,
-                &capsule,
-                &capsule_pos,
-                Vector::new(desired.x, desired.y, desired.z),
-                |_| {}
-            );
+            // every collider the character ran into on its way, so they can be pushed after
+            let mut collisions = vec![];
+
+            let movement_res =
+            {
+                let queries = scene.physics.query_pipeline(filter);
+
+                char_controller.move_shape
+                (
+                    delta_t,
+                    &queries,
+                    &capsule,
+                    &capsule_pos,
+                    Vector::new(desired.x, desired.y, desired.z),
+                    |collision| collisions.push(collision)
+                )
+            };
+
+            // Turn those hits into impulses on whatever dynamic body was in the way. The
+            // character itself stays unmoved by this, it has no mass to take a reaction with,
+            // so push_mass only decides how hard it shoves.
+            if self.collision.push_bodies && !collisions.is_empty()
+            {
+                let mut queries = scene.physics.query_pipeline_mut(filter);
+
+                char_controller.solve_character_collision_impulses(delta_t, &mut queries, &capsule, self.collision.push_mass.max(0.001), &collisions);
+            }
 
             desired = platform_delta + Vector3::new(movement_res.translation.x, movement_res.translation.y, movement_res.translation.z);
 
@@ -1711,6 +1753,12 @@ impl SceneController for CharacterController
             }
             else
             {
+                if self.grounded && !is_jumping && !self.reported_ground_loss
+                {
+                    self.reported_ground_loss = true;
+                    console_warning!("character: lost the ground for a frame while standing, y velocity {:.4} - snap_to_ground is not reaching far enough", y_velocity_before);
+                }
+
                 self.ground_collider = None;
 
                 if !is_jumping && (y_velocity_before < -self.fall_velocity || self.falling)
@@ -2088,25 +2136,23 @@ impl SceneController for CharacterController
             ui.add(egui::Slider::new(&mut self.collision.min_slope_slide_angle, 0.0..=PI / 2.0).fixed_decimals(2));
         });
 
-        let mut ground_changed = false;
+        ui.separator();
 
-        ground_changed |= ui.checkbox(&mut self.collision.ground_plane, "Endless Ground Plane").on_hover_text("a floor the character can always stand on - the editor grid is only a visual helper and is rebuilt whenever the grid settings change, so it cannot be used for this").changed();
+        ui.checkbox(&mut self.collision.push_bodies, "Push Dynamic Objects").on_hover_text("turns the collisions the character already reports into impulses, so it can shove things out of the way instead of just being stopped by them");
 
-        ui.add_enabled_ui(self.collision.ground_plane, |ui|
+        ui.add_enabled_ui(self.collision.push_bodies, |ui|
         {
             ui.horizontal(|ui|
             {
-                ui.label("Ground Plane Y: ");
-                ground_changed |= ui.add(egui::DragValue::new(&mut self.collision.ground_plane_y).speed(0.1)).changed();
+                ui.label("Push Mass: ");
+                ui.add(egui::Slider::new(&mut self.collision.push_mass, 1.0..=500.0).fixed_decimals(0).suffix(" kg"));
+                ui.label("ℹ").on_hover_text("the character is a shape cast, not a rigid body, so it has no mass of its own - this is only how hard it shoves. Nothing pushes back, so a heavy object gives way too, just slower");
             });
         });
 
-        if ground_changed
-        {
-            self.apply_ground_plane(scene);
-        }
+        ui.separator();
 
-        ui.checkbox(&mut scene.physics.auto_add_nodes, "Auto Add New Objects").on_hover_text("objects loaded into the scene after the colliders were built become solid on their own, within a few frames");
+        ui.label("The ground plane and the solver settings live on the scene, see Physics Settings there.");
 
         ui.horizontal(|ui|
         {

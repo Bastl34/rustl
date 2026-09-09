@@ -6,7 +6,7 @@ use web_time::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, physics, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
@@ -166,6 +166,8 @@ pub struct Statistics
     pub engine_update_time: f32,
     pub engine_render_time: f32,
 
+    pub physics_update_time: f32,
+
     pub app_update_time: f32,
 
     pub editor_update_time: f32,
@@ -292,6 +294,52 @@ pub struct Debug
     pub highlight_visible_occlusions: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum RunMode
+{
+    Stopped,
+    Edit,
+    Simulate,
+    Play,
+}
+
+impl RunMode
+{
+    // scenes, nodes, animations and rendering states are updated
+    pub fn updates_engine(&self) -> bool
+    {
+        *self > RunMode::Stopped
+    }
+
+    pub fn runs_physics(&self) -> bool
+    {
+        *self >= RunMode::Simulate
+    }
+
+    // scene controllers (character controller, ...) - they read input and move the avatar
+    pub fn runs_game_logic(&self) -> bool
+    {
+        *self == RunMode::Play
+    }
+
+    // simulate and play are the modes a stop button can return to edit from
+    pub fn is_running(&self) -> bool
+    {
+        self.runs_physics()
+    }
+
+    pub fn name(&self) -> &'static str
+    {
+        match self
+        {
+            RunMode::Stopped => "Stopped",
+            RunMode::Edit => "Edit",
+            RunMode::Simulate => "Simulate",
+            RunMode::Play => "Play",
+        }
+    }
+}
+
 pub struct State
 {
     pub project: Project,
@@ -305,8 +353,11 @@ pub struct State
 
     pub main_thread_execution_queue: ExecutionQueueItem,
 
-    pub running: bool,
+    pub run_mode: RunMode,
+
+    // freezes the running mode without changing it - resuming continues where it stopped
     pub pause: bool,
+
     pub exit: bool,
 
     pub scenes: Vec<SceneItem>,
@@ -429,7 +480,8 @@ impl State
 
             main_thread_execution_queue: Arc::new(RwLock::new(ExecutionQueue::new())),
 
-            running: false,
+            // a build without the editor just runs - the editor switches to edit on init
+            run_mode: RunMode::Play,
             pause: false,
             exit: false,
 
@@ -488,6 +540,8 @@ impl State
 
                 engine_update_time: 0.0,
                 engine_render_time: 0.0,
+
+                physics_update_time: 0.0,
 
                 app_update_time: 0.0,
 
@@ -954,8 +1008,55 @@ impl State
         self.rendering_adapter.max_texture_resolution
     }
 
-    pub fn update(&mut self, time: u128, time_delta: f32, frame: u64)
+    // Switching the mode always starts unpaused - resuming a run that was left while
+    // frozen would otherwise look like nothing happened at all.
+    pub fn set_run_mode(&mut self, run_mode: RunMode)
     {
+        if self.run_mode == run_mode
+        {
+            return;
+        }
+
+        self.run_mode = run_mode;
+        self.pause = false;
+
+        self.sync_physics_run_state();
+    }
+
+    // The mode that actually drives this frame. Pausing does not change the selected
+    // mode, it only drops the update down to edit level, so the physics snapshot stays
+    // untouched and resuming continues exactly where it stopped.
+    pub fn effective_run_mode(&self) -> RunMode
+    {
+        if self.pause
+        {
+            self.run_mode.min(RunMode::Edit)
+        }
+        else
+        {
+            self.run_mode
+        }
+    }
+
+    pub fn sync_physics_run_state(&mut self)
+    {
+        let running = self.run_mode.runs_physics();
+
+        for scene in &mut self.scenes
+        {
+            scene.physics.set_running(running);
+        }
+    }
+
+    pub fn update(&mut self, time: u128, time_delta: f32, frame: u64) -> f32
+    {
+        // scenes can be loaded or switched at any time, so this is re-applied every frame
+        self.sync_physics_run_state();
+
+        let run_mode = self.effective_run_mode();
+
+        let mut physics_update_time = 0.0;
+
         // ********** update scenes **********
         for scene in &mut self.scenes
         {
@@ -964,7 +1065,7 @@ impl State
                 continue;
             }
 
-            scene.update(&mut self.io, time, time_delta, frame);
+            physics_update_time += scene.update(&mut self.io, time, time_delta, frame, run_mode);
         }
 
         // ********** textures **********
@@ -1045,6 +1146,8 @@ impl State
                 sound_source.write().unwrap().delete_later();
             }
         }
+
+        physics_update_time
     }
 
     pub fn clear(&mut self)
@@ -1075,5 +1178,50 @@ impl State
         {
             scene.print();
         }
+    }
+}
+#[cfg(test)]
+mod tests
+{
+    use super::RunMode;
+
+    #[test]
+    fn the_modes_are_ordered_by_how_much_runs()
+    {
+        assert!(RunMode::Stopped < RunMode::Edit);
+        assert!(RunMode::Edit < RunMode::Simulate);
+        assert!(RunMode::Simulate < RunMode::Play);
+    }
+
+    #[test]
+    fn only_a_stopped_engine_skips_the_update()
+    {
+        assert!(!RunMode::Stopped.updates_engine());
+        assert!(RunMode::Edit.updates_engine());
+        assert!(RunMode::Simulate.updates_engine());
+        assert!(RunMode::Play.updates_engine());
+    }
+
+    #[test]
+    fn physics_starts_at_simulate_and_game_logic_only_at_play()
+    {
+        assert!(!RunMode::Stopped.runs_physics());
+        assert!(!RunMode::Edit.runs_physics());
+        assert!(RunMode::Simulate.runs_physics());
+        assert!(RunMode::Play.runs_physics());
+
+        assert!(!RunMode::Simulate.runs_game_logic());
+        assert!(RunMode::Play.runs_game_logic());
+    }
+
+    #[test]
+    fn pausing_drops_a_running_mode_to_edit_level()
+    {
+        // this is what effective_run_mode does, without needing a whole State
+        assert_eq!(RunMode::Play.min(RunMode::Edit), RunMode::Edit);
+        assert_eq!(RunMode::Simulate.min(RunMode::Edit), RunMode::Edit);
+
+        // and a stopped engine stays stopped
+        assert_eq!(RunMode::Stopped.min(RunMode::Edit), RunMode::Stopped);
     }
 }

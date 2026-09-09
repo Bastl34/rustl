@@ -1715,7 +1715,7 @@ impl Scene
         // recreated textures -> recreate them in the next update (cameras added later etc.)
         self.depth_pass_texture_changed = true;
 
-        // rendering keeps running while the update loop is paused (state.pause) -> existing
+        // rendering keeps running while the update loop is stopped (RunMode::Stopped) -> existing
         // bind groups that bake the recreated texture views are rebuilt right away, otherwise
         // the passes would sample the old (never again written) textures until the next
         // unpaused update
@@ -2066,7 +2066,7 @@ impl Scene
                             let b_dist = distance_squared(&b_middle, &cam_pos);
 
                             // front-to-back: smaller distance first
-                            a_dist.partial_cmp(&b_dist).unwrap()
+                            a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
                         });
                     }
 
@@ -2091,7 +2091,7 @@ impl Scene
                             let b_dist = distance_squared(&b_middle, &cam_pos);
 
                             // back-to-front: larger distance first
-                            b_dist.partial_cmp(&a_dist).unwrap()
+                            b_dist.partial_cmp(&a_dist).unwrap_or(std::cmp::Ordering::Equal)
                         }
                     });
                 }

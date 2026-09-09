@@ -162,6 +162,104 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
         scene.ui(ui);
     });
 
+    // Physics
+    collapse_with_title(ui, "scene_physics", true, "🌍 Physics Settings", None, |ui|
+    {
+        {
+            let physics = &mut scene.physics.settings;
+
+            ui.horizontal(|ui|
+            {
+                ui.label("gravity: ");
+                ui.add(egui::DragValue::new(&mut physics.gravity.x).speed(0.1).prefix("x: "));
+                ui.add(egui::DragValue::new(&mut physics.gravity.y).speed(0.1).prefix("y: "));
+                ui.add(egui::DragValue::new(&mut physics.gravity.z).speed(0.1).prefix("z: "));
+            });
+
+            ui.separator();
+
+            // the solver needs a constant step, so this is shown as the rate it runs at
+            ui.horizontal(|ui|
+            {
+                ui.label("solver rate: ");
+
+                let mut rate = (1.0 / physics.fixed_timestep).round();
+
+                if ui.add(egui::Slider::new(&mut rate, 30.0..=240.0).fixed_decimals(0).suffix(" Hz")).changed()
+                {
+                    physics.fixed_timestep = 1.0 / rate.max(1.0);
+                }
+
+                ui.label("ℹ").on_hover_text("the solver needs a constant step, the frame time is not - a higher rate is more stable and more expensive");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("solver iterations: ");
+                ui.add(egui::Slider::new(&mut physics.solver_iterations, 1..=32));
+                ui.label("ℹ").on_hover_text("how hard the solver works per step. More is steadier for piles and stacks, and more expensive. It does not cure an unstable contact: a rack of nudged bowling pins gets worse at 32, not better");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("max substeps: ");
+                ui.add(egui::Slider::new(&mut physics.max_substeps, 1..=16));
+                ui.label("ℹ").on_hover_text("upper limit of solver steps per frame, so a long hitch does not turn into a burst of catch up steps");
+            });
+
+            ui.separator();
+
+            ui.label("sleeping");
+
+            ui.horizontal(|ui|
+            {
+                ui.label("linear threshold: ");
+                ui.add(egui::Slider::new(&mut physics.sleep_linear_threshold, 0.0..=1.0).fixed_decimals(3));
+                ui.label("ℹ").on_hover_text("a body sleeps once it stays below this speed and the angular threshold long enough - raise it to settle things sooner, at the price of freezing genuinely slow motion. in world units per second, so this assumes meters");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("angular threshold: ");
+                ui.add(egui::Slider::new(&mut physics.sleep_angular_threshold, 0.0..=5.0).fixed_decimals(3)).on_hover_text("in radians per second");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("time until sleep: ");
+                ui.add(egui::Slider::new(&mut physics.time_until_sleep, 0.0..=5.0).fixed_decimals(2).suffix(" s"));
+            });
+
+            ui.separator();
+
+            ui.checkbox(&mut physics.ground_plane, "Endless Ground Plane").on_hover_text("a floor everything can always land on - the editor grid is only a visual helper and is rebuilt whenever the grid settings change, so it cannot be used for this");
+
+            ui.add_enabled_ui(physics.ground_plane, |ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("ground plane y: ");
+                    ui.add(egui::DragValue::new(&mut physics.ground_plane_y).speed(0.1));
+                });
+            });
+
+        }
+
+        ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label(format!("colliders: {}", scene.physics.collider_amount()));
+            ui.label("ℹ").on_hover_text(format!("synced last frame: {} / shape rebuilds: {}
+both should be 0 while nothing but the character moves", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
+
+            if ui.button("Rebuild").clicked()
+            {
+                scene.build_physics();
+            }
+        });
+    });
+
     // Env Texture
     if let Some(texture) = scene.get_data().environment_texture.clone()
     {

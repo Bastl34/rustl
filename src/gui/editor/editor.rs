@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+﻿#![allow(dead_code)]
 
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use self::math::approx_zero;
 
@@ -41,6 +41,8 @@ impl Editor
 
     pub fn init(&mut self, state: &mut State, egui: &EGui, scene_id: u32)
     {
+        state.set_run_mode(RunMode::Edit);
+
         self.editor_state.load_all_asset_entries(state, &egui.ctx);
 
         self.create_internal_nodes(state, scene_id);
@@ -304,7 +306,8 @@ impl Editor
         // update grid based on camera pos and key inputs
         update_grid(&mut self.editor_state, state);
 
-        if !self.editor_state.try_mode
+        // authoring tools are off while the game owns the input
+        if state.run_mode != RunMode::Play
         {
             // key bindings (copy paste, instancing, ...)
             self.key_bindings(state);
@@ -373,16 +376,24 @@ impl Editor
 
     pub fn update_modes(&mut self, state: &mut State)
     {
-        // start try out mde
-        if !self.editor_state.try_mode && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::R)
+        // play mode (Ctrl+R, +shift: fullscreen and no ui)
+        if state.run_mode != RunMode::Play && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::R)
         {
-            self.editor_state.set_try_mode(state, true);
+            let fullscreen = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift);
+            self.editor_state.set_run_mode(state, RunMode::Play, fullscreen);
         }
 
-        // end try out mode
-        if self.editor_state.try_mode && state.io.input_manager.keyboard.is_pressed(Key::Escape)
+        // back to edit mode
+        if (state.run_mode == RunMode::Play || state.run_mode == RunMode::Simulate) && state.io.input_manager.keyboard.is_pressed(Key::Escape)
         {
-            self.editor_state.set_try_mode(state, false);
+            self.editor_state.set_run_mode(state, RunMode::Edit, false);
+        }
+
+        // pause mode
+        if state.run_mode.is_running() && state.io.input_manager.keyboard.is_pressed(Key::P)
+        {
+            let paused = !state.pause;
+            self.editor_state.set_paused(state, paused);
         }
 
         // hide ui
@@ -488,11 +499,6 @@ impl Editor
 
     pub fn key_bindings(&mut self, state: &mut State)
     {
-        if self.editor_state.try_mode
-        {
-            return;
-        }
-
         // create instance
         if state.io.input_manager.keyboard.is_pressed(Key::I)
         {
@@ -796,8 +802,7 @@ impl Editor
 
         let mut scene_id = scene_id.unwrap();
 
-        //if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
-        if !self.editor_state.try_mode && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
+        if state.run_mode != RunMode::Play && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
             let left_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Left);
             let right_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Right);

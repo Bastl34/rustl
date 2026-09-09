@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use nalgebra::{Matrix4, Vector3};
+use nalgebra::{Matrix4, Point3, Vector3};
+use serde::{Deserialize, Serialize};
 use parry3d::query::DefaultQueryDispatcher;
 use rapier3d::prelude::*;
 
-use crate::{component_downcast, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::mesh::Mesh, node::{InstanceItemArc, NodeItem}, scene::Scene}}};
+use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene}}};
 
 // transform deltas below this are treated as float noise and do not trigger a bvh update
 const TRANSFORM_EPSILON: f32 = 0.00001;
@@ -14,8 +15,41 @@ const TRANSFORM_EPSILON: f32 = 0.00001;
 // a scale change needs a shape rebuild, so it uses a slightly more forgiving threshold
 const SCALE_EPSILON: f32 = 0.0001;
 
+// Above this ratio between the largest and smallest node scale, a rotating rigid body
+// stretches enough to be obvious.
+const NON_UNIFORM_SCALE_LIMIT: f32 = 1.5;
+
+// Nothing in a normal scene moves this fast or jumps this far in a single step, so either
+// is worth reporting once.
+const IMPLAUSIBLE_SPEED: f32 = 50.0;
+const IMPLAUSIBLE_JUMP: f32 = 2.0;
+
+// Smallest half extent a primitive collider is built with, and the share of the object's
+// own size used when it is flat. A flat mesh would otherwise produce a volume-less shape,
+// and a dynamic body without volume has no mass.
+const MIN_SHAPE_HALF_EXTENT: f32 = 0.001;
+const MIN_SHAPE_THICKNESS_RATIO: f32 = 0.02;
+
+// Separating an author move from float noise in the solver round trip. Far above that
+// noise, far below anything a gizmo drag produces.
+const AUTHOR_MOVE_EPSILON: f32 = 0.001;
+
+// re-deriving the mass properties integrates the shape, so small edits are not worth it
+const DENSITY_EPSILON: f32 = 0.0001;
+const CENTER_OF_MASS_EPSILON: f32 = 0.0001;
+
 // Half size of the ground plane quad. A flat cuboid jittered the character over 6 cm.
 const GROUND_PLANE_HALF_SIZE: f32 = 500.0;
+
+// Edge length of a single ground plane tile. Measured: a bowling pin standing on its own
+// base tips over on a plane made of two 1000 unit triangles and stands on one made of small
+// ones. Contact generation between a shape a few centimetres wide and a triangle that large
+// loses too much precision, and the leftover torque topples anything narrow.
+const GROUND_PLANE_TILE_SIZE: f32 = 25.0;
+
+// How far below the ground plane an object may reach before it is lifted back onto it.
+// Above the contact slack, so a resting object never triggers it.
+const GROUND_RECOVERY_MARGIN: f32 = 0.05;
 
 // Largest safe snap distance - 0.08 already buries a slim capsule 7 cm in the floor.
 pub const SNAP_TO_GROUND_LIMIT: f32 = 0.03;
@@ -23,7 +57,69 @@ pub const SNAP_TO_GROUND_LIMIT: f32 = 0.03;
 // Rescan interval for new or removed mesh instances - every frame would be wasteful.
 const NODE_SCAN_INTERVAL_FRAMES: u32 = 10;
 
-// One collider per mesh instance - doors and the like are animated on the instance.
+// Everything about a physics world the author gets to set. Kept apart from the solver
+// state so it can be serialized with the scene and edited in the ui.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct PhysicsWorldSettings
+{
+    pub gravity: Vector3<f32>,
+
+    pub fixed_timestep: f32, // a solver needs a constant dt, the frame time is not
+    pub max_substeps: u32,
+
+    // endless floor - the editor grid cannot serve as one, it is rebuilt on every change
+    pub ground_plane: bool,
+    pub ground_plane_y: f32,
+
+    // A body falls asleep once it stays below both thresholds for this long, and a sleeping
+    // body costs nothing and stops wobbling. The defaults are rapier's and assume meters.
+    #[serde(default = "default_sleep_linear_threshold")]
+    pub sleep_linear_threshold: f32,
+    #[serde(default = "default_sleep_angular_threshold")]
+    pub sleep_angular_threshold: f32,
+    #[serde(default = "default_time_until_sleep")]
+    pub time_until_sleep: f32,
+
+    // How hard the solver works per step. Above rapier's own default of 4, which leaves a
+    // visible wobble on tall narrow props in a real scene. It is not a cure for an unstable
+    // contact though - measured, a rack of nudged bowling pins gets worse at 32, not better,
+    // because the extra passes feed in more of whatever is wrong. Reach for the contact
+    // softness first, this is for settling piles and stacks.
+    #[serde(default = "default_solver_iterations")]
+    pub solver_iterations: usize,
+}
+
+fn default_solver_iterations() -> usize { 8 }
+
+fn default_sleep_linear_threshold() -> f32 { 0.05 }
+fn default_sleep_angular_threshold() -> f32 { 0.5 }
+fn default_time_until_sleep() -> f32 { 0.5 }
+
+impl Default for PhysicsWorldSettings
+{
+    fn default() -> Self
+    {
+        PhysicsWorldSettings
+        {
+            gravity: Vector3::new(0.0, -9.81, 0.0),
+
+            fixed_timestep: 1.0 / 60.0,
+            max_substeps: 4,
+
+            // without a floor a dynamic object simply falls out of the world, which reads
+            // as a broken simulation - y = 0 is where the editor grid sits
+            ground_plane: true,
+            ground_plane_y: 0.0,
+
+            sleep_linear_threshold: default_sleep_linear_threshold(),
+            sleep_angular_threshold: default_sleep_angular_threshold(),
+            time_until_sleep: default_time_until_sleep(),
+
+            solver_iterations: default_solver_iterations(),
+        }
+    }
+}
+
 pub struct ColliderEntry
 {
     pub node: NodeItem,
@@ -34,13 +130,23 @@ pub struct ColliderEntry
 
     pub handle: ColliderHandle,
 
+    // set for dynamic and kinematic objects - the solver moves those, not the scene
+    pub body: Option<RigidBodyHandle>,
+    pub body_type: PhysicsBodyType,
+    pub shape_kind: PhysicsShape, // what it was built as, to notice a change in the editor
+
     transform: Matrix4<f32>, // the world transform
 
     // the scale is baked into the shape - only a scale change forces a shape rebuild
     scale: Vector3<f32>,
+
+    // what the mass properties were last built from - recomputing them means integrating
+    // the shape again, so it only happens when one of these actually changed
+    applied_density: f32,
+    applied_center_of_mass: Option<Vector3<f32>>, // None = left to the shape
 }
 
-// Query-only collision world: no physics step, static trimeshes mirrored from the scene.
+// Static geometry is mirrored from the scene, dynamic bodies are moved by the solver.
 pub struct PhysicsWorld
 {
     pub bodies: RigidBodySet,
@@ -51,13 +157,42 @@ pub struct PhysicsWorld
     islands: IslandManager,
     dispatcher: DefaultQueryDispatcher,
 
+    // only used once a body exists - a purely static world never steps
+    pipeline: PhysicsPipeline,
+    narrow_phase: NarrowPhase,
+    impulse_joints: ImpulseJointSet,
+    multibody_joints: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+
+    pub settings: PhysicsWorldSettings,
+
+    time_accumulator: f32,
+    body_amount: usize,
+
+    // nothing simulates outside a running mode, and leaving one has to put every
+    // dynamic object back where the author placed it
+    running: bool,
+
+    snapshot_pending: bool,
+    edit_snapshot: HashMap<(u32, u32), Matrix4<f32>>,
+
+    // The gizmo edits the node transform when a whole object is selected, not the instance
+    // one, so a snapshot of the instances alone would leave those moves behind.
+    edit_snapshot_nodes: HashMap<u32, Matrix4<f32>>,
+
     entries: Vec<ColliderEntry>,
 
-    // endless floor - the editor grid cannot serve as one, it is rebuilt on every change
+    // the built floor collider plus the height it was built at, so that a settings
+    // change is noticed and the plane rebuilt
     ground_plane: Option<ColliderHandle>,
-    ground_plane_y: Option<f32>,
+    applied_ground_plane: Option<f32>,
 
-    // pick up objects loaded after the world was built, and drop disabled ones again
+    // the sleep settings the bodies were last given, they live per body in rapier
+    applied_sleep: Option<(f32, f32, f32)>,
+
+    // pick up objects loaded after the world was built, and drop disabled ones again.
+    // not an authored setting: the editor always wants this, a build may turn it off to
+    // save the recurring node scan
     pub auto_add_nodes: bool,
     scan_countdown: u32,
 
@@ -73,6 +208,14 @@ impl PhysicsWorld
 {
     pub fn new() -> PhysicsWorld
     {
+        let mut world = Self::empty();
+        world.rebuild_ground_plane();
+
+        world
+    }
+
+    fn empty() -> PhysicsWorld
+    {
         PhysicsWorld
         {
             bodies: RigidBodySet::new(),
@@ -83,9 +226,25 @@ impl PhysicsWorld
             islands: IslandManager::new(),
             dispatcher: DefaultQueryDispatcher,
 
+            pipeline: PhysicsPipeline::new(),
+            narrow_phase: NarrowPhase::new(),
+            impulse_joints: ImpulseJointSet::new(),
+            multibody_joints: MultibodyJointSet::new(),
+            ccd_solver: CCDSolver::new(),
+
+            settings: PhysicsWorldSettings::default(),
+
+            time_accumulator: 0.0,
+            body_amount: 0,
+            running: true, // the editor turns this off, a game build just runs
+            snapshot_pending: false,
+            edit_snapshot: HashMap::new(),
+            edit_snapshot_nodes: HashMap::new(),
+
             entries: vec![],
             ground_plane: None,
-            ground_plane_y: None,
+            applied_ground_plane: None,
+            applied_sleep: None,
             auto_add_nodes: true,
             scan_countdown: 0,
             last_synced: 0,
@@ -116,18 +275,90 @@ impl PhysicsWorld
         self.colliders = ColliderSet::new();
         self.broad_phase_bvh = BroadPhaseBvh::new();
         self.islands = IslandManager::new();
+        self.narrow_phase = NarrowPhase::new();
+        self.impulse_joints = ImpulseJointSet::new();
+        self.multibody_joints = MultibodyJointSet::new();
+        self.time_accumulator = 0.0;
+        self.body_amount = 0;
 
         self.entries.clear();
         self.ground_plane = None;
+        self.applied_ground_plane = None;
+        self.applied_sleep = None;
         // excluded_nodes is kept on purpose - a rebuild must not resurrect character colliders
 
         // the ground plane is configuration, not scene content, so it survives a rebuild
-        let ground_plane_y = self.ground_plane_y;
-        self.set_ground_plane(ground_plane_y);
+        self.rebuild_ground_plane();
     }
 
     // Places an endless floor at the given height, or removes it with None.
     pub fn set_ground_plane(&mut self, y: Option<f32>)
+    {
+        self.settings.ground_plane = y.is_some();
+
+        if let Some(y) = y
+        {
+            self.settings.ground_plane_y = y;
+        }
+
+        self.rebuild_ground_plane();
+    }
+
+    // Picks up a settings change made elsewhere, e.g. in the ui. Cheap enough to call
+    // every frame: only a changed ground plane costs anything.
+    pub fn apply_settings(&mut self)
+    {
+        if self.configured_ground_plane() != self.applied_ground_plane
+        {
+            self.rebuild_ground_plane();
+        }
+
+        let sleep = self.configured_sleep();
+
+        if Some(sleep) != self.applied_sleep
+        {
+            self.applied_sleep = Some(sleep);
+            self.apply_sleep_settings();
+        }
+    }
+
+    fn configured_sleep(&self) -> (f32, f32, f32)
+    {
+        (
+            self.settings.sleep_linear_threshold.max(0.0),
+            self.settings.sleep_angular_threshold.max(0.0),
+            self.settings.time_until_sleep.max(0.0)
+        )
+    }
+
+    // rapier keeps the thresholds per body, so a world level change has to be handed out
+    fn apply_sleep_settings(&mut self)
+    {
+        let (linear, angular, time_until_sleep) = self.configured_sleep();
+
+        for (_handle, body) in self.bodies.iter_mut()
+        {
+            let activation = body.activation_mut();
+
+            activation.normalized_linear_threshold = linear;
+            activation.angular_threshold = angular;
+            activation.time_until_sleep = time_until_sleep;
+        }
+    }
+
+    fn configured_ground_plane(&self) -> Option<f32>
+    {
+        if self.settings.ground_plane
+        {
+            Some(self.settings.ground_plane_y)
+        }
+        else
+        {
+            None
+        }
+    }
+
+    fn rebuild_ground_plane(&mut self)
     {
         if let Some(handle) = self.ground_plane.take()
         {
@@ -135,22 +366,50 @@ impl PhysicsWorld
             self.rebuild_bvh();
         }
 
-        self.ground_plane_y = y;
+        self.applied_ground_plane = self.configured_ground_plane();
 
-        let Some(y) = y else { return; };
+        let Some(y) = self.applied_ground_plane else { return; };
 
         let half = GROUND_PLANE_HALF_SIZE;
 
-        // same vertex order MeshResource::new_plane produces for a floor
-        let vertices = vec!
-        [
-            Vector::new(-half, 0.0, -half),
-            Vector::new( half, 0.0, -half),
-            Vector::new( half, 0.0,  half),
-            Vector::new(-half, 0.0,  half),
-        ];
+        // Measured, do not "improve" this into a solid shape: a halfspace is never found by
+        // the bvh backed queries and the character drops straight through it, and a deep
+        // cuboid buries the character 1.4 cm while walking and snags it on walls. A surface
+        // has no inside to sink into, which is exactly why this one works.
+        //
+        // Tiled rather than two huge triangles, see GROUND_PLANE_TILE_SIZE.
+        let tiles = ((half * 2.0) / GROUND_PLANE_TILE_SIZE).ceil().max(1.0) as u32;
+        let step = (half * 2.0) / tiles as f32;
+        let row = tiles + 1;
 
-        let Ok(shape) = SharedShape::trimesh(vertices, vec![[0, 1, 2], [0, 2, 3]]) else { return; };
+        let mut vertices = vec![];
+
+        for z in 0..row
+        {
+            for x in 0..row
+            {
+                vertices.push(Vector::new(-half + x as f32 * step, 0.0, -half + z as f32 * step));
+            }
+        }
+
+        let mut indices = vec![];
+
+        for z in 0..tiles
+        {
+            for x in 0..tiles
+            {
+                // same winding a single quad had: (x0,z0) (x1,z0) (x1,z1) (x0,z1)
+                let v00 = z * row + x;
+                let v10 = v00 + 1;
+                let v01 = v00 + row;
+                let v11 = v01 + 1;
+
+                indices.push([v00, v10, v11]);
+                indices.push([v00, v11, v01]);
+            }
+        }
+
+        let Ok(shape) = SharedShape::trimesh(vertices, indices) else { return; };
 
         let pose = Pose::from_translation(Vector::new(0.0, y, 0.0));
         let collider = ColliderBuilder::new(shape).position(pose).build();
@@ -160,9 +419,43 @@ impl PhysicsWorld
         self.refresh_leaf(handle);
     }
 
+    fn recover_escaped_bodies(&mut self)
+    {
+        let Some(ground_y) = self.applied_ground_plane else { return; };
+
+        for index in 0..self.entries.len()
+        {
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            {
+                continue;
+            }
+
+            let Some(body_handle) = self.entries[index].body else { continue; };
+
+            // the lowest point, not the origin - a pivot away from the geometry would read
+            // as below the floor while the object is sitting on it
+            let Some(collider) = self.colliders.get(self.entries[index].handle) else { continue; };
+            let penetration = ground_y - collider.compute_aabb().mins.y;
+
+            if penetration <= GROUND_RECOVERY_MARGIN
+            {
+                continue;
+            }
+
+            let Some(body) = self.bodies.get_mut(body_handle) else { continue; };
+
+            let mut pose = *body.position();
+            pose.translation.y += penetration;
+
+            body.set_position(pose, true);
+            body.set_linvel(Vector::ZERO, true);
+            body.set_angvel(Vector::ZERO, true);
+        }
+    }
+
     pub fn ground_plane_y(&self) -> Option<f32>
     {
-        self.ground_plane_y
+        self.applied_ground_plane
     }
 
     pub fn collider_amount(&self) -> usize
@@ -219,10 +512,53 @@ impl PhysicsWorld
     }
 
     // reads the node mesh and bakes the scale into the vertices
-    fn build_shape(node: &NodeItem, scale: &Vector3<f32>) -> Option<SharedShape>
+    // A dynamic body needs volume for mass and inertia, which a trimesh does not have.
+    // Auto therefore means trimesh for static and a convex hull for everything else.
+    fn effective_shape(body_type: PhysicsBodyType, shape: PhysicsShape) -> PhysicsShape
     {
-        let node = node.read().unwrap();
-        let mesh = node.find_component::<Mesh>()?;
+        if shape != PhysicsShape::Auto
+        {
+            return shape;
+        }
+
+        match body_type
+        {
+            PhysicsBodyType::Static => PhysicsShape::TriMesh,
+            _ => PhysicsShape::ConvexHull
+        }
+    }
+
+    // reads the node mesh and bakes the scale into the shape
+    // A shape is rebuilt whenever the scale changes, so a plain warning would repeat for
+    // the same object frame after frame and bury everything else in the console.
+    fn warn_once(node_id: u32, message: String)
+    {
+        static WARNED: std::sync::OnceLock<std::sync::Mutex<HashSet<u32>>> = std::sync::OnceLock::new();
+
+        let warned = WARNED.get_or_init(|| std::sync::Mutex::new(HashSet::new()));
+
+        if let Ok(mut warned) = warned.lock()
+        {
+            if !warned.insert(node_id)
+            {
+                return;
+            }
+        }
+
+        console_warning!("{}", message);
+    }
+
+    fn translation_of(transform: &Matrix4<f32>) -> Vector
+    {
+        Vector::new(transform[(0, 3)], transform[(1, 3)], transform[(2, 3)])
+    }
+
+    // The geometry of one mesh, with a transform applied to it. Colliders cannot be scaled,
+    // so anything the scene graph does to the vertices has to be baked in here.
+    fn collect_geometry(node: &NodeItem, transform: &Matrix4<f32>) -> Option<(Vec<Vector>, Vec<[u32; 3]>)>
+    {
+        let node_read = node.read().unwrap();
+        let mesh = node_read.find_component::<Mesh>()?;
 
         component_downcast!(mesh, Mesh);
 
@@ -237,10 +573,99 @@ impl PhysicsWorld
 
         let vertices: Vec<Vector> = data.vertices.iter().map(|v|
         {
-            Vector::new(v.x * scale.x, v.y * scale.y, v.z * scale.z)
+            let moved = transform * Point3::new(v.x, v.y, v.z).to_homogeneous();
+            Vector::new(moved.x, moved.y, moved.z)
         }).collect();
 
-        SharedShape::trimesh(vertices, data.indices.clone()).ok()
+        Some((vertices, data.indices.clone()))
+    }
+
+    fn resolved_shape_kind(node: &NodeItem) -> PhysicsShape
+    {
+        let node = node.read().unwrap();
+        let physics = node.resolve_physics();
+
+        Self::effective_shape(physics.body_type, physics.shape)
+    }
+
+    fn build_shape(node: &NodeItem, scale: &Vector3<f32>) -> Option<SharedShape>
+    {
+        let shape_kind = Self::resolved_shape_kind(node);
+
+        let scaling = Matrix4::new_nonuniform_scaling(scale);
+        let (vertices, indices) = Self::collect_geometry(node, &scaling)?;
+
+        let (name, node_id) =
+        {
+            let node = node.read().unwrap();
+            (node.name.clone(), node.id)
+        };
+
+        Self::shape_from_geometry(shape_kind, vertices, indices, &name, node_id)
+    }
+
+    // One shape from one set of vertices. Everything that turns geometry into a collider goes
+    // through here.
+    fn shape_from_geometry(shape_kind: PhysicsShape, vertices: Vec<Vector>, indices: Vec<[u32; 3]>, name: &str, node_id: u32) -> Option<SharedShape>
+    {
+
+        if vertices.is_empty() || indices.is_empty()
+        {
+            return None;
+        }
+
+        let aabb = Aabb::from_points(vertices.iter().copied());
+        let centre = aabb.center();
+
+        // A flat mesh has a zero extent on one axis, and a primitive built from that has no
+        // volume at all. A dynamic body without volume has no mass either, and the solver
+        // answers a near zero mass with enormous accelerations - the object shoots off and
+        // its transform ends up as NaN. So the thickness is filled in relative to the size
+        // of the object, which keeps the mass in a believable range.
+        let half = aabb.half_extents();
+        let minimum = (half.x.max(half.y).max(half.z) * MIN_SHAPE_THICKNESS_RATIO).max(MIN_SHAPE_HALF_EXTENT);
+        let half = Vector::new(half.x.max(minimum), half.y.max(minimum), half.z.max(minimum));
+
+        // the primitives are centred on the mesh aabb, not on the node origin
+        let centred = |shape: SharedShape| -> SharedShape
+        {
+            SharedShape::compound(vec![(Pose::from_translation(centre), shape)])
+        };
+
+        let shape = match shape_kind
+        {
+            PhysicsShape::TriMesh | PhysicsShape::Auto =>
+            {
+                SharedShape::trimesh(vertices, indices).ok()?
+            }
+            PhysicsShape::ConvexHull =>
+            {
+                match SharedShape::convex_hull(&vertices)
+                {
+                    Some(shape) => shape,
+                    None =>
+                    {
+                        Self::warn_once(node_id, format!("physics: convex hull failed for '{}', falling back to a box", name));
+                        centred(SharedShape::cuboid(half.x, half.y, half.z))
+                    }
+                }
+            }
+            PhysicsShape::ConvexDecomposition =>
+            {
+                SharedShape::convex_decomposition(&vertices, &indices)
+            }
+            PhysicsShape::Box => centred(SharedShape::cuboid(half.x.max(0.001), half.y.max(0.001), half.z.max(0.001))),
+            PhysicsShape::Sphere => centred(SharedShape::ball(half.max_element().max(0.001))),
+            PhysicsShape::Capsule =>
+            {
+                let radius = half.x.max(half.z).max(0.001);
+                let half_height = (half.y - radius).max(0.001);
+
+                centred(SharedShape::capsule_y(half_height, radius))
+            }
+        };
+
+        Some(shape)
     }
 
     // pushes the collider aabb into the bvh - this is what makes it visible to queries
@@ -272,13 +697,114 @@ impl PhysicsWorld
 
         let shape = Self::build_shape(&node, &scale)?;
 
-        let collider = ColliderBuilder::new(shape)
-            .position(pose)
-            .user_data(Self::pack_user_data(node_id, instance_id))
-            .build();
+        let physics = node.read().unwrap().resolve_physics();
 
-        let handle = self.colliders.insert(collider);
+        // Keep the mass and inertia the shape computes, only move the centre of mass.
+        // Asking the user for an inertia tensor instead would help nobody.
+        let mass_properties = if physics.center_of_mass_auto
+        {
+            None
+        }
+        else
+        {
+            let mut mprops = shape.mass_properties(physics.density.max(0.001));
+            mprops.local_com = Vector::new(physics.center_of_mass.x, physics.center_of_mass.y, physics.center_of_mass.z);
+
+            Some(mprops)
+        };
+
+        let collider = ColliderBuilder::new(shape)
+            .user_data(Self::pack_user_data(node_id, instance_id))
+            .density(physics.density.max(0.001))
+            .friction(physics.friction.max(0.0))
+            .restitution(physics.restitution.clamp(0.0, 1.0));
+
+        let collider = match mass_properties
+        {
+            Some(mass_properties) => collider.mass_properties(mass_properties),
+            None => collider
+        };
+
+        // static objects are standalone colliders, everything else needs a body to be moved
+        let (handle, body) = match physics.body_type
+        {
+            PhysicsBodyType::Static =>
+            {
+                (self.colliders.insert(collider.position(pose).build()), None)
+            }
+            body_type =>
+            {
+                let builder = match body_type
+                {
+                    PhysicsBodyType::Dynamic => RigidBodyBuilder::dynamic()
+                        .linvel(Vector::new(physics.linear_velocity.x, physics.linear_velocity.y, physics.linear_velocity.z))
+                        .angvel(Vector::new(physics.angular_velocity.x, physics.angular_velocity.y, physics.angular_velocity.z))
+                        .linear_damping(physics.linear_damping.max(0.0))
+                        .angular_damping(physics.angular_damping.max(0.0)),
+                    _ => RigidBodyBuilder::kinematic_position_based()
+                };
+
+                let body = self.bodies.insert(builder.pose(pose).build());
+
+                let (linear, angular, time_until_sleep) = self.configured_sleep();
+
+                if let Some(body) = self.bodies.get_mut(body)
+                {
+                    let activation = body.activation_mut();
+
+                    activation.normalized_linear_threshold = linear;
+                    activation.angular_threshold = angular;
+                    activation.time_until_sleep = time_until_sleep;
+                }
+                let handle = self.colliders.insert_with_parent(collider.build(), body, &mut self.bodies);
+
+                self.body_amount += 1;
+
+                (handle, Some(body))
+            }
+        };
+
         self.refresh_leaf(handle);
+
+        // A non-uniform scale on the node stretches whatever sits below it, and by a
+        // different amount for every orientation. A rigid body rotating under one therefore
+        // changes shape as it turns, which no write back can undo - the scale is applied
+        // after the instance transform, so the effect is in the scene graph itself.
+        if physics.body_type == PhysicsBodyType::Dynamic
+        {
+            let node_scale = extract_scale_from_transform(&node.read().unwrap().get_full_transform());
+            let largest = node_scale.x.max(node_scale.y).max(node_scale.z);
+            let smallest = node_scale.x.min(node_scale.y).min(node_scale.z);
+
+            if smallest > 0.0 && largest / smallest > NON_UNIFORM_SCALE_LIMIT
+            {
+                let name = node.read().unwrap().name.clone();
+                Self::warn_once(node_id, format!("physics: '{}' is dynamic under a non-uniform scale of {:.2}/{:.2}/{:.2} - it will visibly stretch as it rotates. Bake the scale into the mesh to fix it", name, node_scale.x, node_scale.y, node_scale.z));
+            }
+        }
+
+        // A default instance carries no transformation at all, and the solver result has
+        // nowhere to go without one. An identity transform changes nothing visually.
+        if physics.body_type == PhysicsBodyType::Dynamic && instance.read().unwrap().find_component::<Transformation>().is_none()
+        {
+            let transformation = Transformation::identity("Physics Transformation");
+            instance.write().unwrap().add_component(std::sync::Arc::new(std::sync::RwLock::new(Box::new(transformation))));
+        }
+
+        // created while running, so it has to be remembered too
+        if self.running && !self.snapshot_pending && physics.body_type == PhysicsBodyType::Dynamic
+        {
+            let local = instance.read().unwrap().find_component::<Transformation>().map(|transformation|
+            {
+                component_downcast!(transformation, Transformation);
+                *transformation.get_transform()
+            });
+
+            if let Some(local) = local
+            {
+                self.edit_snapshot.insert((node_id, instance_id), local);
+            }
+        }
 
         self.entries.push(ColliderEntry
         {
@@ -287,8 +813,13 @@ impl PhysicsWorld
             instance,
             instance_id,
             handle,
+            body,
+            body_type: physics.body_type,
+            shape_kind: Self::effective_shape(physics.body_type, physics.shape),
             transform,
             scale,
+            applied_density: physics.density.max(0.001),
+            applied_center_of_mass: if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) },
         });
 
         Some(handle)
@@ -335,11 +866,17 @@ impl PhysicsWorld
             return false;
         }
 
+        let bodies: Vec<RigidBodyHandle> = self.entries.iter()
+            .filter(|entry| entry.node_id == node_id)
+            .filter_map(|entry| entry.body)
+            .collect();
+
         self.entries.retain(|entry| entry.node_id != node_id);
+        self.remove_bodies(&bodies);
 
         for handle in handles
         {
-            self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+            self.remove_collider(handle);
         }
 
         // the arena slots can be reused, so rebuild rather than patch single leaves
@@ -376,6 +913,10 @@ impl PhysicsWorld
     {
         let all_nodes = Scene::list_all_child_nodes_with_mesh(nodes);
 
+        // Anything whose body type or shape no longer matches what was built has to go
+        // first, otherwise the add pass below would see it as already present and skip it.
+        let rebuilt = self.drop_outdated_entries();
+
         // everything that should have a collider right now, as (node id, instance id)
         let mut wanted: HashSet<(u32, u32)> = HashSet::new();
         let mut added = 0;
@@ -397,11 +938,16 @@ impl PhysicsWorld
                     continue;
                 }
 
-                wanted.insert((node_id, instance.read().unwrap().id));
+                let instance_id = instance.read().unwrap().id;
+                wanted.insert((node_id, instance_id));
 
                 if self.add_instance(node.clone(), instance).is_some()
                 {
                     added += 1;
+                }
+                else if let Some(index) = self.entries.iter().position(|entry| entry.node_id == node_id && entry.instance_id == instance_id)
+                {
+                    self.refresh_collider_settings(index);
                 }
             }
         }
@@ -412,15 +958,21 @@ impl PhysicsWorld
             .map(|entry| entry.handle)
             .collect();
 
-        let removed = stale.len();
+        let removed = stale.len() + rebuilt;
 
-        if removed > 0
+        if !stale.is_empty()
         {
+            let bodies: Vec<RigidBodyHandle> = self.entries.iter()
+                .filter(|entry| !wanted.contains(&(entry.node_id, entry.instance_id)))
+                .filter_map(|entry| entry.body)
+                .collect();
+
             self.entries.retain(|entry| wanted.contains(&(entry.node_id, entry.instance_id)));
+            self.remove_bodies(&bodies);
 
             for handle in stale
             {
-                self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+                self.remove_collider(handle);
             }
 
             self.rebuild_bvh();
@@ -444,6 +996,404 @@ impl PhysicsWorld
         true
     }
 
+    // Drops colliders whose settings changed in a way the shape or the body type depends on.
+    // Switching a crate to dynamic in the editor has to actually rebuild it.
+    fn drop_outdated_entries(&mut self) -> usize
+    {
+        let outdated: Vec<usize> = self.entries.iter().enumerate().filter_map(|(index, entry)|
+        {
+            let physics = entry.node.read().unwrap().resolve_physics();
+            let shape_kind = Self::effective_shape(physics.body_type, physics.shape);
+
+            if physics.body_type != entry.body_type || shape_kind != entry.shape_kind
+            {
+                Some(index)
+            }
+            else
+            {
+                None
+            }
+        }).collect();
+
+        if outdated.is_empty()
+        {
+            return 0;
+        }
+
+        let handles: Vec<ColliderHandle> = outdated.iter().map(|index| self.entries[*index].handle).collect();
+        let bodies: Vec<RigidBodyHandle> = outdated.iter().filter_map(|index| self.entries[*index].body).collect();
+
+        // back to front, the indices would shift otherwise
+        for index in outdated.iter().rev()
+        {
+            self.entries.remove(*index);
+        }
+
+        self.remove_bodies(&bodies);
+
+        for handle in handles.iter()
+        {
+            self.remove_collider(*handle);
+        }
+
+        self.rebuild_bvh();
+
+        handles.len()
+    }
+
+    // Friction, restitution and density can change without rebuilding anything.
+    // Everything the inspector can change on a collider that does not need a new shape.
+    // Body type and shape are handled by drop_outdated_entries instead, those do.
+    fn refresh_collider_settings(&mut self, index: usize)
+    {
+        let physics = self.entries[index].node.read().unwrap().resolve_physics();
+        let handle = self.entries[index].handle;
+
+        let density = physics.density.max(0.001);
+        let center_of_mass = if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) };
+
+        let mass_changed =
+            (self.entries[index].applied_density - density).abs() > DENSITY_EPSILON
+            || !Self::center_of_mass_matches(&self.entries[index].applied_center_of_mass, &center_of_mass);
+
+        let Some(collider) = self.colliders.get_mut(handle) else { return; };
+
+        if (collider.friction() - physics.friction).abs() > 0.0001
+        {
+            collider.set_friction(physics.friction.max(0.0));
+        }
+
+        if (collider.restitution() - physics.restitution).abs() > 0.0001
+        {
+            collider.set_restitution(physics.restitution.clamp(0.0, 1.0));
+        }
+
+        if mass_changed
+        {
+            match center_of_mass
+            {
+                // the shape works out the centre itself, plain density is enough
+                None => collider.set_density(density),
+
+                // keep the mass and inertia the shape computes, only move the centre
+                Some(center_of_mass) =>
+                {
+                    let mut mass_properties = collider.shape().mass_properties(density);
+                    mass_properties.local_com = Vector::new(center_of_mass.x, center_of_mass.y, center_of_mass.z);
+
+                    collider.set_mass_properties(mass_properties);
+                }
+            }
+
+            self.entries[index].applied_density = density;
+            self.entries[index].applied_center_of_mass = center_of_mass;
+        }
+
+        // damping sits on the body, not on the collider
+        let Some(body_handle) = self.entries[index].body else { return; };
+        let Some(body) = self.bodies.get_mut(body_handle) else { return; };
+
+        let linear_damping = physics.linear_damping.max(0.0);
+        let angular_damping = physics.angular_damping.max(0.0);
+
+        if (body.linear_damping() - linear_damping).abs() > 0.0001
+        {
+            body.set_linear_damping(linear_damping);
+        }
+
+        if (body.angular_damping() - angular_damping).abs() > 0.0001
+        {
+            body.set_angular_damping(angular_damping);
+        }
+    }
+
+    fn center_of_mass_matches(a: &Option<Vector3<f32>>, b: &Option<Vector3<f32>>) -> bool
+    {
+        match (a, b)
+        {
+            (None, None) => true,
+            (Some(a), Some(b)) => (a - b).norm() <= CENTER_OF_MASS_EPSILON,
+            _ => false
+        }
+    }
+
+    // Every run starts from the authored values, even when the recurring node scan that
+    // would otherwise pick them up is turned off.
+    fn refresh_all_collider_settings(&mut self)
+    {
+        for index in 0..self.entries.len()
+        {
+            self.refresh_collider_settings(index);
+        }
+    }
+
+    fn remove_collider(&mut self, handle: ColliderHandle)
+    {
+        self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+    }
+
+    fn remove_bodies(&mut self, bodies: &Vec<RigidBodyHandle>)
+    {
+        for body in bodies
+        {
+            self.bodies.remove(*body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, true);
+            self.body_amount = self.body_amount.saturating_sub(1);
+        }
+    }
+
+    pub fn body_amount(&self) -> usize
+    {
+        self.body_amount
+    }
+
+    pub fn has_dynamics(&self) -> bool
+    {
+        self.body_amount > 0
+    }
+
+    pub fn is_running(&self) -> bool
+    {
+        self.running
+    }
+
+    // Entering run mode records where every dynamic object started, leaving it puts them
+    // back. Without that a single play press would permanently rearrange the scene.
+    pub fn set_running(&mut self, running: bool)
+    {
+        if running == self.running
+        {
+            return;
+        }
+
+        self.running = running;
+        self.time_accumulator = 0.0;
+
+        if running
+        {
+            // the world is built during the update, which has not run yet at the moment
+            // play is pressed - so the colliders usually do not exist by then
+            self.snapshot_pending = true;
+        }
+        else
+        {
+            self.snapshot_pending = false;
+            self.restore_edit_snapshot();
+        }
+    }
+
+    fn instance_local_transform(entry: &ColliderEntry) -> Option<Matrix4<f32>>
+    {
+        let instance = entry.instance.read().unwrap();
+        let transformation = instance.find_component::<Transformation>()?;
+
+        component_downcast!(transformation, Transformation);
+
+        Some(*transformation.get_transform())
+    }
+
+    fn node_local_transform(node: &NodeItem) -> Option<Matrix4<f32>>
+    {
+        let node = node.read().unwrap();
+        let transformation = node.find_component::<Transformation>()?;
+
+        component_downcast!(transformation, Transformation);
+
+        Some(*transformation.get_transform())
+    }
+
+    // Every run starts with the authored velocity, so shooting an object in is repeatable.
+    fn apply_start_velocities(&mut self)
+    {
+        for index in 0..self.entries.len()
+        {
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            {
+                continue;
+            }
+
+            let physics = self.entries[index].node.read().unwrap().resolve_physics();
+            let Some(body_handle) = self.entries[index].body else { continue; };
+
+            if let Some(body) = self.bodies.get_mut(body_handle)
+            {
+                body.set_linvel(Vector::new(physics.linear_velocity.x, physics.linear_velocity.y, physics.linear_velocity.z), true);
+                body.set_angvel(Vector::new(physics.angular_velocity.x, physics.angular_velocity.y, physics.angular_velocity.z), true);
+            }
+        }
+    }
+
+    fn take_edit_snapshot(&mut self)
+    {
+        self.edit_snapshot.clear();
+        self.edit_snapshot_nodes.clear();
+
+        for entry in &self.entries
+        {
+            if entry.body_type != PhysicsBodyType::Dynamic
+            {
+                continue;
+            }
+
+            if let Some(transform) = Self::instance_local_transform(entry)
+            {
+                self.edit_snapshot.insert((entry.node_id, entry.instance_id), transform);
+            }
+
+            // the whole chain up to the root: the gizmo may have been on any of them,
+            // an object root with the mesh on a child is the usual shape of a loaded asset
+            let mut current = Some(entry.node.clone());
+
+            while let Some(node) = current
+            {
+                let id = node.read().unwrap().id;
+
+                if let Some(transform) = Self::node_local_transform(&node)
+                {
+                    self.edit_snapshot_nodes.insert(id, transform);
+                }
+
+                current = node.read().unwrap().parent.as_ref().cloned();
+            }
+        }
+    }
+
+    fn restore_edit_snapshot(&mut self)
+    {
+        // the node chain first, so the instance transforms below it land in the right place
+        for index in 0..self.entries.len()
+        {
+            let mut current = Some(self.entries[index].node.clone());
+
+            while let Some(node) = current
+            {
+                let id = node.read().unwrap().id;
+
+                if let Some(transform) = self.edit_snapshot_nodes.get(&id).copied()
+                {
+                    let node_read = node.read().unwrap();
+
+                    if let Some(transformation) = node_read.find_component::<Transformation>()
+                    {
+                        component_downcast_mut!(transformation, Transformation);
+                        transformation.set_local_transform(transform);
+                    }
+                }
+
+                current = node.read().unwrap().parent.as_ref().cloned();
+            }
+        }
+
+        for index in 0..self.entries.len()
+        {
+            let key = (self.entries[index].node_id, self.entries[index].instance_id);
+
+            let Some(transform) = self.edit_snapshot.get(&key).copied() else { continue; };
+
+            {
+                let instance = self.entries[index].instance.clone();
+                let instance = instance.read().unwrap();
+
+                if let Some(transformation) = instance.find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
+                    transformation.set_local_transform(transform);
+                }
+            }
+
+            // put the body back too, otherwise it keeps its velocity and pose
+            if let Some(body_handle) = self.entries[index].body
+            {
+                // calculate_transform already walks the node chain, so this is the world
+                // transform - multiplying the node in again would apply it twice
+                let world = self.entries[index].instance.read().unwrap().calculate_transform();
+                let (pose, _) = Self::split_transform(&world);
+
+                if let Some(body) = self.bodies.get_mut(body_handle)
+                {
+                    body.set_position(pose, true);
+                    body.set_linvel(Vector::ZERO, true);
+                    body.set_angvel(Vector::ZERO, true);
+                }
+            }
+        }
+
+        self.edit_snapshot.clear();
+        self.edit_snapshot_nodes.clear();
+    }
+
+    // Advances the solver in fixed steps. The frame time is not constant, and feeding a
+    // varying dt into a solver makes it behave differently at different frame rates.
+    // `frozen` stops the stepping without restoring anything, unlike leaving the run mode.
+    pub fn step(&mut self, delta_t: f32, frozen: bool) -> u32
+    {
+        if !self.has_dynamics() || !self.running
+        {
+            return 0;
+        }
+
+        if self.snapshot_pending
+        {
+            self.snapshot_pending = false;
+            self.take_edit_snapshot();
+            self.refresh_all_collider_settings();
+            self.apply_start_velocities();
+        }
+
+        // frozen, but everything stays exactly where it is
+        if frozen
+        {
+            self.time_accumulator = 0.0;
+            return 0;
+        }
+
+        self.time_accumulator += delta_t.max(0.0);
+
+        // a long hitch must not turn into a burst of catch up steps
+        let max_time = self.settings.fixed_timestep * self.settings.max_substeps as f32;
+        self.time_accumulator = self.time_accumulator.min(max_time);
+
+        self.integration_params.dt = self.settings.fixed_timestep;
+        self.integration_params.num_solver_iterations = self.settings.solver_iterations.max(1);
+
+        // Rapier stiffens contacts against fixed bodies to twice the normal frequency, which
+        // lands at 60 Hz - exactly the rate the solver runs at. A contact spring sampled once
+        // per oscillation feeds energy in rather than taking it out, and anything tall and
+        // narrow standing on the floor slowly rocks itself over. Measured: ten bowling pins
+        // nudged at 0.3 rad/s, three fall at 60 Hz and none at 30. More solver iterations or
+        // a finer timestep make it worse, which is what gives the cause away.
+        self.integration_params.static_contact_softness.natural_frequency = self.integration_params.contact_softness.natural_frequency;
+
+        let mut steps = 0;
+
+        let gravity = Vector::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z);
+
+        while self.time_accumulator >= self.settings.fixed_timestep
+        {
+            self.time_accumulator -= self.settings.fixed_timestep;
+            steps += 1;
+
+            self.pipeline.step
+            (
+                gravity,
+                &self.integration_params,
+                &mut self.islands,
+                &mut self.broad_phase_bvh,
+                &mut self.narrow_phase,
+                &mut self.bodies,
+                &mut self.colliders,
+                &mut self.impulse_joints,
+                &mut self.multibody_joints,
+                &mut self.ccd_solver,
+                &(),
+                &()
+            );
+        }
+
+        self.recover_escaped_bodies();
+
+        steps
+    }
+
     fn rebuild_bvh(&mut self)
     {
         self.broad_phase_bvh = BroadPhaseBvh::new();
@@ -459,14 +1409,47 @@ impl PhysicsWorld
 
     // ********** syncing **********
 
-    // Mirrors instance transforms onto the colliders, from the cache the renderer also uses.
-    pub fn sync_transformations(&mut self) -> usize
+    // apply_dynamic_bodies stores the world transform it wrote, and the next frame rebuilds
+    // exactly that transform again from the node chain. So while the solver is the only one
+    // touching an object, the two stay equal - any larger difference means somebody else
+    // moved it, which in practice is the author with a gizmo.
+    fn author_moved(&self, index: usize) -> bool
     {
+        let transform = self.entries[index].instance.read().unwrap().get_cached_world_transform();
+
+        // relative: at large coordinates a float step is already bigger than a fixed
+        // threshold, and every frame would then look like an author move
+        transform.iter().zip(self.entries[index].transform.iter()).any(|(a, b)|
+        {
+            (a - b).abs() > AUTHOR_MOVE_EPSILON * (1.0 + a.abs().max(b.abs()))
+        })
+    }
+
+    // Mirrors instance transforms onto the colliders, from the cache the renderer also uses.
+    // `frozen` is the pause: the solver is not advancing, so the author is free to move
+    // things again and the bodies have to follow.
+    pub fn sync_transformations(&mut self, frozen: bool) -> usize
+    {
+        let scene_owns_dynamics = !self.running || frozen;
+
         let mut updated = 0;
         let mut rebuilds = 0;
 
         for index in 0..self.entries.len()
         {
+            // While the solver advances a dynamic body owns its pose and the scene follows
+            // it. Outside that it is the other way round: the author moves the object, so
+            // the body has to follow, otherwise the write back would snap it right back.
+            //
+            // The exception is the author reaching in mid run. Their move has to win for
+            // that frame, otherwise the solver writes its own pose straight back over it.
+            let dynamic = self.entries[index].body_type == PhysicsBodyType::Dynamic;
+
+            if dynamic && !scene_owns_dynamics && !self.author_moved(index)
+            {
+                continue;
+            }
+
             let transform = self.entries[index].instance.read().unwrap().get_cached_world_transform();
 
             if !Self::transform_differs(&transform, &self.entries[index].transform)
@@ -488,21 +1471,52 @@ impl PhysicsWorld
                 None
             };
 
-            if let Some(collider) = self.colliders.get_mut(handle)
-            {
-                collider.set_position(pose);
+            let body = self.entries[index].body;
 
-                if let Some(shape) = shape
+            if let Some(body) = body
+            {
+                // moving the collider of a parented body would be overwritten by the solver
+                match self.bodies.get_mut(body)
                 {
-                    collider.set_shape(shape);
+                    // a dynamic body is teleported to where the author put it, a kinematic
+                    // one is handed to the solver so it moves things on its way
+                    Some(body) =>
+                    {
+                        if dynamic
+                        {
+                            body.set_position(pose, true);
+                            body.set_linvel(Vector::ZERO, true);
+                            body.set_angvel(Vector::ZERO, true);
+                        }
+                        else
+                        {
+                            body.set_next_kinematic_position(pose);
+                        }
+                    },
+                    None => continue
                 }
             }
             else
             {
-                continue;
+                match self.colliders.get_mut(handle)
+                {
+                    Some(collider) => collider.set_position(pose),
+                    None => continue
+                }
             }
 
-            self.refresh_leaf(handle);
+            if let Some(shape) = shape
+            {
+                if let Some(collider) = self.colliders.get_mut(handle)
+                {
+                    collider.set_shape(shape);
+                }
+            }
+
+            if !self.has_dynamics()
+            {
+                self.refresh_leaf(handle);
+            }
 
             self.entries[index].transform = transform;
             self.entries[index].scale = scale;
@@ -516,11 +1530,140 @@ impl PhysicsWorld
         updated
     }
 
+    // Writes the solver result back into the scene. This is the one place where the
+    // physics world is the authority and the scene graph follows. Outside a run, and while
+    // frozen, the authored transform wins instead, so nothing is written back there.
+    pub fn apply_dynamic_bodies(&mut self, frozen: bool) -> usize
+    {
+        if !self.has_dynamics() || !self.running || frozen
+        {
+            return 0;
+        }
+
+        let mut applied = 0;
+
+        for index in 0..self.entries.len()
+        {
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            {
+                continue;
+            }
+
+            let Some(body_handle) = self.entries[index].body else { continue; };
+            let Some(body) = self.bodies.get(body_handle) else { continue; };
+
+            if body.is_sleeping()
+            {
+                continue;
+            }
+
+            let pose = body.position();
+
+            // A degenerate shape or a zero mass can still make the solver produce NaN. Once
+            // that reaches an instance transform it spreads through every derived value and
+            // takes the renderer down with it, so it stops here.
+            if !pose.translation.is_finite() || !pose.rotation.is_finite()
+            {
+                continue;
+            }
+
+            // An object that suddenly leaves at an absurd speed is worth naming, and the
+            // two possible causes look different here: a real speed means the solver did it,
+            // a big jump at a small speed means something teleported the body.
+            {
+                let speed = body.linvel().length();
+                let jump = (pose.translation - Self::translation_of(&self.entries[index].transform)).length();
+
+                if speed > IMPLAUSIBLE_SPEED || jump > IMPLAUSIBLE_JUMP
+                {
+                    let name = self.entries[index].node.read().unwrap().name.clone();
+                    let node_id = self.entries[index].node_id;
+
+                    Self::warn_once(node_id, format!("physics: '{}' left at {:.1} units/s after a {:.2} unit jump - a high speed points at the solver resolving a deep overlap, a big jump at a small speed points at a teleport", name, speed, jump));
+                }
+            }
+
+            let world = pose.to_mat4();
+            let world = Matrix4::new
+            (
+                world.x_axis.x, world.y_axis.x, world.z_axis.x, world.w_axis.x,
+                world.x_axis.y, world.y_axis.y, world.z_axis.y, world.w_axis.y,
+                world.x_axis.z, world.y_axis.z, world.z_axis.z, world.w_axis.z,
+                world.x_axis.w, world.y_axis.w, world.z_axis.w, world.w_axis.w
+            );
+
+            // the scale lives in the shape, so only the rigid part comes back
+            let scale = self.entries[index].scale;
+            let world = world * Matrix4::new_nonuniform_scaling(&scale);
+
+            // the body pose is in world space, the instance transform is relative to its node
+            let (frame, frame_inverse) =
+            {
+                let node = self.entries[index].node.read().unwrap();
+                (node.get_full_transform(), node.get_full_transform_inverse())
+            };
+
+            let instance = self.entries[index].instance.clone();
+            let instance = instance.read().unwrap();
+
+            let transformation = match instance.find_component::<Transformation>()
+            {
+                Some(transformation) => transformation,
+                None => continue
+            };
+
+            // A plain node_inverse * world would be right in principle, but a parent with a
+            // non-uniform scale turns any rotation below it into shear, and the transform
+            // component holds a position, a rotation and a scale - nothing else. The shear
+            // would land in the scale and visibly stretch the object. So the local transform
+            // is assembled from parts that always decompose cleanly: the exact position, a
+            // pure rotation, and the scale the instance already carries. The solver never
+            // changes scale anyway.
+            let local =
+            {
+                component_downcast!(transformation, Transformation);
+
+                let position = extract_translation_from_transform(&world);
+                let position = frame_inverse * Point3::from(position).to_homogeneous();
+                let position = Vector3::new(position.x, position.y, position.z);
+
+                let rotation = extract_rotation_quat_from_transform(&frame).inverse() * extract_rotation_quat_from_transform(&world);
+                let scale = extract_scale_from_transform(transformation.get_transform());
+
+                Matrix4::new_translation(&position) * rotation.to_homogeneous() * Matrix4::new_nonuniform_scaling(&scale)
+            };
+
+            {
+                component_downcast_mut!(transformation, Transformation);
+                transformation.set_local_transform(local);
+            }
+
+            // What the scene will actually show, not what was intended. The transform
+            // component stores a position, a rotation and a scale, and a matrix that does
+            // not decompose into those loses the rest. That happens as soon as a parent
+            // carries a non-uniform scale: expressing the solver's rotation below it needs
+            // shear, which the triple cannot hold. Recording the intention here instead
+            // would make author_moved see a difference every single frame and teleport the
+            // body onto it, which is how an object ends up shooting off on first contact.
+            self.entries[index].transform = instance.calculate_transform();
+
+            applied += 1;
+        }
+
+        applied
+    }
+
     // ********** queries **********
 
     pub fn query_pipeline<'a>(&'a self, filter: QueryFilter<'a>) -> QueryPipeline<'a>
     {
         self.broad_phase_bvh.as_query_pipeline(&self.dispatcher, &self.bodies, &self.colliders, filter)
+    }
+
+    // The writing variant, for queries that push something around rather than only look.
+    pub fn query_pipeline_mut<'a>(&'a mut self, filter: QueryFilter<'a>) -> QueryPipelineMut<'a>
+    {
+        self.broad_phase_bvh.as_query_pipeline_mut(&self.dispatcher, &mut self.bodies, &mut self.colliders, filter)
     }
 
     pub fn collider_translation(&self, handle: ColliderHandle) -> Option<Vector3<f32>>
@@ -640,6 +1783,9 @@ mod tests
 
     // Node::update refreshes the cached world transform every frame - the tests do not run
     // it, so they refresh it the same way it does.
+    // Node::update does this for every node in the scene, children included, so the helper
+    // has to recurse as well - a stale child cache would make the physics read a transform
+    // the scene left behind long ago
     fn refresh_instance_cache(node: &NodeItem)
     {
         let instances: Vec<InstanceItemArc> = node.read().unwrap().instances.get_ref().clone();
@@ -649,6 +1795,23 @@ mod tests
             let world_matrix = instance.read().unwrap().calculate_transform();
             instance.write().unwrap().get_data_mut().get_mut().computed.world_matrix = world_matrix;
         }
+
+        let children: Vec<NodeItem> = node.read().unwrap().nodes.clone();
+
+        for child in &children
+        {
+            refresh_instance_cache(child);
+        }
+    }
+
+    // no default ground plane: the tests place their own geometry, and a second floor at
+    // y = 0 would sit exactly on top of it
+    fn test_world() -> PhysicsWorld
+    {
+        let mut world = PhysicsWorld::new();
+        world.set_ground_plane(None);
+
+        world
     }
 
     fn controller() -> KinematicCharacterController
@@ -664,7 +1827,7 @@ mod tests
     #[test]
     fn trimesh_collider_is_reachable_through_the_bvh()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         assert_eq!(world.add_node(ground_node(0.0)), 1);
         assert_eq!(world.collider_amount(), 1);
 
@@ -682,7 +1845,7 @@ mod tests
     #[test]
     fn capsule_does_not_tunnel_and_settles_on_the_plane()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.add_node(ground_node(0.0));
 
         let capsule = Capsule::new_y(0.5, 0.3);
@@ -718,7 +1881,9 @@ mod tests
     #[test]
     fn moving_the_node_moves_the_collider()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
+        world.set_ground_plane(None); // only the node under test may act as ground here
+
         let node = ground_node(0.0);
         world.add_node(node.clone());
 
@@ -735,8 +1900,8 @@ mod tests
 
         refresh_instance_cache(&node);
 
-        assert_eq!(world.sync_transformations(), 1, "the moved node should be picked up");
-        assert_eq!(world.sync_transformations(), 0, "a second sync has nothing left to do");
+        assert_eq!(world.sync_transformations(false), 1, "the moved node should be picked up");
+        assert_eq!(world.sync_transformations(false), 0, "a second sync has nothing left to do");
 
         let queries = world.query_pipeline(QueryFilter::default());
         let res = controller().move_shape(1.0 / 60.0, &queries, &capsule, &pos, Vector::new(0.0, -0.1, 0.0), |_| {});
@@ -747,7 +1912,7 @@ mod tests
     #[test]
     fn the_query_predicate_can_exclude_a_node()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         let node = ground_node(0.0);
         let node_id = node.read().unwrap().id;
         world.add_node(node);
@@ -826,7 +1991,7 @@ mod tests
     #[test]
     fn jump_actually_leaves_the_ground()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.add_node(big_ground_node());
 
         // jump_force 5.0 from a standing start - the whole arc takes about a second
@@ -845,7 +2010,7 @@ mod tests
     #[test]
     fn walking_on_flat_ground_advances_evenly()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.add_node(big_ground_node());
 
         // running speed, long enough to expose the drift that used to drop frames
@@ -862,7 +2027,7 @@ mod tests
     #[test]
     fn an_excluded_node_never_becomes_a_collider()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         let node = ground_node(0.0);
         let node_id = node.read().unwrap().id;
 
@@ -885,7 +2050,10 @@ mod tests
     #[test]
     fn the_ground_plane_catches_a_character_in_an_empty_scene()
     {
-        let mut world = PhysicsWorld::new();
+        // a fresh world already carries a floor, the test helper strips it again
+        assert!(!PhysicsWorld::new().is_empty(), "a ground plane is created by default");
+
+        let mut world = test_world();
         assert!(world.is_empty());
 
         world.set_ground_plane(Some(0.0));
@@ -903,7 +2071,7 @@ mod tests
     #[test]
     fn the_ground_plane_follows_its_height_and_survives_a_rebuild()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.set_ground_plane(Some(3.0));
 
         let (heights, _, grounded) = simulate(&world, 8.0, 0.0, 0.0, 180);
@@ -930,7 +2098,7 @@ mod tests
     #[test]
     fn an_object_loaded_after_the_build_becomes_solid()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
 
         // a scene that only has the ground so far
         let ground = ground_node(0.0);
@@ -961,7 +2129,7 @@ mod tests
     #[test]
     fn turning_off_the_collider_flag_drops_the_collider()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
 
         let node = ground_node(0.0);
         let scene_nodes = vec![node.clone()];
@@ -980,7 +2148,7 @@ mod tests
     #[test]
     fn the_scan_only_runs_on_its_interval()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
 
         assert!(world.scan_due(), "the first call should scan right away");
 
@@ -1029,7 +2197,7 @@ mod tests
                 transformation.apply_translation(Vector3::new(0.0, platform_speed, 0.0));
             }
             refresh_instance_cache(platform);
-            world.sync_transformations();
+            world.sync_transformations(false);
 
             let mut platform_delta = Vector3::<f32>::zeros();
             if ride
@@ -1089,7 +2257,7 @@ mod tests
     #[test]
     fn walking_on_a_rising_platform_does_not_sink_into_it()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
 
         // a platform the character starts on, no ground plane below it
         let platform = ground_node(0.0);
@@ -1111,7 +2279,7 @@ mod tests
     #[test]
     fn without_riding_the_character_sinks_into_a_rising_platform()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         let platform = ground_node(0.0);
         world.add_node(platform.clone());
 
@@ -1128,7 +2296,8 @@ mod tests
     #[test]
     fn rotating_the_instance_moves_the_collider()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
+        world.set_ground_plane(None); // only the instance under test may act as ground here
 
         let node = ground_node(0.0);
         assert_eq!(world.add_node(node.clone()), 1, "the default instance should get a collider");
@@ -1155,7 +2324,7 @@ mod tests
 
         refresh_instance_cache(&node);
 
-        assert_eq!(world.sync_transformations(), 1, "an instance transform change has to be picked up");
+        assert_eq!(world.sync_transformations(false), 1, "an instance transform change has to be picked up");
 
         let queries = world.query_pipeline(QueryFilter::default());
         let res = controller().move_shape(1.0 / 60.0, &queries, &capsule, &pos, Vector::new(0.0, -0.1, 0.0), |_| {});
@@ -1166,7 +2335,7 @@ mod tests
     #[test]
     fn an_instance_with_collision_off_gets_no_collider()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
 
         let node = ground_node(0.0);
         let scene_nodes = vec![node.clone()];
@@ -1191,7 +2360,7 @@ mod tests
     #[test]
     fn standing_still_on_the_ground_plane_does_not_jitter()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.set_ground_plane(Some(0.0));
 
         let capsule = Capsule::new_y(0.5, 0.3);
@@ -1225,7 +2394,7 @@ mod tests
     #[test]
     fn walking_on_the_ground_plane_advances_evenly()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.set_ground_plane(Some(0.0));
 
         let step = -0.12f32;
@@ -1243,7 +2412,7 @@ mod tests
     #[test]
     fn a_slim_capsule_does_not_sink_into_the_floor_while_walking()
     {
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.set_ground_plane(Some(0.0));
 
         // real editor capsule - slimmer than the other tests, which exposed the snap bug
@@ -1329,7 +2498,7 @@ mod tests
         let start = Vector3::new(-6.705f32, 0.0, -1.0);
 
         {
-            let mut world = PhysicsWorld::new();
+            let mut world = test_world();
             world.set_ground_plane(Some(0.0));
             wall(&mut world);
 
@@ -1340,7 +2509,7 @@ mod tests
 
         {
             // a panel mounted flat against the wall must not change anything
-            let mut world = PhysicsWorld::new();
+            let mut world = test_world();
             world.set_ground_plane(Some(0.0));
             wall(&mut world);
             add_quad(&mut world, Vector::new(-3.0, 0.5, -0.1), Vector::new(3.0, 0.5, -0.1), Vector::new(3.0, 3.0, -0.1), Vector::new(-3.0, 3.0, -0.1));
@@ -1361,7 +2530,7 @@ mod tests
 
         let scene_nodes = vec![root.clone()];
 
-        let mut world = PhysicsWorld::new();
+        let mut world = test_world();
         world.build_from_nodes(&scene_nodes);
         assert_eq!(world.collider_amount(), 1, "the child mesh should start out collidable");
 
@@ -1381,4 +2550,998 @@ mod tests
         assert_eq!(removed, 0);
     }
 
+
+    // a 1x1x1 box mesh, the usual dynamic prop
+    fn box_node(y: f32, body_type: PhysicsBodyType, shape: PhysicsShape) -> NodeItem
+    {
+        let h = 0.5f32;
+        let v = vec!
+        [
+            Point3::new(-h, -h, -h), Point3::new(h, -h, -h), Point3::new(h, h, -h), Point3::new(-h, h, -h),
+            Point3::new(-h, -h,  h), Point3::new(h, -h,  h), Point3::new(h, h,  h), Point3::new(-h, h,  h),
+        ];
+        let i = vec!
+        [
+            [0u32,2,1],[0,3,2], [4,5,6],[4,6,7], [0,1,5],[0,5,4],
+            [3,7,6],[3,6,2], [0,4,7],[0,7,3], [1,2,6],[1,6,5],
+        ];
+
+        let resource = MeshResource::new_with_data("box", v, i, vec![], vec![], vec![], vec![]);
+
+        let mut mesh = Mesh::new("box mesh");
+        mesh.mesh_resource = OptionOrId::Some(Arc::new(RwLock::new(Box::new(resource))));
+
+        let node = Node::new("box");
+        {
+            let mut node_write = node.write().unwrap();
+            node_write.add_component(Arc::new(RwLock::new(Box::new(mesh))));
+            node_write.settings.physics.body_type = body_type;
+            node_write.settings.physics.shape = shape;
+        }
+
+        node.write().unwrap().create_default_instance(node.clone());
+
+        // the instance carries the transform, like everything else in the scene
+        {
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let transformation = Transformation::new("trans", Vector3::new(0.0, y, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0));
+            instance.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+        }
+
+        refresh_instance_cache(&node);
+
+        node
+    }
+
+    fn instance_y(node: &NodeItem) -> f32
+    {
+        let node_read = node.read().unwrap();
+        let instance = node_read.instances.get_ref().first().unwrap().clone();
+        let instance = instance.read().unwrap();
+
+        // computed live: apply_dynamic_bodies writes the transform, Node::update would be
+        // the one to refresh the cache from it
+        extract_translation_from_transform(&instance.calculate_transform()).y
+    }
+
+    #[test]
+    fn a_dynamic_box_falls_and_comes_to_rest_on_the_ground()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        assert_eq!(world.add_node(node.clone()), 1);
+        assert_eq!(world.body_amount(), 1, "a dynamic object needs a rigid body");
+        assert!(world.has_dynamics());
+
+        let start = instance_y(&node);
+        assert!((start - 4.0).abs() < 0.001, "box should start at 4.0, got {}", start);
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            world.step(1.0 / 60.0, false);
+            world.apply_dynamic_bodies(false);
+        }
+
+        // half the box height above the floor, give or take the solver tolerance
+        let resting = instance_y(&node);
+        assert!((resting - 0.5).abs() < 0.06, "box came to rest at {} instead of 0.5", resting);
+    }
+
+    #[test]
+    fn a_static_object_is_never_moved_by_the_solver()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        // floating in the air, and it has to stay there
+        let node = box_node(4.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+        world.add_node(node.clone());
+
+        assert_eq!(world.body_amount(), 0, "a static object must not get a rigid body");
+        assert!(!world.has_dynamics(), "a purely static world must not step at all");
+
+        world.set_running(true);
+
+        for _ in 0..120
+        {
+            assert_eq!(world.step(1.0 / 60.0, false), 0, "nothing to simulate, so nothing should step");
+            world.apply_dynamic_bodies(false);
+        }
+
+        assert!((instance_y(&node) - 4.0).abs() < 0.001, "static box moved to {}", instance_y(&node));
+    }
+
+    #[test]
+    fn auto_picks_a_trimesh_for_static_and_a_hull_for_dynamic()
+    {
+        assert_eq!(PhysicsWorld::effective_shape(PhysicsBodyType::Static, PhysicsShape::Auto), PhysicsShape::TriMesh);
+        assert_eq!(PhysicsWorld::effective_shape(PhysicsBodyType::Dynamic, PhysicsShape::Auto), PhysicsShape::ConvexHull);
+        assert_eq!(PhysicsWorld::effective_shape(PhysicsBodyType::Kinematic, PhysicsShape::Auto), PhysicsShape::ConvexHull);
+
+        // an explicit choice is never overridden
+        assert_eq!(PhysicsWorld::effective_shape(PhysicsBodyType::Dynamic, PhysicsShape::Box), PhysicsShape::Box);
+        assert_eq!(PhysicsWorld::effective_shape(PhysicsBodyType::Static, PhysicsShape::Sphere), PhysicsShape::Sphere);
+    }
+
+    #[test]
+    fn the_fixed_timestep_does_not_depend_on_the_frame_rate()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.add_node(box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto));
+
+        world.set_running(true);
+
+        // one long frame must not turn into an unbounded burst of catch up steps
+        let steps = world.step(10.0, false);
+        assert!(steps <= world.settings.max_substeps, "{} steps for a 10 second hitch", steps);
+
+        // and a frame shorter than the step accumulates instead of stepping
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.add_node(box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto));
+
+        world.set_running(true);
+
+        assert_eq!(world.step(1.0 / 240.0, false), 0, "a quarter step should not simulate yet");
+        assert_eq!(world.step(1.0 / 240.0, false), 0);
+        assert_eq!(world.step(1.0 / 240.0, false), 0);
+        assert_eq!(world.step(1.0 / 240.0, false), 1, "four quarter steps make one full step");
+    }
+
+    #[test]
+    fn switching_a_node_to_dynamic_rebuilds_its_collider()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        world.build_from_nodes(&scene_nodes);
+        assert_eq!(world.collider_amount(), 1);
+        assert_eq!(world.body_amount(), 0, "static gets no body");
+
+        // this is what flipping the combo box in the editor does
+        node.write().unwrap().settings.physics.body_type = PhysicsBodyType::Dynamic;
+
+        let (added, removed) = world.scan_nodes(&scene_nodes);
+        assert_eq!(removed, 1, "the static collider has to be dropped");
+        assert_eq!(added, 1, "and rebuilt as a dynamic one in the same scan");
+        assert_eq!(world.body_amount(), 1, "dynamic needs a rigid body");
+
+        // and it actually falls now
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            world.step(1.0 / 60.0, false);
+            world.apply_dynamic_bodies(false);
+        }
+
+        assert!((instance_y(&node) - 0.5).abs() < 0.06, "box came to rest at {}", instance_y(&node));
+
+        // back to static: the body goes away and it stops moving
+        node.write().unwrap().settings.physics.body_type = PhysicsBodyType::Static;
+        world.scan_nodes(&scene_nodes);
+
+        assert_eq!(world.body_amount(), 0, "the rigid body has to be released again");
+    }
+
+    #[test]
+    fn changing_the_shape_alone_also_rebuilds()
+    {
+        let mut world = test_world();
+        let node = box_node(0.0, PhysicsBodyType::Dynamic, PhysicsShape::ConvexHull);
+        let scene_nodes = vec![node.clone()];
+
+        world.build_from_nodes(&scene_nodes);
+        assert_eq!(world.collider_amount(), 1);
+
+        node.write().unwrap().settings.physics.shape = PhysicsShape::Sphere;
+
+        let (added, removed) = world.scan_nodes(&scene_nodes);
+        assert_eq!((added, removed), (1, 1), "a shape change has to rebuild the collider");
+
+        // an unchanged scan does nothing, so a slider drag does not thrash the world
+        let (added, removed) = world.scan_nodes(&scene_nodes);
+        assert_eq!((added, removed), (0, 0));
+    }
+
+    #[test]
+    fn a_body_type_set_on_a_parent_reaches_the_mesh_below_it()
+    {
+        // objects load as a root with the mesh underneath, and the editor sets the root
+        let root = Node::new("crate root");
+        let mesh = box_node(4.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+        Node::add_node(root.clone(), mesh.clone());
+
+        let scene_nodes = vec![root.clone()];
+
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.build_from_nodes(&scene_nodes);
+
+        assert_eq!(world.body_amount(), 0, "static so far");
+
+        root.write().unwrap().settings.physics.body_type = PhysicsBodyType::Dynamic;
+
+        world.scan_nodes(&scene_nodes);
+        assert_eq!(world.body_amount(), 1, "the setting on the root has to reach the mesh child");
+    }
+
+    #[test]
+    fn leaving_run_mode_puts_dynamic_objects_back()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        world.add_node(node.clone());
+
+        world.set_running(false); // the editor is not in try mode
+
+        // not running: nothing simulates, so editing is never disturbed
+        for _ in 0..60
+        {
+            assert_eq!(world.step(1.0 / 60.0, false), 0, "a world that is not running must not step");
+            world.apply_dynamic_bodies(false);
+        }
+
+        assert!((instance_y(&node) - 4.0).abs() < 0.001, "box moved while not running");
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            world.step(1.0 / 60.0, false);
+            world.apply_dynamic_bodies(false);
+        }
+
+        assert!(instance_y(&node) < 1.0, "box should have fallen in run mode");
+
+        world.set_running(false);
+
+        assert!((instance_y(&node) - 4.0).abs() < 0.001, "box should be back at 4.0, got {}", instance_y(&node));
+
+        // and a second run starts from the authored position again
+        world.set_running(true);
+        world.step(1.0 / 60.0, false);
+        world.apply_dynamic_bodies(false);
+
+        assert!(instance_y(&node) > 3.9, "the second run must start from the top again");
+    }
+
+    // Mirrors what Scene::update does per frame, so the test exercises the real order.
+    fn frame(world: &mut PhysicsWorld, scene_nodes: &Vec<NodeItem>)
+    {
+        frame_frozen(world, scene_nodes, false);
+    }
+
+    fn frame_frozen(world: &mut PhysicsWorld, scene_nodes: &Vec<NodeItem>, frozen: bool)
+    {
+        if world.auto_add_nodes && world.scan_due()
+        {
+            world.scan_nodes(scene_nodes);
+        }
+
+        for node in scene_nodes
+        {
+            refresh_instance_cache(node);
+        }
+
+        world.sync_transformations(frozen);
+        world.step(1.0 / 60.0, frozen);
+        world.apply_dynamic_bodies(frozen);
+    }
+
+    #[test]
+    fn pressing_play_on_an_untouched_scene_makes_the_box_fall()
+    {
+        // exactly the editor flow: nothing built yet, the type is set on the object root,
+        // then play is pressed
+        let root = Node::new("cube top");
+        let mesh = box_node(4.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+        Node::add_node(root.clone(), mesh.clone());
+
+        let scene_nodes = vec![root.clone()];
+
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        assert!(world.is_empty() || world.collider_amount() == 0, "nothing is built up front");
+
+        root.write().unwrap().settings.physics.body_type = PhysicsBodyType::Dynamic;
+
+        // play - the colliders do not exist yet at this point
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.body_amount(), 1, "the world has to build itself while running");
+        assert!((instance_y(&mesh) - 0.5).abs() < 0.06, "box came to rest at {} instead of 0.5", instance_y(&mesh));
+
+        // back to edit mode
+        world.set_running(false);
+
+        assert!((instance_y(&mesh) - 4.0).abs() < 0.001, "box should be back at 4.0, got {}", instance_y(&mesh));
+    }
+
+    #[test]
+    fn a_default_instance_without_a_transformation_still_falls()
+    {
+        // create_default_instance adds no transformation component at all - this is what an
+        // object added in the editor actually looks like, and the write back had nowhere to
+        // go, so the body fell in rapier while nothing moved on screen
+        let root = Node::new("cube top");
+
+        let h = 0.5f32;
+        let v = vec!
+        [
+            Point3::new(-h, -h, -h), Point3::new(h, -h, -h), Point3::new(h, h, -h), Point3::new(-h, h, -h),
+            Point3::new(-h, -h,  h), Point3::new(h, -h,  h), Point3::new(h, h,  h), Point3::new(-h, h,  h),
+        ];
+        let i = vec!
+        [
+            [0u32,2,1],[0,3,2], [4,5,6],[4,6,7], [0,1,5],[0,5,4],
+            [3,7,6],[3,6,2], [0,4,7],[0,7,3], [1,2,6],[1,6,5],
+        ];
+
+        let resource = MeshResource::new_with_data("box", v, i, vec![], vec![], vec![], vec![]);
+        let mut mesh_component = Mesh::new("box mesh");
+        mesh_component.mesh_resource = OptionOrId::Some(Arc::new(RwLock::new(Box::new(resource))));
+
+        let mesh = Node::new("cube");
+        {
+            let mut mesh_write = mesh.write().unwrap();
+            mesh_write.add_component(Arc::new(RwLock::new(Box::new(mesh_component))));
+            // the height sits on the NODE, like the editor gizmo would set it
+            mesh_write.add_component(Arc::new(RwLock::new(Box::new(Transformation::new("trans", Vector3::new(0.0, 4.0, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0))))));
+        }
+        mesh.write().unwrap().create_default_instance(mesh.clone());
+
+        Node::add_node(root.clone(), mesh.clone());
+        root.write().unwrap().settings.physics.body_type = PhysicsBodyType::Dynamic;
+
+        let scene_nodes = vec![root.clone()];
+
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.body_amount(), 1, "the mesh should have become a dynamic body");
+        assert!((instance_y(&mesh) - 0.5).abs() < 0.06, "box came to rest at {} instead of 0.5", instance_y(&mesh));
+
+        world.set_running(false);
+        assert!((instance_y(&mesh) - 4.0).abs() < 0.001, "box should be back at 4.0, got {}", instance_y(&mesh));
+    }
+
+    #[test]
+    fn an_object_can_be_shot_into_the_scene()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(2.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        node.write().unwrap().settings.physics.linear_velocity = Vector3::new(8.0, 0.0, 0.0);
+
+        let scene_nodes = vec![node.clone()];
+        world.set_running(true);
+
+        for _ in 0..120
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        let travelled = {
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let instance = instance.read().unwrap();
+            extract_translation_from_transform(&instance.calculate_transform()).x
+        };
+
+        assert!(travelled > 3.0, "the box should have been shot sideways, moved {}", travelled);
+
+        // a second run has to start with the same shot, not from where it landed
+        world.set_running(false);
+        world.set_running(true);
+        frame(&mut world, &scene_nodes);
+
+        let restart = {
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let instance = instance.read().unwrap();
+            extract_translation_from_transform(&instance.calculate_transform()).x
+        };
+
+        assert!(restart.abs() < 0.5, "the second run must start at the authored spot, got {}", restart);
+    }
+
+    #[test]
+    fn a_low_center_of_mass_keeps_an_object_upright()
+    {
+        // same box twice, once with the weight at the bottom
+        let run = |low_com: bool| -> f32
+        {
+            let mut world = test_world();
+            world.set_ground_plane(Some(0.0));
+
+            let node = box_node(1.5, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+            {
+                let mut node_write = node.write().unwrap();
+                node_write.settings.physics.angular_velocity = Vector3::new(0.0, 0.0, 3.0);
+
+                if low_com
+                {
+                    node_write.settings.physics.center_of_mass_auto = false;
+                    node_write.settings.physics.center_of_mass = Vector3::new(0.0, -0.45, 0.0);
+                }
+            }
+
+            let scene_nodes = vec![node.clone()];
+            world.set_running(true);
+
+            for _ in 0..400
+            {
+                frame(&mut world, &scene_nodes);
+            }
+
+            // how far the local up axis still points up
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let instance = instance.read().unwrap();
+            let transform = instance.calculate_transform();
+
+            transform[(1, 1)]
+        };
+
+        let auto_com = run(false);
+        let low_com = run(true);
+
+        assert!(low_com > auto_com, "a low centre of mass should keep it more upright ({} vs {})", low_com, auto_com);
+    }
+
+    // moves the instance the way the gizmo does: write a new local transform and refresh
+    // the cache the scene would refresh during its update
+    fn move_instance_to_y(node: &NodeItem, y: f32)
+    {
+        {
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let instance = instance.read().unwrap();
+
+            let transformation = instance.find_component::<Transformation>().unwrap();
+            component_downcast_mut!(transformation, Transformation);
+            transformation.set_translation(Vector3::new(0.0, y, 0.0));
+        }
+
+        refresh_instance_cache(node);
+    }
+
+    #[test]
+    fn a_dynamic_object_can_be_moved_while_the_world_is_not_running()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        // edit mode: the world is built, but nothing simulates
+        world.set_running(false);
+
+        for _ in 0..10
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!((instance_y(&node) - 4.0).abs() < 0.001, "the box must not move at all while editing, it is at {}", instance_y(&node));
+
+        // the author drags it up with the gizmo
+        move_instance_to_y(&node, 6.0);
+
+        for _ in 0..60
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!((instance_y(&node) - 6.0).abs() < 0.001, "the box snapped back to {} instead of staying where it was put", instance_y(&node));
+
+        // and pressing play starts from there, not from where the body used to be
+        world.set_running(true);
+
+        frame(&mut world, &scene_nodes);
+
+        assert!(instance_y(&node) < 6.0, "the box should start falling from its new spot");
+        assert!(instance_y(&node) > 5.5, "the box jumped back to its old spot at {} when the run started", instance_y(&node));
+
+        // leaving the run puts it back where the author left it, not where it was built
+        world.set_running(false);
+
+        assert!((instance_y(&node) - 6.0).abs() < 0.001, "leaving the run has to restore the authored spot, got {}", instance_y(&node));
+    }
+
+    #[test]
+    fn a_dynamic_object_can_be_moved_while_the_run_is_frozen()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..30
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        let fallen_to = instance_y(&node);
+        assert!(fallen_to < 3.9, "the box should have started falling, at {}", fallen_to);
+
+        // pause, then drag it back up with the gizmo
+        for _ in 0..5
+        {
+            frame_frozen(&mut world, &scene_nodes, true);
+        }
+
+        move_instance_to_y(&node, 6.0);
+
+        for _ in 0..60
+        {
+            frame_frozen(&mut world, &scene_nodes, true);
+        }
+
+        assert!((instance_y(&node) - 6.0).abs() < 0.001, "the box snapped back to {} instead of staying where it was put while frozen", instance_y(&node));
+
+        // resuming carries on from the new spot
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!((instance_y(&node) - 0.5).abs() < 0.06, "the box should have landed, at {}", instance_y(&node));
+    }
+
+    #[test]
+    fn moving_while_frozen_is_undone_by_leaving_the_run()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        // play: this is the one moment the authored spot is recorded
+        world.set_running(true);
+
+        for _ in 0..30
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        // pause, move, resume - twice, the way a user pokes at a falling object
+        for target in [6.0f32, 8.0f32]
+        {
+            for _ in 0..3
+            {
+                frame_frozen(&mut world, &scene_nodes, true);
+            }
+
+            move_instance_to_y(&node, target);
+
+            for _ in 0..3
+            {
+                frame_frozen(&mut world, &scene_nodes, true);
+            }
+
+            for _ in 0..20
+            {
+                frame(&mut world, &scene_nodes);
+            }
+        }
+
+        // stop has to land on the authored spot, not on anything dragged in between
+        world.set_running(false);
+
+        assert!((instance_y(&node) - 4.0).abs() < 0.001, "stop landed at {} instead of the authored 4.0", instance_y(&node));
+    }
+
+    #[test]
+    fn an_object_pushed_through_the_ground_plane_is_recovered()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        // dragged straight through the floor while editing, which a surface cannot stop
+        let node = box_node(-2.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..600
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!(instance_y(&node) > -0.1, "the box kept falling below the floor, it is at {}", instance_y(&node));
+    }
+
+    #[test]
+    fn an_object_sunk_into_the_floor_settles_on_it_at_a_high_frame_rate()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        // sunk into the floor, so the recovery has something to correct
+        let node = box_node(-0.5, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        world.set_running(true);
+
+        // the editor runs far faster than the solver, so most frames carry no step at all -
+        // the recovery must not add anything up across those
+        for _ in 0..3000
+        {
+            if world.auto_add_nodes && world.scan_due()
+            {
+                world.scan_nodes(&scene_nodes);
+            }
+
+            refresh_instance_cache(&node);
+            world.sync_transformations(false);
+            world.step(1.0 / 600.0, false);
+            world.apply_dynamic_bodies(false);
+        }
+
+        let resting = instance_y(&node);
+
+        assert!((resting - 0.5).abs() < 0.06, "the object ended up at {} instead of resting at 0.5", resting);
+    }
+
+    fn move_instance_to(node: &NodeItem, x: f32, y: f32, z: f32)
+    {
+        {
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let instance = instance.read().unwrap();
+
+            let transformation = instance.find_component::<Transformation>().unwrap();
+            component_downcast_mut!(transformation, Transformation);
+            transformation.set_translation(Vector3::new(x, y, z));
+        }
+
+        refresh_instance_cache(node);
+    }
+
+    fn body_speed(world: &PhysicsWorld, node: &NodeItem) -> f32
+    {
+        let node_id = node.read().unwrap().id;
+
+        for entry in &world.entries
+        {
+            if entry.node_id != node_id { continue; }
+            let Some(handle) = entry.body else { continue; };
+            let Some(body) = world.bodies.get(handle) else { continue; };
+
+            return body.linvel().length();
+        }
+
+        0.0
+    }
+
+    #[test]
+    fn a_kinematic_pusher_does_not_launch_what_it_touches()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        // the bed: resting on the floor, nothing else acting on it
+        let target = box_node(0.5, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+
+        // the car: dragged along z by the gizmo, one editor frame at a time
+        let pusher = box_node(0.5, PhysicsBodyType::Kinematic, PhysicsShape::Auto);
+        move_instance_to(&pusher, 0.0, 0.5, 3.0);
+
+        let scene_nodes = vec![target.clone(), pusher.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..60
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        // a slow nudge at editor frame rate: the editor runs far faster than the solver, so
+        // most frames set a new kinematic target that no step ever consumes
+        let mut z = 3.0f32;
+        let mut fastest: f32 = 0.0;
+
+        for _ in 0..750
+        {
+            z -= 0.004;
+            move_instance_to(&pusher, 0.0, 0.5, z);
+
+            if world.auto_add_nodes && world.scan_due()
+            {
+                world.scan_nodes(&scene_nodes);
+            }
+
+            for node in &scene_nodes
+            {
+                refresh_instance_cache(node);
+            }
+
+            world.sync_transformations(false);
+            world.step(1.0 / 300.0, false);
+            world.apply_dynamic_bodies(false);
+
+            fastest = fastest.max(body_speed(&world, &target));
+        }
+
+        assert!(fastest < 5.0, "a 1.2 m/s nudge accelerated the target to {} m/s", fastest);
+    }
+
+    fn instance_world_position(node: &NodeItem) -> Vector3<f32>
+    {
+        let node_read = node.read().unwrap();
+        let instance = node_read.instances.get_ref().first().unwrap().clone();
+        let instance = instance.read().unwrap();
+
+        extract_translation_from_transform(&instance.calculate_transform())
+    }
+
+    #[test]
+    fn a_rotating_body_under_a_non_uniformly_scaled_parent_does_not_jump()
+    {
+        // exactly the shape of a loaded asset: an object root that carries a rotation and a
+        // very uneven scale, with the mesh on a child. Expressing a rotation below that needs
+        // shear, which a position/rotation/scale triple cannot store.
+        let root = Node::new("object root");
+        {
+            let mut root_write = root.write().unwrap();
+            let transformation = Transformation::new("trans", Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, std::f32::consts::FRAC_PI_2, 0.0), Vector3::new(1.04, 0.076, 0.75));
+            root_write.add_component(Arc::new(RwLock::new(Box::new(transformation))));
+        }
+
+        let mesh = box_node(6.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+
+        // spinning, so the body rotation and the parent rotation never line up
+        mesh.write().unwrap().settings.physics.angular_velocity = Vector3::new(0.0, 0.0, 3.0);
+
+        Node::add_node(root.clone(), mesh.clone());
+
+        let scene_nodes = vec![root.clone()];
+
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.set_running(true);
+
+        let mut previous = instance_world_position(&mesh);
+        let mut largest_jump: f32 = 0.0;
+
+        for _ in 0..600
+        {
+            frame(&mut world, &scene_nodes);
+
+            let current = instance_world_position(&mesh);
+            largest_jump = largest_jump.max((current - previous).norm());
+            previous = current;
+        }
+
+        assert!(largest_jump < 0.5, "the body jumped {} in a single frame, so the scene and the solver disagree about where it is", largest_jump);
+    }
+
+    // a tall narrow prop standing on its base, the proportions of a bowling pin
+    fn pin_node(shape: PhysicsShape, x: f32, z: f32) -> NodeItem
+    {
+        // the measured silhouette of the asset: a 4 cm base ring, widest at 6.2 cm just
+        // above it, tapering to a narrow neck - about 51 cm tall
+        let profile = [(0.0f32, 0.040f32), (0.115, 0.0616), (0.330, 0.028), (0.430, 0.034), (0.5142, 0.020)];
+        let segments = 16u32;
+
+        let mut v = vec![];
+        for (level, radius) in profile
+        {
+            for i in 0..segments
+            {
+                let a = (i as f32) * 2.0 * std::f32::consts::PI / (segments as f32);
+                v.push(Point3::new(radius * a.cos(), level, radius * a.sin()));
+            }
+        }
+
+        let mut i = vec![];
+        let rings = profile.len() as u32;
+
+        for ring in 0..rings - 1
+        {
+            for k in 0..segments
+            {
+                let n = (k + 1) % segments;
+                let a = ring * segments;
+                let b = (ring + 1) * segments;
+
+                i.push([a + k, a + n, b + n]);
+                i.push([a + k, b + n, b + k]);
+            }
+        }
+
+        // caps
+        for k in 1..segments - 1
+        {
+            i.push([0, k + 1, k]);
+            let top = (rings - 1) * segments;
+            i.push([top, top + k, top + k + 1]);
+        }
+
+        let resource = MeshResource::new_with_data("pin", v, i, vec![], vec![], vec![], vec![]);
+
+        let mut mesh = Mesh::new("pin mesh");
+        mesh.mesh_resource = OptionOrId::Some(Arc::new(RwLock::new(Box::new(resource))));
+
+        let node = Node::new("bowling pin");
+        {
+            let mut node_write = node.write().unwrap();
+            node_write.add_component(Arc::new(RwLock::new(Box::new(mesh))));
+            node_write.settings.physics.body_type = PhysicsBodyType::Dynamic;
+            node_write.settings.physics.shape = shape;
+        }
+
+        node.write().unwrap().create_default_instance(node.clone());
+
+        {
+            let node_read = node.read().unwrap();
+            let instance = node_read.instances.get_ref().first().unwrap().clone();
+            let transformation = Transformation::new("trans", Vector3::new(x, 0.0, z), Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0));
+            instance.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+        }
+
+        refresh_instance_cache(&node);
+
+        node
+    }
+
+    fn upright_amount(node: &NodeItem) -> f32
+    {
+        let node_read = node.read().unwrap();
+        let instance = node_read.instances.get_ref().first().unwrap().clone();
+        let instance = instance.read().unwrap();
+
+        let transform = instance.calculate_transform();
+        let up = transform * nalgebra::Vector4::new(0.0, 1.0, 0.0, 0.0);
+
+        up.y
+    }
+
+    // the up axis as the solver itself sees it, so a tip in the physics can be told apart
+    // from one that only the scene transform picked up
+    fn body_upright(world: &PhysicsWorld, node: &NodeItem) -> f32
+    {
+        let node_id = node.read().unwrap().id;
+
+        for entry in &world.entries
+        {
+            if entry.node_id != node_id { continue; }
+            let Some(handle) = entry.body else { continue; };
+            let Some(body) = world.bodies.get(handle) else { continue; };
+
+            return (body.position().rotation * Vector::new(0.0, 1.0, 0.0)).y;
+        }
+
+        1.0
+    }
+
+    #[test]
+    fn a_tall_narrow_prop_stays_standing_on_the_ground_plane()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = pin_node(PhysicsShape::Auto, 2.2, -2.2);
+        let scene_nodes = vec![node.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!(upright_amount(&node) > 0.98, "the pin tipped over - scene up {}, solver up {}", upright_amount(&node), body_upright(&world, &node));
+    }
+
+    #[test]
+    fn a_rack_of_tall_narrow_props_stays_standing()
+    {
+        // the exact bowling formation from the physics test project: ten pins, closest pair
+        // 15.6 cm apart, widest diameter 12.3 cm - so about 3 cm of air between them
+        let positions =
+        [
+            (2.0066f32, -2.0068f32), (2.1628, -2.0082), (2.3255, -2.0150), (2.4846, -2.0107),
+            (2.0795, -2.1669), (2.2434, -2.1606), (2.4171, -2.1703),
+            (2.1407, -2.3329), (2.3271, -2.3206),
+            (2.2255, -2.4716),
+        ];
+
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let pins: Vec<NodeItem> = positions.iter().map(|(x, z)| pin_node(PhysicsShape::Auto, *x, *z)).collect();
+        let scene_nodes = pins.clone();
+
+        // A gentle nudge, the kind a settling neighbour or a passing avatar produces. It
+        // carries a few percent of the energy needed to tip a pin, so all ten have to rock
+        // and settle - if any of them goes over, something is adding energy.
+        for pin in &pins
+        {
+            pin.write().unwrap().settings.physics.angular_velocity = Vector3::new(0.3, 0.0, 0.0);
+        }
+
+        world.set_running(true);
+
+        for _ in 0..600
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        let toppled = pins.iter().filter(|pin| upright_amount(pin) <= 0.98).count();
+
+        assert_eq!(toppled, 0, "{} of {} pins fell over on their own", toppled, pins.len());
+    }
+
+    #[test]
+    fn pausing_freezes_the_simulation_without_resetting_it()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let node = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![node.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..30
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        let fallen_to = instance_y(&node);
+        assert!(fallen_to < 3.9, "the box should have started falling, at {}", fallen_to);
+
+        // freeze: nothing simulates, and nothing is put back either
+        for _ in 0..120
+        {
+            assert_eq!(world.step(1.0 / 60.0, true), 0, "a frozen world must not step");
+            frame_frozen(&mut world, &scene_nodes, true);
+        }
+
+        assert!((instance_y(&node) - fallen_to).abs() < 0.001, "the box moved while frozen, {} vs {}", instance_y(&node), fallen_to);
+
+        // and it carries on from there
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!((instance_y(&node) - 0.5).abs() < 0.06, "the box should have landed, at {}", instance_y(&node));
+
+        // leaving the running mode still resets
+        world.set_running(false);
+
+        assert!((instance_y(&node) - 4.0).abs() < 0.001, "the box should be back at 4.0");
+    }
 }

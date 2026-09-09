@@ -13,7 +13,7 @@ use crate::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
-use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
+use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode};
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator};
@@ -421,7 +421,9 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.set_min_height(icon_size + padding * 2.0);
 
         let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
-        let mut try_out = editor_state.try_mode;
+
+        let run_mode = state.run_mode;
+        let running = run_mode.is_running();
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
@@ -443,14 +445,95 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
-            // try out mode
+            ui.separator();
+
+            // engine stop - nothing updates at all while this is off
             {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/tryout.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(try_out).frame(true);
-                if ui.add(btn).on_hover_text("Try Out").clicked()
+                let updating = state.run_mode.updates_engine();
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/engine.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(updating).frame(true);
+                if ui.add(btn).on_hover_text("Engine update on/off").clicked()
                 {
-                    try_out = !try_out;
-                    editor_state.set_try_mode(state, try_out);
+                    let run_mode = if updating { RunMode::Stopped } else { RunMode::Edit };
+                    editor_state.set_run_mode(state, run_mode, false);
+                }
+            }
+
+            let transport_size = egui::vec2(icon_size + padding * 2.0, icon_size + padding * 2.0);
+
+            // pause
+            {
+                let btn = egui::Button::new("⏸").selected(state.pause).frame(true).min_size(transport_size);
+
+                if ui.add_enabled(running, btn).on_hover_text("Pause (P) - keeps everything where it is").clicked()
+                {
+                    let paused = !state.pause;
+                    editor_state.set_paused(state, paused);
+                }
+            }
+
+            // start or stop a run: a plain click plays, the arrow offers the other
+            // combinations - while a run is on, the same spot stops it again
+            {
+                let mut picked_run_mode = None;
+                let mut stop = false;
+
+                // right to left layout, so the arrow is added first to end up on the right
+                ui.scope(|ui|
+                {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+
+                    // the arrow only hints at the menu, so it is a thin strip of the same
+                    // height as the button next to it
+                    let default_button_padding = ui.spacing().button_padding;
+                    ui.spacing_mut().button_padding.x = 1.0;
+
+                    let arrow_glyph = egui::RichText::new("⏷").size(icon_size * 0.45);
+                    let arrow = egui::Button::new(arrow_glyph).frame(true).min_size(egui::vec2(icon_size / 3.0, icon_size + padding * 2.0));
+
+                    let (response, _) = egui::containers::menu::MenuButton::from_button(arrow).ui(ui, |ui|
+                    {
+                        if ui.add(egui::Button::new("Play").selected(run_mode == RunMode::Play)).clicked() { picked_run_mode = Some((RunMode::Play, false)); }
+                        if ui.button("Play (Fullscreen)").clicked() { picked_run_mode = Some((RunMode::Play, true)); }
+
+                        ui.separator();
+
+                        if ui.add(egui::Button::new("Simulate").selected(run_mode == RunMode::Simulate)).clicked() { picked_run_mode = Some((RunMode::Simulate, false)); }
+                        if ui.button("Simulate (Fullscreen)").clicked() { picked_run_mode = Some((RunMode::Simulate, true)); }
+                    });
+
+                    response.on_hover_text("Pick a run mode");
+
+                    ui.spacing_mut().button_padding = default_button_padding;
+
+                    if running
+                    {
+                        let btn = egui::Button::new("⏹").frame(true).min_size(transport_size);
+
+                        if ui.add(btn).on_hover_text("Stop (Esc) - back to edit, resets every dynamic object").clicked()
+                        {
+                            stop = true;
+                        }
+                    }
+                    else
+                    {
+                        let img = egui::Image::new(egui::include_image!("../../../../resources/icons/tryout.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                        let btn = egui::Button::image(img).frame(true);
+
+                        if ui.add(btn).on_hover_text("Play (Ctrl+R, hold Shift for fullscreen)").clicked()
+                        {
+                            picked_run_mode = Some((RunMode::Play, false));
+                        }
+                    }
+                });
+
+                if stop
+                {
+                    editor_state.set_run_mode(state, RunMode::Edit, false);
+                }
+                else if let Some((run_mode, fullscreen)) = picked_run_mode
+                {
+                    editor_state.set_run_mode(state, run_mode, fullscreen);
                 }
             }
 
@@ -653,19 +736,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     {
                         editor_state.de_select_current_item(state);
                     }
-                }
-            }
-
-            ui.separator();
-
-            // play/pause
-            {
-                let playing = !state.pause;
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/engine.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(playing).frame(true);
-                if ui.add(btn).on_hover_text("Playing/Pause").clicked()
-                {
-                    state.pause = playing;
                 }
             }
         });

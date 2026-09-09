@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
+use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, time::Instant, vec};
 
 use nalgebra::{Vector2, Vector3};
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{get_delta_t, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
@@ -127,6 +127,8 @@ impl Serialize for Scene
 
         map.serialize_entry("materials", &MaterialsSerializer { map: &self.materials })?;
 
+        map.serialize_entry("physics", &self.physics.settings)?;
+
         let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter().filter(|controller| controller.is_serializable()).collect();
         map.serialize_entry("pre_controller", &pre_controller)?;
 
@@ -182,6 +184,7 @@ impl<'de> Deserialize<'de> for Scene
                         {
                             scene.lights = ChangeTracker::new(map.next_value().into_iter().map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst)))).collect())
                         }
+                        "physics" => scene.physics.settings = map.next_value()?,
                         "materials" => {
                             let material_map: HashMap<u32, Box<dyn Component>> = map.next_value()?;
                             scene.materials = material_map.into_iter().map(|(id, mat)| (id, Arc::new(RwLock::new(mat)))).collect();
@@ -284,7 +287,7 @@ impl Scene
         self.tags.contains(tag)
     }
 
-    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
+    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> f32
     {
         crate::notify_observable!(self, on_before_update);
 
@@ -307,14 +310,20 @@ impl Scene
             });
         }
 
+        let mut physics_update_time: u128 = 0;
+
+        // ********** physics settings **********
+        // picked up here so a change in the ui, or a freshly loaded scene, takes effect
+        self.physics.apply_settings();
+
         // ********** physics colliders (structure) **********
-        if !self.physics.is_empty()
+        if self.physics.auto_add_nodes && self.physics.scan_due()
         {
-            if self.physics.auto_add_nodes && self.physics.scan_due()
-            {
-                let nodes = self.nodes.clone();
-                self.physics.scan_nodes(&nodes);
-            }
+            let physics_time = Instant::now();
+            let nodes = self.nodes.clone();
+            self.physics.scan_nodes(&nodes);
+
+            physics_update_time += physics_time.elapsed().as_micros();
         }
 
         // ********** update pre controller **********
@@ -322,7 +331,7 @@ impl Scene
         swap(&mut self.pre_controller, &mut pre_controller);
         for controller_item in &mut pre_controller
         {
-            if controller_item.get_base().is_enabled
+            if controller_item.get_base().is_enabled && controller_item.runs_in_mode(run_mode)
             {
                 controller_item.update(self, io, frame_scale);
             }
@@ -335,7 +344,7 @@ impl Scene
         let mut skinned_nodes = vec![];
         for node in &self.nodes
         {
-            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame);
+            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame, run_mode);
 
             if update_result.delete_nodes.len() > 0
             {
@@ -401,7 +410,7 @@ impl Scene
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
         {
-            cam.update(self, io, frame_scale);
+            cam.update(self, io, frame_scale, run_mode);
         }
 
         swap(&mut cameras, &mut self.cameras);
@@ -410,7 +419,21 @@ impl Scene
         // after the node update on purpose - animations move nodes there
         if !self.physics.is_empty()
         {
-            self.physics.sync_transformations();
+            let physics_time = Instant::now();
+
+            // the world only runs in a running mode, a pause freezes it without resetting
+            let frozen = !run_mode.runs_physics();
+
+            // sync transforms from scene to physics world
+            self.physics.sync_transformations(frozen);
+
+            // run physics
+            self.physics.step(get_delta_t(frame_scale), frozen);
+
+            // apply the physics world transforms back to the scene nodes
+            self.physics.apply_dynamic_bodies(frozen);
+
+            physics_update_time += physics_time.elapsed().as_micros();
         }
 
         // ********** update post controller **********
@@ -418,7 +441,7 @@ impl Scene
         swap(&mut self.post_controller, &mut post_controller);
         for controller_item in &mut post_controller
         {
-            if controller_item.get_base().is_enabled
+            if controller_item.get_base().is_enabled && controller_item.runs_in_mode(run_mode)
             {
                 controller_item.update(self, io, frame_scale);
             }
@@ -433,6 +456,8 @@ impl Scene
         }
 
         crate::notify_observable!(self, on_after_update);
+
+        physics_update_time as f32
     }
 
     pub fn notify_before_render_all(&self)
@@ -1531,7 +1556,7 @@ impl Scene
         }
 
         // sort bbox dist (to get the nearest)
-        hits_bbox.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+        hits_bbox.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
         if bounding_box_only && hits_bbox.len() > 0
         {
@@ -1654,7 +1679,7 @@ impl Scene
         }
 
         // sort by distance
-        hits.sort_by(|a, b| a.time_of_impact.partial_cmp(&b.time_of_impact).unwrap());
+        hits.sort_by(|a, b| a.time_of_impact.partial_cmp(&b.time_of_impact).unwrap_or(std::cmp::Ordering::Equal));
 
         // best_hit
         hits

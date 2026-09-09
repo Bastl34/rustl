@@ -401,7 +401,7 @@ impl MainInterface
 
 
         // ******************** app update ********************
-        if !self.context.state.borrow().pause
+        if self.context.state.borrow().run_mode.updates_engine()
         {
             let now = Instant::now();
             self.app_update();
@@ -419,8 +419,8 @@ impl MainInterface
         }
 
 
-        // ******************** update scene and rendering ********************
-        if !self.context.state.borrow().pause
+        // ******************** update scene and rendering items ********************
+        if self.context.state.borrow().run_mode.updates_engine()
         {
             let engine_update_time = Instant::now();
 
@@ -434,7 +434,8 @@ impl MainInterface
                 self.context.wgpu.create_msaa_texture(msaa_samples);
             }
 
-            state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+            let physics_update_time = state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+            state.stats.physics_update_time = physics_update_time / 1000.0; // physic times are based on micros
 
             rendering::state::update(&mut self.context.wgpu, state);
 
@@ -486,6 +487,7 @@ impl MainInterface
             swap(&mut scenes, &mut state.scenes);
 
             state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.engine_update_time -= state.stats.physics_update_time; // get raw update time without physics
         }
 
 
