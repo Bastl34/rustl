@@ -9,7 +9,6 @@ use std::sync::RwLock;
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::math;
 use crate::helper::math::yaw_pitch_to_direction;
-use crate::state::resources::mesh_resource::MeshResource;
 use crate::state::scene::components::mesh::Mesh;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::camera::{Camera, CameraProjectionType};

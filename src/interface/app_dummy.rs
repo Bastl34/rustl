@@ -26,6 +26,12 @@ impl App for AppDummy
     {
         // ********** observer examples (context level) **********
 
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // THE CONTENT OF THIS FILE IS NOT FINAL OR STABLE, IT IS CURRENTLY JUST A PLACE FOR TESTING AND EXPERIMENTING WITH FEATURES
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
         // fires every frame right before rendering
         /*
         context.on_before_render.add(|ctx|

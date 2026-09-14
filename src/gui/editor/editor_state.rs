@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{gui::editor::gizmo::hide_gizmos, state::project::project::EditorProjectData};
+use crate::{gui::editor::gizmo::hide_gizmos, state::{project::project::EditorProjectData, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 
 const THUMB_EXTENSION: &str = "png";
@@ -258,6 +258,7 @@ pub struct EditorState
     pub copy_asset_transform: Option<TransformationData>,
     pub copy_node_id: Arc<RwLock<Option<u32>>>,
     pub copy_node_name: Option<String>,
+    pub copy_node_settings: Option<NodeSettings>,
 
     pub drag_id: Option<String>,
 
@@ -401,6 +402,7 @@ impl EditorState
             copy_asset_transform: None,
             copy_node_id: Arc::new(RwLock::new(None)),
             copy_node_name: None,
+            copy_node_settings: None,
 
             drag_id: None,
 

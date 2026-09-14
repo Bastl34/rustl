@@ -1723,6 +1723,19 @@ impl SceneController for CharacterController
                 char_controller.solve_character_collision_impulses(delta_t, &mut queries, &capsule, self.collision.push_mass.max(0.001), &collisions);
             }
 
+            // Walking into an object that waits for a hit releases it. The character is a
+            // shape cast, not a body, so its contacts never reach the narrow phase. Standing
+            // still on one is not a hit, so only while moving or in the air.
+            let moving = desired.x.abs() > 0.0001 || desired.z.abs() > 0.0001 || !self.grounded;
+
+            if moving
+            {
+                for collision in &collisions
+                {
+                    scene.physics.hit_collider(collision.handle);
+                }
+            }
+
             desired = platform_delta + Vector3::new(movement_res.translation.x, movement_res.translation.y, movement_res.translation.z);
 
             // grounded while rising would cancel the jump on its first frame

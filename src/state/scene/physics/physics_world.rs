@@ -1,13 +1,17 @@
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 
 use nalgebra::{Matrix4, Point3, Vector3};
 use serde::{Deserialize, Serialize};
+use parry3d::bounding_volume::{Aabb, BoundingVolume};
+use parry3d::mass_properties::MassProperties;
 use parry3d::query::DefaultQueryDispatcher;
+use parry3d::shape::Shape;
 use rapier3d::prelude::*;
 
-use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, NodeItem, PhysicsBodyType, PhysicsShape}, scene::Scene}}};
+use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, NodeItem, PhysicsBodyType, PhysicsSettings, PhysicsShape}, scene::Scene}}};
 
 // transform deltas below this are treated as float noise and do not trigger a bvh update
 const TRANSFORM_EPSILON: f32 = 0.00001;
@@ -15,8 +19,8 @@ const TRANSFORM_EPSILON: f32 = 0.00001;
 // a scale change needs a shape rebuild, so it uses a slightly more forgiving threshold
 const SCALE_EPSILON: f32 = 0.0001;
 
-// Above this ratio between the largest and smallest node scale, a rotating rigid body
-// stretches enough to be obvious.
+// Above this ratio between the largest and smallest scale above a body, a rotating rigid
+// body stretches enough to be obvious.
 const NON_UNIFORM_SCALE_LIMIT: f32 = 1.5;
 
 // Nothing in a normal scene moves this fast or jumps this far in a single step, so either
@@ -57,6 +61,15 @@ pub const SNAP_TO_GROUND_LIMIT: f32 = 0.03;
 // Rescan interval for new or removed mesh instances - every frame would be wasteful.
 const NODE_SCAN_INTERVAL_FRAMES: u32 = 10;
 
+// How close two waiting objects have to be to count as touching when one of them is
+// released. Cell fracture pieces share their faces, a settled pile rests within the
+// contact skin.
+const RELEASE_TOUCH_DISTANCE: f32 = 0.01;
+
+// Steps after a run starts during which nothing counts as a hit: objects placed slightly
+// into each other are pushed apart in the first steps, and that push is as hard as a hit.
+const HIT_GRACE_STEPS: u32 = 10;
+
 // Everything about a physics world the author gets to set. Kept apart from the solver
 // state so it can be serialized with the scene and edited in the ui.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -87,9 +100,16 @@ pub struct PhysicsWorldSettings
     // softness first, this is for settling piles and stacks.
     #[serde(default = "default_solver_iterations")]
     pub solver_iterations: usize,
+
+    // A touch slower than this does not count as a hit for an object that waits for one:
+    // the speed of the touching body before the step, in units per second. Resting weight
+    // never counts that way, whatever is stacked on top, and 1.0 is a drop from about 5 cm.
+    #[serde(default = "default_hit_speed")]
+    pub hit_speed: f32,
 }
 
 fn default_solver_iterations() -> usize { 8 }
+fn default_hit_speed() -> f32 { 1.0 }
 
 fn default_sleep_linear_threshold() -> f32 { 0.05 }
 fn default_sleep_angular_threshold() -> f32 { 0.5 }
@@ -116,11 +136,194 @@ impl Default for PhysicsWorldSettings
             time_until_sleep: default_time_until_sleep(),
 
             solver_iterations: default_solver_iterations(),
+            hit_speed: default_hit_speed(),
         }
     }
 }
 
-pub struct ColliderEntry
+// ********** objects **********
+
+// Where a physics object takes its pose from, and where the solver result goes back to.
+// Every object is a set of colliders around an anchor, one per mesh instance, plus a body
+// when the solver may move it. The anchor is the only thing that differs between a single
+// mesh and a whole node treated as one object - a ragdoll bone will be a third kind.
+#[derive(Clone)]
+pub enum Anchor
+{
+    // one mesh placement: the pose is the instance's world pose and the solver writes the
+    // instance transform - the usual case, and the only one for static geometry
+    Instance { node: NodeItem, instance: InstanceItemArc },
+
+    // a node with everything below it as one object: the pose is the node's world pose,
+    // the solver writes the node transform and the meshes below follow with their offsets
+    Node { node: NodeItem },
+}
+
+// Identifies an anchor without touching any lock: the node id, plus the instance id.
+pub type AnchorKey = (u32, Option<u32>);
+
+impl Anchor
+{
+    pub fn node(&self) -> &NodeItem
+    {
+        match self
+        {
+            Anchor::Instance { node, .. } => node,
+            Anchor::Node { node } => node,
+        }
+    }
+
+    pub fn key(&self) -> AnchorKey
+    {
+        match self
+        {
+            Anchor::Instance { node, instance } => (node.read().unwrap().id, Some(instance.read().unwrap().id)),
+            Anchor::Node { node } => (node.read().unwrap().id, None),
+        }
+    }
+
+    pub fn name(&self) -> String
+    {
+        self.node().read().unwrap().name.clone()
+    }
+
+    // The settings that apply here. resolve_physics walks up to the first non-static
+    // node, which for a node anchor is the node itself.
+    pub fn physics(&self) -> PhysicsSettings
+    {
+        self.node().read().unwrap().resolve_physics()
+    }
+
+    // The pose the scene shows right now: from the cache the renderer also uses for an
+    // instance, computed live for a node - a node usually has no instance of its own, and
+    // its transform is what the gizmo edits when a whole object is selected.
+    pub fn world_transform(&self) -> Matrix4<f32>
+    {
+        match self
+        {
+            Anchor::Instance { instance, .. } => instance.read().unwrap().get_cached_world_transform(),
+            Anchor::Node { node } => node.read().unwrap().get_full_transform(),
+        }
+    }
+
+    // Computed from the scene graph: for a brand new instance, which has no cached
+    // transform yet, and after a restore that just changed the transforms above.
+    pub fn world_transform_live(&self) -> Matrix4<f32>
+    {
+        match self
+        {
+            Anchor::Instance { instance, .. } => instance.read().unwrap().calculate_transform(),
+            Anchor::Node { node } => node.read().unwrap().get_full_transform(),
+        }
+    }
+
+    // The transform the written pose sits below: the node for an instance, the parent for
+    // a node. A non-uniform scale in there stretches a rotating body, the scale of the
+    // written transform itself does not - it is applied first.
+    fn frame(&self) -> Matrix4<f32>
+    {
+        match self
+        {
+            Anchor::Instance { node, .. } => node.read().unwrap().get_full_transform(),
+            Anchor::Node { node } =>
+            {
+                let node_read = node.read().unwrap();
+
+                let inherits = node_read.find_component::<Transformation>().map(|transformation|
+                {
+                    component_downcast!(transformation, Transformation);
+                    transformation.has_parent_inheritance()
+                }).unwrap_or(true);
+
+                if !inherits
+                {
+                    return Matrix4::identity();
+                }
+
+                node_read.parent.as_ref().map(|parent| parent.read().unwrap().get_full_transform()).unwrap_or_else(Matrix4::identity)
+            }
+        }
+    }
+
+    // the transformation the solver writes to
+    fn transformation(&self) -> Option<ComponentItem>
+    {
+        match self
+        {
+            Anchor::Instance { instance, .. } => instance.read().unwrap().find_component::<Transformation>(),
+            Anchor::Node { node } => node.read().unwrap().find_component::<Transformation>(),
+        }
+    }
+
+    // The solver result has nowhere to go without a transformation. An identity one
+    // changes nothing visually.
+    fn ensure_transformation(&self)
+    {
+        if self.transformation().is_some()
+        {
+            return;
+        }
+
+        match self
+        {
+            Anchor::Instance { instance, .. } =>
+            {
+                instance.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Physics Transformation")))));
+            }
+            Anchor::Node { node } =>
+            {
+                node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("Physics Transformation")))));
+            }
+        }
+    }
+
+    // Writes a solver pose back into the scene. Returns the transform the scene will
+    // actually show afterwards, or None when there is nothing to write to.
+    //
+    // What the scene shows, not what was intended: the transform component stores a
+    // position, a rotation and a scale, and a matrix that does not decompose into those
+    // loses the rest. Comparing against the intention instead would look like an author
+    // move every single frame and teleport the body onto it, which is how an object ends
+    // up shooting off on first contact.
+    fn write_back(&self, pose: &Pose) -> Option<Matrix4<f32>>
+    {
+        let transformation = self.transformation()?;
+
+        let frame = self.frame();
+        let frame_inverse = frame.try_inverse()?;
+
+        let local =
+        {
+            component_downcast!(transformation, Transformation);
+            let scale = extract_scale_from_transform(transformation.get_transform());
+
+            PhysicsWorld::local_from_pose(pose, &frame, &frame_inverse, &scale)
+        };
+
+        {
+            component_downcast_mut!(transformation, Transformation);
+            transformation.set_local_transform(local);
+        }
+
+        match self
+        {
+            Anchor::Instance { instance, .. } => Some(instance.read().unwrap().calculate_transform()),
+            Anchor::Node { node } =>
+            {
+                // The scene refreshes the cached world matrices in its update, which has
+                // already run this frame, and the renderer consumes the node's change flag
+                // right after this - before the instances below get to see it. So the
+                // caches are refreshed here, or the meshes stay put while their colliders fall.
+                PhysicsWorld::refresh_instance_cache_below(node);
+
+                Some(node.read().unwrap().get_full_transform())
+            }
+        }
+    }
+}
+
+// One collider: a mesh instance at an offset from its anchor.
+pub struct Part
 {
     pub node: NodeItem,
     pub node_id: u32,
@@ -129,21 +332,79 @@ pub struct ColliderEntry
     pub instance_id: u32,
 
     pub handle: ColliderHandle,
-
-    // set for dynamic and kinematic objects - the solver moves those, not the scene
-    pub body: Option<RigidBodyHandle>,
-    pub body_type: PhysicsBodyType,
     pub shape_kind: PhysicsShape, // what it was built as, to notice a change in the editor
 
-    transform: Matrix4<f32>, // the world transform
+    // the part relative to its anchor, the anchor's scale included - a change to it means
+    // the author edited something below the anchor
+    local: Matrix4<f32>,
+    offset: Pose,        // the rigid part of local, the collider's offset from the anchor
+    scale: Vector3<f32>, // the rest, baked into the shape
+}
 
-    // the scale is baked into the shape - only a scale change forces a shape rebuild
-    scale: Vector3<f32>,
+// A physics object: colliders around an anchor, plus a body when the solver may move it.
+// A single mesh is an object with one part at offset zero; a combined object has one part
+// per mesh below its root. Static objects have no body and their colliders stand alone -
+// rapier propagates a body's pose to its colliders only in a step, and nothing steps while
+// the scene is being edited.
+pub struct BodyEntry
+{
+    pub anchor: Anchor,
+    pub key: AnchorKey,
+
+    pub body: Option<RigidBodyHandle>,
+    pub body_type: PhysicsBodyType,
+
+    // Waiting for a hit: a fixed body until something releases it, see release_entry.
+    // reacts_on_hit is the authored flag, so every run starts waiting; waiting is the
+    // live state.
+    pub reacts_on_hit: bool,
+    pub waiting: bool,
+
+    pub parts: Vec<Part>,
+
+    // every part the scene asked for, built or not - a mesh without geometry stays on this
+    // list, otherwise the object would count as changed and be rebuilt on every scan
+    requested_parts: HashSet<(u32, u32)>,
+
+    transform: Matrix4<f32>, // the anchor's world transform, as last handed to or received from the solver
+    scale: Vector3<f32>,     // the anchor's world scale, baked into every part
 
     // what the mass properties were last built from - recomputing them means integrating
-    // the shape again, so it only happens when one of these actually changed
+    // the shapes again, so it only happens when one of these actually changed
     applied_density: f32,
-    applied_center_of_mass: Option<Vector3<f32>>, // None = left to the shape
+    applied_center_of_mass: Option<Vector3<f32>>, // None = left to the shapes
+}
+
+impl BodyEntry
+{
+    pub fn node_id(&self) -> u32
+    {
+        self.key.0
+    }
+
+    pub fn is_combined(&self) -> bool
+    {
+        matches!(self.anchor, Anchor::Node { .. })
+    }
+
+    // as its anchor or as one of its meshes
+    pub fn has_node(&self, node_id: u32) -> bool
+    {
+        self.key.0 == node_id || self.parts.iter().any(|part| part.node_id == node_id)
+    }
+
+    pub fn has_instance(&self, node_id: u32, instance_id: u32) -> bool
+    {
+        self.parts.iter().any(|part| part.node_id == node_id && part.instance_id == instance_id)
+    }
+}
+
+// What the scene wants built at one anchor, collected during a scan.
+struct Request
+{
+    anchor: Anchor,
+    key: AnchorKey,
+    parts: Vec<(NodeItem, InstanceItemArc)>,
 }
 
 // Static geometry is mirrored from the scene, dynamic bodies are moved by the solver.
@@ -168,6 +429,17 @@ pub struct PhysicsWorld
 
     time_accumulator: f32,
     body_amount: usize,
+    run_steps: u32, // since the run started - hits only count after a short grace
+
+    // kinematic bodies the scene moved this frame - rapier reports no velocity for a
+    // position driven kinematic body after the step, so this is what "moving" means here
+    moved_kinematics: HashSet<RigidBodyHandle>,
+
+    // The speed of every dynamic body before this frame's steps. A hit is judged by how
+    // fast the hitter arrived, not by the impulse the solver applied: a resting contact's
+    // impulse grows with everything stacked on top, and released waiting bodies under any
+    // pile of props. Measured: g * dt = 0.16 per unit mass and step per stacked object.
+    pre_step_speed: HashMap<RigidBodyHandle, f32>,
 
     // nothing simulates outside a running mode, and leaving one has to put every
     // dynamic object back where the author placed it
@@ -180,7 +452,7 @@ pub struct PhysicsWorld
     // one, so a snapshot of the instances alone would leave those moves behind.
     edit_snapshot_nodes: HashMap<u32, Matrix4<f32>>,
 
-    entries: Vec<ColliderEntry>,
+    entries: Vec<BodyEntry>,
 
     // the built floor collider plus the height it was built at, so that a settings
     // change is noticed and the plane rebuilt
@@ -202,6 +474,7 @@ pub struct PhysicsWorld
 
     // never collidable, by node id - characters belong here, their skin re-syncs every frame
     excluded_nodes: HashSet<u32>,
+
 }
 
 impl PhysicsWorld
@@ -236,6 +509,9 @@ impl PhysicsWorld
 
             time_accumulator: 0.0,
             body_amount: 0,
+            run_steps: 0,
+            moved_kinematics: HashSet::new(),
+            pre_step_speed: HashMap::new(),
             running: true, // the editor turns this off, a game build just runs
             snapshot_pending: false,
             edit_snapshot: HashMap::new(),
@@ -419,6 +695,9 @@ impl PhysicsWorld
         self.refresh_leaf(handle);
     }
 
+    // An object pushed through the floor is lifted back onto it. Measured by its lowest
+    // part, not its origin - a pivot away from the geometry would read as below the floor
+    // while the object is sitting on it.
     fn recover_escaped_bodies(&mut self)
     {
         let Some(ground_y) = self.applied_ground_plane else { return; };
@@ -430,26 +709,34 @@ impl PhysicsWorld
                 continue;
             }
 
-            let Some(body_handle) = self.entries[index].body else { continue; };
+            let Some(body) = self.entries[index].body else { continue; };
 
-            // the lowest point, not the origin - a pivot away from the geometry would read
-            // as below the floor while the object is sitting on it
-            let Some(collider) = self.colliders.get(self.entries[index].handle) else { continue; };
-            let penetration = ground_y - collider.compute_aabb().mins.y;
+            let lowest = self.entries[index].parts.iter()
+                .filter_map(|part| self.colliders.get(part.handle))
+                .map(|collider| collider.compute_aabb().mins.y)
+                .fold(f32::INFINITY, f32::min);
+
+            if !lowest.is_finite()
+            {
+                continue;
+            }
+
+            let penetration = ground_y - lowest;
 
             if penetration <= GROUND_RECOVERY_MARGIN
             {
                 continue;
             }
 
-            let Some(body) = self.bodies.get_mut(body_handle) else { continue; };
+            if let Some(body) = self.bodies.get_mut(body)
+            {
+                let mut pose = *body.position();
+                pose.translation.y += penetration;
 
-            let mut pose = *body.position();
-            pose.translation.y += penetration;
-
-            body.set_position(pose, true);
-            body.set_linvel(Vector::ZERO, true);
-            body.set_angvel(Vector::ZERO, true);
+                body.set_position(pose, true);
+                body.set_linvel(Vector::ZERO, true);
+                body.set_angvel(Vector::ZERO, true);
+            }
         }
     }
 
@@ -458,9 +745,27 @@ impl PhysicsWorld
         self.applied_ground_plane
     }
 
+    // ********** lookups **********
+
     pub fn collider_amount(&self) -> usize
     {
-        self.entries.len()
+        self.entries.iter().map(|entry| entry.parts.len()).sum()
+    }
+
+    // objects whose meshes share one body
+    pub fn combined_amount(&self) -> usize
+    {
+        self.entries.iter().filter(|entry| entry.is_combined()).count()
+    }
+
+    pub fn body_amount(&self) -> usize
+    {
+        self.body_amount
+    }
+
+    pub fn has_dynamics(&self) -> bool
+    {
+        self.body_amount > 0
     }
 
     pub fn is_empty(&self) -> bool
@@ -468,24 +773,32 @@ impl PhysicsWorld
         self.entries.is_empty() && self.ground_plane.is_none()
     }
 
-    pub fn entries(&self) -> &Vec<ColliderEntry>
+    pub fn entries(&self) -> &Vec<BodyEntry>
     {
         &self.entries
     }
 
     pub fn has_node(&self, node_id: u32) -> bool
     {
-        self.entries.iter().any(|entry| entry.node_id == node_id)
+        self.entries.iter().any(|entry| entry.has_node(node_id))
     }
 
     pub fn has_instance(&self, node_id: u32, instance_id: u32) -> bool
     {
-        self.entries.iter().any(|entry| entry.node_id == node_id && entry.instance_id == instance_id)
+        self.entries.iter().any(|entry| entry.has_instance(node_id, instance_id))
+    }
+
+    // The body of the first object a node is part of, as its anchor or as one of its
+    // meshes. None for static geometry. This is where gameplay code gets hold of a body,
+    // to push it or to lock it.
+    pub fn body_of(&self, node_id: u32) -> Option<RigidBodyHandle>
+    {
+        self.entries.iter().find(|entry| entry.has_node(node_id)).and_then(|entry| entry.body)
     }
 
     // ********** transform helpers **********
 
-    // splits a node transform into a rigid pose (for the collider) and a scale (baked into the shape)
+    // splits a transform into a rigid pose (for the body or collider) and a scale (baked into the shape)
     fn split_transform(transform: &Matrix4<f32>) -> (Pose, Vector3<f32>)
     {
         let translation = extract_translation_from_transform(transform);
@@ -506,12 +819,80 @@ impl PhysicsWorld
         a.iter().zip(b.iter()).any(|(a, b)| (a - b).abs() > TRANSFORM_EPSILON)
     }
 
+    // Relative: at large coordinates a float step is already bigger than a fixed
+    // threshold, and every frame would then look like an author move.
+    fn differs_beyond_noise(a: &Matrix4<f32>, b: &Matrix4<f32>) -> bool
+    {
+        a.iter().zip(b.iter()).any(|(a, b)|
+        {
+            (a - b).abs() > AUTHOR_MOVE_EPSILON * (1.0 + a.abs().max(b.abs()))
+        })
+    }
+
     fn scale_differs(a: &Vector3<f32>, b: &Vector3<f32>) -> bool
     {
         (a.x - b.x).abs() > SCALE_EPSILON || (a.y - b.y).abs() > SCALE_EPSILON || (a.z - b.z).abs() > SCALE_EPSILON
     }
 
-    // reads the node mesh and bakes the scale into the vertices
+    fn translation_of(transform: &Matrix4<f32>) -> Vector
+    {
+        Vector::new(transform[(0, 3)], transform[(1, 3)], transform[(2, 3)])
+    }
+
+    // A solver pose as a local transform below the given frame, carrying the scale the
+    // transform component already has.
+    //
+    // A plain frame_inverse * world would be right in principle, but a parent with a
+    // non-uniform scale turns any rotation below it into shear, and the transform component
+    // holds a position, a rotation and a scale - nothing else. The shear would land in the
+    // scale and visibly stretch the object. So the local transform is assembled from parts
+    // that always decompose cleanly: the exact position, a pure rotation, and the scale
+    // that was there before. The solver never changes scale anyway.
+    fn local_from_pose(pose: &Pose, frame: &Matrix4<f32>, frame_inverse: &Matrix4<f32>, scale: &Vector3<f32>) -> Matrix4<f32>
+    {
+        let world = pose.to_mat4();
+        let world = Matrix4::new
+        (
+            world.x_axis.x, world.y_axis.x, world.z_axis.x, world.w_axis.x,
+            world.x_axis.y, world.y_axis.y, world.z_axis.y, world.w_axis.y,
+            world.x_axis.z, world.y_axis.z, world.z_axis.z, world.w_axis.z,
+            world.x_axis.w, world.y_axis.w, world.z_axis.w, world.w_axis.w
+        );
+
+        let position = extract_translation_from_transform(&world);
+        let position = frame_inverse * Point3::from(position).to_homogeneous();
+        let position = Vector3::new(position.x, position.y, position.z);
+
+        let rotation = extract_rotation_quat_from_transform(frame).inverse() * extract_rotation_quat_from_transform(&world);
+
+        Matrix4::new_translation(&position) * rotation.to_homogeneous() * Matrix4::new_nonuniform_scaling(scale)
+    }
+
+    // Recomputes the cached world matrix of every instance below a node, the node's own
+    // included, and marks them for the renderer. Only for a node the solver moved after
+    // the scene update ran - everything else is refreshed by Node::update.
+    fn refresh_instance_cache_below(node: &NodeItem)
+    {
+        let (instances, children) =
+        {
+            let node_read = node.read().unwrap();
+            (node_read.instances.get_ref().clone(), node_read.nodes.clone())
+        };
+
+        for instance in instances
+        {
+            let world_matrix = instance.read().unwrap().calculate_transform();
+            instance.write().unwrap().get_data_mut().get_mut().computed.world_matrix = world_matrix;
+        }
+
+        for child in &children
+        {
+            Self::refresh_instance_cache_below(child);
+        }
+    }
+
+    // ********** shapes **********
+
     // A dynamic body needs volume for mass and inertia, which a trimesh does not have.
     // Auto therefore means trimesh for static and a convex hull for everything else.
     fn effective_shape(body_type: PhysicsBodyType, shape: PhysicsShape) -> PhysicsShape
@@ -528,7 +909,6 @@ impl PhysicsWorld
         }
     }
 
-    // reads the node mesh and bakes the scale into the shape
     // A shape is rebuilt whenever the scale changes, so a plain warning would repeat for
     // the same object frame after frame and bury everything else in the console.
     fn warn_once(node_id: u32, message: String)
@@ -546,11 +926,6 @@ impl PhysicsWorld
         }
 
         console_warning!("{}", message);
-    }
-
-    fn translation_of(transform: &Matrix4<f32>) -> Vector
-    {
-        Vector::new(transform[(0, 3)], transform[(1, 3)], transform[(2, 3)])
     }
 
     // The geometry of one mesh, with a transform applied to it. Colliders cannot be scaled,
@@ -588,6 +963,7 @@ impl PhysicsWorld
         Self::effective_shape(physics.body_type, physics.shape)
     }
 
+    // reads the node mesh and bakes the scale into the shape
     fn build_shape(node: &NodeItem, scale: &Vector3<f32>) -> Option<SharedShape>
     {
         let shape_kind = Self::resolved_shape_kind(node);
@@ -608,7 +984,6 @@ impl PhysicsWorld
     // through here.
     fn shape_from_geometry(shape_kind: PhysicsShape, vertices: Vec<Vector>, indices: Vec<[u32; 3]>, name: &str, node_id: u32) -> Option<SharedShape>
     {
-
         if vertices.is_empty() || indices.is_empty()
         {
             return None;
@@ -680,7 +1055,299 @@ impl PhysicsWorld
 
     // ********** building **********
 
-    // Adds a static trimesh collider for one mesh instance.
+    // The node whose object a mesh belongs to: the first non-static node from the mesh
+    // upwards, the mesh itself included, provided that node combines its children. None
+    // means the mesh is an object of its own. A mesh that sets its own non-static body
+    // type therefore breaks out of a combined parent, like it already overrides the
+    // parent's settings.
+    fn compound_root(node: &NodeItem) -> Option<NodeItem>
+    {
+        let mut current = Some(node.clone());
+
+        while let Some(candidate) = current
+        {
+            let candidate_read = candidate.read().unwrap();
+            let physics = &candidate_read.settings.physics;
+
+            if physics.body_type != PhysicsBodyType::Static
+            {
+                return if physics.combine_children { Some(candidate.clone()) } else { None };
+            }
+
+            current = candidate_read.parent.as_ref().cloned();
+        }
+
+        None
+    }
+
+    // Where a part sits relative to its anchor, the anchor's world scale included: the
+    // body carries the rigid pose only, so the scale has to go into the parts. For an
+    // instance anchor the part is the anchor, so only the scale is left. Below a node the
+    // offset is built from the local transforms down to the part rather than from two
+    // world transforms - that is exact, and it only changes when the author edits
+    // something below the node, never while the solver moves the whole object.
+    fn part_local_transform(anchor: &Anchor, anchor_scale: &Vector3<f32>, node: &NodeItem, instance: &InstanceItemArc) -> Matrix4<f32>
+    {
+        let scaling = Matrix4::new_nonuniform_scaling(anchor_scale);
+
+        let Anchor::Node { node: root } = anchor else { return scaling; };
+        let root_id = root.read().unwrap().id;
+
+        let mut chain = Matrix4::<f32>::identity();
+        let mut current = Some(node.clone());
+
+        while let Some(candidate) = current
+        {
+            let candidate_read = candidate.read().unwrap();
+
+            if candidate_read.id == root_id
+            {
+                break;
+            }
+
+            let (local, _) = candidate_read.get_transform();
+            chain = local * chain;
+
+            current = candidate_read.parent.as_ref().cloned();
+        }
+
+        let instance_local = instance.read().unwrap().find_component::<Transformation>().map(|transformation|
+        {
+            component_downcast!(transformation, Transformation);
+            *transformation.get_transform()
+        }).unwrap_or_else(Matrix4::identity);
+
+        scaling * chain * instance_local
+    }
+
+    // A dynamic or kinematic body at the given pose, with the authored start velocities
+    // and the world's sleep settings. Counts towards the body amount.
+    fn insert_body(&mut self, physics: &PhysicsSettings, pose: Pose) -> RigidBodyHandle
+    {
+        let builder = match physics.body_type
+        {
+            // waits for a hit: fixed until then, the release makes it dynamic
+            PhysicsBodyType::Dynamic if physics.react_on_first_hit => RigidBodyBuilder::fixed(),
+            PhysicsBodyType::Dynamic => RigidBodyBuilder::dynamic()
+                .linvel(Vector::new(physics.linear_velocity.x, physics.linear_velocity.y, physics.linear_velocity.z))
+                .angvel(Vector::new(physics.angular_velocity.x, physics.angular_velocity.y, physics.angular_velocity.z)),
+            _ => RigidBodyBuilder::kinematic_position_based()
+        };
+
+        let handle = self.bodies.insert(builder.pose(pose).build());
+
+        let (linear, angular, time_until_sleep) = self.configured_sleep();
+
+        if let Some(body) = self.bodies.get_mut(handle)
+        {
+            let activation = body.activation_mut();
+
+            activation.normalized_linear_threshold = linear;
+            activation.angular_threshold = angular;
+            activation.time_until_sleep = time_until_sleep;
+        }
+
+        Self::refresh_body_settings(&mut self.bodies, handle, physics);
+
+        self.body_amount += 1;
+
+        handle
+    }
+
+    // The body level settings, the one place they are set - at creation and on every
+    // change in the inspector. Damping for now; axis locks belong here too.
+    fn refresh_body_settings(bodies: &mut RigidBodySet, handle: RigidBodyHandle, physics: &PhysicsSettings)
+    {
+        let Some(body) = bodies.get_mut(handle) else { return; };
+
+        let linear_damping = physics.linear_damping.max(0.0);
+        let angular_damping = physics.angular_damping.max(0.0);
+
+        if (body.linear_damping() - linear_damping).abs() > 0.0001
+        {
+            body.set_linear_damping(linear_damping);
+        }
+
+        if (body.angular_damping() - angular_damping).abs() > 0.0001
+        {
+            body.set_angular_damping(angular_damping);
+        }
+    }
+
+    // Mass and inertia from the shape, the centre moved to the anchor-space point the
+    // author set, expressed in the part's own frame. Every part gets that same point, so
+    // the mass weighted average rapier takes over the parts lands exactly there. Asking
+    // the user for an inertia tensor instead would help nobody.
+    fn part_mass_properties(shape: &dyn Shape, density: f32, center_of_mass: &Vector3<f32>, offset: &Pose) -> MassProperties
+    {
+        let mut mass_properties = shape.mass_properties(density);
+        mass_properties.local_com = offset.inverse_transform_point(Vector::new(center_of_mass.x, center_of_mass.y, center_of_mass.z));
+
+        mass_properties
+    }
+
+    // The collider for one part. Attached to a body it is placed by its offset, standing
+    // alone it needs the world pose.
+    fn part_collider(shape: SharedShape, offset: &Pose, anchor_pose: &Pose, physics: &PhysicsSettings, node_id: u32, instance_id: u32, attached: bool) -> Collider
+    {
+        let density = physics.density.max(0.001);
+
+        let mass_properties = if physics.center_of_mass_auto
+        {
+            None
+        }
+        else
+        {
+            Some(Self::part_mass_properties(&*shape, density, &physics.center_of_mass, offset))
+        };
+
+        let position = if attached { *offset } else { *anchor_pose * *offset };
+
+        // A waiting object is a fixed body, and a moving kinematic one has to be able to
+        // release it - rapier computes no contacts between kinematic and fixed bodies
+        // unless asked to. Free while the body is dynamic, the flag only matters by type.
+        let collision_types = if physics.body_type == PhysicsBodyType::Dynamic
+        {
+            ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED
+        }
+        else
+        {
+            ActiveCollisionTypes::default()
+        };
+
+        let collider = ColliderBuilder::new(shape)
+            .user_data(Self::pack_user_data(node_id, instance_id))
+            .density(density)
+            .friction(physics.friction.max(0.0))
+            .restitution(physics.restitution.clamp(0.0, 1.0))
+            .active_collision_types(collision_types)
+            .position(position);
+
+        match mass_properties
+        {
+            Some(mass_properties) => collider.mass_properties(mass_properties).build(),
+            None => collider.build()
+        }
+    }
+
+    fn pack_user_data(node_id: u32, instance_id: u32) -> u128
+    {
+        (node_id as u128) | ((instance_id as u128) << 32)
+    }
+
+    // Builds the colliders and, unless static, the body for one object. Returns false when
+    // not a single part had usable geometry - there is nothing to simulate then.
+    fn build_entry(&mut self, anchor: Anchor, parts: Vec<(NodeItem, InstanceItemArc)>) -> bool
+    {
+        let key = anchor.key();
+        let physics = anchor.physics();
+
+        let anchor_world = anchor.world_transform_live();
+        let (anchor_pose, anchor_scale) = Self::split_transform(&anchor_world);
+
+        let body = match physics.body_type
+        {
+            PhysicsBodyType::Static => None,
+            _ => Some(self.insert_body(&physics, anchor_pose))
+        };
+
+        let mut built: Vec<Part> = vec![];
+        let mut requested_parts: HashSet<(u32, u32)> = HashSet::new();
+
+        for (node, instance) in parts
+        {
+            let node_id = node.read().unwrap().id;
+            let instance_id = instance.read().unwrap().id;
+
+            requested_parts.insert((node_id, instance_id));
+
+            let local = Self::part_local_transform(&anchor, &anchor_scale, &node, &instance);
+            let (offset, scale) = Self::split_transform(&local);
+
+            let Some(shape) = Self::build_shape(&node, &scale) else { continue; };
+
+            let collider = Self::part_collider(shape, &offset, &anchor_pose, &physics, node_id, instance_id, body.is_some());
+
+            let handle = match body
+            {
+                Some(body) => self.colliders.insert_with_parent(collider, body, &mut self.bodies),
+                None => self.colliders.insert(collider)
+            };
+
+            self.refresh_leaf(handle);
+
+            built.push(Part
+            {
+                shape_kind: Self::resolved_shape_kind(&node),
+                node,
+                node_id,
+                instance,
+                instance_id,
+                handle,
+                local,
+                offset,
+                scale,
+            });
+        }
+
+        if built.is_empty()
+        {
+            if let Some(body) = body
+            {
+                self.remove_bodies(&vec![body]);
+            }
+
+            return false;
+        }
+
+        if physics.body_type == PhysicsBodyType::Dynamic
+        {
+            // A non-uniform scale above the written transform stretches whatever sits below
+            // it, and by a different amount for every orientation. A rigid body rotating
+            // under one therefore changes shape as it turns, which no write back can undo.
+            let frame_scale = extract_scale_from_transform(&anchor.frame());
+            let largest = frame_scale.x.max(frame_scale.y).max(frame_scale.z);
+            let smallest = frame_scale.x.min(frame_scale.y).min(frame_scale.z);
+
+            if smallest > 0.0 && largest / smallest > NON_UNIFORM_SCALE_LIMIT
+            {
+                Self::warn_once(key.0, format!("physics: '{}' is dynamic under a non-uniform scale of {:.2}/{:.2}/{:.2} - it will visibly stretch as it rotates. Bake the scale into the mesh to fix it", anchor.name(), frame_scale.x, frame_scale.y, frame_scale.z));
+            }
+
+            anchor.ensure_transformation();
+
+            // created while running, so it has to be remembered too
+            if self.running && !self.snapshot_pending
+            {
+                for part in &built
+                {
+                    self.snapshot_instance(part.node_id, part.instance_id, &part.instance);
+                    self.snapshot_node_chain(&part.node);
+                }
+            }
+        }
+
+        self.entries.push(BodyEntry
+        {
+            anchor,
+            key,
+            body,
+            body_type: physics.body_type,
+            reacts_on_hit: physics.body_type == PhysicsBodyType::Dynamic && physics.react_on_first_hit,
+            waiting: physics.body_type == PhysicsBodyType::Dynamic && physics.react_on_first_hit,
+            parts: built,
+            requested_parts,
+            transform: anchor_world,
+            scale: anchor_scale,
+            applied_density: physics.density.max(0.001),
+            applied_center_of_mass: if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) },
+        });
+
+        true
+    }
+
+    // Adds one mesh instance as an object of its own, unless it is already part of
+    // something. Returns its collider handle.
     pub fn add_instance(&mut self, node: NodeItem, instance: InstanceItemArc) -> Option<ColliderHandle>
     {
         let node_id = node.read().unwrap().id;
@@ -691,141 +1358,18 @@ impl PhysicsWorld
             return None;
         }
 
-        // computed directly, a brand new instance has no cached transform yet
-        let transform = instance.read().unwrap().calculate_transform();
-        let (pose, scale) = Self::split_transform(&transform);
+        let anchor = Anchor::Instance { node: node.clone(), instance: instance.clone() };
 
-        let shape = Self::build_shape(&node, &scale)?;
-
-        let physics = node.read().unwrap().resolve_physics();
-
-        // Keep the mass and inertia the shape computes, only move the centre of mass.
-        // Asking the user for an inertia tensor instead would help nobody.
-        let mass_properties = if physics.center_of_mass_auto
+        if !self.build_entry(anchor, vec![(node, instance)])
         {
-            None
-        }
-        else
-        {
-            let mut mprops = shape.mass_properties(physics.density.max(0.001));
-            mprops.local_com = Vector::new(physics.center_of_mass.x, physics.center_of_mass.y, physics.center_of_mass.z);
-
-            Some(mprops)
-        };
-
-        let collider = ColliderBuilder::new(shape)
-            .user_data(Self::pack_user_data(node_id, instance_id))
-            .density(physics.density.max(0.001))
-            .friction(physics.friction.max(0.0))
-            .restitution(physics.restitution.clamp(0.0, 1.0));
-
-        let collider = match mass_properties
-        {
-            Some(mass_properties) => collider.mass_properties(mass_properties),
-            None => collider
-        };
-
-        // static objects are standalone colliders, everything else needs a body to be moved
-        let (handle, body) = match physics.body_type
-        {
-            PhysicsBodyType::Static =>
-            {
-                (self.colliders.insert(collider.position(pose).build()), None)
-            }
-            body_type =>
-            {
-                let builder = match body_type
-                {
-                    PhysicsBodyType::Dynamic => RigidBodyBuilder::dynamic()
-                        .linvel(Vector::new(physics.linear_velocity.x, physics.linear_velocity.y, physics.linear_velocity.z))
-                        .angvel(Vector::new(physics.angular_velocity.x, physics.angular_velocity.y, physics.angular_velocity.z))
-                        .linear_damping(physics.linear_damping.max(0.0))
-                        .angular_damping(physics.angular_damping.max(0.0)),
-                    _ => RigidBodyBuilder::kinematic_position_based()
-                };
-
-                let body = self.bodies.insert(builder.pose(pose).build());
-
-                let (linear, angular, time_until_sleep) = self.configured_sleep();
-
-                if let Some(body) = self.bodies.get_mut(body)
-                {
-                    let activation = body.activation_mut();
-
-                    activation.normalized_linear_threshold = linear;
-                    activation.angular_threshold = angular;
-                    activation.time_until_sleep = time_until_sleep;
-                }
-                let handle = self.colliders.insert_with_parent(collider.build(), body, &mut self.bodies);
-
-                self.body_amount += 1;
-
-                (handle, Some(body))
-            }
-        };
-
-        self.refresh_leaf(handle);
-
-        // A non-uniform scale on the node stretches whatever sits below it, and by a
-        // different amount for every orientation. A rigid body rotating under one therefore
-        // changes shape as it turns, which no write back can undo - the scale is applied
-        // after the instance transform, so the effect is in the scene graph itself.
-        if physics.body_type == PhysicsBodyType::Dynamic
-        {
-            let node_scale = extract_scale_from_transform(&node.read().unwrap().get_full_transform());
-            let largest = node_scale.x.max(node_scale.y).max(node_scale.z);
-            let smallest = node_scale.x.min(node_scale.y).min(node_scale.z);
-
-            if smallest > 0.0 && largest / smallest > NON_UNIFORM_SCALE_LIMIT
-            {
-                let name = node.read().unwrap().name.clone();
-                Self::warn_once(node_id, format!("physics: '{}' is dynamic under a non-uniform scale of {:.2}/{:.2}/{:.2} - it will visibly stretch as it rotates. Bake the scale into the mesh to fix it", name, node_scale.x, node_scale.y, node_scale.z));
-            }
+            return None;
         }
 
-        // A default instance carries no transformation at all, and the solver result has
-        // nowhere to go without one. An identity transform changes nothing visually.
-        if physics.body_type == PhysicsBodyType::Dynamic && instance.read().unwrap().find_component::<Transformation>().is_none()
-        {
-            let transformation = Transformation::identity("Physics Transformation");
-            instance.write().unwrap().add_component(std::sync::Arc::new(std::sync::RwLock::new(Box::new(transformation))));
-        }
-
-        // created while running, so it has to be remembered too
-        if self.running && !self.snapshot_pending && physics.body_type == PhysicsBodyType::Dynamic
-        {
-            let local = instance.read().unwrap().find_component::<Transformation>().map(|transformation|
-            {
-                component_downcast!(transformation, Transformation);
-                *transformation.get_transform()
-            });
-
-            if let Some(local) = local
-            {
-                self.edit_snapshot.insert((node_id, instance_id), local);
-            }
-        }
-
-        self.entries.push(ColliderEntry
-        {
-            node,
-            node_id,
-            instance,
-            instance_id,
-            handle,
-            body,
-            body_type: physics.body_type,
-            shape_kind: Self::effective_shape(physics.body_type, physics.shape),
-            transform,
-            scale,
-            applied_density: physics.density.max(0.001),
-            applied_center_of_mass: if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) },
-        });
-
-        Some(handle)
+        self.entries.last().and_then(|entry| entry.parts.first()).map(|part| part.handle)
     }
 
-    // Adds every collidable instance of a node. Returns how many colliders were created.
+    // Adds every collidable instance of a node, each as an object of its own. Returns how
+    // many colliders were created.
     pub fn add_node(&mut self, node: NodeItem) -> usize
     {
         let instances: Vec<InstanceItemArc> = node.read().unwrap().instances.get_ref().clone();
@@ -848,282 +1392,46 @@ impl PhysicsWorld
         added
     }
 
-    fn pack_user_data(node_id: u32, instance_id: u32) -> u128
-    {
-        (node_id as u128) | ((instance_id as u128) << 32)
-    }
-
-    // Removes every collider belonging to a node, across all its instances.
+    // Removes every object the node is part of, as its anchor or as one of its meshes. A
+    // combined object goes as a whole - the next scan builds it again without the node.
     pub fn remove_node(&mut self, node_id: u32) -> bool
     {
-        let handles: Vec<ColliderHandle> = self.entries.iter()
-            .filter(|entry| entry.node_id == node_id)
-            .map(|entry| entry.handle)
-            .collect();
+        let mut removed = false;
 
-        if handles.is_empty()
+        for index in (0..self.entries.len()).rev()
         {
-            return false;
-        }
-
-        let bodies: Vec<RigidBodyHandle> = self.entries.iter()
-            .filter(|entry| entry.node_id == node_id)
-            .filter_map(|entry| entry.body)
-            .collect();
-
-        self.entries.retain(|entry| entry.node_id != node_id);
-        self.remove_bodies(&bodies);
-
-        for handle in handles
-        {
-            self.remove_collider(handle);
+            if self.entries[index].has_node(node_id)
+            {
+                self.remove_entry_at(index);
+                removed = true;
+            }
         }
 
         // the arena slots can be reused, so rebuild rather than patch single leaves
-        self.rebuild_bvh();
-
-        true
-    }
-
-    // Drops every collider and rebuilds from the given nodes. Returns the collider count.
-    pub fn build_from_nodes(&mut self, nodes: &Vec<NodeItem>) -> usize
-    {
-        self.clear();
-        self.scan_nodes(nodes);
-
-        self.entries.len()
-    }
-
-    // both checks walk up the parent chain, so an object root disables everything below
-    fn is_collidable(node: &NodeItem) -> bool
-    {
-        let node = node.read().unwrap();
-
-        node.has_collision() && !node.is_engine_internal()
-    }
-
-    // The per instance collision flag the editor already exposes.
-    fn is_collidable_instance(instance: &InstanceItemArc) -> bool
-    {
-        instance.read().unwrap().get_data().collision
-    }
-
-    // Reconciles the collider set with the scene. Returns (added, removed).
-    pub fn scan_nodes(&mut self, nodes: &Vec<NodeItem>) -> (usize, usize)
-    {
-        let all_nodes = Scene::list_all_child_nodes_with_mesh(nodes);
-
-        // Anything whose body type or shape no longer matches what was built has to go
-        // first, otherwise the add pass below would see it as already present and skip it.
-        let rebuilt = self.drop_outdated_entries();
-
-        // everything that should have a collider right now, as (node id, instance id)
-        let mut wanted: HashSet<(u32, u32)> = HashSet::new();
-        let mut added = 0;
-
-        for node in &all_nodes
+        if removed
         {
-            if !Self::is_collidable(node)
-            {
-                continue;
-            }
-
-            let node_id = node.read().unwrap().id;
-            let instances: Vec<InstanceItemArc> = node.read().unwrap().instances.get_ref().clone();
-
-            for instance in instances
-            {
-                if !Self::is_collidable_instance(&instance)
-                {
-                    continue;
-                }
-
-                let instance_id = instance.read().unwrap().id;
-                wanted.insert((node_id, instance_id));
-
-                if self.add_instance(node.clone(), instance).is_some()
-                {
-                    added += 1;
-                }
-                else if let Some(index) = self.entries.iter().position(|entry| entry.node_id == node_id && entry.instance_id == instance_id)
-                {
-                    self.refresh_collider_settings(index);
-                }
-            }
-        }
-
-        // deleted instances, collision turned off, or a node that is no longer collidable
-        let stale: Vec<ColliderHandle> = self.entries.iter()
-            .filter(|entry| !wanted.contains(&(entry.node_id, entry.instance_id)))
-            .map(|entry| entry.handle)
-            .collect();
-
-        let removed = stale.len() + rebuilt;
-
-        if !stale.is_empty()
-        {
-            let bodies: Vec<RigidBodyHandle> = self.entries.iter()
-                .filter(|entry| !wanted.contains(&(entry.node_id, entry.instance_id)))
-                .filter_map(|entry| entry.body)
-                .collect();
-
-            self.entries.retain(|entry| wanted.contains(&(entry.node_id, entry.instance_id)));
-            self.remove_bodies(&bodies);
-
-            for handle in stale
-            {
-                self.remove_collider(handle);
-            }
-
             self.rebuild_bvh();
         }
 
-        (added, removed)
+        removed
     }
 
-    // True on the first call, then every NODE_SCAN_INTERVAL_FRAMES calls.
-    pub fn scan_due(&mut self) -> bool
+    // Drops an object. A body takes its colliders with it, standalone ones go one by one.
+    // The bvh is left to the caller, which usually has more to remove.
+    fn remove_entry_at(&mut self, index: usize)
     {
-        if self.scan_countdown > 0
+        let entry = self.entries.remove(index);
+
+        match entry.body
         {
-            self.scan_countdown -= 1;
-            return false;
-        }
-
-        // this call is the due one, so only the remaining frames of the interval are counted
-        self.scan_countdown = NODE_SCAN_INTERVAL_FRAMES.saturating_sub(1);
-
-        true
-    }
-
-    // Drops colliders whose settings changed in a way the shape or the body type depends on.
-    // Switching a crate to dynamic in the editor has to actually rebuild it.
-    fn drop_outdated_entries(&mut self) -> usize
-    {
-        let outdated: Vec<usize> = self.entries.iter().enumerate().filter_map(|(index, entry)|
-        {
-            let physics = entry.node.read().unwrap().resolve_physics();
-            let shape_kind = Self::effective_shape(physics.body_type, physics.shape);
-
-            if physics.body_type != entry.body_type || shape_kind != entry.shape_kind
+            Some(body) => self.remove_bodies(&vec![body]),
+            None =>
             {
-                Some(index)
-            }
-            else
-            {
-                None
-            }
-        }).collect();
-
-        if outdated.is_empty()
-        {
-            return 0;
-        }
-
-        let handles: Vec<ColliderHandle> = outdated.iter().map(|index| self.entries[*index].handle).collect();
-        let bodies: Vec<RigidBodyHandle> = outdated.iter().filter_map(|index| self.entries[*index].body).collect();
-
-        // back to front, the indices would shift otherwise
-        for index in outdated.iter().rev()
-        {
-            self.entries.remove(*index);
-        }
-
-        self.remove_bodies(&bodies);
-
-        for handle in handles.iter()
-        {
-            self.remove_collider(*handle);
-        }
-
-        self.rebuild_bvh();
-
-        handles.len()
-    }
-
-    // Friction, restitution and density can change without rebuilding anything.
-    // Everything the inspector can change on a collider that does not need a new shape.
-    // Body type and shape are handled by drop_outdated_entries instead, those do.
-    fn refresh_collider_settings(&mut self, index: usize)
-    {
-        let physics = self.entries[index].node.read().unwrap().resolve_physics();
-        let handle = self.entries[index].handle;
-
-        let density = physics.density.max(0.001);
-        let center_of_mass = if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) };
-
-        let mass_changed =
-            (self.entries[index].applied_density - density).abs() > DENSITY_EPSILON
-            || !Self::center_of_mass_matches(&self.entries[index].applied_center_of_mass, &center_of_mass);
-
-        let Some(collider) = self.colliders.get_mut(handle) else { return; };
-
-        if (collider.friction() - physics.friction).abs() > 0.0001
-        {
-            collider.set_friction(physics.friction.max(0.0));
-        }
-
-        if (collider.restitution() - physics.restitution).abs() > 0.0001
-        {
-            collider.set_restitution(physics.restitution.clamp(0.0, 1.0));
-        }
-
-        if mass_changed
-        {
-            match center_of_mass
-            {
-                // the shape works out the centre itself, plain density is enough
-                None => collider.set_density(density),
-
-                // keep the mass and inertia the shape computes, only move the centre
-                Some(center_of_mass) =>
+                for part in &entry.parts
                 {
-                    let mut mass_properties = collider.shape().mass_properties(density);
-                    mass_properties.local_com = Vector::new(center_of_mass.x, center_of_mass.y, center_of_mass.z);
-
-                    collider.set_mass_properties(mass_properties);
+                    self.remove_collider(part.handle);
                 }
             }
-
-            self.entries[index].applied_density = density;
-            self.entries[index].applied_center_of_mass = center_of_mass;
-        }
-
-        // damping sits on the body, not on the collider
-        let Some(body_handle) = self.entries[index].body else { return; };
-        let Some(body) = self.bodies.get_mut(body_handle) else { return; };
-
-        let linear_damping = physics.linear_damping.max(0.0);
-        let angular_damping = physics.angular_damping.max(0.0);
-
-        if (body.linear_damping() - linear_damping).abs() > 0.0001
-        {
-            body.set_linear_damping(linear_damping);
-        }
-
-        if (body.angular_damping() - angular_damping).abs() > 0.0001
-        {
-            body.set_angular_damping(angular_damping);
-        }
-    }
-
-    fn center_of_mass_matches(a: &Option<Vector3<f32>>, b: &Option<Vector3<f32>>) -> bool
-    {
-        match (a, b)
-        {
-            (None, None) => true,
-            (Some(a), Some(b)) => (a - b).norm() <= CENTER_OF_MASS_EPSILON,
-            _ => false
-        }
-    }
-
-    // Every run starts from the authored values, even when the recurring node scan that
-    // would otherwise pick them up is turned off.
-    fn refresh_all_collider_settings(&mut self)
-    {
-        for index in 0..self.entries.len()
-        {
-            self.refresh_collider_settings(index);
         }
     }
 
@@ -1141,15 +1449,492 @@ impl PhysicsWorld
         }
     }
 
-    pub fn body_amount(&self) -> usize
+    // Drops every collider and rebuilds from the given nodes. Returns the collider count.
+    pub fn build_from_nodes(&mut self, nodes: &Vec<NodeItem>) -> usize
     {
-        self.body_amount
+        self.clear();
+        self.scan_nodes(nodes);
+
+        self.collider_amount()
     }
 
-    pub fn has_dynamics(&self) -> bool
+    // both checks walk up the parent chain, so an object root disables everything below
+    fn is_collidable(node: &NodeItem) -> bool
     {
-        self.body_amount > 0
+        let node = node.read().unwrap();
+
+        node.has_collision() && !node.is_engine_internal()
     }
+
+    // The per instance collision flag the editor already exposes.
+    fn is_collidable_instance(instance: &InstanceItemArc) -> bool
+    {
+        instance.read().unwrap().get_data().collision
+    }
+
+    // ********** scanning **********
+
+    // Reconciles the objects with the scene. Returns (added, removed) colliders.
+    pub fn scan_nodes(&mut self, nodes: &Vec<NodeItem>) -> (usize, usize)
+    {
+        let all_nodes = Scene::list_all_child_nodes_with_mesh(nodes);
+
+        // everything that should exist right now, by anchor: a mesh below a combining node
+        // joins that node's object, everything else is an object of its own
+        let mut requests: Vec<Request> = vec![];
+
+        for node in &all_nodes
+        {
+            if !Self::is_collidable(node)
+            {
+                continue;
+            }
+
+            let node_id = node.read().unwrap().id;
+
+            // a character is never part of anything
+            if self.is_excluded(node_id)
+            {
+                continue;
+            }
+
+            let root = Self::compound_root(node);
+            let instances: Vec<InstanceItemArc> = node.read().unwrap().instances.get_ref().clone();
+
+            for instance in instances
+            {
+                if !Self::is_collidable_instance(&instance)
+                {
+                    continue;
+                }
+
+                match &root
+                {
+                    Some(root) =>
+                    {
+                        let key = (root.read().unwrap().id, None);
+
+                        match requests.iter_mut().find(|request| request.key == key)
+                        {
+                            Some(request) => request.parts.push((node.clone(), instance)),
+                            None => requests.push(Request { anchor: Anchor::Node { node: root.clone() }, key, parts: vec![(node.clone(), instance)] }),
+                        }
+                    }
+                    None =>
+                    {
+                        let key = (node_id, Some(instance.read().unwrap().id));
+                        let anchor = Anchor::Instance { node: node.clone(), instance: instance.clone() };
+
+                        requests.push(Request { anchor, key, parts: vec![(node.clone(), instance)] });
+                    }
+                }
+            }
+        }
+
+        self.reconcile(requests)
+    }
+
+    // True on the first call, then every NODE_SCAN_INTERVAL_FRAMES calls.
+    pub fn scan_due(&mut self) -> bool
+    {
+        if self.scan_countdown > 0
+        {
+            self.scan_countdown -= 1;
+            return false;
+        }
+
+        // this call is the due one, so only the remaining frames of the interval are counted
+        self.scan_countdown = NODE_SCAN_INTERVAL_FRAMES.saturating_sub(1);
+
+        true
+    }
+
+    // Drops what is gone or built differently from what the scene asks for now, adjusts
+    // the rest in place, and builds what is missing. An object is rebuilt when its parts,
+    // its body type or its shape kind changed - switching a crate to dynamic in the editor
+    // has to actually rebuild it, and a body that lost a collider would otherwise keep the
+    // mass of the missing part. Returns (added, removed) colliders.
+    fn reconcile(&mut self, requests: Vec<Request>) -> (usize, usize)
+    {
+        let mut removed = 0;
+        let mut kept: HashSet<AnchorKey> = HashSet::new();
+
+        // Back to front, a removal shifts the indices. And removal before building: a mesh
+        // that just joined a combined object must not exist twice.
+        for index in (0..self.entries.len()).rev()
+        {
+            let key = self.entries[index].key;
+
+            let outdated = match requests.iter().find(|request| request.key == key)
+            {
+                None => true,
+                Some(request) => self.entry_outdated(index, request),
+            };
+
+            if outdated
+            {
+                removed += self.entries[index].parts.len();
+                self.remove_entry_at(index);
+            }
+            else
+            {
+                kept.insert(key);
+                self.refresh_entry_settings(index);
+            }
+        }
+
+        let mut added = 0;
+
+        for request in requests
+        {
+            if kept.contains(&request.key)
+            {
+                continue;
+            }
+
+            if self.build_entry(request.anchor, request.parts)
+            {
+                added += self.entries.last().map(|entry| entry.parts.len()).unwrap_or(0);
+            }
+        }
+
+        if removed > 0 || added > 0
+        {
+            self.rebuild_bvh();
+        }
+
+        (added, removed)
+    }
+
+    fn entry_outdated(&self, index: usize, request: &Request) -> bool
+    {
+        let entry = &self.entries[index];
+
+        if entry.anchor.physics().body_type != entry.body_type
+        {
+            return true;
+        }
+
+        let requested: HashSet<(u32, u32)> = request.parts.iter()
+            .map(|(node, instance)| (node.read().unwrap().id, instance.read().unwrap().id))
+            .collect();
+
+        if requested != entry.requested_parts
+        {
+            return true;
+        }
+
+        // the shape kind is resolved per part, like everything else
+        entry.parts.iter().any(|part| part.shape_kind != Self::resolved_shape_kind(&part.node))
+    }
+
+    // Everything the inspector can change on an object that does not need a new shape:
+    // friction, restitution, mass and the body settings. Body type and shape are handled
+    // by the reconcile instead, those do.
+    fn refresh_entry_settings(&mut self, index: usize)
+    {
+        let physics = self.entries[index].anchor.physics();
+
+        let density = physics.density.max(0.001);
+        let center_of_mass = if physics.center_of_mass_auto { None } else { Some(physics.center_of_mass) };
+
+        let mass_changed =
+            (self.entries[index].applied_density - density).abs() > DENSITY_EPSILON
+            || !Self::center_of_mass_matches(&self.entries[index].applied_center_of_mass, &center_of_mass);
+
+        for part_index in 0..self.entries[index].parts.len()
+        {
+            let handle = self.entries[index].parts[part_index].handle;
+            let offset = self.entries[index].parts[part_index].offset;
+
+            let Some(collider) = self.colliders.get_mut(handle) else { continue; };
+
+            if (collider.friction() - physics.friction).abs() > 0.0001
+            {
+                collider.set_friction(physics.friction.max(0.0));
+            }
+
+            if (collider.restitution() - physics.restitution).abs() > 0.0001
+            {
+                collider.set_restitution(physics.restitution.clamp(0.0, 1.0));
+            }
+
+            if mass_changed
+            {
+                match center_of_mass
+                {
+                    // the shape works out the centre itself, plain density is enough
+                    None => collider.set_density(density),
+
+                    // keep the mass and inertia the shape computes, only move the centre
+                    Some(center_of_mass) =>
+                    {
+                        let mass_properties = Self::part_mass_properties(collider.shape(), density, &center_of_mass, &offset);
+                        collider.set_mass_properties(mass_properties);
+                    }
+                }
+            }
+        }
+
+        if mass_changed
+        {
+            self.entries[index].applied_density = density;
+            self.entries[index].applied_center_of_mass = center_of_mass;
+        }
+
+        if let Some(body) = self.entries[index].body
+        {
+            Self::refresh_body_settings(&mut self.bodies, body, &physics);
+        }
+
+        let reacts_on_hit = physics.body_type == PhysicsBodyType::Dynamic && physics.react_on_first_hit;
+
+        if reacts_on_hit != self.entries[index].reacts_on_hit
+        {
+            self.entries[index].reacts_on_hit = reacts_on_hit;
+            self.set_waiting(index, reacts_on_hit);
+        }
+    }
+
+    fn center_of_mass_matches(a: &Option<Vector3<f32>>, b: &Option<Vector3<f32>>) -> bool
+    {
+        match (a, b)
+        {
+            (None, None) => true,
+            (Some(a), Some(b)) => (a - b).norm() <= CENTER_OF_MASS_EPSILON,
+            _ => false
+        }
+    }
+
+    // Every run starts from the authored values, even when the recurring node scan that
+    // would otherwise pick them up is turned off.
+    fn refresh_all_entry_settings(&mut self)
+    {
+        for index in 0..self.entries.len()
+        {
+            self.refresh_entry_settings(index);
+        }
+    }
+
+    // ********** waiting for a hit **********
+
+    // An object that reacts on its first hit is built as a fixed body and stays one until
+    // something releases it: a dynamic body that arrives faster than the hit speed, a
+    // kinematic body the scene moves into it, the character walking into it, or a waiting
+    // neighbour it touches being released. What it rests on from the start therefore does
+    // not count - a fixed body gets no contacts with static geometry or with other waiting
+    // objects, and a dynamic object resting on it has no speed to count as a hit.
+
+    fn set_waiting(&mut self, index: usize, waiting: bool)
+    {
+        if self.entries[index].body_type != PhysicsBodyType::Dynamic
+        {
+            return;
+        }
+
+        self.entries[index].waiting = waiting;
+
+        let Some(handle) = self.entries[index].body else { return; };
+        let Some(body) = self.bodies.get_mut(handle) else { return; };
+
+        let body_type = if waiting { RigidBodyType::Fixed } else { RigidBodyType::Dynamic };
+
+        if body.body_type() == body_type
+        {
+            return;
+        }
+
+        body.set_body_type(body_type, true);
+        body.set_linvel(Vector::ZERO, true);
+        body.set_angvel(Vector::ZERO, true);
+
+        if !waiting
+        {
+            body.recompute_mass_properties_from_colliders(&self.colliders);
+        }
+    }
+
+    // Releases an object and everything waiting that touches it, and everything touching
+    // those. A hit on one shard of a fractured object brings the whole thing down that way,
+    // instead of leaving the rest hanging in the air on a piece that is no longer there.
+    fn release_entry(&mut self, index: usize)
+    {
+        if !self.entries[index].waiting
+        {
+            return;
+        }
+
+        // the colliders of everything waiting, with a cheap bound each
+        let waiting: Vec<Vec<(ColliderHandle, Aabb)>> = self.entries.iter().map(|entry|
+        {
+            if !entry.waiting
+            {
+                return vec![];
+            }
+
+            entry.parts.iter()
+                .filter_map(|part| self.colliders.get(part.handle).map(|collider| (part.handle, collider.compute_aabb())))
+                .collect()
+        }).collect();
+
+        let mut pending = vec![index];
+
+        while let Some(index) = pending.pop()
+        {
+            if !self.entries[index].waiting
+            {
+                continue;
+            }
+
+            self.set_waiting(index, false);
+
+            for other in 0..self.entries.len()
+            {
+                if other == index || !self.entries[other].waiting || pending.contains(&other)
+                {
+                    continue;
+                }
+
+                if self.colliders_touch(&waiting[index], &waiting[other])
+                {
+                    pending.push(other);
+                }
+            }
+        }
+    }
+
+    // Exact where it matters: dynamic objects are convex hulls or primitives, which parry
+    // measures the distance between directly. Anything it cannot measure counts as touching
+    // once the bounds overlap.
+    fn colliders_touch(&self, a: &Vec<(ColliderHandle, Aabb)>, b: &Vec<(ColliderHandle, Aabb)>) -> bool
+    {
+        for (handle_a, aabb_a) in a
+        {
+            let aabb_a = aabb_a.loosened(RELEASE_TOUCH_DISTANCE);
+
+            for (handle_b, aabb_b) in b
+            {
+                if !aabb_a.intersects(aabb_b)
+                {
+                    continue;
+                }
+
+                let (Some(collider_a), Some(collider_b)) = (self.colliders.get(*handle_a), self.colliders.get(*handle_b)) else { continue; };
+
+                match parry3d::query::distance(collider_a.position(), collider_a.shape(), collider_b.position(), collider_b.shape())
+                {
+                    Ok(distance) => if distance <= RELEASE_TOUCH_DISTANCE { return true; },
+                    Err(_) => return true,
+                }
+            }
+        }
+
+        false
+    }
+
+    fn record_speeds(&mut self)
+    {
+        self.pre_step_speed.clear();
+
+        for entry in &self.entries
+        {
+            if entry.body_type != PhysicsBodyType::Dynamic || entry.waiting
+            {
+                continue;
+            }
+
+            let Some(handle) = entry.body else { continue; };
+            let Some(body) = self.bodies.get(handle) else { continue; };
+
+            self.pre_step_speed.insert(handle, body.linvel().length());
+        }
+    }
+
+    // Hits the solver saw: a contact with a dynamic body that arrived faster than the hit
+    // speed, or with a kinematic body the scene moved this frame - a fixed body does not
+    // get out of a platform's way by itself.
+    fn release_hit_bodies(&mut self)
+    {
+        if self.run_steps < HIT_GRACE_STEPS
+        {
+            return;
+        }
+
+        let hit_speed = self.settings.hit_speed.max(0.0);
+        let mut hit: Vec<usize> = vec![];
+
+        for index in 0..self.entries.len()
+        {
+            if !self.entries[index].waiting
+            {
+                continue;
+            }
+
+            let was_hit = self.entries[index].parts.iter().any(|part|
+            {
+                self.narrow_phase.contact_pairs_with(part.handle).any(|pair|
+                {
+                    if !pair.has_any_active_contact()
+                    {
+                        return false;
+                    }
+
+                    let other = if pair.collider1 == part.handle { pair.collider2 } else { pair.collider1 };
+
+                    let Some(other_body) = self.colliders.get(other).and_then(|collider| collider.parent()) else { return false; };
+                    let Some(body) = self.bodies.get(other_body) else { return false; };
+
+                    if body.is_dynamic()
+                    {
+                        self.pre_step_speed.get(&other_body).copied().unwrap_or(0.0) > hit_speed
+                    }
+                    else if body.is_kinematic()
+                    {
+                        self.moved_kinematics.contains(&other_body)
+                    }
+                    else
+                    {
+                        false
+                    }
+                })
+            });
+
+            if was_hit
+            {
+                hit.push(index);
+            }
+        }
+
+        for index in hit
+        {
+            self.release_entry(index);
+        }
+    }
+
+    // A hit the narrow phase never sees: the character is a shape cast, not a body.
+    pub fn hit_collider(&mut self, handle: ColliderHandle)
+    {
+        let Some(index) = self.entries.iter().position(|entry| entry.waiting && entry.parts.iter().any(|part| part.handle == handle)) else { return; };
+
+        self.release_entry(index);
+    }
+
+    // Every run starts as authored: what reacts on a hit waits, everything else runs.
+    fn reset_waiting(&mut self)
+    {
+        for index in 0..self.entries.len()
+        {
+            let waiting = self.entries[index].reacts_on_hit;
+            self.set_waiting(index, waiting);
+        }
+    }
+
+    pub fn waiting_amount(&self) -> usize
+    {
+        self.entries.iter().filter(|entry| entry.waiting).count()
+    }
+
+    // ********** running **********
 
     pub fn is_running(&self) -> bool
     {
@@ -1167,6 +1952,7 @@ impl PhysicsWorld
 
         self.running = running;
         self.time_accumulator = 0.0;
+        self.run_steps = 0;
 
         if running
         {
@@ -1181,14 +1967,25 @@ impl PhysicsWorld
         }
     }
 
-    fn instance_local_transform(entry: &ColliderEntry) -> Option<Matrix4<f32>>
+    // Every run starts with the authored velocity, so shooting an object in is repeatable.
+    fn apply_start_velocities(&mut self)
     {
-        let instance = entry.instance.read().unwrap();
-        let transformation = instance.find_component::<Transformation>()?;
+        for index in 0..self.entries.len()
+        {
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            {
+                continue;
+            }
 
-        component_downcast!(transformation, Transformation);
+            let Some(body) = self.entries[index].body else { continue; };
+            let physics = self.entries[index].anchor.physics();
 
-        Some(*transformation.get_transform())
+            if let Some(body) = self.bodies.get_mut(body)
+            {
+                body.set_linvel(Vector::new(physics.linear_velocity.x, physics.linear_velocity.y, physics.linear_velocity.z), true);
+                body.set_angvel(Vector::new(physics.angular_velocity.x, physics.angular_velocity.y, physics.angular_velocity.z), true);
+            }
+        }
     }
 
     fn node_local_transform(node: &NodeItem) -> Option<Matrix4<f32>>
@@ -1201,24 +1998,36 @@ impl PhysicsWorld
         Some(*transformation.get_transform())
     }
 
-    // Every run starts with the authored velocity, so shooting an object in is repeatable.
-    fn apply_start_velocities(&mut self)
+    fn snapshot_instance(&mut self, node_id: u32, instance_id: u32, instance: &InstanceItemArc)
     {
-        for index in 0..self.entries.len()
+        let local = instance.read().unwrap().find_component::<Transformation>().map(|transformation|
         {
-            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            component_downcast!(transformation, Transformation);
+            *transformation.get_transform()
+        });
+
+        if let Some(local) = local
+        {
+            self.edit_snapshot.insert((node_id, instance_id), local);
+        }
+    }
+
+    // The whole chain up to the scene root: the gizmo may have been on any of them, an
+    // object root with the mesh on a child is the usual shape of a loaded asset.
+    fn snapshot_node_chain(&mut self, node: &NodeItem)
+    {
+        let mut current = Some(node.clone());
+
+        while let Some(node) = current
+        {
+            let id = node.read().unwrap().id;
+
+            if let Some(transform) = Self::node_local_transform(&node)
             {
-                continue;
+                self.edit_snapshot_nodes.insert(id, transform);
             }
 
-            let physics = self.entries[index].node.read().unwrap().resolve_physics();
-            let Some(body_handle) = self.entries[index].body else { continue; };
-
-            if let Some(body) = self.bodies.get_mut(body_handle)
-            {
-                body.set_linvel(Vector::new(physics.linear_velocity.x, physics.linear_velocity.y, physics.linear_velocity.z), true);
-                body.set_angvel(Vector::new(physics.angular_velocity.x, physics.angular_velocity.y, physics.angular_velocity.z), true);
-            }
+            current = node.read().unwrap().parent.as_ref().cloned();
         }
     }
 
@@ -1227,95 +2036,114 @@ impl PhysicsWorld
         self.edit_snapshot.clear();
         self.edit_snapshot_nodes.clear();
 
-        for entry in &self.entries
+        for index in 0..self.entries.len()
         {
-            if entry.body_type != PhysicsBodyType::Dynamic
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic
             {
                 continue;
             }
 
-            if let Some(transform) = Self::instance_local_transform(entry)
+            let parts: Vec<(NodeItem, u32, InstanceItemArc, u32)> = self.entries[index].parts.iter()
+                .map(|part| (part.node.clone(), part.node_id, part.instance.clone(), part.instance_id))
+                .collect();
+
+            for (node, node_id, instance, instance_id) in parts
             {
-                self.edit_snapshot.insert((entry.node_id, entry.instance_id), transform);
-            }
-
-            // the whole chain up to the root: the gizmo may have been on any of them,
-            // an object root with the mesh on a child is the usual shape of a loaded asset
-            let mut current = Some(entry.node.clone());
-
-            while let Some(node) = current
-            {
-                let id = node.read().unwrap().id;
-
-                if let Some(transform) = Self::node_local_transform(&node)
-                {
-                    self.edit_snapshot_nodes.insert(id, transform);
-                }
-
-                current = node.read().unwrap().parent.as_ref().cloned();
+                self.snapshot_instance(node_id, instance_id, &instance);
+                self.snapshot_node_chain(&node);
             }
         }
     }
 
-    fn restore_edit_snapshot(&mut self)
+    fn restore_node_chain(&self, node: &NodeItem)
     {
-        // the node chain first, so the instance transforms below it land in the right place
-        for index in 0..self.entries.len()
+        let mut current = Some(node.clone());
+
+        while let Some(node) = current
         {
-            let mut current = Some(self.entries[index].node.clone());
+            let id = node.read().unwrap().id;
 
-            while let Some(node) = current
+            if let Some(transform) = self.edit_snapshot_nodes.get(&id).copied()
             {
-                let id = node.read().unwrap().id;
+                let node_read = node.read().unwrap();
 
-                if let Some(transform) = self.edit_snapshot_nodes.get(&id).copied()
-                {
-                    let node_read = node.read().unwrap();
-
-                    if let Some(transformation) = node_read.find_component::<Transformation>()
-                    {
-                        component_downcast_mut!(transformation, Transformation);
-                        transformation.set_local_transform(transform);
-                    }
-                }
-
-                current = node.read().unwrap().parent.as_ref().cloned();
-            }
-        }
-
-        for index in 0..self.entries.len()
-        {
-            let key = (self.entries[index].node_id, self.entries[index].instance_id);
-
-            let Some(transform) = self.edit_snapshot.get(&key).copied() else { continue; };
-
-            {
-                let instance = self.entries[index].instance.clone();
-                let instance = instance.read().unwrap();
-
-                if let Some(transformation) = instance.find_component::<Transformation>()
+                if let Some(transformation) = node_read.find_component::<Transformation>()
                 {
                     component_downcast_mut!(transformation, Transformation);
                     transformation.set_local_transform(transform);
                 }
             }
 
-            // put the body back too, otherwise it keeps its velocity and pose
-            if let Some(body_handle) = self.entries[index].body
-            {
-                // calculate_transform already walks the node chain, so this is the world
-                // transform - multiplying the node in again would apply it twice
-                let world = self.entries[index].instance.read().unwrap().calculate_transform();
-                let (pose, _) = Self::split_transform(&world);
+            current = node.read().unwrap().parent.as_ref().cloned();
+        }
+    }
 
-                if let Some(body) = self.bodies.get_mut(body_handle)
+    fn restore_instance(&self, node_id: u32, instance_id: u32, instance: &InstanceItemArc)
+    {
+        let Some(transform) = self.edit_snapshot.get(&(node_id, instance_id)).copied() else { return; };
+
+        let instance = instance.read().unwrap();
+
+        if let Some(transformation) = instance.find_component::<Transformation>()
+        {
+            component_downcast_mut!(transformation, Transformation);
+            transformation.set_local_transform(transform);
+        }
+    }
+
+    fn restore_edit_snapshot(&mut self)
+    {
+        // the node chains first, so the instance transforms below them land in the right place
+        for index in 0..self.entries.len()
+        {
+            let nodes: Vec<NodeItem> = self.entries[index].parts.iter().map(|part| part.node.clone()).collect();
+
+            for node in &nodes
+            {
+                self.restore_node_chain(node);
+            }
+        }
+
+        for index in 0..self.entries.len()
+        {
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            {
+                continue;
+            }
+
+            let parts: Vec<(u32, InstanceItemArc, u32)> = self.entries[index].parts.iter()
+                .map(|part| (part.node_id, part.instance.clone(), part.instance_id))
+                .collect();
+
+            for (node_id, instance, instance_id) in &parts
+            {
+                self.restore_instance(*node_id, *instance_id, instance);
+            }
+
+            // Put the body back too, otherwise it keeps its velocity and pose. The stored
+            // transform is left alone on purpose: the next sync compares the scene against
+            // it and moves the body onto whatever the scene shows by then.
+            let anchor = self.entries[index].anchor.clone();
+            let (pose, _) = Self::split_transform(&anchor.world_transform_live());
+
+            if let Some(body) = self.entries[index].body
+            {
+                if let Some(body) = self.bodies.get_mut(body)
                 {
                     body.set_position(pose, true);
                     body.set_linvel(Vector::ZERO, true);
                     body.set_angvel(Vector::ZERO, true);
                 }
             }
+
+            // the render caches too, in case this runs after the scene update of the frame
+            if let Anchor::Node { node } = &anchor
+            {
+                Self::refresh_instance_cache_below(node);
+            }
         }
+
+        self.reset_waiting();
 
         self.edit_snapshot.clear();
         self.edit_snapshot_nodes.clear();
@@ -1335,8 +2163,9 @@ impl PhysicsWorld
         {
             self.snapshot_pending = false;
             self.take_edit_snapshot();
-            self.refresh_all_collider_settings();
+            self.refresh_all_entry_settings();
             self.apply_start_velocities();
+            self.reset_waiting();
         }
 
         // frozen, but everything stays exactly where it is
@@ -1367,6 +2196,11 @@ impl PhysicsWorld
 
         let gravity = Vector::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z);
 
+        if self.time_accumulator >= self.settings.fixed_timestep
+        {
+            self.record_speeds();
+        }
+
         while self.time_accumulator >= self.settings.fixed_timestep
         {
             self.time_accumulator -= self.settings.fixed_timestep;
@@ -1389,6 +2223,12 @@ impl PhysicsWorld
             );
         }
 
+        if steps > 0
+        {
+            self.run_steps = self.run_steps.saturating_add(steps);
+            self.release_hit_bodies();
+        }
+
         self.recover_escaped_bodies();
 
         steps
@@ -1398,7 +2238,7 @@ impl PhysicsWorld
     {
         self.broad_phase_bvh = BroadPhaseBvh::new();
 
-        let mut handles: Vec<ColliderHandle> = self.entries.iter().map(|entry| entry.handle).collect();
+        let mut handles: Vec<ColliderHandle> = self.entries.iter().flat_map(|entry| entry.parts.iter().map(|part| part.handle)).collect();
         handles.extend(self.ground_plane);
 
         for handle in handles
@@ -1409,25 +2249,17 @@ impl PhysicsWorld
 
     // ********** syncing **********
 
-    // apply_dynamic_bodies stores the world transform it wrote, and the next frame rebuilds
-    // exactly that transform again from the node chain. So while the solver is the only one
-    // touching an object, the two stay equal - any larger difference means somebody else
-    // moved it, which in practice is the author with a gizmo.
-    fn author_moved(&self, index: usize) -> bool
-    {
-        let transform = self.entries[index].instance.read().unwrap().get_cached_world_transform();
-
-        // relative: at large coordinates a float step is already bigger than a fixed
-        // threshold, and every frame would then look like an author move
-        transform.iter().zip(self.entries[index].transform.iter()).any(|(a, b)|
-        {
-            (a - b).abs() > AUTHOR_MOVE_EPSILON * (1.0 + a.abs().max(b.abs()))
-        })
-    }
-
-    // Mirrors instance transforms onto the colliders, from the cache the renderer also uses.
-    // `frozen` is the pause: the solver is not advancing, so the author is free to move
-    // things again and the bodies have to follow.
+    // Mirrors the scene onto the physics world. Static geometry and kinematic bodies always
+    // follow the scene. While the solver advances, a dynamic body owns its pose and the
+    // scene follows it; outside that - not running, or frozen - it is the other way round:
+    // the author moves the object, so the body has to follow, otherwise the write back
+    // would snap it right back. The exception is the author reaching in mid run - their
+    // move has to win for that frame, otherwise the solver writes its own pose straight
+    // back over it. apply_dynamic_bodies stores what it wrote, and the scene rebuilds
+    // exactly that again, so any larger difference means somebody else moved the object.
+    //
+    // The parts only ever follow an edit below the anchor, which does not fight the
+    // solver, so that is applied whatever the mode.
     pub fn sync_transformations(&mut self, frozen: bool) -> usize
     {
         let scene_owns_dynamics = !self.running || frozen;
@@ -1435,93 +2267,149 @@ impl PhysicsWorld
         let mut updated = 0;
         let mut rebuilds = 0;
 
+        self.moved_kinematics.clear();
+
         for index in 0..self.entries.len()
         {
-            // While the solver advances a dynamic body owns its pose and the scene follows
-            // it. Outside that it is the other way round: the author moves the object, so
-            // the body has to follow, otherwise the write back would snap it right back.
-            //
-            // The exception is the author reaching in mid run. Their move has to win for
-            // that frame, otherwise the solver writes its own pose straight back over it.
             let dynamic = self.entries[index].body_type == PhysicsBodyType::Dynamic;
+            let anchor = self.entries[index].anchor.clone();
 
-            if dynamic && !scene_owns_dynamics && !self.author_moved(index)
-            {
-                continue;
-            }
+            let anchor_world = anchor.world_transform();
+            let moved = Self::transform_differs(&anchor_world, &self.entries[index].transform);
 
-            let transform = self.entries[index].instance.read().unwrap().get_cached_world_transform();
+            let author_moved = moved && Self::differs_beyond_noise(&anchor_world, &self.entries[index].transform);
+            let anchor_follows = moved && (!dynamic || scene_owns_dynamics || author_moved);
 
-            if !Self::transform_differs(&transform, &self.entries[index].transform)
-            {
-                continue;
-            }
 
-            let (pose, scale) = Self::split_transform(&transform);
-            let handle = self.entries[index].handle;
-            let scale_changed = Self::scale_differs(&scale, &self.entries[index].scale);
+            let (anchor_pose, fresh_scale) = Self::split_transform(&anchor_world);
 
-            let shape = if scale_changed
-            {
-                rebuilds += 1;
-                Self::build_shape(&self.entries[index].node, &scale)
-            }
-            else
-            {
-                None
-            };
+            // The scale only replaces the stored one when it really changed. It is read
+            // back out of a rotating matrix, and the float noise in it would otherwise
+            // reach every part and look like an edit on each of them.
+            let scale_changed = Self::scale_differs(&fresh_scale, &self.entries[index].scale);
+            let anchor_scale = if scale_changed { fresh_scale } else { self.entries[index].scale };
 
             let body = self.entries[index].body;
+            let mut moved_parts: Vec<ColliderHandle> = vec![];
 
-            if let Some(body) = body
+            for part_index in 0..self.entries[index].parts.len()
             {
-                // moving the collider of a parented body would be overwritten by the solver
-                match self.bodies.get_mut(body)
+                let (node, instance) =
+                {
+                    let part = &self.entries[index].parts[part_index];
+                    (part.node.clone(), part.instance.clone())
+                };
+
+                let local = Self::part_local_transform(&anchor, &anchor_scale, &node, &instance);
+
+                if !Self::transform_differs(&local, &self.entries[index].parts[part_index].local)
+                {
+                    continue;
+                }
+
+                let (offset, scale) = Self::split_transform(&local);
+                let handle = self.entries[index].parts[part_index].handle;
+
+                let shape = if Self::scale_differs(&scale, &self.entries[index].parts[part_index].scale)
+                {
+                    rebuilds += 1;
+                    Self::build_shape(&node, &scale)
+                }
+                else
+                {
+                    None
+                };
+
+                if let Some(collider) = self.colliders.get_mut(handle)
+                {
+                    match body
+                    {
+                        Some(_) => collider.set_position_wrt_parent(offset),
+                        None => collider.set_position(anchor_pose * offset)
+                    }
+
+                    if let Some(shape) = shape
+                    {
+                        collider.set_shape(shape);
+                    }
+                }
+
+                let part = &mut self.entries[index].parts[part_index];
+                part.local = local;
+                part.offset = offset;
+                part.scale = scale;
+
+                moved_parts.push(handle);
+                updated += 1;
+            }
+
+            if scale_changed
+            {
+                self.entries[index].scale = fresh_scale;
+            }
+
+            // a kinematic mesh moved below its anchor moves its collider, so it is on the
+            // move as far as anything it touches is concerned
+            if !dynamic && !moved_parts.is_empty()
+            {
+                if let Some(handle) = body
+                {
+                    self.moved_kinematics.insert(handle);
+                }
+            }
+
+            if anchor_follows
+            {
+                match body
                 {
                     // a dynamic body is teleported to where the author put it, a kinematic
                     // one is handed to the solver so it moves things on its way
-                    Some(body) =>
+                    Some(handle) =>
                     {
-                        if dynamic
+                        if let Some(body) = self.bodies.get_mut(handle)
                         {
-                            body.set_position(pose, true);
-                            body.set_linvel(Vector::ZERO, true);
-                            body.set_angvel(Vector::ZERO, true);
+                            if dynamic
+                            {
+                                body.set_position(anchor_pose, true);
+                                body.set_linvel(Vector::ZERO, true);
+                                body.set_angvel(Vector::ZERO, true);
+                            }
+                            else
+                            {
+                                body.set_next_kinematic_position(anchor_pose);
+                                self.moved_kinematics.insert(handle);
+                            }
                         }
-                        else
+                    }
+                    // standalone colliders are placed one by one
+                    None =>
+                    {
+                        for part_index in 0..self.entries[index].parts.len()
                         {
-                            body.set_next_kinematic_position(pose);
+                            let handle = self.entries[index].parts[part_index].handle;
+                            let offset = self.entries[index].parts[part_index].offset;
+
+                            if let Some(collider) = self.colliders.get_mut(handle)
+                            {
+                                collider.set_position(anchor_pose * offset);
+                                moved_parts.push(handle);
+                            }
                         }
-                    },
-                    None => continue
+                    }
                 }
-            }
-            else
-            {
-                match self.colliders.get_mut(handle)
-                {
-                    Some(collider) => collider.set_position(pose),
-                    None => continue
-                }
+
+                self.entries[index].transform = anchor_world;
+                updated += 1;
             }
 
-            if let Some(shape) = shape
-            {
-                if let Some(collider) = self.colliders.get_mut(handle)
-                {
-                    collider.set_shape(shape);
-                }
-            }
-
+            // a world without a body never steps, so the bvh is kept up by hand
             if !self.has_dynamics()
             {
-                self.refresh_leaf(handle);
+                for handle in moved_parts
+                {
+                    self.refresh_leaf(handle);
+                }
             }
-
-            self.entries[index].transform = transform;
-            self.entries[index].scale = scale;
-
-            updated += 1;
         }
 
         self.last_synced = updated;
@@ -1544,24 +2432,25 @@ impl PhysicsWorld
 
         for index in 0..self.entries.len()
         {
-            if self.entries[index].body_type != PhysicsBodyType::Dynamic
+            // a waiting body sits exactly where the scene put it, nothing to write
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic || self.entries[index].waiting
             {
                 continue;
             }
 
-            let Some(body_handle) = self.entries[index].body else { continue; };
-            let Some(body) = self.bodies.get(body_handle) else { continue; };
+            let Some(body) = self.entries[index].body else { continue; };
+            let Some(body) = self.bodies.get(body) else { continue; };
 
             if body.is_sleeping()
             {
                 continue;
             }
 
-            let pose = body.position();
+            let pose = *body.position();
 
             // A degenerate shape or a zero mass can still make the solver produce NaN. Once
-            // that reaches an instance transform it spreads through every derived value and
-            // takes the renderer down with it, so it stops here.
+            // that reaches a transform it spreads through every derived value and takes the
+            // renderer down with it, so it stops here.
             if !pose.translation.is_finite() || !pose.rotation.is_finite()
             {
                 continue;
@@ -1576,77 +2465,18 @@ impl PhysicsWorld
 
                 if speed > IMPLAUSIBLE_SPEED || jump > IMPLAUSIBLE_JUMP
                 {
-                    let name = self.entries[index].node.read().unwrap().name.clone();
-                    let node_id = self.entries[index].node_id;
+                    let (node_id, _) = self.entries[index].key;
+                    let name = self.entries[index].anchor.name();
 
                     Self::warn_once(node_id, format!("physics: '{}' left at {:.1} units/s after a {:.2} unit jump - a high speed points at the solver resolving a deep overlap, a big jump at a small speed points at a teleport", name, speed, jump));
                 }
             }
 
-            let world = pose.to_mat4();
-            let world = Matrix4::new
-            (
-                world.x_axis.x, world.y_axis.x, world.z_axis.x, world.w_axis.x,
-                world.x_axis.y, world.y_axis.y, world.z_axis.y, world.w_axis.y,
-                world.x_axis.z, world.y_axis.z, world.z_axis.z, world.w_axis.z,
-                world.x_axis.w, world.y_axis.w, world.z_axis.w, world.w_axis.w
-            );
+            let anchor = self.entries[index].anchor.clone();
 
-            // the scale lives in the shape, so only the rigid part comes back
-            let scale = self.entries[index].scale;
-            let world = world * Matrix4::new_nonuniform_scaling(&scale);
+            let Some(shown) = anchor.write_back(&pose) else { continue; };
 
-            // the body pose is in world space, the instance transform is relative to its node
-            let (frame, frame_inverse) =
-            {
-                let node = self.entries[index].node.read().unwrap();
-                (node.get_full_transform(), node.get_full_transform_inverse())
-            };
-
-            let instance = self.entries[index].instance.clone();
-            let instance = instance.read().unwrap();
-
-            let transformation = match instance.find_component::<Transformation>()
-            {
-                Some(transformation) => transformation,
-                None => continue
-            };
-
-            // A plain node_inverse * world would be right in principle, but a parent with a
-            // non-uniform scale turns any rotation below it into shear, and the transform
-            // component holds a position, a rotation and a scale - nothing else. The shear
-            // would land in the scale and visibly stretch the object. So the local transform
-            // is assembled from parts that always decompose cleanly: the exact position, a
-            // pure rotation, and the scale the instance already carries. The solver never
-            // changes scale anyway.
-            let local =
-            {
-                component_downcast!(transformation, Transformation);
-
-                let position = extract_translation_from_transform(&world);
-                let position = frame_inverse * Point3::from(position).to_homogeneous();
-                let position = Vector3::new(position.x, position.y, position.z);
-
-                let rotation = extract_rotation_quat_from_transform(&frame).inverse() * extract_rotation_quat_from_transform(&world);
-                let scale = extract_scale_from_transform(transformation.get_transform());
-
-                Matrix4::new_translation(&position) * rotation.to_homogeneous() * Matrix4::new_nonuniform_scaling(&scale)
-            };
-
-            {
-                component_downcast_mut!(transformation, Transformation);
-                transformation.set_local_transform(local);
-            }
-
-            // What the scene will actually show, not what was intended. The transform
-            // component stores a position, a rotation and a scale, and a matrix that does
-            // not decompose into those loses the rest. That happens as soon as a parent
-            // carries a non-uniform scale: expressing the solver's rotation below it needs
-            // shear, which the triple cannot hold. Recording the intention here instead
-            // would make author_moved see a difference every single frame and teleport the
-            // body onto it, which is how an object ends up shooting off on first contact.
-            self.entries[index].transform = instance.calculate_transform();
-
+            self.entries[index].transform = shown;
             applied += 1;
         }
 
@@ -3232,16 +4062,10 @@ mod tests
     {
         let node_id = node.read().unwrap().id;
 
-        for entry in &world.entries
-        {
-            if entry.node_id != node_id { continue; }
-            let Some(handle) = entry.body else { continue; };
-            let Some(body) = world.bodies.get(handle) else { continue; };
-
-            return body.linvel().length();
-        }
-
-        0.0
+        world.body_of(node_id)
+            .and_then(|handle| world.bodies.get(handle))
+            .map(|body| body.linvel().length())
+            .unwrap_or(0.0)
     }
 
     #[test]
@@ -3433,16 +4257,10 @@ mod tests
     {
         let node_id = node.read().unwrap().id;
 
-        for entry in &world.entries
-        {
-            if entry.node_id != node_id { continue; }
-            let Some(handle) = entry.body else { continue; };
-            let Some(body) = world.bodies.get(handle) else { continue; };
-
-            return (body.position().rotation * Vector::new(0.0, 1.0, 0.0)).y;
-        }
-
-        1.0
+        world.body_of(node_id)
+            .and_then(|handle| world.bodies.get(handle))
+            .map(|body| (body.position().rotation * Vector::new(0.0, 1.0, 0.0)).y)
+            .unwrap_or(1.0)
     }
 
     #[test]
@@ -3543,5 +4361,429 @@ mod tests
         world.set_running(false);
 
         assert!((instance_y(&node) - 4.0).abs() < 0.001, "the box should be back at 4.0");
+    }
+
+    // ********** combined objects **********
+
+    // A root without a mesh that carries the height, two boxes below it side by side - the
+    // shape of a loaded asset once the author marks the root as one object.
+    fn combined_object(y: f32, body_type: PhysicsBodyType) -> (NodeItem, NodeItem, NodeItem)
+    {
+        let root = Node::new("combined root");
+        {
+            let transformation = Transformation::new("trans", Vector3::new(0.0, y, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0));
+
+            let mut root_write = root.write().unwrap();
+            root_write.add_component(Arc::new(RwLock::new(Box::new(transformation))));
+            root_write.settings.physics.body_type = body_type;
+            root_write.settings.physics.combine_children = true;
+        }
+
+        let left = box_node(0.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+        let right = box_node(0.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+
+        Node::add_node(root.clone(), left.clone());
+        Node::add_node(root.clone(), right.clone());
+
+        move_instance_to(&left, -1.0, 0.0, 0.0);
+        move_instance_to(&right, 1.0, 0.0, 0.0);
+
+        refresh_instance_cache(&root);
+
+        (root, left, right)
+    }
+
+    fn node_world_position(node: &NodeItem) -> Vector3<f32>
+    {
+        extract_translation_from_transform(&node.read().unwrap().get_full_transform())
+    }
+
+    fn set_node_position(node: &NodeItem, position: Vector3<f32>)
+    {
+        {
+            let node_read = node.read().unwrap();
+            let transformation = node_read.find_component::<Transformation>().unwrap();
+
+            component_downcast_mut!(transformation, Transformation);
+            transformation.set_translation(position);
+        }
+
+        refresh_instance_cache(node);
+    }
+
+    #[test]
+    fn a_combined_object_falls_as_one_body()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let (root, left, right) = combined_object(4.0, PhysicsBodyType::Dynamic);
+        let scene_nodes = vec![root.clone()];
+
+        world.build_from_nodes(&scene_nodes);
+
+        assert_eq!(world.body_amount(), 1, "two meshes, one body");
+        assert_eq!(world.collider_amount(), 2, "one collider per mesh");
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        let root_y = node_world_position(&root).y;
+        assert!((root_y - 0.5).abs() < 0.06, "the root should rest with the boxes on the floor, got y = {}", root_y);
+
+        // the root moved, the meshes below it did not - they kept their offsets
+        let left_position = instance_world_position(&left);
+        let right_position = instance_world_position(&right);
+
+        assert!((left_position.x + 1.0).abs() < 0.01 && (right_position.x - 1.0).abs() < 0.01, "the halves drifted: {} / {}", left_position.x, right_position.x);
+        assert!((left_position.y - right_position.y).abs() < 0.01, "the halves must not tilt against each other");
+        assert!((left_position.y - root_y).abs() < 0.01, "the meshes have to follow the root, mesh at {} root at {}", left_position.y, root_y);
+    }
+
+    #[test]
+    fn a_combined_object_can_be_moved_while_editing_and_falls_from_there()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.set_running(false);
+
+        let (root, _, _) = combined_object(4.0, PhysicsBodyType::Dynamic);
+        let scene_nodes = vec![root.clone()];
+
+        frame(&mut world, &scene_nodes);
+        assert_eq!(world.body_amount(), 1);
+
+        // the gizmo moves the root while nothing simulates
+        set_node_position(&root, Vector3::new(3.0, 6.0, 0.0));
+        frame(&mut world, &scene_nodes);
+
+        {
+            let root_id = root.read().unwrap().id;
+            let body = world.bodies.get(world.body_of(root_id).unwrap()).unwrap();
+            let translation = body.translation();
+
+            assert!((translation.x - 3.0).abs() < 0.001 && (translation.y - 6.0).abs() < 0.001, "the body has to follow the root while editing, sits at {:?}", translation);
+        }
+
+        assert!((node_world_position(&root).y - 6.0).abs() < 0.001, "nothing may write back while not running");
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        let position = node_world_position(&root);
+        assert!((position.x - 3.0).abs() < 0.01, "it should fall straight down from where it was put, got x = {}", position.x);
+        assert!((position.y - 0.5).abs() < 0.06, "and come to rest on the floor, got y = {}", position.y);
+
+        // leaving the run puts it back where the author left it
+        world.set_running(false);
+
+        let position = node_world_position(&root);
+        assert!((position.x - 3.0).abs() < 0.001 && (position.y - 6.0).abs() < 0.001, "leaving the run must restore the root, got {:?}", position);
+    }
+
+    // The real frame order: the scene refreshes the caches before the solver writes, and
+    // the renderer reads them right after - nothing in between refreshes them again.
+    #[test]
+    fn the_meshes_below_a_combined_root_follow_it_in_the_render_cache()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let (root, left, _) = combined_object(4.0, PhysicsBodyType::Dynamic);
+        let scene_nodes = vec![root.clone()];
+
+        world.build_from_nodes(&scene_nodes);
+
+        for _ in 0..120
+        {
+            world.sync_transformations(false);
+            world.step(1.0 / 60.0, false);
+            world.apply_dynamic_bodies(false);
+        }
+
+        let root_y = node_world_position(&root).y;
+        assert!(root_y < 3.0, "the root should have fallen, at {}", root_y);
+
+        let cached = left.read().unwrap().instances.get_ref()[0].read().unwrap().get_cached_world_transform();
+        let cached_y = cached[(1, 3)];
+
+        assert!((cached_y - root_y).abs() < 0.001, "what the renderer reads has to follow the root: cached {} root {}", cached_y, root_y);
+    }
+
+    #[test]
+    fn a_kinematic_combined_object_follows_its_root()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let (root, _, _) = combined_object(1.0, PhysicsBodyType::Kinematic);
+        let scene_nodes = vec![root.clone()];
+
+        frame(&mut world, &scene_nodes);
+
+        set_node_position(&root, Vector3::new(2.0, 1.0, 0.0));
+
+        // the next kinematic position is applied by the step
+        frame(&mut world, &scene_nodes);
+        frame(&mut world, &scene_nodes);
+
+        let root_id = root.read().unwrap().id;
+        let body = world.bodies.get(world.body_of(root_id).unwrap()).unwrap();
+        assert!((body.translation().x - 2.0).abs() < 0.001, "a kinematic body has to follow the root, sits at x = {}", body.translation().x);
+    }
+
+    #[test]
+    fn combining_and_separating_rebuilds_the_bodies()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let (root, _, _) = combined_object(4.0, PhysicsBodyType::Dynamic);
+        root.write().unwrap().settings.physics.combine_children = false;
+
+        let scene_nodes = vec![root.clone()];
+
+        world.build_from_nodes(&scene_nodes);
+        assert_eq!(world.body_amount(), 2, "without the flag every mesh is a body of its own");
+        assert_eq!(world.combined_amount(), 0);
+
+        root.write().unwrap().settings.physics.combine_children = true;
+
+        let (added, removed) = world.scan_nodes(&scene_nodes);
+        assert_eq!((added, removed), (2, 2), "the two singles go, two parts come");
+        assert_eq!(world.body_amount(), 1);
+        assert_eq!(world.collider_amount(), 2);
+
+        // a settings change alone does not rebuild
+        root.write().unwrap().settings.physics.friction = 0.2;
+
+        let (added, removed) = world.scan_nodes(&scene_nodes);
+        assert_eq!((added, removed), (0, 0), "friction is adjusted in place");
+
+        root.write().unwrap().settings.physics.combine_children = false;
+
+        world.scan_nodes(&scene_nodes);
+        assert_eq!(world.body_amount(), 2, "separated again");
+        assert_eq!(world.collider_amount(), 2);
+        assert_eq!(world.combined_amount(), 0);
+    }
+
+    // ********** reacting on a hit **********
+
+    fn waiting_box(y: f32) -> NodeItem
+    {
+        let node = box_node(y, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        node.write().unwrap().settings.physics.react_on_first_hit = true;
+
+        node
+    }
+
+    #[test]
+    fn an_object_that_reacts_on_its_first_hit_holds_still_until_something_hits_it()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        // in the air on purpose: a waiting object does not even fall
+        let waiting = waiting_box(3.0);
+        let scene_nodes = vec![waiting.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..120
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 1);
+        assert!((instance_y(&waiting) - 3.0).abs() < 0.001, "the waiting box moved to {}", instance_y(&waiting));
+
+        // a box dropped from well above lands on it at several units per second
+        let dropped = box_node(6.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![waiting.clone(), dropped.clone()];
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 0, "the hit should have released the box");
+        assert!(instance_y(&waiting) < 1.0, "the released box should have fallen, it is at {}", instance_y(&waiting));
+    }
+
+    #[test]
+    fn an_object_resting_on_it_from_the_start_is_not_a_hit()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let waiting = waiting_box(0.5);
+        let resting = box_node(1.5, PhysicsBodyType::Dynamic, PhysicsShape::Auto); // exactly on top of it
+        let scene_nodes = vec![waiting.clone(), resting.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 1, "resting weight must not count as a hit");
+        assert!((instance_y(&resting) - 1.5).abs() < 0.06, "the resting box should stay on top, it is at {}", instance_y(&resting));
+    }
+
+    #[test]
+    fn a_release_takes_every_waiting_object_it_touches_with_it()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        // two waiting boxes side by side with their faces touching, and one further away
+        let left = waiting_box(0.5);
+        let right = waiting_box(0.5);
+        let apart = waiting_box(0.5);
+        move_instance_to(&right, 1.0, 0.5, 0.0);
+        move_instance_to(&apart, 3.0, 0.5, 0.0);
+
+        let dropped = box_node(4.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+
+        let scene_nodes = vec![left.clone(), right.clone(), apart.clone(), dropped.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 1, "the hit on the left box should release the right one with it and leave the one apart waiting");
+
+        let apart_id = apart.read().unwrap().id;
+        assert!(world.entries().iter().find(|entry| entry.node_id() == apart_id).unwrap().waiting);
+    }
+
+    #[test]
+    fn leaving_the_run_puts_a_released_object_back_to_waiting()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let waiting = waiting_box(3.0);
+        let dropped = box_node(6.0, PhysicsBodyType::Dynamic, PhysicsShape::Auto);
+        let scene_nodes = vec![waiting.clone(), dropped.clone()];
+
+        world.set_running(true);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 0);
+        assert!(instance_y(&waiting) < 1.0);
+
+        world.set_running(false);
+
+        assert_eq!(world.waiting_amount(), 1, "every run starts waiting again");
+        assert!((instance_y(&waiting) - 3.0).abs() < 0.001, "the box should be back where the author put it, it is at {}", instance_y(&waiting));
+
+        // and it holds still there on the next run, until the dropped box lands again
+        world.set_running(true);
+
+        for _ in 0..30
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!((instance_y(&waiting) - 3.0).abs() < 0.001, "the box should hold still on the second run, it is at {}", instance_y(&waiting));
+    }
+
+    #[test]
+    fn the_flag_on_an_object_root_reaches_the_meshes_below_it()
+    {
+        // the shape of a loaded fractured object: the root carries the settings, every
+        // piece is a mesh below it with a body of its own
+        let root = Node::new("object root");
+        {
+            let mut root_write = root.write().unwrap();
+            root_write.add_component(Arc::new(RwLock::new(Box::new(Transformation::identity("trans")))));
+            root_write.settings.physics.body_type = PhysicsBodyType::Dynamic;
+            root_write.settings.physics.combine_children = false;
+            root_write.settings.physics.react_on_first_hit = true;
+        }
+
+        let piece = box_node(3.0, PhysicsBodyType::Static, PhysicsShape::Auto);
+        Node::add_node(root.clone(), piece.clone());
+
+        let scene_nodes = vec![root.clone()];
+
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+        world.set_running(true);
+
+        for _ in 0..120
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 1, "the piece below the root should wait");
+        assert!((instance_y(&piece) - 3.0).abs() < 0.001, "the piece should hold still in the air, it is at {}", instance_y(&piece));
+    }
+
+    #[test]
+    fn a_moving_kinematic_body_releases_what_it_runs_into()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let waiting = waiting_box(0.5);
+        let pusher = box_node(0.5, PhysicsBodyType::Kinematic, PhysicsShape::Auto);
+        move_instance_to(&pusher, -3.0, 0.5, 0.0);
+
+        let scene_nodes = vec![waiting.clone(), pusher.clone()];
+
+        world.set_running(true);
+
+        let mut x = -3.0f32;
+
+        for _ in 0..300
+        {
+            // driven from the scene at 2 units per second, into the box and a bit beyond
+            x += 2.0 / 60.0;
+            move_instance_to(&pusher, x.min(-0.9), 0.5, 0.0);
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert_eq!(world.waiting_amount(), 0, "the kinematic pusher should have released the box");
+    }
+
+    #[test]
+    fn a_hit_reported_from_outside_releases_the_object()
+    {
+        let mut world = test_world();
+        world.set_ground_plane(Some(0.0));
+
+        let waiting = waiting_box(3.0);
+        let scene_nodes = vec![waiting.clone()];
+
+        world.set_running(true);
+        frame(&mut world, &scene_nodes);
+
+        // what the character controller reports
+        let handle = world.entries()[0].parts[0].handle;
+        world.hit_collider(handle);
+
+        for _ in 0..300
+        {
+            frame(&mut world, &scene_nodes);
+        }
+
+        assert!((instance_y(&waiting) - 0.5).abs() < 0.06, "the box should have fallen to the ground, it is at {}", instance_y(&waiting));
     }
 }

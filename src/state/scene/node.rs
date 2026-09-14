@@ -9,8 +9,6 @@ use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Dese
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, state::state::ENGINE_INTERNAL_TAG_PREFX, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::{InputOutput, RunMode}}};
 
-use crate::state::scene::exporter::serialization_helper::default_true;
-
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
@@ -48,7 +46,10 @@ fn default_linear_damping() -> f32 { 0.05 }
 // spins, it just does not keep teetering once it has landed.
 fn default_angular_damping() -> f32 { 0.5 }
 
+// every field falls back to Default, so an older project file without a given setting
+// still loads and simply gets today's default for it
 #[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(default)]
 pub struct PhysicsSettings
 {
     pub body_type: PhysicsBodyType,
@@ -58,20 +59,19 @@ pub struct PhysicsSettings
     pub friction: f32,
     pub restitution: f32, // bounciness, 0 = no bounce
 
-    // Bleeds off motion over time. Sleeping alone only catches an object that stays below
-    // its thresholds long enough, so a slow rocking prop can wobble forever without this.
-    #[serde(default = "default_linear_damping")]
     pub linear_damping: f32,
-    #[serde(default = "default_angular_damping")]
     pub angular_damping: f32,
 
-    // applied every time the scene is tried out, so a shot object starts the same way twice
     pub linear_velocity: Vector3<f32>,
     pub angular_velocity: Vector3<f32>,
 
-    // off the shape centre the object tips over, which is what makes a barrel roll oddly
     pub center_of_mass_auto: bool,
     pub center_of_mass: Vector3<f32>,
+
+    pub combine_children: bool,
+
+    // holds still when the run starts, whatever it rests on, until something hits it
+    pub react_on_first_hit: bool,
 }
 
 impl Default for PhysicsSettings
@@ -95,14 +95,22 @@ impl Default for PhysicsSettings
 
             center_of_mass_auto: true,
             center_of_mass: Vector3::new(0.0, 0.0, 0.0),
+
+            combine_children: true,
+
+            react_on_first_hit: false,
         }
     }
 }
 
+// saved as a whole with the node, so a new setting is persisted without touching the
+// project format. Missing fields fall back to Default, which keeps older files loadable.
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct NodeSettings
 {
-    pub transient: bool, // not saved
+    #[serde(skip)]
+    pub transient: bool, // node is not written to the project file
 
     pub visible: bool,
     pub locked: bool,
@@ -120,10 +128,8 @@ pub struct NodeSettings
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
 
-    #[serde(default = "default_true")]
     pub collision: bool,
 
-    #[serde(default)]
     pub physics: PhysicsSettings,
 
     pub layer_mask: u32, // bitmask, matched against camera culling_mask
@@ -136,17 +142,17 @@ impl Default for NodeSettings
         Self
         {
             transient: false,
-            visible: false,
+            visible: true,
             locked: false,
-            pickable: false,
+            pickable: true,
             render_children_first: false,
             alpha_index: 0,
             render_group_id: 0,
-            depth_test: false,
-            depth_write: false,
-            pick_bbox_first: false,
-            frustum_culling: false,
-            occlusion_culling: false,
+            depth_test: true,
+            depth_write: true,
+            pick_bbox_first: true,
+            frustum_culling: true,
+            occlusion_culling: true,
             collision: true,
             physics: PhysicsSettings::default(),
             layer_mask: LAYER_DEFAULT,
@@ -350,28 +356,8 @@ impl Node
             name: "default".to_string(),
             root_node: false,
 
-            settings: NodeSettings
-            {
-                transient: true,
-                visible: true,
-                locked: false,
-                pickable: true,
-
-                render_children_first: false,
-                alpha_index: 0,
-                render_group_id: 0,
-
-                depth_write: true,
-                depth_test: true,
-
-                pick_bbox_first: true,
-                frustum_culling: true,
-                occlusion_culling: true,
-                collision: true,
-                physics: PhysicsSettings::default(),
-
-                layer_mask: LAYER_DEFAULT,
-            },
+            // a fresh node is transient until something (the loader, the editor) claims it
+            settings: NodeSettings { transient: true, ..NodeSettings::default() },
 
             components: vec![],
 
@@ -1385,7 +1371,9 @@ impl Node
         false
     }
 
-    fn get_transform(&self) -> (Matrix4<f32>, bool)
+    // the node's own transform and whether it inherits the parent's - the physics world
+    // walks the chain below a combined object with it
+    pub fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
         let joint_component = self.find_component::<Joint>();

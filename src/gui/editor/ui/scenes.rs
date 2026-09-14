@@ -232,6 +232,17 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
             ui.separator();
 
+            ui.label("reacting on a hit");
+
+            ui.horizontal(|ui|
+            {
+                ui.label("hit speed: ");
+                ui.add(egui::Slider::new(&mut physics.hit_speed, 0.0..=10.0).fixed_decimals(2));
+                ui.label("ℹ").on_hover_text("an object that reacts on its first hit ignores anything that touches it slower than this, in units per second. Resting weight never counts; 1.0 is a drop from about 5 cm. The character always counts, a moving kinematic body too.");
+            });
+
+            ui.separator();
+
             ui.checkbox(&mut physics.ground_plane, "Endless Ground Plane").on_hover_text("a floor everything can always land on - the editor grid is only a visual helper and is rebuilt whenever the grid settings change, so it cannot be used for this");
 
             ui.add_enabled_ui(physics.ground_plane, |ui|
@@ -249,9 +260,11 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         ui.horizontal(|ui|
         {
-            ui.label(format!("colliders: {}", scene.physics.collider_amount()));
+            ui.label(format!("colliders: {} / bodies: {} / combined: {} / waiting: {}", scene.physics.collider_amount(), scene.physics.body_amount(), scene.physics.combined_amount(), scene.physics.waiting_amount()));
             ui.label("ℹ").on_hover_text(format!("synced last frame: {} / shape rebuilds: {}
-both should be 0 while nothing but the character moves", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
+both should be 0 while nothing but the character moves
+combined: objects whose meshes share one body
+waiting: objects holding still for their first hit", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
 
             if ui.button("Rebuild").clicked()
             {

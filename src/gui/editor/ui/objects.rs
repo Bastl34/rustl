@@ -774,6 +774,29 @@ fn node_scale(node: &NodeItem) -> nalgebra::Vector3<f32>
     extract_scale_from_transform(transformation.get_transform())
 }
 
+// The parent a static node takes its physics from, if there is one: its name and whether
+// it combines its children into one body. Mirrors Node::resolve_physics, which only hands
+// out the settings and not where they came from.
+fn physics_owner(node: &NodeItem) -> Option<(String, bool)>
+{
+    let mut parent = node.read().unwrap().parent.as_ref().cloned();
+
+    while let Some(candidate) = parent
+    {
+        let candidate_read = candidate.read().unwrap();
+        let physics = &candidate_read.settings.physics;
+
+        if physics.body_type != PhysicsBodyType::Static
+        {
+            return Some((candidate_read.name.clone(), physics.combine_children));
+        }
+
+        parent = candidate_read.parent.as_ref().cloned();
+    }
+
+    None
+}
+
 pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     let (node_id, instance_id) = editor_state.get_object_ids();
@@ -1189,6 +1212,43 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
 
                 ui.label("ℹ").on_hover_text("Static: mirrored from the scene. Dynamic: moved by the solver, the scene follows. Kinematic: moved by you, pushes dynamic bodies.");
             });
+
+            // a node with meshes below it: one body for all of them, or one body each
+            ui.add_enabled_ui(physics.body_type != PhysicsBodyType::Static, |ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    changed = ui.checkbox(&mut physics.combine_children, "one body for the whole object").changed() || changed;
+                    ui.label("ℹ").on_hover_text("every mesh below this node becomes a collider on the same rigid body, and the solver moves this node instead of each mesh on its own. Without this every mesh under a dynamic node falls as a separate object. Needs Dynamic or Kinematic. A mesh below that sets its own body type stays separate.");
+                });
+            });
+
+            ui.add_enabled_ui(physics.body_type == PhysicsBodyType::Dynamic, |ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    changed = ui.checkbox(&mut physics.react_on_first_hit, "react on first hit").changed() || changed;
+                    ui.label("ℹ").on_hover_text("the object holds still when the run starts, whatever it rests on, and only comes alive once something dynamic hits it faster than the scene's hit speed, the character walks into it, or a touching object that waits with it is released. Set it on the object root, the meshes below inherit it.");
+                });
+            });
+
+            // a static node under a dynamic or kinematic parent takes the parent's physics
+            if physics.body_type == PhysicsBodyType::Static
+            {
+                if let Some((owner, combined)) = physics_owner(&node)
+                {
+                    let text = if combined
+                    {
+                        format!("part of the combined body of '{}' - the physics settings are made there", owner)
+                    }
+                    else
+                    {
+                        format!("body type inherited from '{}' - this mesh gets a body of its own", owner)
+                    };
+
+                    ui.label(RichText::new(text).color(Color32::LIGHT_YELLOW));
+                }
+            }
 
             ui.horizontal(|ui|
             {

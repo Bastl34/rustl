@@ -200,11 +200,9 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                         {
                             let mut node_write = node.write().unwrap();
                             node_write.name = name.clone();
-                            node_write.settings.visible = options.visible;
-                            node_write.settings.locked = options.locked;
+                            node_write.settings = options.settings.clone();
+                            node_write.settings.transient = false; // it comes from the project file, so it is saved again
                             node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
-                            node_write.settings.transient = false;
-                            node_write.settings.collision = options.collision;
 
                             if let Some(reuse) = options.reuse_materials_by_name
                             {
@@ -251,8 +249,8 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
             let node = scene.add_empty_node(&name, parent.clone());
             {
                 let mut node_write = node.write().unwrap();
-                node_write.settings.visible = options.visible;
-                node_write.settings.locked = options.locked;
+                node_write.settings = options.settings.clone();
+                node_write.settings.transient = false;
                 node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
             }
 

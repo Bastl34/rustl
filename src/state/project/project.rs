@@ -3,9 +3,8 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::scene::exporter::serialization_helper::default_true;
-use crate::state::scene::exporter::serialization_helper::is_true;
 use crate::state::scene::exporter::serialization_helper::is_false;
+use crate::state::scene::node::NodeSettings;
 use crate::state::state::State;
 
 /// Node extra flag: reuse already loaded materials with the same name instead of duplicating them.
@@ -105,20 +104,15 @@ pub struct EditorScene
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EditorObjectOptions
 {
-    #[serde(default = "default_true", skip_serializing_if = "is_true")]
-    pub visible: bool,
-
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub locked: bool,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reuse_materials_by_name: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 3]>,
 
-    #[serde(default = "default_true", skip_serializing_if = "is_true")]
-    pub collision: bool,
+    // the node settings as a whole (visible, locked, collision, culling, physics, ...)
+    #[serde(default)]
+    pub settings: NodeSettings,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
