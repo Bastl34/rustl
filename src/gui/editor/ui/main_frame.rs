@@ -39,6 +39,8 @@ use super::sound::{build_sound_sources_list, create_sound_settings, create_sound
 use super::statistics::{create_chart, create_statistic};
 use super::textures::{create_texture_settings, build_texture_list};
 
+const HIERARCHY_MIN_HEIGHT: f32 = 250.0;
+
 pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &mut State)
 {
     let mut visual = Visuals::dark();
@@ -189,10 +191,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
 
             //ui.add_enabled_ui(!loading, |ui|
             //{
-                ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui|
-                {
-                    create_left_sidebar(editor_state, state, ui);
-                });
+                create_left_sidebar(editor_state, state, ui);
             //});
         });
     }
@@ -805,88 +804,105 @@ fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: 
 
 fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    // statistics
-    collapse_with_title(ui, "chart", true, "📈 Chart", None, |ui|
-    {
-        create_chart(editor_state, state, ui);
-    });
+    let viewport_height = ui.available_height();
 
-    // statistics
-    collapse_with_title(ui, "statistic", false, "ℹ Statistics", None, |ui|
-    {
-        create_statistic(editor_state, state, ui);
-    });
+    // solid scroll bars reserve their own space instead of floating over the content,
+    // so the sidebar bar doesn't cover the hierarchy bar
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
 
-    // hierarchy
-    collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", None, |ui|
+    ScrollArea::vertical().id_salt("left_sidebar_scroll").auto_shrink([false, false]).show(ui, |ui|
     {
-        ScrollArea::vertical().show(ui, |ui|
+        // both move with the scroll offset, so their difference is the unscrolled content height
+        let content_top = ui.cursor().min.y;
+
+        // chart
+        collapse_with_title(ui, "chart", true, "📈 Chart", None, |ui|
+        {
+            create_chart(editor_state, state, ui);
+        });
+
+        // statistics
+        collapse_with_title(ui, "statistic", false, "ℹ Statistics", None, |ui|
+        {
+            create_statistic(editor_state, state, ui);
+        });
+
+        // hierarchy
+        collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", None, |ui|
         {
             ui.scope(|ui|
             {
                 ui.style_mut().visuals.indent_has_left_vline = true;
 
-                let row_width = ui.available_width();
-                let row_height = ui.spacing().interact_size.y;
-                ui.allocate_ui(egui::vec2(row_width, row_height), |ui|
+                // header (add / search / more) stays fixed above the scrolling list
                 {
-                    ui.horizontal(|ui|
+                    let row_width = ui.available_width();
+                    let row_height = ui.spacing().interact_size.y;
+                    ui.allocate_ui(egui::vec2(row_width, row_height), |ui|
                     {
-                        let icon_size = 14.0;
-
-                        // add button
-                        let add_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/add.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
-                        egui::Popup::menu(&add_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
+                        ui.horizontal(|ui|
                         {
-                            ui.set_min_width(120.0);
-                            if ui.button("⊞ Add Scene").clicked()
-                            {
-                                state.add_scene("Scene");
-                                egui::Popup::close_all(ui.ctx());
-                            }
+                            let icon_size = 14.0;
 
-                            if ui.button("⬇ Import Scene").clicked()
+                            // add button
+                            let add_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/add.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
+                            egui::Popup::menu(&add_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
                             {
-                                let loading_state = editor_state.loading.clone();
-                                let loading_progress_state = editor_state.loading_progress.clone();
-                                if let Some(new_scene_id) = crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state)
+                                ui.set_min_width(120.0);
+                                if ui.button("⊞ Add Scene").clicked()
                                 {
-                                    if !editor_state.open_scene_tabs.contains(&new_scene_id)
-                                    {
-                                        editor_state.open_scene_tabs.push(new_scene_id);
-                                    }
-                                    editor_state.selected_scene_id = Some(new_scene_id);
-                                    editor_state.selected_object.clear();
-                                    editor_state.selected_type = SelectionType::None;
-                                    editor_state.settings_panel = SettingsPanel::Scene;
-                                    state.set_active_scene(new_scene_id);
+                                    state.add_scene("Scene");
+                                    egui::Popup::close_all(ui.ctx());
                                 }
 
-                                egui::Popup::close_all(ui.ctx());
-                            }
-                        });
+                                if ui.button("⬇ Import Scene").clicked()
+                                {
+                                    let loading_state = editor_state.loading.clone();
+                                    let loading_progress_state = editor_state.loading_progress.clone();
+                                    if let Some(new_scene_id) = crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state)
+                                    {
+                                        if !editor_state.open_scene_tabs.contains(&new_scene_id)
+                                        {
+                                            editor_state.open_scene_tabs.push(new_scene_id);
+                                        }
+                                        editor_state.selected_scene_id = Some(new_scene_id);
+                                        editor_state.selected_object.clear();
+                                        editor_state.selected_type = SelectionType::None;
+                                        editor_state.settings_panel = SettingsPanel::Scene;
+                                        state.set_active_scene(new_scene_id);
+                                    }
 
-                        // more button — add right-to-left so TextEdit gets exact remaining space
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
-                        {
-                            let more_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/more.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
-                            egui::Popup::menu(&more_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
-                            {
-                                ui.set_min_width(160.0);
-                                ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+                                    egui::Popup::close_all(ui.ctx());
+                                }
                             });
 
-                            let search_response = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(f32::INFINITY));
-                            let icon_rect = egui::Rect::from_center_size(egui::pos2(search_response.rect.right() - icon_size / 2.0 - 4.0, search_response.rect.center().y),egui::vec2(icon_size, icon_size));
-                            egui::Image::new(egui::include_image!("../../../../resources/icons/search.svg")).tint(ui.visuals().weak_text_color()).paint_at(ui, icon_rect);
+                            // more button — add right-to-left so TextEdit gets exact remaining space
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                            {
+                                let more_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/more.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
+                                egui::Popup::menu(&more_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
+                                {
+                                    ui.set_min_width(160.0);
+                                    ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+                                });
+
+                                let search_response = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(f32::INFINITY));
+                                let icon_rect = egui::Rect::from_center_size(egui::pos2(search_response.rect.right() - icon_size / 2.0 - 4.0, search_response.rect.center().y),egui::vec2(icon_size, icon_size));
+                                egui::Image::new(egui::include_image!("../../../../resources/icons/search.svg")).tint(ui.visuals().weak_text_color()).paint_at(ui, icon_rect);
+                            });
                         });
                     });
+
+                    ui.separator();
+                }
+
+                // hierarchy — fills the rest of the panel (minus the bottom padding of collapse())
+                let used_height = ui.cursor().min.y - content_top;
+                let scroll_height = (viewport_height - used_height - 12.0).max(HIERARCHY_MIN_HEIGHT);
+                ScrollArea::vertical().id_salt("hierarchy_scroll").max_height(scroll_height).auto_shrink([false, false]).show(ui, |ui|
+                {
+                    create_hierarchy(editor_state, state, ui);
                 });
-
-                ui.separator();
-
-                // hierarchy
-                create_hierarchy(editor_state, state, ui);
             });
         });
     });
