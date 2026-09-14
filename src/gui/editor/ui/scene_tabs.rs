@@ -1,24 +1,36 @@
 use egui::{Color32, ScrollArea, Ui};
 
-use crate::{gui::{editor::{editor::EDITOR_INTERNAL_TAG, editor_state::{EditorState, SelectionType, SettingsPanel}}, helper::generic_items::tab}, state::state::{ENGINE_INTERNAL_TAG, State}};
+use crate::{gui::{editor::{editor::EDITOR_INTERNAL_TAG, editor_state::{EditorState, SelectionType, SettingsPanel}}, helper::generic_items::{tab_button, tab_sized}}, state::state::{ENGINE_INTERNAL_TAG, State}};
+
+const SCENE_TAB_FONT_SIZE: f32 = 14.0;
+const SCENE_TAB_H_PAD: f32 = 12.0;
 
 fn is_internal_scene(scene: &crate::state::scene::scene::Scene) -> bool
 {
     scene.has_tag(ENGINE_INTERNAL_TAG) || scene.has_tag(EDITOR_INTERNAL_TAG)
 }
 
-pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui, tab_height: f32)
 {
     // remove tabs for scenes that no longer exist (or that became internal, e.g. the preview scene)
     let valid_ids: Vec<u32> = state.scenes.iter().filter(|s| !is_internal_scene(s)).map(|s| s.id).collect();
     editor_state.open_scene_tabs.retain(|id| valid_ids.contains(id));
 
-    // auto-open first user (non-internal) scene if no tabs are open yet
+    // auto-open the active (or first) user scene if no tabs are open yet - at startup and after loading a project
     if editor_state.open_scene_tabs.is_empty()
     {
-        if let Some(first) = state.scenes.iter().find(|s| !is_internal_scene(s))
+        let scene = state.scenes.iter().find(|s| s.active && !is_internal_scene(s)).or_else(|| state.scenes.iter().find(|s| !is_internal_scene(s)));
+
+        if let Some(scene) = scene
         {
-            editor_state.open_scene_tabs.push(first.id);
+            editor_state.open_scene_tabs.push(scene.id);
+
+            // select it like a click, unless something else is selected already
+            if editor_state.selected_scene_id.is_none() && editor_state.selected_object.is_empty() && editor_state.selected_type == SelectionType::None
+            {
+                editor_state.selected_scene_id = Some(scene.id);
+                editor_state.settings_panel = SettingsPanel::Scene;
+            }
         }
     }
 
@@ -36,7 +48,8 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
 
     ScrollArea::horizontal().id_salt("scene_tabs_scroll").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui|
     {
-        ui.horizontal(|ui|
+        // top aligned: a centered row starts at the default row height and pushes the taller tabs down (clipped at the bottom)
+        ui.horizontal_top(|ui|
         {
             ui.spacing_mut().item_spacing.x = 2.0;
 
@@ -59,14 +72,14 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                     && editor_state.selected_object.is_empty()
                     && editor_state.selected_type == SelectionType::None;
 
-                let mut label = egui::RichText::new(format!("🎬  {}", scene_name)).size(13.0);
+                let mut label = egui::RichText::new(format!("🎬  {}", scene_name)).size(SCENE_TAB_FONT_SIZE);
                 if is_active
                 {
                     // brighter blue + bold so the active scene clearly stands out
                     label = label.color(Color32::from_rgb(170, 230, 255)).strong();
                 }
 
-                let result = tab(ui, label, is_selected, can_close);
+                let result = tab_sized(ui, label, is_selected, can_close, Some(tab_height), SCENE_TAB_H_PAD);
 
                 if result.clicked
                 {
@@ -85,7 +98,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
 
             // + button to add a new scene
             {
-                let plus_response = tab(ui, egui::RichText::new("+").size(13.0).strong(), false, false).response;
+                let plus_response = tab_button(ui, egui::RichText::new("+").size(SCENE_TAB_FONT_SIZE + 3.0).strong(), egui::vec2(tab_height, tab_height));
                 let plus_response = plus_response.on_hover_text("Add scene");
 
                 egui::Popup::menu(&plus_response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|

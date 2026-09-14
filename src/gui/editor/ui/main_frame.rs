@@ -13,7 +13,7 @@ use crate::gui::editor::ui::dialogs::load_texture_dialog;
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
-use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode};
+use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
 use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator};
@@ -38,6 +38,7 @@ use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
 use super::textures::{create_texture_settings, build_texture_list};
+use super::run_mode_bar::{create_run_mode_bar, RUN_MODE_BAR_HEIGHT, RUN_MODE_BAR_V_PADDING};
 
 const HIERARCHY_MIN_HEIGHT: f32 = 250.0;
 
@@ -209,11 +210,35 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     });
     editor_state.right_panel_open = right_panel_open;
 
-    // scene tabs — no bottom inner margin so the tabs sit flush on the panel separator
-    let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 2, bottom: 0 });
+    // scene tabs — no vertical inner margin: the tabs sit flush on the panel separator, the row brings its own padding
+    let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 0, bottom: 0 });
     egui::Panel::top("scene_tabs_panel").frame(scene_tabs_frame).show(ui, |ui|
     {
-        create_scene_tabs(editor_state, state, ui);
+        // the real bar height is only known after drawing, so the last measured one is used
+        let bar_height_id = ui.id().with("run_mode_bar_height");
+        let bar_height = ui.data(|data| data.get_temp::<f32>(bar_height_id)).unwrap_or(RUN_MODE_BAR_HEIGHT);
+
+        // explicit rects: the run mode bar vertically centered on the right, the tabs as high as the bar and flush on the separator
+        let row_height = bar_height + RUN_MODE_BAR_V_PADDING * 2.0;
+        let tabs_height = bar_height;
+        let (_, row_rect) = ui.allocate_space(egui::vec2(ui.available_width(), row_height));
+
+        // top aligned: a centered layout would center the bar's start height and let the content grow downwards
+        let bar_rect = egui::Rect::from_center_size(row_rect.center(), egui::vec2(row_rect.width(), bar_height));
+        let mut bar_ui = ui.new_child(egui::UiBuilder::new().id_salt("run_mode_bar").max_rect(bar_rect).layout(egui::Layout::right_to_left(egui::Align::Min)));
+        create_run_mode_bar(editor_state, state, &mut bar_ui);
+
+        let measured_height = bar_ui.min_rect().height();
+        if (measured_height - bar_height).abs() > 0.5
+        {
+            ui.data_mut(|data| data.insert_temp(bar_height_id, measured_height));
+            ui.ctx().request_repaint();
+        }
+
+        let tabs_right = bar_ui.min_rect().left() - 8.0;
+        let tabs_rect = egui::Rect::from_min_max(egui::pos2(row_rect.left(), row_rect.bottom() - tabs_height), egui::pos2(tabs_right, row_rect.bottom()));
+        let mut tabs_ui = ui.new_child(egui::UiBuilder::new().id_salt("scene_tabs").max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        create_scene_tabs(editor_state, state, &mut tabs_ui, tabs_height);
     });
 
     //top
@@ -408,11 +433,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         // same height (otherwise the grid menu, added first, sticks to the top)
         ui.set_min_height(icon_size + padding * 2.0);
 
-        let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
-
-        let run_mode = state.run_mode;
-        let running = run_mode.is_running();
-
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
             create_tool_menu_grid(editor_state, state, ui);
@@ -421,111 +441,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
         {
             ui.spacing_mut().button_padding = egui::vec2(padding, padding);
-
-            // fullscreen change
-            {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/fullscreen.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(fullscreen).frame(true);
-                if ui.add(btn).on_hover_text("Fullscreen").clicked()
-                {
-                    fullscreen = !fullscreen;
-                    state.rendering.fullscreen.set(fullscreen);
-                }
-            }
-
-            ui.separator();
-
-            // engine stop - nothing updates at all while this is off
-            {
-                let updating = state.run_mode.updates_engine();
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/engine.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(updating).frame(true);
-                if ui.add(btn).on_hover_text("Engine update on/off").clicked()
-                {
-                    let run_mode = if updating { RunMode::Stopped } else { RunMode::Edit };
-                    editor_state.set_run_mode(state, run_mode, false);
-                }
-            }
-
-            let transport_size = egui::vec2(icon_size + padding * 2.0, icon_size + padding * 2.0);
-
-            // pause
-            {
-                let btn = egui::Button::new("⏸").selected(state.pause).frame(true).min_size(transport_size);
-
-                if ui.add_enabled(running, btn).on_hover_text("Pause (P) - keeps everything where it is").clicked()
-                {
-                    let paused = !state.pause;
-                    editor_state.set_paused(state, paused);
-                }
-            }
-
-            // start or stop a run: a plain click plays, the arrow offers the other
-            // combinations - while a run is on, the same spot stops it again
-            {
-                let mut picked_run_mode = None;
-                let mut stop = false;
-
-                // right to left layout, so the arrow is added first to end up on the right
-                ui.scope(|ui|
-                {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-
-                    // the arrow only hints at the menu, so it is a thin strip of the same
-                    // height as the button next to it
-                    let default_button_padding = ui.spacing().button_padding;
-                    ui.spacing_mut().button_padding.x = 1.0;
-
-                    let arrow_glyph = egui::RichText::new("⏷").size(icon_size * 0.45);
-                    let arrow = egui::Button::new(arrow_glyph).frame(true).min_size(egui::vec2(icon_size / 3.0, icon_size + padding * 2.0));
-
-                    let (response, _) = egui::containers::menu::MenuButton::from_button(arrow).ui(ui, |ui|
-                    {
-                        if ui.add(egui::Button::new("Play").selected(run_mode == RunMode::Play)).clicked() { picked_run_mode = Some((RunMode::Play, false)); }
-                        if ui.button("Play (Fullscreen)").clicked() { picked_run_mode = Some((RunMode::Play, true)); }
-
-                        ui.separator();
-
-                        if ui.add(egui::Button::new("Simulate").selected(run_mode == RunMode::Simulate)).clicked() { picked_run_mode = Some((RunMode::Simulate, false)); }
-                        if ui.button("Simulate (Fullscreen)").clicked() { picked_run_mode = Some((RunMode::Simulate, true)); }
-                    });
-
-                    response.on_hover_text("Pick a run mode");
-
-                    ui.spacing_mut().button_padding = default_button_padding;
-
-                    if running
-                    {
-                        let btn = egui::Button::new("⏹").frame(true).min_size(transport_size);
-
-                        if ui.add(btn).on_hover_text("Stop (Esc) - back to edit, resets every dynamic object").clicked()
-                        {
-                            stop = true;
-                        }
-                    }
-                    else
-                    {
-                        let img = egui::Image::new(egui::include_image!("../../../../resources/icons/tryout.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                        let btn = egui::Button::image(img).frame(true);
-
-                        if ui.add(btn).on_hover_text("Play (Ctrl+R, hold Shift for fullscreen)").clicked()
-                        {
-                            picked_run_mode = Some((RunMode::Play, false));
-                        }
-                    }
-                });
-
-                if stop
-                {
-                    editor_state.set_run_mode(state, RunMode::Edit, false);
-                }
-                else if let Some((run_mode, fullscreen)) = picked_run_mode
-                {
-                    editor_state.set_run_mode(state, run_mode, fullscreen);
-                }
-            }
-
-            ui.separator();
 
             // gizmo
             {

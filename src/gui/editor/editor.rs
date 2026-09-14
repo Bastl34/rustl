@@ -377,6 +377,13 @@ impl Editor
             self.editor_state.set_run_mode(state, RunMode::Play, fullscreen);
         }
 
+        // simulation mode (Ctrl+T, +shift: fullscreen)
+        if state.run_mode != RunMode::Simulate && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::T)
+        {
+            let fullscreen = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift);
+            self.editor_state.set_run_mode(state, RunMode::Simulate, fullscreen);
+        }
+
         // back to edit mode
         if (state.run_mode == RunMode::Play || state.run_mode == RunMode::Simulate) && state.io.input_manager.keyboard.is_pressed(Key::Escape)
         {
