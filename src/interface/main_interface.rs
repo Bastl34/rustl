@@ -97,7 +97,7 @@ impl MainInterface
             {
                 state,
 
-                window_title: window.title().clone(),
+                window_title: format!("Rustl v{}", env!("CARGO_PKG_VERSION")),
                 window_minimized: false,
 
                 wgpu,
@@ -303,9 +303,13 @@ impl MainInterface
                 {
                     self.context.window_title.clone()
                 }
-                else
+                else if state.project.version.trim().is_empty()
                 {
                     format!("{} | {}", &self.context.window_title, state.project.name.trim())
+                }
+                else
+                {
+                    format!("{} | {} v{}", &self.context.window_title, state.project.name.trim(), state.project.version.trim())
                 };
 
                 self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());

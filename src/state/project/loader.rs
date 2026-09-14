@@ -365,6 +365,7 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
         return;
     }
 
+    state.project = project.project.clone();
     state.delete_all_scenes(true);
 
     let mut editor_scenes: Vec<(EditorScene, String, bool)> = Vec::new();

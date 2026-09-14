@@ -36,7 +36,7 @@ impl Default for EditorProjectFormat
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorProjectData
+pub struct ProjectData
 {
     pub name: String,
     pub version: String,
@@ -51,11 +51,11 @@ pub struct EditorProjectData
     pub editing_time_secs: u64,
 }
 
-impl Default for EditorProjectData
+impl Default for ProjectData
 {
     fn default() -> Self
     {
-        EditorProjectData
+        ProjectData
         {
             name: "Untitled".to_string(),
             version: "0.0.1".to_string(),
@@ -84,7 +84,7 @@ pub struct EditorProjectSceneRef
 pub struct EditorProject
 {
     pub format: EditorProjectFormat,
-    pub project: EditorProjectData,
+    pub project: ProjectData,
 
     pub scenes: Vec<EditorProjectSceneRef>,
 }

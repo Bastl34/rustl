@@ -9,7 +9,7 @@ use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes}
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
 
 pub const GRID_ROOT: &str = "grid root";
-pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid main";         // single view + 3d quad
+pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid main"; // single view + 3d quad
 pub const GRID_NAME_XZ: &str = "grid xz"; // top quad — same orientation, independent transform
 pub const GRID_NAME_XY: &str = "grid xy";
 pub const GRID_NAME_YZ: &str = "grid yz";

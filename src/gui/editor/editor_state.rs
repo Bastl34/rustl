@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{gui::editor::gizmo::hide_gizmos, state::{project::project::EditorProjectData, scene::node::NodeSettings}};
+use crate::{gui::editor::gizmo::hide_gizmos, state::{project::project::ProjectData, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 
 const THUMB_EXTENSION: &str = "png";
@@ -196,7 +196,6 @@ pub struct EditorState
     pub recent_projects: RecentProjectsData,
     pub settings: EditorSettings,
 
-    pub project_data: EditorProjectData,
     pub project_path: Option<String>,
     pub project_session_start: Instant,
 
@@ -322,7 +321,7 @@ impl EditorState
 {
     pub fn new() -> EditorState
     {
-        let mut state = EditorState
+        let state = EditorState
         {
             visible: true,
             loading: Arc::new(RwLock::new(false)),
@@ -340,7 +339,6 @@ impl EditorState
             recent_projects: RecentProjectsData::new(),
             settings: EditorSettings::new(),
 
-            project_data: EditorProjectData::default(),
             project_path: None,
             project_session_start: Instant::now(),
 
@@ -461,14 +459,12 @@ impl EditorState
             open_scene_tabs: vec![],
         };
 
-        state.reset_project();
-
         state
     }
 
-    pub fn reset_project(&mut self)
+    pub fn reset_project(&mut self, state: &mut State)
     {
-        self.project_data = EditorProjectData::default();
+        state.project = ProjectData::default();
         self.project_path = None;
         self.project_session_start = Instant::now();
     }
@@ -505,7 +501,7 @@ impl EditorState
             "Save changes to the current project before creating a new one?",
             |editor_state, state|
             {
-                editor_state.reset_project();
+                editor_state.reset_project(state);
                 state.delete_all_scenes(true);
                 state.add_scene("main scene");
                 state.run_mode = RunMode::Edit;
@@ -523,10 +519,10 @@ impl EditorState
         self.dialog_alert_message = message.to_string();
     }
 
-    pub fn accumulate_editing_time(&mut self)
+    pub fn accumulate_editing_time(&mut self, state: &mut State)
     {
         let elapsed = self.project_session_start.elapsed().as_secs();
-        self.project_data.editing_time_secs += elapsed;
+        state.project.editing_time_secs += elapsed;
         self.project_session_start = Instant::now();
     }
 

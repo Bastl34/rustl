@@ -128,12 +128,12 @@ fn extract_transform(node: &crate::state::scene::node::Node) -> ([f32; 3], [f32;
 
 // ******************** save ********************
 
-pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: &str) -> bool
+pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, path: &str) -> bool
 {
-    editor_state.project_data.build += 1;
-    editor_state.accumulate_editing_time();
+    state.project.build += 1;
+    editor_state.accumulate_editing_time(state);
 
-    let project_name = editor_state.project_data.name.clone();
+    let project_name = state.project.name.clone();
     let base_dir = get_dirname(path);
 
     let mut project_scenes: Vec<EditorProjectSceneRef> = Vec::new();
@@ -195,7 +195,7 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
 
     let project = EditorProject
     {
-        project: editor_state.project_data.clone(),
+        project: state.project.clone(),
         format: EditorProjectFormat::default(),
         scenes: project_scenes,
     };
@@ -226,14 +226,14 @@ pub fn save_editor_project(state: &State, editor_state: &mut EditorState, path: 
     }
 }
 
-pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &State, force_new_path: bool) -> Option<String>
+pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &mut State, force_new_path: bool) -> Option<String>
 {
     let mut path = editor_state.project_path.clone();
     if editor_state.project_path.is_none() || force_new_path
     {
         path = rfd::FileDialog::new()
             .add_filter("Rustl Project", &["project"])
-            .set_file_name(&format!("{}.project", editor_state.project_data.name))
+            .set_file_name(&format!("{}.project", state.project.name))
             .save_file()
             .map(|path| path.to_string_lossy().into_owned())
     }
@@ -247,7 +247,7 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
         let stem = get_stem(&base);
         if !stem.is_empty()
         {
-            editor_state.project_data.name = stem;
+            state.project.name = stem;
         }
 
         if save_editor_project(state, editor_state, &base)
@@ -280,7 +280,6 @@ pub fn load_editor_project_from_path(editor_state: &mut EditorState, state: &mut
 {
     if let Some(project) = load_editor_project(&path)
     {
-        editor_state.project_data = project.project.clone();
         editor_state.project_path = Some(path.clone());
         editor_state.project_session_start = web_time::Instant::now();
         editor_state.recent_projects.add_and_save(path.clone());

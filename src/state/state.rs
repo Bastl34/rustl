@@ -6,7 +6,7 @@ use web_time::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::ProjectData, resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
@@ -36,12 +36,6 @@ pub const ENGINE_INTERNAL_TAG: &str = "__internal_engine";
 pub fn get_delta_t(frame_scale: f32) -> f32
 {
     frame_scale / REFERENCE_UPDATE_FRAMES
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Project
-{
-    pub name: String,
 }
 
 pub struct RenderingAdapterFeatures
@@ -342,7 +336,7 @@ impl RunMode
 
 pub struct State
 {
-    pub project: Project,
+    pub project: ProjectData,
 
     pub rendering_adapter: RenderingAdapterFeatures,
     pub rendering: Rendering,
@@ -409,10 +403,7 @@ impl State
 
         Self
         {
-            project: Project
-            {
-                name: "Untitled".to_string(),
-            },
+            project: ProjectData::default(),
             rendering_adapter: RenderingAdapterFeatures
             {
                 name: String::new(),
