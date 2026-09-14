@@ -143,7 +143,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
             let console_errors = console_log::get_error_amount();
             let console_label = if console_errors > 0
             {
-                egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)
+                egui::RichText::new(format!("📝 Console {} (with Errors {})", console_log_amount, console_errors)).color(egui::Color32::LIGHT_RED)
             }
             else
             {
