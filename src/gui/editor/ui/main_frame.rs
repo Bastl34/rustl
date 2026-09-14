@@ -66,8 +66,8 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    // status bar — just a single row at the bottom of the screen, separate from the bottom panel
-    egui::Panel::bottom("bottom_status_panel").resizable(true).frame(frame).show(ui, |ui|
+    // status bar
+    egui::Panel::bottom("bottom_status_panel").resizable(false).frame(frame).show(ui, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -126,70 +126,76 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    // bottom panel
-    if editor_state.bottom_panel_open
+    // bottom panel (drag below min size to close, drag the edge handle to reopen)
+    let mut bottom_panel_open = editor_state.bottom_panel_open;
+    egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).min_size(100.0).show_collapsible(ui, &mut bottom_panel_open, |ui|
     {
-        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show(ui, |ui|
+        ui.horizontal(|ui|
         {
-            ui.horizontal(|ui|
+            ui.spacing_mut().item_spacing.x = 2.0;
+
+            if tab(ui, "📦 Assets", editor_state.bottom == BottomPanel::Assets, false).clicked
             {
-                ui.spacing_mut().item_spacing.x = 2.0;
-
-                if tab(ui, "📦 Assets", editor_state.bottom == BottomPanel::Assets, false).clicked
-                {
-                    editor_state.bottom = BottomPanel::Assets;
-                }
-
-                let console_log_amount = console_log::get_amount();
-                let console_errors = console_log::get_error_amount();
-                let console_label = if console_errors > 0
-                {
-                    egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)
-                }
-                else
-                {
-                    egui::RichText::new(format!("📝 Console ({})", console_log_amount))
-                };
-                let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
-                if console_errors > 0
-                {
-                    console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
-                }
-                if console_tab.clicked
-                {
-                    editor_state.bottom = BottomPanel::Console;
-                }
-
-                if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
-                {
-                    editor_state.bottom = BottomPanel::Debug;
-                }
-            });
-            tab_separator(ui);
-
-            if editor_state.bottom == BottomPanel::Assets
-            {
-                create_asset_section(editor_state, state, ui);
+                editor_state.bottom = BottomPanel::Assets;
             }
-            else if editor_state.bottom == BottomPanel::Console
+
+            let console_log_amount = console_log::get_amount();
+            let console_errors = console_log::get_error_amount();
+            let console_label = if console_errors > 0
             {
-                create_console_section(editor_state, state, ui);
+                egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)
             }
-            else if editor_state.bottom == BottomPanel::Debug
+            else
             {
-                create_debug_settings(editor_state, state, ui);
+                egui::RichText::new(format!("📝 Console ({})", console_log_amount))
+            };
+            let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
+            if console_errors > 0
+            {
+                console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
+            }
+            if console_tab.clicked
+            {
+                editor_state.bottom = BottomPanel::Console;
+            }
+
+            if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
+            {
+                editor_state.bottom = BottomPanel::Debug;
             }
         });
-    }
+        tab_separator(ui);
+
+        if editor_state.bottom == BottomPanel::Assets
+        {
+            create_asset_section(editor_state, state, ui);
+        }
+        else if editor_state.bottom == BottomPanel::Console
+        {
+            create_console_section(editor_state, state, ui);
+        }
+        else if editor_state.bottom == BottomPanel::Debug
+        {
+            create_debug_settings(editor_state, state, ui);
+        }
+    });
+    editor_state.bottom_panel_open = bottom_panel_open;
 
     // left panel
     let mut left_panel_open = editor_state.left_panel_open;
     egui::Panel::left("left_panel").frame(frame).min_size(150.0).show_collapsible(ui, &mut left_panel_open, |ui|
     {
-        ui.set_min_width(300.0);
-        ui.set_max_width(ui.available_width());
+        // content in a child ui (>= 300) that doesn't report its size, otherwise the resize line sticks at 300
+        let content_width = ui.available_width().max(300.0);
+        let content_rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(content_width, ui.available_height()));
+        let mut content_ui = ui.new_child(egui::UiBuilder::new().id_salt("left_sidebar_content").max_rect(content_rect).layout(*ui.layout()));
 
-        create_left_sidebar(editor_state, state, ui);
+        create_left_sidebar(editor_state, state, &mut content_ui);
+
+        // while resizing report the visible width (line follows pointer), otherwise >= 300 (snaps back)
+        let resizing = ui.input(|i| i.pointer.primary_down());
+        let reported_width = if resizing { ui.available_width() } else { content_width };
+        ui.advance_cursor_after_rect(egui::Rect::from_min_size(ui.cursor().min, egui::vec2(reported_width, 0.0)));
     });
     editor_state.left_panel_open = left_panel_open;
 
@@ -799,8 +805,7 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
 {
     let viewport_height = ui.available_height();
 
-    // solid scroll bars reserve their own space instead of floating over the content,
-    // so the sidebar bar doesn't cover the hierarchy bar
+    // solid scroll bars take their own space, so the sidebar bar doesn't cover the hierarchy bar
     ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
 
     ScrollArea::vertical().id_salt("left_sidebar_scroll").auto_shrink([false, false]).show(ui, |ui|
