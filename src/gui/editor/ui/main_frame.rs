@@ -183,32 +183,25 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     }
 
     // left panel
-    if editor_state.left_panel_open
+    let mut left_panel_open = editor_state.left_panel_open;
+    egui::Panel::left("left_panel").frame(frame).min_size(150.0).show_collapsible(ui, &mut left_panel_open, |ui|
     {
-        egui::Panel::left("left_panel").frame(frame).min_size(300.0).show(ui, |ui|
-        {
-            ui.set_max_width(ui.available_width());
+        ui.set_min_width(300.0);
+        ui.set_max_width(ui.available_width());
 
-            //ui.add_enabled_ui(!loading, |ui|
-            //{
-                create_left_sidebar(editor_state, state, ui);
-            //});
-        });
-    }
+        create_left_sidebar(editor_state, state, ui);
+    });
+    editor_state.left_panel_open = left_panel_open;
 
     // right panel
-    if editor_state.right_panel_open
+    let mut right_panel_open = editor_state.right_panel_open;
+    egui::Panel::right("right_panel").frame(frame).min_size(150.0).show_collapsible(ui, &mut right_panel_open, |ui|
     {
-        egui::Panel::right("right_panel").frame(frame).show(ui, |ui|
-        {
-            ui.set_min_width(300.0);
+        ui.set_min_width(300.0);
 
-            //ui.add_enabled_ui(!loading, |ui|
-            //{
-                create_right_sidebar(editor_state, state, ui);
-            //});
-        });
-    }
+        create_right_sidebar(editor_state, state, ui);
+    });
+    editor_state.right_panel_open = right_panel_open;
 
     // scene tabs — no bottom inner margin so the tabs sit flush on the panel separator
     let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 2, bottom: 0 });

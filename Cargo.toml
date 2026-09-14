@@ -67,10 +67,10 @@ gltf = { git = "https://github.com/gltf-rs/gltf", rev = "3def30c9caf96f2dbc85238
 image = { version = "0.25.10", default-features = false, features = [ "png", "jpeg", "webp"] }
 # image = "0.24.5"
 
-egui = "0.36.1"
-egui-wgpu = "0.36.1"
+egui = "0.36.2"
+egui-wgpu = "0.36.2"
 egui_plot = { version = "0.37.0", optional = true }
-egui_extras = { version = "0.36.1", features = ["svg"] }
+egui_extras = { version = "0.36.2", features = ["svg"] }
 #egui = { git = "https://github.com/emilk/egui", branch = "main"  }
 #egui-wgpu = { git = "https://github.com/emilk/egui", branch = "main" }
 #egui_extras = { git = "https://github.com/emilk/egui", branch = "main" }
@@ -81,7 +81,7 @@ egui_extras = { version = "0.36.1", features = ["svg"] }
 #egui = { git = "https://github.com/emilk/egui", branch = "main" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.36.1"
+egui-winit = "0.36.2"
 #egui-winit = { git ="https://github.com/emilk/egui", branch = "main" }
 pollster = "1.0.1"
 
@@ -104,7 +104,7 @@ web-sys = { version = "0.3.104", features = [
 wasm_thread = { version = "0.3.3", features = ["es_modules"]}
 
 #egui-winit = { git ="https://github.com/emilk/egui", default-features = false, branch = "main", features = [
-egui-winit = { version = "0.36.1", default-features = false, features = [
+egui-winit = { version = "0.36.2", default-features = false, features = [
   "links",
 ]}
 
