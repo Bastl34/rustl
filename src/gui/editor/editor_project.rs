@@ -18,7 +18,7 @@ use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
 use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorProjectFormat, EditorProjectSceneRef, EditorScene, RESUSE_MATERIALS_TAG};
 use crate::state::scene::components::transformation::Transformation;
-use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, State};
+use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode, State};
 
 // ******************** extraction (Runtime --> EditorProject) ********************
 
@@ -254,6 +254,10 @@ pub fn save_editor_project_with_dialog(editor_state: &mut EditorState, state: &S
         {
             editor_state.project_path = Some(format!("{}.project", base));
         }
+        else
+        {
+            return None;
+        }
     }
 
     path
@@ -287,6 +291,8 @@ pub fn load_editor_project_from_path(editor_state: &mut EditorState, state: &mut
         // load_editor_project already logged the concrete reason (missing file or broken json)
         editor_state.alert("Project", &format!("Project can not be loaded:\n{}\n\nSee the console for details.", path), LogType::Error);
     }
+
+    state.run_mode = RunMode::Edit;
 }
 
 pub fn import_editor_scene_with_dialog(state: &mut State, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>) -> Option<u32>

@@ -114,14 +114,15 @@ pub fn create_alert_dialog(editor_state: &mut EditorState, _state: &mut State, c
 pub fn create_modal_confirm(
 editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
 {
-    let (title, message) = match &editor_state.confirm_dialog
+    let (title, message, save_option) = match &editor_state.confirm_dialog
     {
-        Some(dialog) => (dialog.title.clone(), dialog.message.clone()),
+        Some(dialog) => (dialog.title.clone(), dialog.message.clone(), dialog.save_option),
         None => return,
     };
 
     let mut open = true;
     let mut confirmed = false;
+    let mut save = false;
     let mut cancelled = false;
 
     // own window with .anchor() instead of modal_with_title:
@@ -171,20 +172,45 @@ editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
             {
                 let button_size = egui::vec2(78.0, 28.0);
-
-                let yes = egui::Button::new(egui::RichText::new("Yes").strong().color(egui::Color32::WHITE))
+                let highlighted = |text: &str| egui::Button::new(egui::RichText::new(text).strong().color(egui::Color32::WHITE))
                     .fill(egui::Color32::from_rgb(80, 120, 200))
                     .min_size(button_size);
-                if ui.add(yes).clicked()
+
+                // right_to_left: added in reverse, so it reads "Save | Don't Save | Cancel"
+                if save_option
                 {
-                    confirmed = true;
+                    if ui.add(egui::Button::new("Cancel").min_size(button_size)).clicked()
+                    {
+                        cancelled = true;
+                    }
+
+                    ui.add_space(8.0);
+
+                    if ui.add(egui::Button::new("Don't Save").min_size(button_size)).clicked()
+                    {
+                        confirmed = true;
+                    }
+
+                    ui.add_space(8.0);
+
+                    if ui.add(highlighted("Save")).clicked()
+                    {
+                        save = true;
+                    }
                 }
-
-                ui.add_space(8.0);
-
-                if ui.add(egui::Button::new("No").min_size(button_size)).clicked()
+                else
                 {
-                    cancelled = true;
+                    if ui.add(highlighted("Yes")).clicked()
+                    {
+                        confirmed = true;
+                    }
+
+                    ui.add_space(8.0);
+
+                    if ui.add(egui::Button::new("No").min_size(button_size)).clicked()
+                    {
+                        cancelled = true;
+                    }
                 }
             });
         });
@@ -192,7 +218,19 @@ editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
         ui.add_space(4.0);
     });
 
-    if confirmed
+    if save
+    {
+        if let Some(dialog) = editor_state.confirm_dialog.take()
+        {
+            // only continue when the project was really written - closing the file dialog or a failed save aborts
+            if let Some(path) = crate::gui::editor::editor_project::save_editor_project_with_dialog(editor_state, state, false)
+            {
+                editor_state.recent_projects.add_and_save(path);
+                (dialog.callback)(editor_state, state);
+            }
+        }
+    }
+    else if confirmed
     {
         // take the dialog out first, so the callback can freely borrow editor_state
         if let Some(dialog) = editor_state.confirm_dialog.take()

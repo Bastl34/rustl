@@ -172,6 +172,9 @@ pub struct ConfirmDialog
 {
     pub title: String,
     pub message: String,
+    // true: Save / Don't Save / Cancel (Save stores the project before the callback runs)
+    // false: Yes / No
+    pub save_option: bool,
     pub callback: Box<dyn FnOnce(&mut EditorState, &mut State)>,
 }
 
@@ -477,8 +480,37 @@ impl EditorState
         {
             title: title.to_string(),
             message: message.to_string(),
+            save_option: false,
             callback: Box::new(callback),
         });
+    }
+
+    // shows a Save / Don't Save / Cancel modal - the callback runs after saving or on "Don't Save"
+    pub fn show_save_changes_dialog(&mut self, title: &str, message: &str, callback: impl FnOnce(&mut EditorState, &mut State) + 'static)
+    {
+        self.confirm_dialog = Some(ConfirmDialog
+        {
+            title: title.to_string(),
+            message: message.to_string(),
+            save_option: true,
+            callback: Box::new(callback),
+        });
+    }
+
+    pub fn request_new_project(&mut self)
+    {
+        self.show_save_changes_dialog
+        (
+            "New Project",
+            "Save changes to the current project before creating a new one?",
+            |editor_state, state|
+            {
+                editor_state.reset_project();
+                state.delete_all_scenes(true);
+                state.add_scene("main scene");
+                state.run_mode = RunMode::Edit;
+            }
+        );
     }
 
     // shows a modal alert the user has to acknowledge
