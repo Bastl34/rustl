@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, debug_volumes::{DebugVolume, DebugVolumesBuffer, BOX_VERTICES, SPHERE_VERTICES}, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, debug_volumes::{DebugVolume, DebugVolumeList, DebugVolumesBuffer, BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR}, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -251,11 +251,13 @@ pub struct Scene
 
     bounding_boxes_buffer: BoundingBoxesBuffer,
 
-    // debug rendering of the culling bounding volumes (boxes/spheres) as lines
+    // debug rendering of the culling bounding volumes (boxes/spheres) and the physics colliders as lines
     // (needs storage buffer access in the vertex stage - not available on WebGL)
     debug_volumes_supported: bool,
     pub draw_bounding_boxes: bool,
     pub draw_bounding_spheres: bool,
+    pub draw_physics_volumes: bool,
+    pub draw_light_camera_volumes: bool,
     debug_volumes_buffer: DebugVolumesBuffer,
 
     // one slot per (node, mesh) draw - the slot index is the fixed offset into the indirect
@@ -388,6 +390,8 @@ impl Scene
             debug_volumes_supported: state.rendering_adapter.storage_buffer_array_support,
             draw_bounding_boxes: false,
             draw_bounding_spheres: false,
+            draw_physics_volumes: false,
+            draw_light_camera_volumes: false,
             debug_volumes_buffer: DebugVolumesBuffer::new(wgpu),
 
             draw_slots: DrawSlotsBuffer::new(wgpu),
@@ -800,7 +804,7 @@ impl Scene
             }
 
             // ********** debug volumes bind group **********
-            if self.debug_volumes_supported && (self.draw_bounding_boxes || self.draw_bounding_spheres)
+            if self.debug_volumes_supported && self.draw_debug_volumes()
             {
                 if cam.debug_volumes_bind_group_render_item.is_none() || cam_buffer_created || self.update_result.debug_volumes_buffer_recreated
                 {
@@ -1463,39 +1467,89 @@ impl Scene
         self.update_nodes(wgpu, &mut all_nodes);
         Self::consume_changed_joints(&all_nodes);
 
-        // ********** debug bounding volumes (boxes / spheres) **********
+        // ********** debug volumes (bounding boxes / spheres, physics colliders) **********
         self.draw_bounding_boxes = state.rendering.draw_bounding_boxes && self.debug_volumes_supported;
         self.draw_bounding_spheres = state.rendering.draw_bounding_spheres && self.debug_volumes_supported;
+        self.draw_physics_volumes = state.rendering.draw_physics_volumes && self.debug_volumes_supported;
+        self.draw_light_camera_volumes = state.rendering.draw_light_camera_volumes && self.debug_volumes_supported;
 
-        if self.draw_bounding_boxes || self.draw_bounding_spheres
+        if self.draw_debug_volumes()
         {
             // rebuilt every frame while enabled (cheap) - transform changes, node add/remove and
             // visibility toggles are all covered without extra change tracking
-            let visible_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
-            let mut volumes: Vec<DebugVolume> = Vec::with_capacity(visible_nodes.len());
+            let mut volumes = DebugVolumeList::default();
 
-            for node_arc in &visible_nodes
+            if self.draw_bounding_boxes || self.draw_bounding_spheres
             {
-                let node = node_arc.read().unwrap();
+                let visible_nodes = Scene::list_all_child_nodes(&scene.nodes, true);
 
-                // skip engine/editor helper objects (grid, gizmos, ...)
-                if node.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                for node_arc in &visible_nodes
                 {
-                    continue;
+                    let node = node_arc.read().unwrap();
+
+                    // skip engine/editor helper objects (grid, gizmos, ...)
+                    if node.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                    {
+                        continue;
+                    }
+
+                    // the same box the occlusion culling tests against
+                    let Some((min, max)) = node.get_bounding_box_for_all_instances_from_cached_transform() else { continue; };
+
+                    if self.draw_bounding_boxes
+                    {
+                        volumes.boxes.push(DebugVolume::aabb(&min, &max, BOUNDING_BOX_COLOR));
+                    }
+
+                    // the same sphere the frustum culling tests against
+                    if self.draw_bounding_spheres
+                    {
+                        let sphere = node.instance_render_item.as_ref().and_then(|render_item|
+                        {
+                            let instance_buffer = get_render_item::<InstanceBuffer>(render_item);
+                            node.get_bounding_sphere_for_all_instances(&instance_buffer.transformations)
+                        });
+
+                        if let Some((center, radius)) = sphere
+                        {
+                            volumes.spheres.push(DebugVolume::sphere(&center, radius, BOUNDING_SPHERE_COLOR));
+                        }
+                    }
+                }
+            }
+
+            // colliders and character capsules, straight from the physics world
+            if self.draw_physics_volumes
+            {
+                for volume in scene.physics.debug_volumes()
+                {
+                    volumes.add_physics(&volume);
+                }
+            }
+
+            // light icons and camera frustums, straight from the scene
+            if self.draw_light_camera_volumes
+            {
+                // internal entries (editor lights and cameras) only with "show internal entries"
+                let show_internal = state.rendering.debug_volumes_show_internal;
+
+                for light in scene.lights.get_ref()
+                {
+                    let light = light.borrow();
+                    let light = light.get_ref();
+
+                    if show_internal || !light.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                    {
+                        volumes.add_light(light);
+                    }
                 }
 
-                // the same box the occlusion culling tests against
-                if let Some((min, max)) = node.get_bounding_box_for_all_instances_from_cached_transform()
+                for cam in &scene.cameras
                 {
-                    // the same sphere the frustum culling tests against
-                    let sphere = node.instance_render_item.as_ref().and_then(|render_item|
+                    if show_internal || !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
                     {
-                        let instance_buffer = get_render_item::<InstanceBuffer>(render_item);
-                        node.get_bounding_sphere_for_all_instances(&instance_buffer.transformations)
-                    });
-
-                    let (center, radius) = sphere.unwrap_or((Point3::origin(), 0.0));
-                    volumes.push(DebugVolume::new(&min, &max, &center, radius));
+                        volumes.add_camera(cam);
+                    }
                 }
             }
 
@@ -2212,12 +2266,12 @@ impl Scene
             }
 
             // ********** debug bounding volumes **********
-            if (self.draw_bounding_boxes || self.draw_bounding_spheres) && self.debug_volumes_buffer.count > 0
+            if self.draw_debug_volumes() && self.debug_volumes_buffer.count > 0
             {
                 if let Some(debug_volumes_bind_group) = cam.debug_volumes_bind_group_render_item.as_ref()
                 {
                     let debug_volumes_bind_group = get_render_item::<DebugVolumesBindGroup>(debug_volumes_bind_group);
-                    render_result.draw_calls += self.render_debug_volumes(view, msaa_view, encoder, cam_data, &debug_volumes_bind_group.bind_group);
+                    render_result.draw_calls += self.render_debug_volumes(view, msaa_view, encoder, cam_data, cam.id, &debug_volumes_bind_group.bind_group);
                 }
             }
 
@@ -2719,9 +2773,14 @@ impl Scene
         draw_calls
     }
 
-    // draws the culling bounding volumes (boxes/spheres) as lines on top of the color pass
+    fn draw_debug_volumes(&self) -> bool
+    {
+        self.draw_bounding_boxes || self.draw_bounding_spheres || self.draw_physics_volumes || self.draw_light_camera_volumes
+    }
+
+    // draws the debug volumes (culling bounds, physics colliders) as lines on top of the color pass
     // (vertex pulling from the debug volumes buffer - no vertex buffers, one instance per volume)
-    pub fn render_debug_volumes(&self, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, cam_data: &CameraData, bind_group: &BindGroup) -> u32
+    pub fn render_debug_volumes(&self, view: &TextureView, msaa_view: &Option<TextureView>, encoder: &mut CommandEncoder, cam_data: &CameraData, camera_id: u32, bind_group: &BindGroup) -> u32
     {
         let mut render_pass_view = view;
         let mut render_pass_resolve_target = None;
@@ -2770,27 +2829,21 @@ impl Scene
 
         render_pass.set_bind_group(0, bind_group, &[]);
 
-        let volumes = self.debug_volumes_buffer.count as u32;
         let mut draw_calls = 0;
 
-        if self.draw_bounding_boxes
+        // one draw per shape group, plus a faded one where see through volumes are hidden behind geometry
+        for (vertices, instances, see_through, (visible, hidden)) in self.debug_volumes_buffer.draws(camera_id)
         {
-            if let Some(pipeline) = self.debug_volumes_buffer.box_pipeline()
+            if see_through
             {
-                render_pass.set_pipeline(pipeline);
-                render_pass.draw(0..BOX_VERTICES, 0..volumes);
+                render_pass.set_pipeline(hidden);
+                render_pass.draw(0..vertices, instances.clone());
                 draw_calls += 1;
             }
-        }
 
-        if self.draw_bounding_spheres
-        {
-            if let Some(pipeline) = self.debug_volumes_buffer.sphere_pipeline()
-            {
-                render_pass.set_pipeline(pipeline);
-                render_pass.draw(0..SPHERE_VERTICES, 0..volumes);
-                draw_calls += 1;
-            }
+            render_pass.set_pipeline(visible);
+            render_pass.draw(0..vertices, instances);
+            draw_calls += 1;
         }
 
         draw_calls
@@ -3054,6 +3107,8 @@ pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene
     // - update() syncs them from the state, so they are cleared afterwards
     render_scene.draw_bounding_boxes = false;
     render_scene.draw_bounding_spheres = false;
+    render_scene.draw_physics_volumes = false;
+    render_scene.draw_light_camera_volumes = false;
 
     let (buffer_dimensions, output_buffer, texture, view, msaa_view) = wgpu.start_offscreen_render(Some((width, height)));
     let mut encoder = wgpu.create_command_encoder();

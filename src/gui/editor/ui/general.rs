@@ -250,6 +250,18 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_physics_volumes, "Draw Physics Volumes"));
+            ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the physics colliders and character capsules as lines - mesh colliders as their bounds, faded where hidden behind geometry" } else { "not supported by this GPU/backend" });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_light_camera_volumes, "Draw Lights And Cameras"));
+            ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders an icon per enabled light (point: rays, directional: arrow, sun: rays + arrow, spot: cone, hemispheric: color and ground color half) and the frustum of each enabled camera, faded where hidden behind geometry - editor lights and cameras only with \"show internal entries\"" } else { "not supported by this GPU/backend" });
+        });
+
+        ui.horizontal(|ui|
+        {
             ui.checkbox(&mut state.rendering.create_mipmaps, "create mipmaps");
             ui.label("ℹ").on_hover_text("applied only for new loaded objects");
         });

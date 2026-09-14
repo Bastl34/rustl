@@ -587,6 +587,7 @@ impl CharacterController
 
         // the character is skinned, so its meshes would be re-synced every single frame
         scene.physics.exclude_nodes(&self.excluded_node_ids);
+        self.publish_capsule(scene);
 
         self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, 1.0, true, false, false);
 
@@ -764,6 +765,15 @@ impl CharacterController
         self.collision.capsule_center_offset = (min.y + max.y) * 0.5 - world_pos.y;
 
         true
+    }
+
+    // Hands the capsule to the physics world, which is where the debug view picks it up.
+    fn publish_capsule(&self, scene: &mut Scene)
+    {
+        if let Some(node) = self.node.as_ref()
+        {
+            scene.physics.set_character_shape(node, self.collision.capsule_center_offset, self.collision.capsule_half_height, self.collision.capsule_radius);
+        }
     }
 
     // The character and everything below it must not block its own shape cast.
@@ -1216,6 +1226,14 @@ impl SceneController for CharacterController
         false
     }
 
+    fn on_remove(&mut self, scene: &mut crate::state::scene::scene::Scene)
+    {
+        if let Some(node) = self.node.as_ref()
+        {
+            scene.physics.remove_character_shape(node.read().unwrap().id);
+        }
+    }
+
     fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
     {
         // resolve node
@@ -1270,6 +1288,8 @@ impl SceneController for CharacterController
 
             self.apply_camera_offset(scene);
         }
+
+        self.publish_capsule(scene);
 
         let mut movement = Vector3::<f32>::zeros();
         let mut rotation = Vector3::<f32>::zeros();
@@ -2107,6 +2127,9 @@ impl SceneController for CharacterController
             ui.label("ℹ").on_hover_text("from the node origin (feet) up to the capsule center");
             ui.add(egui::Slider::new(&mut self.collision.capsule_center_offset, 0.0..=4.0).fixed_decimals(3));
         });
+
+        // outside play the controller does not update, so edits reach the debug view from here
+        self.publish_capsule(scene);
 
         ui.horizontal(|ui|
         {

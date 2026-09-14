@@ -107,6 +107,18 @@ pub struct Rendering
     #[serde(default)]
     pub draw_bounding_spheres: bool,
 
+    // debug rendering of the physics colliders and character capsules (lines)
+    #[serde(default)]
+    pub draw_physics_volumes: bool,
+
+    // debug rendering of the lights (icons) and cameras (frustums)
+    #[serde(default)]
+    pub draw_light_camera_volumes: bool,
+
+    // editor internal lights and cameras are drawn too - mirrors "show internal entries", set by the editor every frame
+    #[serde(skip)]
+    pub debug_volumes_show_internal: bool,
+
     pub xray_mode: bool,
     pub xray_alpha: f32,
 }
@@ -451,6 +463,9 @@ impl State
 
                 draw_bounding_boxes: false,
                 draw_bounding_spheres: false,
+                draw_physics_volumes: false,
+                draw_light_camera_volumes: false,
+                debug_volumes_show_internal: false,
 
                 xray_mode: false,
                 xray_alpha: DEFAULT_XRAY_ALPHA,

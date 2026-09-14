@@ -1211,8 +1211,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
             if (lights[i].light_type == 4u) //LIGHT_TYPE_HEMISPHERIC
             {
+                // dir is where the light travels (as for a directional light), so normals facing against it get the sky color
                 let dir = normalize(lights[i].dir.xyz);
-                let normal_dot_light_dir = dot(normal, dir);
+                let normal_dot_light_dir = dot(normal, -dir);
 
                 let light_contrib = clamp(normal_dot_light_dir, -1.0, 1.0) * 0.5 + 0.5;
                 let light_color = mix(lights[i].ground_color, lights[i].color, light_contrib);

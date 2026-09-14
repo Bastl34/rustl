@@ -430,7 +430,8 @@ waiting: objects holding still for their first hit", scene.physics.last_synced, 
 
         if let Some(delete_controller) = delete_controller
         {
-            scene.pre_controller.remove(delete_controller);
+            let mut removed = scene.pre_controller.remove(delete_controller);
+            removed.on_remove(scene);
         }
 
         // add scene controller
@@ -502,7 +503,8 @@ waiting: objects holding still for their first hit", scene.physics.last_synced, 
 
         if let Some(delete_controller) = delete_controller
         {
-            scene.post_controller.remove(delete_controller);
+            let mut removed = scene.post_controller.remove(delete_controller);
+            removed.on_remove(scene);
         }
 
         // add scene controller

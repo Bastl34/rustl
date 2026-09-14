@@ -496,6 +496,16 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // editor internals (hierarchy, lists and the light/camera debug view)
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/internal_entries.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.show_internal_entries).frame(true);
+                if ui.add(btn).on_hover_text("show editor internals (hierarchy, lists and the light/camera debug view)").clicked()
+                {
+                    editor_state.show_internal_entries = !editor_state.show_internal_entries;
+                }
+            }
+
             // wireframe mode
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/wireframe.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
@@ -511,6 +521,8 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
                 }
             }
+
+            ui.separator();
 
             // bounding volume rendering (cycles off -> spheres -> boxes)
             {
@@ -544,6 +556,40 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     }
                 }
             }
+
+            // physics volume rendering (colliders and character capsules)
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/physics_volumes.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let mut btn = egui::Button::image(img).selected(state.rendering.draw_physics_volumes).frame(true);
+                let supported = state.rendering_adapter.storage_buffer_array_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle physics volume rendering (colliders and character capsules)" } else { "physics volume rendering not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    state.rendering.draw_physics_volumes = !state.rendering.draw_physics_volumes;
+                }
+            }
+
+            // light icons and camera frustums
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/light_camera_volumes.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let mut btn = egui::Button::image(img).selected(state.rendering.draw_light_camera_volumes).frame(true);
+                let supported = state.rendering_adapter.storage_buffer_array_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle light and camera rendering (light icons, camera frustums)" } else { "light and camera rendering not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    state.rendering.draw_light_camera_volumes = !state.rendering.draw_light_camera_volumes;
+                }
+            }
+
+            ui.separator();
 
             // x-ray mode (Blender-style see-through)
             {
@@ -789,16 +835,9 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
                                 }
                             });
 
-                            // more button — add right-to-left so TextEdit gets exact remaining space
+                            // right-to-left so the TextEdit gets exact remaining space
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
                             {
-                                let more_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/more.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
-                                egui::Popup::menu(&more_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
-                                {
-                                    ui.set_min_width(160.0);
-                                    ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
-                                });
-
                                 let search_response = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(f32::INFINITY));
                                 let icon_rect = egui::Rect::from_center_size(egui::pos2(search_response.rect.right() - icon_size / 2.0 - 4.0, search_response.rect.center().y),egui::vec2(icon_size, icon_size));
                                 egui::Image::new(egui::include_image!("../../../../resources/icons/search.svg")).tint(ui.visuals().weak_text_color()).paint_at(ui, icon_rect);

@@ -80,7 +80,7 @@ impl Editor
                 let dir = scene.add_light_directional("Dir", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(0.2, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
                 dir.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
-                let hemi = scene.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+                let hemi = scene.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, 1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
                 hemi.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
 
                 // add cameras
@@ -296,6 +296,9 @@ impl Editor
 
         // update cameras
         self.update_cameras(state);
+
+        // the renderer has no access to the editor state
+        state.rendering.debug_volumes_show_internal = self.editor_state.show_internal_entries;
 
         // update grid based on camera pos and key inputs
         update_grid(&mut self.editor_state, state);

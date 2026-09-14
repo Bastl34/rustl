@@ -27,6 +27,9 @@ pub trait SceneController: Any + Send + Sync
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool;
 
+    // called once the controller was taken out of the scene
+    fn on_remove(&mut self, _scene: &mut crate::state::scene::scene::Scene) {}
+
     fn runs_in_mode(&self, run_mode: RunMode) -> bool
     {
         run_mode.updates_engine()

@@ -1,17 +1,17 @@
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
-use nalgebra::{Matrix4, Point3, Vector3};
+use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 use parry3d::bounding_volume::{Aabb, BoundingVolume};
 use parry3d::mass_properties::MassProperties;
 use parry3d::query::DefaultQueryDispatcher;
-use parry3d::shape::Shape;
+use parry3d::shape::{Shape, TypedShape};
 use rapier3d::prelude::*;
 
-use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, NodeItem, PhysicsBodyType, PhysicsSettings, PhysicsShape}, scene::Scene}}};
+use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem, PhysicsBodyType, PhysicsSettings, PhysicsShape}, scene::Scene}}};
 
 // transform deltas below this are treated as float noise and do not trigger a bvh update
 const TRANSFORM_EPSILON: f32 = 0.00001;
@@ -399,6 +399,44 @@ impl BodyEntry
     }
 }
 
+// A collider as the debug view draws it, mesh colliders (trimesh, convex hull) reduced to their oriented bounds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PhysicsDebugShape
+{
+    Box { half_extents: Vector3<f32> },
+    Sphere { radius: f32 },
+    Capsule { half_height: f32, radius: f32 }, // along the local y axis
+    Bounds { half_extents: Vector3<f32> },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PhysicsDebugState
+{
+    Static,
+    Kinematic,
+    Dynamic,
+    Sleeping,
+    Waiting, // reacts on its first hit and has not been hit yet
+    Character,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PhysicsDebugVolume
+{
+    pub shape: PhysicsDebugShape,
+    pub transform: Matrix4<f32>, // world from shape, rigid
+    pub state: PhysicsDebugState,
+}
+
+// A character moves by shape casts and never becomes a collider, so only the debug view needs its capsule.
+struct CharacterShape
+{
+    node: Weak<RwLock<Box<Node>>>, // weak, a deleted character simply drops out
+    center_offset: f32,
+    half_height: f32,
+    radius: f32,
+}
+
 // What the scene wants built at one anchor, collected during a scan.
 struct Request
 {
@@ -475,6 +513,8 @@ pub struct PhysicsWorld
     // never collidable, by node id - characters belong here, their skin re-syncs every frame
     excluded_nodes: HashSet<u32>,
 
+    // character capsules by node id, debug view only - kept across a rebuild like excluded_nodes
+    characters: HashMap<u32, CharacterShape>,
 }
 
 impl PhysicsWorld
@@ -526,6 +566,7 @@ impl PhysicsWorld
             last_synced: 0,
             last_shape_rebuilds: 0,
             excluded_nodes: HashSet::new(),
+            characters: HashMap::new(),
         }
     }
 
@@ -946,13 +987,46 @@ impl PhysicsWorld
             return None;
         }
 
-        let vertices: Vec<Vector> = data.vertices.iter().map(|v|
+        // a skinned mesh is also placed by its joints - rest pose, so an animation never rebuilds the shape
+        let joint_matrices = node_read.get_joint_transform_vec(false).filter(|_| data.joints.len() >= data.vertices.len() && data.weights.len() >= data.vertices.len());
+
+        let vertices: Vec<Vector> = data.vertices.iter().enumerate().map(|(v_i, v)|
         {
-            let moved = transform * Point3::new(v.x, v.y, v.z).to_homogeneous();
+            let mut position = v.to_homogeneous();
+
+            if let Some(joint_matrices) = joint_matrices.as_ref()
+            {
+                position = Self::skin_position(&position, &data.joints[v_i], &data.weights[v_i], joint_matrices).unwrap_or(position);
+            }
+
+            let moved = transform * position;
             Vector::new(moved.x, moved.y, moved.z)
         }).collect();
 
         Some((vertices, data.indices.clone()))
+    }
+
+    // Weighted joint transform of one vertex, None for a vertex no joint moves.
+    fn skin_position(position: &Vector4<f32>, joints: &[u32], weights: &[f32], joint_matrices: &Vec<Matrix4<f32>>) -> Option<Vector4<f32>>
+    {
+        let mut skinned = Vector4::<f32>::zeros();
+
+        for (joint, weight) in joints.iter().zip(weights.iter())
+        {
+            let Some(joint_matrix) = joint_matrices.get(*joint as usize) else { continue; };
+
+            if *weight > 0.0
+            {
+                skinned += joint_matrix * position * *weight;
+            }
+        }
+
+        if skinned.w <= 0.0
+        {
+            return None;
+        }
+
+        Some(skinned / skinned.w)
     }
 
     fn resolved_shape_kind(node: &NodeItem) -> PhysicsShape
@@ -2481,6 +2555,128 @@ impl PhysicsWorld
         }
 
         applied
+    }
+
+    // ********** debug view **********
+
+    // Registers the capsule a character casts through the world, for the debug view only.
+    pub fn set_character_shape(&mut self, node: &NodeItem, center_offset: f32, half_height: f32, radius: f32)
+    {
+        let node_id = node.read().unwrap().id;
+
+        self.characters.insert(node_id, CharacterShape { node: Arc::downgrade(node), center_offset, half_height, radius });
+    }
+
+    pub fn remove_character_shape(&mut self, node_id: u32)
+    {
+        self.characters.remove(&node_id);
+    }
+
+    // Every collider and character capsule in world space, for the debug view.
+    pub fn debug_volumes(&self) -> Vec<PhysicsDebugVolume>
+    {
+        let mut volumes = vec![];
+
+        for entry in &self.entries
+        {
+            let body = entry.body.and_then(|handle| self.bodies.get(handle));
+
+            let state = match entry.body_type
+            {
+                PhysicsBodyType::Static => PhysicsDebugState::Static,
+                PhysicsBodyType::Kinematic => PhysicsDebugState::Kinematic,
+                PhysicsBodyType::Dynamic if entry.waiting => PhysicsDebugState::Waiting,
+                PhysicsBodyType::Dynamic if body.is_some_and(|body| body.is_sleeping()) => PhysicsDebugState::Sleeping,
+                PhysicsBodyType::Dynamic => PhysicsDebugState::Dynamic,
+            };
+
+            for part in &entry.parts
+            {
+                let Some(collider) = self.colliders.get(part.handle) else { continue; };
+
+                // an attached collider only catches up with its body in a step, and nothing steps while editing
+                let pose = match (body, collider.position_wrt_parent())
+                {
+                    (Some(body), Some(offset)) => *body.position() * *offset,
+                    _ => *collider.position()
+                };
+
+                Self::push_debug_shape(collider.shape(), &pose, state, &mut volumes);
+            }
+        }
+
+        if let Some(collider) = self.ground_plane.and_then(|handle| self.colliders.get(handle))
+        {
+            Self::push_debug_shape(collider.shape(), collider.position(), PhysicsDebugState::Static, &mut volumes);
+        }
+
+        for character in self.characters.values()
+        {
+            let Some(node) = character.node.upgrade() else { continue; };
+
+            let position = extract_translation_from_transform(&node.read().unwrap().get_full_transform());
+            let pose = Pose::from_translation(Vector::new(position.x, position.y + character.center_offset, position.z));
+
+            volumes.push(Self::debug_volume(PhysicsDebugShape::Capsule { half_height: character.half_height, radius: character.radius }, &pose, PhysicsDebugState::Character));
+        }
+
+        volumes
+    }
+
+    fn debug_volume(shape: PhysicsDebugShape, pose: &Pose, state: PhysicsDebugState) -> PhysicsDebugVolume
+    {
+        let matrix = pose.to_mat4();
+
+        PhysicsDebugVolume
+        {
+            shape,
+            transform: Matrix4::from_column_slice(&matrix.to_cols_array()),
+            state,
+        }
+    }
+
+    // Exact for primitives, compounds are walked, everything mesh based is reduced to its oriented bounds.
+    fn push_debug_shape(shape: &dyn Shape, pose: &Pose, state: PhysicsDebugState, volumes: &mut Vec<PhysicsDebugVolume>)
+    {
+        match shape.as_typed_shape()
+        {
+            TypedShape::Ball(ball) =>
+            {
+                volumes.push(Self::debug_volume(PhysicsDebugShape::Sphere { radius: ball.radius }, pose, state));
+            }
+            TypedShape::Cuboid(cuboid) =>
+            {
+                let half = cuboid.half_extents;
+                volumes.push(Self::debug_volume(PhysicsDebugShape::Box { half_extents: Vector3::new(half.x, half.y, half.z) }, pose, state));
+            }
+            TypedShape::Capsule(capsule) =>
+            {
+                let axis = capsule.segment.b - capsule.segment.a;
+                let height = axis.length();
+
+                // the debug capsule stands along y, so a tilted segment becomes a rotation
+                let rotation = if height > f32::EPSILON { Rotation::from_rotation_arc(Vector::Y, axis / height) } else { Rotation::IDENTITY };
+                let local = Pose::from_parts(capsule.center(), rotation);
+
+                volumes.push(Self::debug_volume(PhysicsDebugShape::Capsule { half_height: height * 0.5, radius: capsule.radius }, &(*pose * local), state));
+            }
+            TypedShape::Compound(compound) =>
+            {
+                for (sub_pose, sub_shape) in compound.shapes()
+                {
+                    Self::push_debug_shape(&**sub_shape, &(*pose * *sub_pose), state, volumes);
+                }
+            }
+            TypedShape::HalfSpace(_) => {}
+            _ =>
+            {
+                let aabb = shape.compute_local_aabb();
+                let half = aabb.half_extents();
+                let local = Pose::from_translation(aabb.center());
+
+                volumes.push(Self::debug_volume(PhysicsDebugShape::Bounds { half_extents: Vector3::new(half.x, half.y, half.z) }, &(*pose * local), state));
+            }
+        }
     }
 
     // ********** queries **********
