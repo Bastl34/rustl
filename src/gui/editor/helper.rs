@@ -42,7 +42,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     for camera in &scene.cameras
     {
         // check if click is insight
-        if camera.enabled && camera.is_point_in_viewport(&pos)
+        if scene.is_camera_active(camera, state.run_mode) && camera.is_point_in_viewport(&pos)
         {
             let ray = camera.get_ray_from_viewport_coordinates(&pos);
 

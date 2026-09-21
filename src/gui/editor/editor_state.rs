@@ -185,7 +185,6 @@ pub struct EditorState
     pub loading_progress: Arc<RwLock<f32>>,
 
     pub selectable: bool,
-    pub fly_camera: bool,
 
     pub quad_view: bool,
 
@@ -328,7 +327,6 @@ impl EditorState
             loading_progress: Arc::new(RwLock::new(0.0)),
 
             selectable: true,
-            fly_camera: true,
 
             quad_view: false,
 
@@ -503,7 +501,7 @@ impl EditorState
             {
                 editor_state.reset_project(state);
                 state.delete_all_scenes(true);
-                state.add_scene("main scene");
+                state.add_scene("main scene").add_default_lights_and_cam();
                 state.run_mode = RunMode::Edit;
             }
         );
@@ -603,11 +601,12 @@ impl EditorState
         // ******************** hzb image ********************
         if let Some(show_hzb_image_mip) = state.debug.show_hzb_image
         {
+            let run_mode = state.run_mode;
             let scene = self.get_debug_scene(state);
 
             if let Some(scene) = scene
             {
-                if let Some(cam) = scene.get_active_camera()
+                if let Some(cam) = scene.get_active_camera(run_mode)
                 {
                     if let Some(ref render_item_box) = cam.hzb_texture_render_item
                     {

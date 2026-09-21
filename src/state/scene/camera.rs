@@ -425,7 +425,7 @@ impl Camera
 
     pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode) -> bool
     {
-        if !self.enabled
+        if !scene.is_camera_active(self, run_mode)
         {
             return false;
         }

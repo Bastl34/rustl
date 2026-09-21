@@ -18,6 +18,7 @@ use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
 use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorProjectFormat, EditorProjectSceneRef, EditorScene, RESUSE_MATERIALS_TAG};
 use crate::state::scene::components::transformation::Transformation;
+use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode, State};
 
 // ******************** extraction (Runtime --> EditorProject) ********************
@@ -33,11 +34,57 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, path: &str) -
         .filter_map(|node_item| extract_node(node_item, path))
         .collect();
 
+    // internal ones (editor cams, ...) belong to the editor, not to the scene
+    let cameras = scene.cameras.iter()
+        .filter(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX))
+        .filter_map(|cam| to_json_value("camera", &cam.name, &**cam))
+        .collect();
+
+    let lights = scene.lights.get_ref().iter()
+        .filter_map(|light|
+        {
+            let light = light.borrow();
+            let light = light.get_ref();
+
+            if light.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+            {
+                return None;
+            }
+
+            to_json_value("light", &light.name, &**light)
+        })
+        .collect();
+
     EditorScene
     {
         name: scene.name.clone(),
         active: scene.active,
         objects,
+        cameras,
+        lights,
+        pre_controller: extract_controllers(&scene.pre_controller),
+        post_controller: extract_controllers(&scene.post_controller),
+    }
+}
+
+fn extract_controllers(controllers: &[SceneControllerBox]) -> Vec<serde_json::Value>
+{
+    controllers.iter()
+        .filter(|controller| controller.is_serializable())
+        .filter_map(|controller| to_json_value("scene controller", &controller.get_base().name, controller))
+        .collect()
+}
+
+fn to_json_value<T: serde::Serialize + ?Sized>(kind: &str, name: &str, item: &T) -> Option<serde_json::Value>
+{
+    match serde_json::to_value(item)
+    {
+        Ok(value) => Some(value),
+        Err(e) =>
+        {
+            console_error!("failed to serialize {} '{}': {}", kind, name, e);
+            None
+        },
     }
 }
 
@@ -94,6 +141,7 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
     Some(EditorObject
     {
         source,
+        uuid: Some(node.uuid.clone()),
         name: node.name.clone(),
         options,
         position,

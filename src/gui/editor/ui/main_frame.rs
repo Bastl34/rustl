@@ -632,16 +632,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
             ui.separator();
 
-            // fly camera
-            {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/fly_camera.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(editor_state.fly_camera).frame(true);
-                if ui.add(btn).on_hover_text("fly camera").clicked()
-                {
-                    editor_state.fly_camera = !editor_state.fly_camera;
-                }
-            }
-
             // frame scene (fit the editor camera to the whole scene)
             {
                 use crate::gui::editor::editor::{EDITOR_INTERNAL_TAG, QUAD_CAM};
@@ -810,7 +800,7 @@ fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &m
                                 ui.set_min_width(120.0);
                                 if ui.button("⊞ Add Scene").clicked()
                                 {
-                                    state.add_scene("Scene");
+                                    state.add_scene("Scene").add_default_lights_and_cam();
                                     egui::Popup::close_all(ui.ctx());
                                 }
 

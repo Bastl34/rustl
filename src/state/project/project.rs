@@ -99,6 +99,19 @@ pub struct EditorScene
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<EditorObject>,
+
+    // serde of the runtime types as they are - parsed one by one, so a broken entry only drops itself
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cameras: Vec<serde_json::Value>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lights: Vec<serde_json::Value>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pre_controller: Vec<serde_json::Value>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub post_controller: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -120,6 +133,10 @@ pub struct EditorObject
 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+
+    // kept so cameras and controllers can find their node again
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<String>,
 
     pub name: String,
     pub options: EditorObjectOptions,

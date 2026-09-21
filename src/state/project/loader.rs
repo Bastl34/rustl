@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -7,11 +8,18 @@ use nalgebra::{Vector3, Vector4};
 
 use crate::{component_downcast_mut, console_error, console_log, console_success};
 use crate::helper::asset_path_descriptor::AssetPathDesciptor;
+use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::file::resolve_relative_path;
+use crate::helper::option_or_id::OptionOrId;
 use crate::resources::resources::{RESOURCE_SCHEME, load_string};
 use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorScene, LoadingGuard, ProjectDoneCallback, RESUSE_MATERIALS_TAG};
+use crate::state::scene::camera::Camera;
+use crate::state::scene::components::component::DeserializationContext;
 use crate::state::scene::components::transformation::Transformation;
+use crate::state::scene::light::Light;
+use crate::state::scene::manager::id_manager;
+use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
 use crate::state::scene::loader::asset_container::AssetContainer;
 use crate::state::scene::loader::loader::{load_asset, LoaderOptions, MaterialCache, TextureCache};
 use crate::state::scene::utilities::scene_utils::execute_on_state_mut_and_wait;
@@ -71,6 +79,7 @@ pub fn load_editor_scene(path: &str) -> Option<EditorScene>
 /// The heavy parsing/decoding is already done; only state-mutation remains.
 struct PreparedEditorObject
 {
+    uuid: Option<String>,
     name: String,
     options: EditorObjectOptions,
     position: [f32; 3],
@@ -165,6 +174,7 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
 
     PreparedEditorObject
     {
+        uuid: obj.uuid.clone(),
         name: obj.name.clone(),
         options: obj.options.clone(),
         position: obj.position,
@@ -179,7 +189,7 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
 
 fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedEditorObject)
 {
-    let PreparedEditorObject { name, options, position, rotation, rotation_quat, scale, source, container, children } = object;
+    let PreparedEditorObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, children } = object;
 
     let node: Option<crate::state::scene::node::NodeItem> = match container
     {
@@ -199,6 +209,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
                     {
                         {
                             let mut node_write = node.write().unwrap();
+                            if let Some(uuid) = &uuid { node_write.uuid = uuid.clone(); }
                             node_write.name = name.clone();
                             node_write.settings = options.settings.clone();
                             node_write.settings.transient = false; // it comes from the project file, so it is saved again
@@ -249,6 +260,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
             let node = scene.add_empty_node(&name, parent.clone());
             {
                 let mut node_write = node.write().unwrap();
+                if let Some(uuid) = &uuid { node_write.uuid = uuid.clone(); }
                 node_write.settings = options.settings.clone();
                 node_write.settings.transient = false;
                 node_write.color = options.color.map(|c| Vector3::new(c[0], c[1], c[2]));
@@ -269,6 +281,95 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
     for child in children
     {
         apply_prepared_object(state, scene_id, node.clone(), child);
+    }
+}
+
+// cameras and controllers reference the objects -> applied after them
+fn apply_scene_entries(state: &mut State, scene_id: u32, cameras: Vec<serde_json::Value>, lights: Vec<serde_json::Value>, pre_controller: Vec<serde_json::Value>, post_controller: Vec<serde_json::Value>)
+{
+    let textures = state.resources.textures.values().cloned().collect();
+    let mesh_resources = state.resources.mesh_resources.values().cloned().collect();
+    let sound_sources = state.resources.sound_sources.values().cloned().collect();
+
+    let Some(scene) = state.scenes.iter_mut().find(|scene| scene.id == scene_id) else { return; };
+
+    let nodes = scene.list_all_nodes();
+    let instances = nodes.iter().flat_map(|node| node.read().unwrap().instances.get_ref().clone()).collect();
+    let components = nodes.iter().flat_map(|node| node.read().unwrap().components.clone()).collect();
+
+    let mut context = DeserializationContext
+    {
+        textures,
+        mesh_resources,
+        sound_sources,
+
+        scene: &mut **scene,
+        nodes,
+        instances,
+        components,
+
+        io: &mut state.io,
+    };
+
+    for value in lights
+    {
+        match serde_json::from_value::<Light>(value)
+        {
+            Ok(mut light) =>
+            {
+                // ids are runtime only - the saved one may already be taken
+                light.id = id_manager::get_next_light_id();
+                context.scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            },
+            Err(e) => { console_error!("failed to parse light: {}", e); },
+        }
+    }
+
+    for value in cameras
+    {
+        match serde_json::from_value::<Camera>(value)
+        {
+            Ok(mut cam) =>
+            {
+                cam.id = id_manager::get_next_camera_id();
+
+                if let Some(uuid) = cam.node.id().map(|id| id.to_string())
+                {
+                    cam.node = match context.nodes.iter().find(|node| node.read().unwrap().uuid == uuid)
+                    {
+                        Some(node) => OptionOrId::Some(node.clone()),
+                        None => OptionOrId::None,
+                    };
+                }
+
+                if let Some(controller) = cam.controller.as_mut()
+                {
+                    controller.run_after_deserialize(&mut context);
+                }
+
+                context.scene.cameras.push(Box::new(cam));
+            },
+            Err(e) => { console_error!("failed to parse camera: {}", e); },
+        }
+    }
+
+    // after the cameras - the character controller looks its camera up by name
+    for (values, post) in [(pre_controller, false), (post_controller, true)]
+    {
+        for value in values
+        {
+            match serde_json::from_value::<SceneControllerBox>(value)
+            {
+                Ok(mut controller) =>
+                {
+                    controller.run_after_deserialize(&mut context);
+
+                    if post { context.scene.post_controller.push(controller); }
+                    else    { context.scene.pre_controller.push(controller); }
+                },
+                Err(e) => { console_error!("failed to parse scene controller: {}", e); },
+            }
+        }
     }
 }
 
@@ -332,6 +433,8 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                 loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
             }
 
+            let EditorScene { cameras, lights, pre_controller, post_controller, .. } = editor_scene;
+
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
             {
@@ -339,6 +442,8 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                 {
                     apply_prepared_object(state, scene_id, None, object);
                 }
+
+                apply_scene_entries(state, scene_id, cameras, lights, pre_controller, post_controller);
             }));
         }
 

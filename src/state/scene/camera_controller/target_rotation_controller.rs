@@ -162,7 +162,8 @@ impl TargetRotationController
         target_pos + controller_data.offset
     }
 
-    fn apply_to_camera(&mut self, node: Option<NodeItem>, cam_data: &mut ChangeTracker<CameraData>)
+    // places the camera around the target - also usable without an update (e.g. in the editor)
+    pub fn apply_to_camera(&mut self, node: Option<NodeItem>, cam_data: &mut ChangeTracker<CameraData>)
     {
         let target_pos = self.get_target_pos(node);
 

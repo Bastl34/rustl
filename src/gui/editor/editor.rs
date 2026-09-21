@@ -45,6 +45,11 @@ impl Editor
 
         self.editor_state.load_all_asset_entries(state, &egui.ctx);
 
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            scene.add_default_lights_and_cam();
+        }
+
         self.create_internal_nodes(state, scene_id);
 
         // load initial project if setting is enabled
@@ -65,26 +70,19 @@ impl Editor
 
     pub fn create_internal_nodes(&mut self, state: &mut State, scene_id: u32)
     {
-        self.create_lights_and_cams_entities(state, scene_id);
+        self.create_editor_cams(state, scene_id);
         self.create_util_objects(state, scene_id);
     }
 
-    pub fn create_lights_and_cams_entities(&mut self, state: &mut State, scene_id: u32)
+    pub fn create_editor_cams(&mut self, state: &mut State, scene_id: u32)
     {
         let main_queue = state.main_thread_execution_queue.clone();
         spawn_thread(move ||
         {
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {
-                // dir light
-                let dir = scene.add_light_directional("Dir", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(0.2, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                dir.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-
-                let hemi = scene.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, 1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
-                hemi.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-
-                // add cameras
-                if scene.cameras.len() == 0
+                // the scene has its own cameras now -> only check for the editor ones
+                if !scene.cameras.iter().any(|cam| cam.tags.contains(EDITOR_INTERNAL_TAG))
                 {
                     // default cam
                     {

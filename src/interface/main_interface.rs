@@ -540,6 +540,7 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
+                        render_scene.run_mode = state.run_mode;
 
                         scene.notify_before_render_all();
 
@@ -549,12 +550,12 @@ impl MainInterface
                         scene.notify_after_render_all();
 
                         // update visibility info for cameras
-                        let mut enabled_index = 0;
-                        for cam in scene.cameras.iter_mut()
+                        for render_result in &render_results
                         {
-                            if !cam.enabled { continue; }
-                            cam.visible_nodes_last_frame = render_results[enabled_index].objects_visible.clone();
-                            enabled_index += 1;
+                            if let Some(cam) = scene.get_camera_by_id_mut(render_result.camera_id)
+                            {
+                                cam.visible_nodes_last_frame = render_result.objects_visible.clone();
+                            }
                         }
 
                         // all draw calls (camera passes + shadow passes)
@@ -677,6 +678,7 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
+                        render_scene.run_mode = state.run_mode;
                         render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;

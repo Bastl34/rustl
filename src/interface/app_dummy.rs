@@ -79,9 +79,13 @@ impl App for AppDummy
                     state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
                 }
 
+                // projects saved with cameras and lights bring their own
                 for scene in &mut state.scenes
                 {
-                    scene.add_default_lights_and_cam();
+                    if scene.cameras.is_empty()
+                    {
+                        scene.add_default_lights_and_cam();
+                    }
                 }
             })));
         }

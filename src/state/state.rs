@@ -464,7 +464,7 @@ impl State
                 draw_bounding_boxes: false,
                 draw_bounding_spheres: false,
                 draw_physics_volumes: false,
-                draw_light_camera_volumes: false,
+                draw_light_camera_volumes: true,
                 debug_volumes_show_internal: false,
 
                 xray_mode: false,

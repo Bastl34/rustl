@@ -8,6 +8,7 @@ use rapier3d::prelude::{Capsule, Collider, ColliderHandle, Pose, QueryFilter, Ve
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::console_warning;
+use crate::state::scene::components::mesh::Mesh;
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use super::scene_controller::SceneController;
@@ -305,6 +306,10 @@ pub struct CharacterController
     #[serde(skip, default)]
     capsule_setup_pending: bool,
 
+    // shown in the ui every frame - the regex search behind it only runs on setup
+    #[serde(skip, default)]
+    root_joint_name: Option<String>,
+
     // collider under the feet + its last position, so moving platforms carry the character
     #[serde(skip, default)]
     ground_collider: Option<(ColliderHandle, Vector3<f32>)>,
@@ -376,7 +381,7 @@ impl CharacterController
 
             rotation_speed: ROTATION_SPEED,
 
-            rotation_follow: true,
+            rotation_follow: false,
             rotation_follow_angle_speed: 0.075,
             direction: CHARACTER_DIRECTION,
             current_target_rotation: 0.0,
@@ -391,6 +396,7 @@ impl CharacterController
 
             excluded_node_ids: HashSet::new(),
             capsule_setup_pending: false,
+            root_joint_name: None,
             ground_collider: None,
             reported_platform_hop: false,
             reported_ground_loss: false,
@@ -426,15 +432,8 @@ impl CharacterController
     {
         let node = scene.find_node_by_name(character_node);
 
-        let cam;
-        if cam_name.is_empty()
-        {
-            cam = scene.get_active_camera_mut();
-        }
-        else
-        {
-            cam = scene.get_camera_by_name_mut(cam_name);
-        }
+        // never the editor cam - its controller must stay untouched
+        let cam = scene.get_game_camera_mut(cam_name);
 
         if node.is_none()
         {
@@ -488,14 +487,6 @@ impl CharacterController
         }));
 
         cam.controller = Some(Box::new(target_rotation_controller));
-
-
-        /*
-        let mut follow_controller = FollowController::new();
-        follow_controller.data.get_mut().offset.y = 1.0;
-
-        cam.controller = Some(Box::new(follow_controller));
-        */
 
         {
             // blending node
@@ -572,7 +563,7 @@ impl CharacterController
         if self.collision.capsule_auto
         {
             // usable value from the bind pose now, measured again once idle poses the skeleton
-            self.setup_capsule_from_bounds();
+            self.setup_capsule_from_bounds(false);
             self.capsule_setup_pending = true;
         }
 
@@ -590,6 +581,9 @@ impl CharacterController
         self.publish_capsule(scene);
 
         self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, 1.0, true, false, false);
+
+        // visible in the editor right away, not only after entering play
+        self.place_camera(scene);
 
         None
     }
@@ -643,15 +637,7 @@ impl CharacterController
     // Keeps the follow camera aimed at the middle of the character rather than its feet.
     pub fn apply_camera_offset(&self, scene: &mut crate::state::scene::scene::Scene)
     {
-        let cam = if self.cam_name.is_empty()
-        {
-            scene.get_active_camera_mut()
-        }
-        else
-        {
-            let cam_name = self.cam_name.clone();
-            scene.get_camera_by_name_mut(cam_name.as_str())
-        };
+        let cam = scene.get_game_camera_mut(&self.cam_name);
 
         let Some(cam) = cam else { return; };
         let Some(controller) = cam.controller.as_mut() else { return; };
@@ -664,6 +650,22 @@ impl CharacterController
         {
             controller.data.get_mut().offset.y = wanted;
         }
+    }
+
+    // Puts the camera where its controller would, without waiting for the first update in play.
+    pub fn place_camera(&self, scene: &mut crate::state::scene::scene::Scene)
+    {
+        self.apply_camera_offset(scene);
+
+        let Some(cam) = scene.get_game_camera_mut(&self.cam_name) else { return; };
+        let cam = &mut **cam;
+        let node = cam.node.as_ref().cloned();
+
+        let Some(controller) = cam.controller.as_mut() else { return; };
+        let Some(controller) = controller.as_any_mut().downcast_mut::<TargetRotationController>() else { return; };
+
+        controller.apply_to_camera(node, &mut cam.data);
+        cam.init_matrices();
     }
 
     // Root joint carrying the clip root motion. Ordered, because the lookup is depth first.
@@ -699,6 +701,7 @@ impl CharacterController
     pub fn apply_locomotion_in_place(&mut self)
     {
         let root_joint = Self::find_root_joint_node(&self.animation_node);
+        self.root_joint_name = root_joint.as_ref().map(|joint| joint.read().unwrap().name.clone());
 
         let axis = Vector3::new(self.animation.in_place_x, self.animation.in_place_y, self.animation.in_place_z);
         let enabled = self.animation.locomotion_in_place;
@@ -733,13 +736,29 @@ impl CharacterController
     }
 
     // Derives the capsule from the bounding box, assuming the node origin sits at the feet.
-    pub fn setup_capsule_from_bounds(&mut self) -> bool
+    pub fn setup_capsule_from_bounds(&mut self, posed: bool) -> bool
     {
         let node = match self.node.as_ref()
         {
             Some(node) => node.clone(),
             None => return false
         };
+
+        // the cached skin bbox only follows the joints and is too thin - measure the real skin of this pose
+        let mut skin_nodes = Scene::list_all_child_nodes(&node.read().unwrap().nodes);
+        skin_nodes.push(node.clone());
+
+        for skin_node in &skin_nodes
+        {
+            let skin_node = skin_node.read().unwrap();
+            let Some(joint_matrices) = skin_node.get_joint_transform_vec(true) else { continue; };
+
+            for mesh in skin_node.find_components::<Mesh>()
+            {
+                component_downcast_mut!(mesh, Mesh);
+                mesh.calc_bounding_volume_skin(&joint_matrices);
+            }
+        }
 
         let bounds = node.read().unwrap().get_world_bounding_info(None, true, None);
 
@@ -754,8 +773,8 @@ impl CharacterController
 
         let height = (max.y - min.y).max(0.02);
 
-        // smaller extent = body depth; the wider one is the arm span in a bind pose
-        let width = (max.x - min.x).min(max.z - min.z);
+        // t-pose: the wider extent is the arm span, take the depth - posed (idle): arms hang down, the wider one is the body
+        let width = if posed { (max.x - min.x).max(max.z - min.z) } else { (max.x - min.x).min(max.z - min.z) };
 
         // the two caps eat into the total height, so the radius can never reach half of it
         let radius = (width * 0.5).clamp(0.01, height * 0.5 - 0.01);
@@ -1191,6 +1210,7 @@ impl SceneController for CharacterController
 
         self.node = OptionOrId::None;
         self.animation_node = None;
+        self.root_joint_name = None;
 
         self.animations.idle = None;
         self.animations.walk = None;
@@ -1246,12 +1266,26 @@ impl SceneController for CharacterController
             }
             else
             {
+                console_warning!("CharacterController: node with id {} not found, falling back to the name", self.node.id().unwrap());
                 self.node = OptionOrId::None;
-                console_error!("CharacterController: Node with id {} not found", self.node.id().unwrap());
             }
         }
 
-        self.auto_setup(&mut context.scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
+        // a controller that was never set up has nothing to find
+        if !self.node_name.is_empty()
+        {
+            // the saved sizes win - a fresh measurement depends on the pose at load time
+            let (collision, camera) = (self.collision, self.camera);
+
+            self.auto_setup(&mut context.scene, self.node_name.clone().as_str(), self.cam_name.clone().as_str());
+
+            self.collision = collision;
+            self.camera = camera;
+            self.capsule_setup_pending = false;
+
+            self.publish_capsule(&mut context.scene);
+            self.place_camera(&mut context.scene);
+        }
     }
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
@@ -1273,7 +1307,7 @@ impl SceneController for CharacterController
 
             if self.collision.capsule_auto
             {
-                self.setup_capsule_from_bounds();
+                self.setup_capsule_from_bounds(true);
             }
 
             if self.camera.eye_auto
@@ -1310,7 +1344,7 @@ impl SceneController for CharacterController
                 self.start_animation(CharAnimationType::Fall, 0, AnimationMixing::Fade, 1.0, true, false, false);
             }
 
-            if let Some(cam) = scene.get_active_camera_mut()
+            if let Some(cam) = scene.get_game_camera_mut(&self.cam_name)
             {
                 if let Some(controller) = cam.controller.as_mut()
                 {
@@ -1324,7 +1358,7 @@ impl SceneController for CharacterController
 
         // ********** first person mode **********
         let mut is_first_person = false;
-        if let Some(cam) = scene.get_active_camera()
+        if let Some(cam) = scene.get_game_camera(&self.cam_name)
         {
             if let Some(controller) = cam.controller.as_ref()
             {
@@ -1841,7 +1875,7 @@ impl SceneController for CharacterController
         // ********** camera angle for follow mode **********
         if !approx_zero(movement.z) && !approx_zero(rotation.y) && self.rotation_follow
         {
-            if let Some(cam) = scene.get_active_camera_mut()
+            if let Some(cam) = scene.get_game_camera_mut(&self.cam_name)
             {
                 if let Some(controller) = cam.controller.as_mut()
                 {
@@ -1885,7 +1919,7 @@ impl SceneController for CharacterController
         }
 
         // ********** rotation for first person mode **********
-        if let Some(cam) = scene.get_active_camera()
+        if let Some(cam) = scene.get_game_camera(&self.cam_name)
         {
             if let Some(controller) = cam.controller.as_ref()
             {
@@ -2004,9 +2038,9 @@ impl SceneController for CharacterController
         let mut in_place_changed = false;
 
         // without a hips/root joint the whole in place handling silently does nothing
-        match Self::find_root_joint_node(&self.animation_node)
+        match &self.root_joint_name
         {
-            Some(joint) => { ui.label(format!("Root Joint: {}", joint.read().unwrap().name)); }
+            Some(name) => { ui.label(format!("Root Joint: {}", name)); }
             None => { ui.colored_label(egui::Color32::from_rgb(220, 160, 60), "Root Joint: none found - in place has no effect"); }
         }
 
@@ -2075,8 +2109,7 @@ impl SceneController for CharacterController
         });
 
         {
-            let cam_name = self.cam_name.clone();
-            let cam = if cam_name.is_empty() { scene.get_active_camera_mut() } else { scene.get_camera_by_name_mut(cam_name.as_str()) };
+            let cam = scene.get_game_camera_mut(&self.cam_name);
 
             if let Some(cam) = cam
             {
@@ -2104,7 +2137,7 @@ impl SceneController for CharacterController
 
             if ui.button("Recalculate").clicked()
             {
-                self.setup_capsule_from_bounds();
+                self.setup_capsule_from_bounds(true);
             }
         });
 

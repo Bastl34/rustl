@@ -9,7 +9,7 @@ use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializ
 
 use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{get_delta_t, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
 pub type SceneItem = Box<Scene>;
 pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u32>) -> bool>;
@@ -389,9 +389,9 @@ impl Scene
             }
         }
 
-        // ********** spatial sound listener (based on the first camera) **********
+        // ********** spatial sound listener (based on the first active camera) **********
         {
-            let cam = self.cameras.first();
+            let cam = self.cameras.iter().find(|cam| self.is_camera_active(cam, run_mode));
             if let Some(cam) = cam
             {
                 if cam.get_data_tracker().changed()
@@ -754,8 +754,8 @@ impl Scene
     pub fn add_default_lights_and_cam(&mut self)
     {
         // lights
-        self.add_light_point("Point", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0, 0.0);
-        self.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+        self.add_light_directional("Dir", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(0.2, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+        self.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, 1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
 
         // cam
         let mut cam = Camera::new("Cam".to_string());
@@ -767,6 +767,7 @@ impl Scene
         cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
         cam_data.clipping_near = 0.1;
         cam_data.clipping_far = 1000.0;
+        cam_data.culling_mask = LAYER_MASK_USER;
         self.cameras.push(Box::new(cam));
     }
 
@@ -955,29 +956,42 @@ impl Scene
         self.cameras.last().unwrap()
     }
 
-    //pub fn get_active_camera() -> Option<&'static CameraItem>
-    pub fn get_active_camera(&self) -> Option<&CameraItem>
+    // internal (editor) cameras outside of play, the scene's own cameras only in play - internal scenes keep all of theirs
+    pub fn is_camera_active(&self, camera: &Camera, run_mode: RunMode) -> bool
     {
-        for camera in &self.cameras
+        if !camera.enabled
         {
-            if camera.enabled
-            {
-                return Some(camera);
-            }
+            return false;
         }
-        None
+
+        if self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            return true;
+        }
+
+        camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) != (run_mode == RunMode::Play)
     }
 
-    pub fn get_active_camera_mut(&mut self) -> Option<&mut CameraItem>
+    pub fn get_active_camera(&self, run_mode: RunMode) -> Option<&CameraItem>
     {
-        for camera in self.cameras.iter_mut()
-        {
-            if camera.enabled
-            {
-                return Some(camera);
-            }
-        }
-        None
+        self.cameras.iter().find(|camera| self.is_camera_active(camera, run_mode))
+    }
+
+    pub fn get_active_camera_mut(&mut self, run_mode: RunMode) -> Option<&mut CameraItem>
+    {
+        let index = self.cameras.iter().position(|camera| self.is_camera_active(camera, run_mode))?;
+        self.cameras.get_mut(index)
+    }
+
+    // the named camera (or the first one for an empty name) - internal cameras are never picked
+    pub fn get_game_camera(&self, name: &str) -> Option<&CameraItem>
+    {
+        self.cameras.iter().find(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) && (name.is_empty() || cam.name == name))
+    }
+
+    pub fn get_game_camera_mut(&mut self, name: &str) -> Option<&mut CameraItem>
+    {
+        self.cameras.iter_mut().find(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) && (name.is_empty() || cam.name == name))
     }
 
     pub fn get_light_by_id(&self, id: u32) -> Option<&RefCell<ChangeTracker<Box<Light>>>>

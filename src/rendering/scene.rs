@@ -5,7 +5,7 @@ use strum::EnumCount;
 use strum_macros::EnumCount;
 use wgpu::{CommandEncoder, TextureView, RenderPassColorAttachment, BindGroup, util::DeviceExt};
 
-use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BoundingBox, BoundingBoxesBuffer, BOUNDING_BOX_FLAG_OCCLUSION_TEST}, compute_pipeline::ComputePipeline, debug_volumes::{DebugVolume, DebugVolumeList, DebugVolumesBuffer, BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR}, draw_slots::{DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers, DRAW_INDEXED_ARGS_SIZE}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{State, DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_debug, console_log, console_warning, helper::image::float32_to_grayscale, render_item_impl_default, rendering::{bind_groups::{debug_volumes::DebugVolumesBindGroup, depth_export::DepthExportBindGroup, hzb_downsample::HZBDownsampleBindGroup, hzb_occlusion_check::HZBOcclusionCheckBindGroup, ssao::{SsaoBindGroup, SsaoUniform}}, bounding_boxes::{BOUNDING_BOX_FLAG_OCCLUSION_TEST, BoundingBox, BoundingBoxesBuffer}, compute_pipeline::ComputePipeline, debug_volumes::{BOUNDING_BOX_COLOR, BOUNDING_SPHERE_COLOR, DebugVolume, DebugVolumeList, DebugVolumesBuffer}, draw_slots::{DRAW_INDEXED_ARGS_SIZE, DrawSlot, DrawSlotsBuffer, IndirectArgsBuffers}, gpu_timer::{GpuPassTimes, GpuTimer, GpuTimerPass, GpuTimerSegment}, hzb_cull_buffer::HZBCullBuffer, visibility::VisibilityBuffer}, resources::resources, state::{helper::render_item::{RenderItem, get_render_item, get_render_item_mut}, scene::{camera::{Camera, CameraData}, components::{self, alpha::Alpha, component::{Component, ComponentBox}, joint::Joint, material::TextureType, mesh::Mesh, transformation::Transformation}, node::{Node, NodeItem}, scene::SceneData}, state::{DEFAULT_XRAY_ALPHA, ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use super::{wgpu::WGpu, pipeline::Pipeline, texture::Texture, camera::CameraBuffer, instance::InstanceBuffer, vertex_buffer::VertexBuffer, light::LightBuffer, shadow::{self, ShadowBuffer}, bind_groups::{light_cam_scene::LightCamSceneBindGroup, skeleton_morph_target::SkeletonMorphTargetBindGroup}, material::MaterialBuffer, helper::buffer::create_empty_buffer, skeleton::SkeletonBuffer, morph_target::MorphTarget};
 
@@ -199,6 +199,7 @@ pub struct Scene
     pub distance_sorting: bool,
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
+    pub run_mode: RunMode,
 
     // occlusion culling needs compute shaders + indirect draws (not available on WebGL)
     occlusion_supported: bool,
@@ -346,6 +347,7 @@ impl Scene
             distance_sorting: true,
             frustum_culling: true,
             occlusion_culling: true,
+            run_mode: state.run_mode,
 
             occlusion_supported: state.rendering_adapter.occlusion_culling_support,
             occlusion_was_active: false,
@@ -717,6 +719,9 @@ impl Scene
         // ********** lights: all **********
         let max_lights = scene.get_data().max_lights;
         let (lights, all_lights_changed) = scene.lights.consume_borrow();
+
+        // cameras can arrive before any light (loading) - their bind group needs the buffer anyway
+        let all_lights_changed = all_lights_changed || scene.lights_render_item.is_none();
         if all_lights_changed || self.update_result.scene_changed || shadow_enabled_changed
         {
             if scene.lights_render_item.is_none()
@@ -1985,9 +1990,11 @@ impl Scene
         // create render results
         for cam in &scene.cameras
         {
-            if cam.enabled
+            if scene.is_camera_active(cam, self.run_mode)
             {
-                render_results.push(RenderResultForCamera::new());
+                let mut render_result = RenderResultForCamera::new();
+                render_result.camera_id = cam.id;
+                render_results.push(render_result);
             }
         }
 
@@ -2038,7 +2045,7 @@ impl Scene
         let mut i = 0;
         for (_cam_index, cam) in scene.cameras.iter().enumerate()
         {
-            if !cam.enabled { continue; }
+            if !scene.is_camera_active(cam, self.run_mode) { continue; }
 
             let render_result = &mut render_results[i];
 
@@ -2392,14 +2399,9 @@ impl Scene
     // non-blocking: fills the render results with the latest read back visibility (a few frames behind)
     pub fn read_back_visibility_results(&mut self, wgpu: &mut WGpu, cameras: &std::vec::Vec<Box<Camera>>, render_results: &mut Vec<RenderResultForCamera>)
     {
-        let mut result_index = 0;
-        for cam in cameras.iter()
+        for render_result in render_results.iter_mut()
         {
-            if !cam.enabled { continue; }
-
-            let render_result = &mut render_results[result_index];
-            render_result.camera_id = cam.id;
-            result_index += 1;
+            let Some(cam) = cameras.iter().find(|cam| cam.id == render_result.camera_id) else { continue; };
 
             if cam.visibility_buffer_render_item.is_none() { continue; }
 
@@ -2437,8 +2439,8 @@ impl Scene
         let max_lights = scene.get_data().max_lights as usize;
         let lights = scene.lights.get_ref();
 
-        // directional cascades are fitted to the first enabled camera
-        let cam_data = scene.cameras.iter().find(|cam| cam.enabled).map(|cam| cam.get_data());
+        // directional cascades are fitted to the first active camera
+        let cam_data = scene.cameras.iter().find(|cam| scene.is_camera_active(cam, self.run_mode)).map(|cam| cam.get_data());
 
         let shadow_views = shadow::compute_shadow_views(lights, max_lights, cam_data, self.shadow.size(), self.shadow_max_distance);
 
@@ -3101,6 +3103,7 @@ pub fn render_scene_offscreen_to_image(wgpu: &mut WGpu, state: &mut State, scene
     render_scene.distance_sorting = state.rendering.distance_sorting;
     render_scene.frustum_culling = state.rendering.frustum_culling;
     render_scene.occlusion_culling = false;
+    render_scene.run_mode = state.run_mode;
     render_scene.update(wgpu, state, scene);
 
     // no debug bounding volumes in offscreen renders (material thumbnails etc.)

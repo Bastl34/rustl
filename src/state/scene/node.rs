@@ -1678,16 +1678,21 @@ impl Node
     pub fn find_child_node_by_regex(&self, regex: &str) -> Option<NodeItem>
     {
         let regex_item: Regex = Regex::new(regex).unwrap();
+        self.find_child_node_by_compiled_regex(&regex_item)
+    }
 
+    // compiled once by the caller - compiling per visited node made skeleton searches very slow
+    fn find_child_node_by_compiled_regex(&self, regex: &Regex) -> Option<NodeItem>
+    {
         for node in &self.nodes
         {
-            if regex_item.is_match(&node.read().unwrap().name)
+            if regex.is_match(&node.read().unwrap().name)
             {
                 return Some(node.clone());
             }
 
             // check child nodes
-            let result = node.read().unwrap().find_child_node_by_regex(regex);
+            let result = node.read().unwrap().find_child_node_by_compiled_regex(regex);
             if result.is_some()
             {
                 return result;
