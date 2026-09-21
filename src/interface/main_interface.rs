@@ -812,7 +812,20 @@ impl MainInterface
         #[cfg(feature = "editor")]
         let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {
-            editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
+            if editor_gui.editor_state.visible
+            {
+                self.context.egui.on_event(event, self.context.window.clone())
+            }
+            else
+            {
+                // keep egui's modifier state in sync while hidden, otherwise a Ctrl held on entering play mode stays stuck and turns the wheel into zoom
+                if matches!(event, winit::event::WindowEvent::ModifiersChanged(_) | winit::event::WindowEvent::Focused(_))
+                {
+                    _ = self.context.egui.on_event(event, self.context.window.clone());
+                }
+
+                false
+            }
         }
         else
         {
