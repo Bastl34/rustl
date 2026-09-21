@@ -1023,10 +1023,17 @@ impl State
             return;
         }
 
+        let old_run_mode = self.run_mode;
+
         self.run_mode = run_mode;
         self.pause = false;
 
         self.sync_physics_run_state();
+
+        for scene in &mut self.scenes
+        {
+            scene.notify_run_mode_changed(old_run_mode, run_mode);
+        }
     }
 
     // The mode that actually drives this frame. Pausing does not change the selected

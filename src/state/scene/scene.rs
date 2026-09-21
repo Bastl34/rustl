@@ -273,6 +273,19 @@ impl Scene
         self.tags.contains(tag)
     }
 
+    pub fn notify_run_mode_changed(&mut self, old: RunMode, new: RunMode)
+    {
+        // taken out so the controller can borrow the scene mutably
+        let mut controller = std::mem::take(&mut self.controller);
+        for controller_item in &mut controller
+        {
+            controller_item.on_run_mode_changed(self, old, new);
+        }
+
+        controller.append(&mut self.controller);
+        self.controller = controller;
+    }
+
     fn update_controller(&mut self, phase: ControllerPhase, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode)
     {
         // taken out so the controller can borrow the scene mutably

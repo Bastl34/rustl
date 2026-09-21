@@ -33,6 +33,9 @@ pub trait SceneController: Any + Send + Sync
     // called once the controller was taken out of the scene
     fn on_remove(&mut self, _scene: &mut crate::state::scene::scene::Scene) {}
 
+    // e.g. back from play to edit - pausing does not count as a change
+    fn on_run_mode_changed(&mut self, _scene: &mut crate::state::scene::scene::Scene, _old: RunMode, _new: RunMode) {}
+
     fn runs_in_mode(&self, run_mode: RunMode) -> bool
     {
         run_mode.updates_engine()

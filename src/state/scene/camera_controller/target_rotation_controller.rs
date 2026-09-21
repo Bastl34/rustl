@@ -6,7 +6,7 @@ use nalgebra::{Vector2, Vector3, Point3};
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
 
-use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::mouse::MouseButton, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::InputOutput}};
+use crate::{camera_controller_impl_default, helper::{change_tracker::ChangeTracker, generic::get_millis, math::{self, approx_equal_with_decimal_places, approx_zero, approx_zero_vec2, interpolate}}, input::mouse::MouseButton, state::{scene::{camera::CameraData, node::NodeItem, scene::Scene}, state::{get_delta_t, InputOutput}}};
 
 use crate::state::scene::exporter::serialization_helper::default_true;
 
@@ -16,6 +16,11 @@ const DEFAULT_TARGET_POS: Point3::<f32> = Point3::new(0.0, 0.0, 0.0);
 const ANGLE_OFFSET: f32 = 0.01;
 const DEFAULT_AUTO_ROTATE_TIMEOUT: u64 = 2000;
 const DEFAULT_ZOOM_SPEED: f32 = 0.05;
+const LATERAL_OFFSET_FADE_RADIUS: f32 = 2.0;
+const DEFAULT_MOUSE_SENSITIVITY: Vector2::<f32> = Vector2::<f32>::new(0.0015, 0.0015);
+const DEFAULT_MOUSE_WHEEL_SENSITIVITY: f32 = 0.2;
+
+pub fn default_max_radius() -> f32 { 1000.0 }
 
 #[derive(Serialize, Deserialize)]
 pub struct TargetRotationControllerData
@@ -32,6 +37,7 @@ pub struct TargetRotationController
 {
     base: CameraControllerBase,
 
+    #[serde(skip, default = "default_true")]
     run_initial_update: bool,
 
     pub data: ChangeTracker<TargetRotationControllerData>,
@@ -53,8 +59,29 @@ pub struct TargetRotationController
     pub collision_check_offset: f32,
     pub collision_zoom_speed: f32,
 
+    // moves the pivot along the camera right axis, so the target sits off center on screen
+    #[serde(default)]
+    pub lateral_offset: f32,
+
+    // zoom limits - collision may still pull the camera closer
+    #[serde(default)]
+    pub min_radius: f32,
+    #[serde(default = "default_max_radius")]
+    pub max_radius: f32,
+
+    // seconds the pivot needs to catch up with a moving target, 0 = rigid
+    #[serde(default)]
+    pub follow_smoothing: f32,
+    #[serde(default)]
+    pub follow_smoothing_vertical: f32,
+
+    #[serde(skip, default)]
     last_manual_move: u64, // time in millis after the last movement
-    last_radius: Option<f32> // the last radius which was maybe overwritten by collision
+    #[serde(skip, default)]
+    last_radius: Option<f32>, // the last radius which was maybe overwritten by collision
+
+    #[serde(skip, default)]
+    smoothed_target: Option<Point3::<f32>>,
 }
 
 impl TargetRotationController
@@ -90,16 +117,21 @@ impl TargetRotationController
             collision_check_offset: 0.1,
             collision_zoom_speed: DEFAULT_ZOOM_SPEED,
 
+            lateral_offset: 0.0,
+            min_radius: 0.0,
+            max_radius: default_max_radius(),
+            follow_smoothing: 0.0,
+            follow_smoothing_vertical: 0.0,
+
             last_manual_move: 0,
-            last_radius: None
+            last_radius: None,
+
+            smoothed_target: None,
         }
     }
 
     pub fn default() -> Self
     {
-        //let mouse_wheel_sensivity = if platform::is_mac() { 0.1 } else { 0.01 };
-        let mouse_wheel_sensivity = 0.1;
-
         TargetRotationController
         {
             base: CameraControllerBase::new("Target Rotation Controller".to_string(), "⟲".to_string()),
@@ -115,8 +147,8 @@ impl TargetRotationController
                 beta: PI / 8.0,
             }),
 
-            mouse_sensitivity: Vector2::<f32>::new(0.0015, 0.0015),
-            mouse_wheel_sensitivity: mouse_wheel_sensivity,
+            mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
+            mouse_wheel_sensitivity: DEFAULT_MOUSE_WHEEL_SENSITIVITY,
 
             auto_rotate: None,
             auto_rotate_timeout: DEFAULT_AUTO_ROTATE_TIMEOUT,
@@ -129,8 +161,16 @@ impl TargetRotationController
             collision_check_offset: 0.1,
             collision_zoom_speed: DEFAULT_ZOOM_SPEED,
 
+            lateral_offset: 0.0,
+            min_radius: 0.0,
+            max_radius: default_max_radius(),
+            follow_smoothing: 0.0,
+            follow_smoothing_vertical: 0.0,
+
             last_manual_move: 0,
-            last_radius: None
+            last_radius: None,
+
+            smoothed_target: None,
         }
     }
 
@@ -162,10 +202,38 @@ impl TargetRotationController
         target_pos + controller_data.offset
     }
 
+    // sets the radius and forgets the one collision wanted to return to
+    pub fn set_radius(&mut self, radius: f32)
+    {
+        self.data.get_mut().radius = radius;
+        self.last_radius = None;
+    }
+
     // places the camera around the target - also usable without an update (e.g. in the editor)
     pub fn apply_to_camera(&mut self, node: Option<NodeItem>, cam_data: &mut ChangeTracker<CameraData>)
     {
         let target_pos = self.get_target_pos(node);
+
+        // snap - smoothing starts over from here
+        self.smoothed_target = Some(target_pos);
+
+        self.place(target_pos, cam_data);
+    }
+
+    // fades out while zooming in, so the zoom ends in the pivot and not beside it
+    fn offset_pivot(&self, target_pos: Point3::<f32>) -> Point3::<f32>
+    {
+        let controller_data = self.data.get_ref();
+
+        let fade = (controller_data.radius / LATERAL_OFFSET_FADE_RADIUS).clamp(0.0, 1.0);
+
+        let right = Vector3::new(controller_data.alpha.cos(), 0.0, -controller_data.alpha.sin());
+        target_pos + right * self.lateral_offset * fade
+    }
+
+    fn place(&self, target_pos: Point3::<f32>, cam_data: &mut ChangeTracker<CameraData>)
+    {
+        let target_pos = self.offset_pivot(target_pos);
 
         let cam_data = cam_data.get_mut();
         let controller_data = self.data.get_ref();
@@ -176,6 +244,41 @@ impl TargetRotationController
         let dir = dir * controller_data.radius;
 
         cam_data.eye_pos = target_pos + dir;
+    }
+
+    // moves the smoothed pivot one step toward the target, returns it and whether it still trails
+    fn step_smoothing(&mut self, target_pos: Point3::<f32>, frame_scale: f32) -> (Point3::<f32>, bool)
+    {
+        let first_person = approx_zero(self.data.get_ref().radius);
+
+        let Some(smoothed) = self.smoothed_target.filter(|_| !first_person) else
+        {
+            self.smoothed_target = Some(target_pos);
+            return (target_pos, false);
+        };
+
+        let dt = get_delta_t(frame_scale);
+        let factor = |smoothing: f32| if smoothing > 0.0 { 1.0 - (-dt / smoothing).exp() } else { 1.0 };
+
+        let horizontal = factor(self.follow_smoothing);
+        let vertical = factor(self.follow_smoothing_vertical);
+
+        let mut pivot = Point3::new
+        (
+            interpolate(smoothed.x, target_pos.x, horizontal),
+            interpolate(smoothed.y, target_pos.y, vertical),
+            interpolate(smoothed.z, target_pos.z, horizontal)
+        );
+
+        let trailing = (pivot - target_pos).norm() > 0.0005;
+        if !trailing
+        {
+            pivot = target_pos;
+        }
+
+        self.smoothed_target = Some(pivot);
+
+        (pivot, trailing)
     }
 
 }
@@ -270,18 +373,27 @@ impl CameraController for TargetRotationController
             let data = self.data.get_mut();
             data.radius += self.mouse_wheel_sensitivity * -io.input_manager.mouse.wheel_delta_y;
 
-            if data.radius <= 0.0 { data.radius = 0.0; }
+            data.radius = data.radius.clamp(self.min_radius.max(0.0), self.max_radius.max(self.min_radius.max(0.0)));
 
             update_needed = true;
             self.last_manual_move = get_millis();
             self.last_radius = None;
         }
 
+        // smoothing
+        if self.run_initial_update
+        {
+            self.smoothed_target = None;
+        }
+
+        let raw_target_pos = self.get_target_pos(node.clone());
+        let (target_pos, trailing) = self.step_smoothing(raw_target_pos, frame_scale);
+
         // apply
         let controller_data_change = self.data.consume_change();
-        if self.run_initial_update || update_needed || controller_data_change
+        if self.run_initial_update || update_needed || controller_data_change || trailing
         {
-            self.apply_to_camera(node.clone(), cam_data);
+            self.place(target_pos, cam_data);
 
             self.run_initial_update = false;
 
@@ -291,7 +403,7 @@ impl CameraController for TargetRotationController
         // collision
         if change && self.collision_check && node.is_some()
         {
-            let target_pos = self.get_target_pos(node.clone());
+            let ray_origin = self.offset_pivot(target_pos);
 
             // use "saved" radius for distance check
             let mut dir = -cam_data.get_ref().dir;
@@ -304,7 +416,7 @@ impl CameraController for TargetRotationController
                 dir *= self.data.get_ref().radius;
             }
 
-            let ray = Ray::new(target_pos.into(), dir.into());
+            let ray = Ray::new(ray_origin.into(), dir.into());
 
             let target_node = node.clone().unwrap();
             let pick_res = scene.pick(&ray, false, false, false, false, Some(Arc::new(move |node, _instance|
@@ -326,14 +438,14 @@ impl CameraController for TargetRotationController
                     }
 
                     self.data.get_mut().radius = (pick_res.time_of_impact - self.collision_check_offset).max(self.collision_check_offset);
-                    self.apply_to_camera(node.clone(), cam_data);
+                    self.place(target_pos, cam_data);
                     change = true;
                 }
                 // move out the camera a bit if possible
                 else if self.last_radius.is_some() && pick_res.time_of_impact < self.last_radius.unwrap()
                 {
                     self.data.get_mut().radius = (pick_res.time_of_impact - self.collision_check_offset).max(self.collision_check_offset);
-                    self.apply_to_camera(node.clone(), cam_data);
+                    self.place(target_pos, cam_data);
                     change = true;
                 }
             }
@@ -349,7 +461,7 @@ impl CameraController for TargetRotationController
                     self.last_radius = None;
                 }
 
-                self.apply_to_camera(node.clone(), cam_data);
+                self.place(target_pos, cam_data);
                 change = true;
             }
         }
@@ -456,6 +568,28 @@ impl CameraController for TargetRotationController
         {
             ui.label("Collision zoom speed: ");
             ui.add(egui::DragValue::new(&mut self.collision_zoom_speed).speed(0.1))
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Lateral offset: ");
+            ui.label("ℹ").on_hover_text("moves the pivot along the camera right axis, so the target sits off center (e.g. over the shoulder)");
+            ui.add(egui::DragValue::new(&mut self.lateral_offset).speed(0.01))
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Zoom limits: ");
+            ui.add(egui::DragValue::new(&mut self.min_radius).speed(0.05).range(0.0..=1000.0).prefix("min: "));
+            ui.add(egui::DragValue::new(&mut self.max_radius).speed(0.05).range(0.0..=1000.0).prefix("max: "));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Follow smoothing (s): ");
+            ui.label("ℹ").on_hover_text("how long the pivot takes to catch up with a moving target, 0 = rigid");
+            ui.add(egui::DragValue::new(&mut self.follow_smoothing).speed(0.005).range(0.0..=2.0).prefix("h: "));
+            ui.add(egui::DragValue::new(&mut self.follow_smoothing_vertical).speed(0.005).range(0.0..=2.0).prefix("v: "));
         });
 
     }

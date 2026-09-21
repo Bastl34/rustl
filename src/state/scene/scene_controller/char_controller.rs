@@ -8,8 +8,9 @@ use rapier3d::prelude::{Capsule, Collider, ColliderHandle, Pose, QueryFilter, Ve
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::console_warning;
+use crate::state::scene::exporter::serialization_helper::default_true;
 use crate::state::scene::components::mesh::Mesh;
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::TargetRotationController, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::{default_max_radius, TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use super::scene_controller::SceneController;
 
@@ -50,12 +51,52 @@ const AUTOSTEP_MIN_WIDTH: f32 = 0.15;
 const MAX_SLOPE_CLIMB_ANGLE: f32 = PI / 4.0;
 const MIN_SLOPE_SLIDE_ANGLE: f32 = PI / 4.0;
 
+// the stand up check starts this far above the feet, so the ground itself does not block it
+const STAND_UP_GROUND_MARGIN: f32 = 0.1;
+
 // extra reach of the downwards probe that looks for the collider the character stands on
 const GROUND_PROBE_MARGIN: f32 = 0.2;
 
 const DEFAULT_CAM_RADIUS: f32 = 6.0;
+const CAM_RELATIVE_LATERAL_OFFSET: f32 = -0.5; // negative = character right of the screen center
+const TURN_SPEED: f32 = 12.0;
 
-#[derive(Debug)]
+fn default_turn_speed() -> f32 { TURN_SPEED }
+
+const IDLE_TURN_SPEED: f32 = 2.0;
+
+fn default_idle_turn_speed() -> f32 { IDLE_TURN_SPEED }
+
+// hysteresis, so the turn clips do not flicker on and off around one angle
+const TURN_ANIMATION_START_ANGLE: f32 = 15.0 * PI / 180.0;
+const TURN_ANIMATION_STOP_ANGLE: f32 = 5.0 * PI / 180.0;
+
+// playback speed range of the turn clips - the body turn rate is clamped to match
+const MIN_TURN_ANIMATION_SPEED: f32 = 0.5;
+const MAX_TURN_ANIMATION_SPEED: f32 = 2.0;
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default)]
+pub enum CharControlMode
+{
+    #[default]
+    CameraRelative, // input relative to the camera, the character turns into the walking direction
+    CharacterRelativeChaseCam, // A/D rotate the character, the camera swings in behind it
+    Tank, // A/D rotate the character, the camera stays where the mouse put it
+}
+
+// closest the camera may zoom in when first person is not allowed
+const MIN_THIRD_PERSON_RADIUS: f32 = 1.0;
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default)]
+pub enum CharPerspective
+{
+    #[default]
+    FirstAndThirdPerson, // zooming in all the way switches to first person
+    FirstPersonOnly,
+    ThirdPersonOnly,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum CharAnimationType
 {
     None,
@@ -66,6 +107,8 @@ enum CharAnimationType
     StrafeRightWalk,
     StrafeLeftRun,
     StrafeRightRun,
+    TurnLeft,
+    TurnRight,
     Jump,
     Crouch,
     Roll,
@@ -93,6 +136,8 @@ pub struct AnimationComponents
     strafe_right_walk: Option<ComponentItem>,
     strafe_left_run: Option<ComponentItem>,
     strafe_right_run: Option<ComponentItem>,
+    turn_left: Option<ComponentItem>,
+    turn_right: Option<ComponentItem>,
     fall_idle: Option<ComponentItem>,
     fall_landing: Option<ComponentItem>,
 
@@ -116,6 +161,8 @@ impl Default for AnimationComponents
             strafe_right_walk: None,
             strafe_left_run: None,
             strafe_right_run: None,
+            turn_left: None,
+            turn_right: None,
             fall_idle: None,
             fall_landing: None,
 
@@ -228,7 +275,16 @@ pub struct CharCollisionSettings
     pub push_bodies: bool,
     #[serde(default = "default_push_mass")]
     pub push_mass: f32,
+
+    // capsule height while rolling, relative to the standing height
+    #[serde(default = "default_roll_height_factor")]
+    pub roll_height_factor: f32,
+    #[serde(default = "default_crouch_height_factor")]
+    pub crouch_height_factor: f32,
 }
+
+fn default_roll_height_factor() -> f32 { 0.5 }
+fn default_crouch_height_factor() -> f32 { 0.65 }
 
 fn default_push_bodies() -> bool { true }
 
@@ -256,6 +312,8 @@ impl Default for CharCollisionSettings
 
             push_bodies: default_push_bodies(),
             push_mass: default_push_mass(),
+            roll_height_factor: default_roll_height_factor(),
+            crouch_height_factor: default_crouch_height_factor(),
         }
     }
 }
@@ -277,7 +335,33 @@ pub struct CharacterController
 
     pub rotation_speed: f32,
 
-    pub rotation_follow: bool,
+    #[serde(default)]
+    pub control_mode: CharControlMode,
+
+    #[serde(default)]
+    pub perspective: CharPerspective,
+
+    // camera relative: how fast the character turns into the walking direction, 1/s
+    #[serde(default = "default_turn_speed")]
+    pub turn_speed: f32,
+
+    // camera relative: a standing character slowly turns into the view direction
+    #[serde(default = "default_true")]
+    pub idle_turn: bool,
+    #[serde(default = "default_idle_turn_speed")]
+    pub idle_turn_speed: f32,
+
+    // toggled with caps lock
+    #[serde(skip, default)]
+    sprint_lock: bool,
+
+    // capsule height factor while rolling/crouching, or still under something that leaves no room to grow - None = standing
+    #[serde(skip, default)]
+    low_capsule: Option<f32>,
+
+    // scenes from before control_mode, mapped on load
+    #[serde(default, skip_serializing)]
+    rotation_follow: bool,
     pub rotation_follow_angle_speed: f32,
     pub direction: Vector3<f32>,
 
@@ -381,6 +465,14 @@ impl CharacterController
 
             rotation_speed: ROTATION_SPEED,
 
+            control_mode: CharControlMode::default(),
+            perspective: CharPerspective::default(),
+            turn_speed: TURN_SPEED,
+            idle_turn: true,
+            idle_turn_speed: IDLE_TURN_SPEED,
+            sprint_lock: false,
+            low_capsule: None,
+
             rotation_follow: false,
             rotation_follow_angle_speed: 0.075,
             direction: CHARACTER_DIRECTION,
@@ -415,7 +507,7 @@ impl CharacterController
             falling: true,
             grounded: false,
 
-            strafe: false,
+            strafe: true,
 
             update_only_on_move: false,
 
@@ -459,6 +551,11 @@ impl CharacterController
         target_rotation_controller.data.get_mut().alpha = 0.0;
         target_rotation_controller.data.get_mut().beta = PI / 7.0;
         target_rotation_controller.data.get_mut().radius = DEFAULT_CAM_RADIUS;
+        target_rotation_controller.lateral_offset = if self.control_mode == CharControlMode::CameraRelative { CAM_RELATIVE_LATERAL_OFFSET } else { 0.0 };
+
+        // hides the steps of autostep and snap to ground
+        target_rotation_controller.follow_smoothing = 0.05;
+        target_rotation_controller.follow_smoothing_vertical = 0.1;
         target_rotation_controller.data.get_mut().offset.y = 1.0;
         target_rotation_controller.collision_check = true;
 
@@ -521,6 +618,8 @@ impl CharacterController
             self.animations.strafe_right_walk = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "walk".to_string()].to_vec(), &vec![]);
             self.animations.strafe_left_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "left".to_string(), "run".to_string()].to_vec(), &vec![]);
             self.animations.strafe_right_run = node.find_animation_by_include_exclude(&["strafe".to_string(), "right".to_string(), "run".to_string()].to_vec(), &vec![]);
+            self.animations.turn_left = node.find_animation_by_include_exclude(&["turn".to_string(), "left".to_string()].to_vec(), &vec![]);
+            self.animations.turn_right = node.find_animation_by_include_exclude(&["turn".to_string(), "right".to_string()].to_vec(), &vec![]);
             self.animations.fall_idle = node.find_animation_by_include_exclude(&["fall".to_string()].to_vec(), &["land".to_string()].to_vec());
             self.animations.fall_landing = node.find_animation_by_include_exclude(&["fall".to_string(), "land".to_string()].to_vec(), &vec![]);
             self.animations.actions = node.find_animations_by_regex("(?i)action.*");
@@ -643,8 +742,41 @@ impl CharacterController
         let Some(controller) = cam.controller.as_mut() else { return; };
         let Some(controller) = controller.as_any_mut().downcast_mut::<TargetRotationController>() else { return; };
 
+        // perspective: zoom limits, and leave a perspective that is not allowed (anymore)
+        let radius = controller.data.get_ref().radius;
+        match self.perspective
+        {
+            CharPerspective::FirstAndThirdPerson =>
+            {
+                controller.min_radius = 0.0;
+            },
+            CharPerspective::FirstPersonOnly =>
+            {
+                controller.min_radius = 0.0;
+                controller.max_radius = 0.0;
+
+                if !approx_zero(radius) { controller.set_radius(0.0); }
+            },
+            CharPerspective::ThirdPersonOnly =>
+            {
+                controller.min_radius = MIN_THIRD_PERSON_RADIUS;
+
+                if approx_zero(radius)
+                {
+                    controller.set_radius(DEFAULT_CAM_RADIUS);
+                }
+            },
+        }
+
+        // first person only left max_radius at 0
+        if self.perspective != CharPerspective::FirstPersonOnly && approx_zero(controller.max_radius)
+        {
+            controller.max_radius = default_max_radius();
+        }
+
         let first_person = approx_zero(controller.data.get_ref().radius);
-        let wanted = if first_person { self.camera.eye_offset } else { self.camera.follow_offset };
+        // follow_auto reads the eye height directly - a saved follow_offset may predate the measurement
+        let wanted = if first_person || self.camera.follow_auto { self.camera.eye_offset } else { self.camera.follow_offset };
 
         if !approx_equal(controller.data.get_ref().offset.y, wanted)
         {
@@ -714,7 +846,16 @@ impl CharacterController
             self.animations.strafe_right_walk.clone(),
             self.animations.strafe_left_run.clone(),
             self.animations.strafe_right_run.clone(),
+            self.animations.turn_left.clone(),
+            self.animations.turn_right.clone(),
         ];
+
+        // the controller turns the character, so the turn clips must not turn the hips as well
+        for animation in [self.animations.turn_left.clone(), self.animations.turn_right.clone()].into_iter().flatten()
+        {
+            component_downcast_mut!(animation, Animation);
+            animation.in_place_rotation = true;
+        }
 
         for animation in locomotion.into_iter().flatten()
         {
@@ -791,8 +932,31 @@ impl CharacterController
     {
         if let Some(node) = self.node.as_ref()
         {
-            scene.physics.set_character_shape(node, self.collision.capsule_center_offset, self.collision.capsule_half_height, self.collision.capsule_radius);
+            let (center_offset, half_height, radius) = self.capsule_dimensions();
+            scene.physics.set_character_shape(node, center_offset, half_height, radius);
         }
+    }
+
+    fn capsule_dimensions(&self) -> (f32, f32, f32)
+    {
+        self.capsule_dimensions_for(self.low_capsule.unwrap_or(1.0))
+    }
+
+    // center offset, half height and radius at a fraction of the standing height - the bottom stays at the feet
+    fn capsule_dimensions_for(&self, factor: f32) -> (f32, f32, f32)
+    {
+        let (center_offset, half_height, radius) = (self.collision.capsule_center_offset, self.collision.capsule_half_height, self.collision.capsule_radius);
+
+        if factor >= 1.0
+        {
+            return (center_offset, half_height, radius);
+        }
+
+        let bottom = center_offset - half_height - radius;
+        let height = (half_height + radius) * 2.0 * factor.max(0.1);
+
+        let low_radius = radius.min(height * 0.5);
+        (bottom + height * 0.5, height * 0.5 - low_radius, low_radius)
     }
 
     // The character and everything below it must not block its own shape cast.
@@ -832,6 +996,8 @@ impl CharacterController
             CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.clone(),
             CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.clone(),
             CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.clone(),
+            CharAnimationType::TurnLeft => self.animations.turn_left.clone(),
+            CharAnimationType::TurnRight => self.animations.turn_right.clone(),
             CharAnimationType::Jump => self.animations.jump.clone(),
             CharAnimationType::Crouch => self.animations.crouch.clone(),
             CharAnimationType::Roll => self.animations.roll.clone(),
@@ -839,6 +1005,21 @@ impl CharacterController
             CharAnimationType::FallLanding => self.animations.fall_landing.clone(),
             CharAnimationType::Action => self.animations.actions.get(index).cloned(),
         }
+    }
+
+    // turn rate of a turn clip in rad/s, None for any other animation
+    fn turn_animation_rate(&self, animation: CharAnimationType) -> Option<f32>
+    {
+        if !matches!(animation, CharAnimationType::TurnLeft | CharAnimationType::TurnRight)
+        {
+            return None;
+        }
+
+        let item = self.get_animation(animation, 0)?;
+        component_downcast!(item, Animation);
+
+        let rate = item.get_in_place_turn_speed();
+        rate
     }
 
     fn get_animation_duration(&self, animation: CharAnimationType, index: usize) -> f32
@@ -853,6 +1034,8 @@ impl CharacterController
             CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.as_ref(),
             CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.as_ref(),
             CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.as_ref(),
+            CharAnimationType::TurnLeft => self.animations.turn_left.as_ref(),
+            CharAnimationType::TurnRight => self.animations.turn_right.as_ref(),
             CharAnimationType::Jump => self.animations.jump.as_ref(),
             CharAnimationType::Crouch => self.animations.crouch.as_ref(),
             CharAnimationType::Roll => self.animations.roll.as_ref(),
@@ -882,6 +1065,8 @@ impl CharacterController
             CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.as_ref(),
             CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.as_ref(),
             CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.as_ref(),
+            CharAnimationType::TurnLeft => self.animations.turn_left.as_ref(),
+            CharAnimationType::TurnRight => self.animations.turn_right.as_ref(),
             CharAnimationType::Jump => self.animations.jump.as_ref(),
             CharAnimationType::Crouch => self.animations.crouch.as_ref(),
             CharAnimationType::Roll => self.animations.roll.as_ref(),
@@ -910,6 +1095,8 @@ impl CharacterController
             self.animations.strafe_right_walk.clone(),
             self.animations.strafe_left_run.clone(),
             self.animations.strafe_right_run.clone(),
+            self.animations.turn_left.clone(),
+            self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
             self.animations.roll.clone(),
@@ -948,6 +1135,8 @@ impl CharacterController
             self.animations.strafe_right_walk.clone(),
             self.animations.strafe_left_run.clone(),
             self.animations.strafe_right_run.clone(),
+            self.animations.turn_left.clone(),
+            self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
             self.animations.roll.clone(),
@@ -988,6 +1177,8 @@ impl CharacterController
             self.animations.strafe_right_walk.clone(),
             self.animations.strafe_left_run.clone(),
             self.animations.strafe_right_run.clone(),
+            self.animations.turn_left.clone(),
+            self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
             self.animations.roll.clone(),
@@ -1077,6 +1268,8 @@ impl CharacterController
             self.animations.strafe_right_walk.clone(),
             self.animations.strafe_left_run.clone(),
             self.animations.strafe_right_run.clone(),
+            self.animations.turn_left.clone(),
+            self.animations.turn_right.clone(),
             self.animations.jump.clone(),
             self.animations.crouch.clone(),
             self.animations.roll.clone(),
@@ -1132,6 +1325,8 @@ impl CharacterController
             CharAnimationType::StrafeRightWalk => self.animations.strafe_right_walk.as_ref(),
             CharAnimationType::StrafeLeftRun => self.animations.strafe_left_run.as_ref(),
             CharAnimationType::StrafeRightRun => self.animations.strafe_right_run.as_ref(),
+            CharAnimationType::TurnLeft => self.animations.turn_left.as_ref(),
+            CharAnimationType::TurnRight => self.animations.turn_right.as_ref(),
             CharAnimationType::Jump => self.animations.jump.as_ref(),
             CharAnimationType::Crouch => self.animations.crouch.as_ref(),
             CharAnimationType::Roll => self.animations.roll.as_ref(),
@@ -1157,7 +1352,7 @@ impl CharacterController
             component_downcast_mut!(animation_item, Animation);
             animation_item.looped = looped;
             animation_item.reverse = reverse;
-            animation_item.speed = animation_speed;
+            animation_item.set_speed(animation_speed);
 
             if reset_time
             {
@@ -1181,6 +1376,25 @@ impl SceneController for CharacterController
     fn runs_in_mode(&self, run_mode: RunMode) -> bool
     {
         run_mode.runs_game_logic()
+    }
+
+    fn on_run_mode_changed(&mut self, _scene: &mut crate::state::scene::scene::Scene, old: RunMode, new: RunMode)
+    {
+        // update no longer runs, so whatever clip was playing (e.g. a strafe) would keep looping in the editor
+        if old.runs_game_logic() && !new.runs_game_logic()
+        {
+            self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Stop, 1.0, true, false, true);
+
+            self.sprint_lock = false;
+            self.current_y_velocity = 0.0;
+            self.low_capsule = None;
+
+            // first person hides the character
+            if let Some(node) = self.node.as_ref()
+            {
+                node.write().unwrap().settings.visible = true;
+            }
+        }
     }
 
     fn cleanup(&mut self)
@@ -1222,6 +1436,8 @@ impl SceneController for CharacterController
         self.animations.strafe_right_walk = None;
         self.animations.strafe_left_run = None;
         self.animations.strafe_right_run = None;
+        self.animations.turn_left = None;
+        self.animations.turn_right = None;
         self.animations.fall_idle = None;
         self.animations.fall_landing = None;
 
@@ -1257,6 +1473,12 @@ impl SceneController for CharacterController
     fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
     {
         // resolve node
+        if self.rotation_follow
+        {
+            self.control_mode = CharControlMode::CharacterRelativeChaseCam;
+            self.rotation_follow = false;
+        }
+
         if self.node.is_ref()
         {
             let node_found = context.nodes.iter().find(|node| node.read().unwrap().uuid == self.node.id().unwrap());
@@ -1334,6 +1556,15 @@ impl SceneController for CharacterController
 
         let mut is_action = self.is_action();
 
+        // ********** sprint lock **********
+        if io.input_manager.keyboard.is_pressed(Key::CapsLock)
+        {
+            self.sprint_lock = !self.sprint_lock;
+        }
+
+        // shift inverts the lock, so it walks while the lock is on
+        let fast = io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift) != self.sprint_lock;
+
         // ********** fly mode **********
         if io.input_manager.keyboard.is_pressed(Key::Y)
         {
@@ -1358,6 +1589,7 @@ impl SceneController for CharacterController
 
         // ********** first person mode **********
         let mut is_first_person = false;
+        let mut cam_alpha = None;
         if let Some(cam) = scene.get_game_camera(&self.cam_name)
         {
             if let Some(controller) = cam.controller.as_ref()
@@ -1365,9 +1597,13 @@ impl SceneController for CharacterController
                 if let Some(controller) = controller.as_any().downcast_ref::<TargetRotationController>()
                 {
                     is_first_person = approx_zero(controller.data.get_ref().radius);
+                    cam_alpha = Some(controller.data.get_ref().alpha);
                 }
             }
         }
+
+        // first person keeps forward + strafe
+        let camera_relative = self.control_mode == CharControlMode::CameraRelative && !is_first_person && cam_alpha.is_some();
 
         self.apply_camera_offset(scene);
 
@@ -1377,10 +1613,65 @@ impl SceneController for CharacterController
             node.write().unwrap().settings.visible = !is_first_person;
         }
 
-        // ********** forward/backward **********
-        if !io.input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
+        // ********** camera relative input **********
+        let mut move_dir: Option<Vector3<f32>> = None;
+        let mut strafing = false;
+        if camera_relative && !io.input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
         {
-            if io.input_manager.keyboard.is_holding(Key::W) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            let keyboard = &io.input_manager.keyboard;
+
+            let input_z = keyboard.is_holding(Key::W) as i32 - keyboard.is_holding(Key::S) as i32;
+            let input_x = keyboard.is_holding(Key::D) as i32 - keyboard.is_holding(Key::A) as i32;
+
+            if input_x != 0 || input_z != 0
+            {
+                let alpha = cam_alpha.unwrap_or(0.0);
+                let forward = Vector3::new(-alpha.sin(), 0.0, -alpha.cos());
+                let right = Vector3::new(alpha.cos(), 0.0, -alpha.sin());
+
+                move_dir = Some((forward * input_z as f32 + right * input_x as f32).normalize());
+
+                // strafe only straight sideways or backwards - diagonals turn and walk like without strafe
+                strafing = self.strafe && (input_z == 0 || input_x == 0);
+
+                // strafe: the body keeps facing the view, backwards is never fast (like the tank controls)
+                let backwards = strafing && input_z < 0;
+                let fast = fast && !backwards;
+
+                if !is_jumping && !is_rolling && !self.falling && !self.fly_mode
+                {
+                    let animation = match (strafing && input_z == 0, input_x < 0, fast)
+                    {
+                        (true, true, false) => CharAnimationType::StrafeLeftWalk,
+                        (true, true, true) => CharAnimationType::StrafeLeftRun,
+                        (true, false, false) => CharAnimationType::StrafeRightWalk,
+                        (true, false, true) => CharAnimationType::StrafeRightRun,
+                        (false, _, false) => CharAnimationType::Walk,
+                        (false, _, true) => CharAnimationType::Run,
+                    };
+
+                    self.start_animation(animation, 0, AnimationMixing::Fade, 1.0, true, backwards, false);
+                }
+
+                let speed = match (self.fly_mode, fast)
+                {
+                    (true, true) => self.fly_speed_fast,
+                    (true, false) => self.fly_speed,
+                    (false, true) => self.movement_speed_fast,
+                    (false, false) => self.movement_speed,
+                };
+
+                // negative only for strafing backwards (roll direction), move_dir carries the actual direction
+                movement.z = if backwards { -speed } else { speed };
+
+                has_change = true;
+            }
+        }
+
+        // ********** forward/backward **********
+        if !camera_relative && !io.input_manager.keyboard.is_holding(Key::C) && !is_action && !is_landing
+        {
+            if io.input_manager.keyboard.is_holding(Key::W) && !fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1390,7 +1681,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { self.fly_speed } else { self.movement_speed };
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::S) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if io.input_manager.keyboard.is_holding(Key::S) && !fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1399,7 +1690,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { -self.fly_speed } else { -self.movement_speed };
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::W) && io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if io.input_manager.keyboard.is_holding(Key::W) && fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1409,7 +1700,7 @@ impl SceneController for CharacterController
                 movement.z = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed_fast };
                 has_change = true;
             }
-            else if io.input_manager.keyboard.is_holding(Key::S) && io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            else if io.input_manager.keyboard.is_holding(Key::S) && fast
             {
                 if !is_jumping && !is_rolling && !is_action && !self.falling && !self.fly_mode
                 {
@@ -1422,7 +1713,7 @@ impl SceneController for CharacterController
         }
 
         // ********** left/right **********
-        if !is_landing
+        if !camera_relative && !is_landing
         {
             if io.input_manager.keyboard.is_holding(Key::A)
             {
@@ -1432,7 +1723,7 @@ impl SceneController for CharacterController
                 }
                 else
                 {
-                    if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    if fast
                     {
                         if !self.fly_mode
                         {
@@ -1460,7 +1751,7 @@ impl SceneController for CharacterController
                 }
                 else
                 {
-                    if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+                    if fast
                     {
                         if !self.fly_mode
                         {
@@ -1474,7 +1765,7 @@ impl SceneController for CharacterController
                         {
                             self.start_animation(CharAnimationType::StrafeRightWalk, 0, AnimationMixing::Fade, 1.0, true, false, false);
                         }
-                        movement.x = if self.fly_mode { self.fly_speed_fast } else { self.movement_speed };
+                        movement.x = if self.fly_mode { self.fly_speed } else { self.movement_speed };
                     }
                 }
 
@@ -1485,7 +1776,7 @@ impl SceneController for CharacterController
         // ********** up/down **********
         if io.input_manager.keyboard.is_holding(Key::C) && self.fly_mode
         {
-            if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            if fast
             {
                 movement.y = -self.movement_speed_fast;
             }
@@ -1499,7 +1790,7 @@ impl SceneController for CharacterController
 
         if io.input_manager.keyboard.is_holding(Key::Space) && self.fly_mode
         {
-            if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
+            if fast
             {
                 movement.y = self.movement_speed_fast;
             }
@@ -1512,6 +1803,7 @@ impl SceneController for CharacterController
         }
 
         // ********** jump **********
+        let mut crouching = false;
         if io.input_manager.keyboard.is_pressed_no_wait(Key::Space) && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode && ((self.grounded && !is_jumping) || (self.jumps > 0 && self.jumps < self.max_jumps))
         {
             let animation_speed = self.gravity / EARTH_GRAVITY;
@@ -1524,12 +1816,14 @@ impl SceneController for CharacterController
         else if (io.input_manager.keyboard.is_holding(Key::C) || io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl)) && approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.fly_mode
         {
             self.start_animation(CharAnimationType::Crouch, 0, AnimationMixing::Fade, 1.0, false, false, false);
+            crouching = true;
             has_change = true;
         }
         // ********** roll **********
         else if io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !approx_zero_vec3(&movement) && !is_jumping && !is_rolling && !is_action && !is_landing && !self.falling && !self.fly_mode
         {
-            if movement.z > 0.0
+            // camera relative always rolls forward - the body turns into the roll direction
+            if movement.z > 0.0 || move_dir.is_some()
             {
                 self.start_animation(CharAnimationType::Roll, 0, AnimationMixing::Fade, 1.0, false, false, true);
             }
@@ -1563,9 +1857,35 @@ impl SceneController for CharacterController
         is_rolling = self.is_rolling();
 
         // ********** idle **********
+        let mut idle_turn_rate: Option<f32> = None; // rad/s while a turn clip plays
         if approx_zero_vec3(&movement) && !self.falling && !is_jumping && !is_rolling && !is_action && !is_landing && !io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) && !io.input_manager.keyboard.is_holding(Key::C) && !self.fly_mode
         {
-            self.start_animation(CharAnimationType::Idle, 0, AnimationMixing::Fade, 1.0, true, false, false);
+            // standing but still turning into the view (see idle_turn below) - step with the turn clips
+            let mut idle_turn_diff = 0.0;
+            if let (true, Some(alpha), Some(transformation)) = (camera_relative && self.idle_turn && move_dir.is_none(), cam_alpha, &self.transformation)
+            {
+                component_downcast!(transformation, Transformation);
+                idle_turn_diff = shortest_angle_dist(transformation.get_data().rotation.y + self.rotation_offset, alpha);
+            }
+
+            let turning = self.is_animation_running(CharAnimationType::TurnLeft, 0) || self.is_animation_running(CharAnimationType::TurnRight, 0);
+            let threshold = if turning { TURN_ANIMATION_STOP_ANGLE } else { TURN_ANIMATION_START_ANGLE };
+
+            let animation = if idle_turn_diff > threshold && self.animations.turn_left.is_some() { CharAnimationType::TurnLeft }
+            else if idle_turn_diff < -threshold && self.animations.turn_right.is_some() { CharAnimationType::TurnRight }
+            else { CharAnimationType::Idle };
+
+            // body and clip turn at the same rate, so the feet stay planted
+            let mut animation_speed = 1.0;
+            if let Some(clip_rate) = self.turn_animation_rate(animation)
+            {
+                let body_rate = (self.idle_turn_speed * idle_turn_diff.abs()).clamp(clip_rate * MIN_TURN_ANIMATION_SPEED, clip_rate * MAX_TURN_ANIMATION_SPEED);
+
+                idle_turn_rate = Some(body_rate);
+                animation_speed = body_rate / clip_rate;
+            }
+
+            self.start_animation(animation, 0, AnimationMixing::Fade, animation_speed, true, false, false);
         }
 
         /*
@@ -1603,6 +1923,37 @@ impl SceneController for CharacterController
             }
         }
 
+        // ********** turn toward the walking direction, or slowly toward the view while standing (camera relative) **********
+        let turn = match move_dir
+        {
+            // the jump and roll clips only go forward, so a strafe jump or roll faces where it goes
+            Some(_) if strafing && !is_jumping && !is_rolling => cam_alpha.map(|alpha| (alpha, self.turn_speed)),
+            Some(move_dir) => Some(((-move_dir.x).atan2(-move_dir.z), self.turn_speed)),
+            None if camera_relative && self.idle_turn && !is_action && !is_rolling => cam_alpha.map(|alpha| (alpha, self.idle_turn_speed)),
+            None => None
+        };
+
+        if let (Some((wanted, speed)), Some(transformation)) = (turn, &self.transformation)
+        {
+            component_downcast_mut!(transformation, Transformation);
+
+            let current = transformation.get_data().rotation.y + self.rotation_offset;
+            let diff = shortest_angle_dist(current, wanted);
+            let delta_t = get_delta_t(frame_scale);
+
+            let delta = match idle_turn_rate
+            {
+                Some(rate) if move_dir.is_none() => diff.signum() * (rate * delta_t).min(diff.abs()),
+                _ => diff * (1.0 - (-speed * delta_t).exp()),
+            };
+
+            // aligned - leave the transform untouched, so a standing character does not count as changed
+            if diff.abs() > 0.001
+            {
+                transformation.apply_rotation(Vector3::new(0.0, delta, 0.0));
+            }
+        }
+
         // the facing direction is also needed when nothing rotated this frame
         if let Some(transformation) = &self.transformation
         {
@@ -1626,9 +1977,17 @@ impl SceneController for CharacterController
         }
 
         // forward/backward
-        if !approx_zero(movement_frame_scale.z)
+        if let (Some(move_dir), true) = (move_dir, strafing)
         {
-            desired += movement_frame_scale.z * self.direction.normalize();
+            // camera relative strafe: straight where the input points
+            desired += movement_frame_scale.z.abs() * move_dir;
+        }
+        else if !approx_zero(movement_frame_scale.z)
+        {
+            // camera relative: walk where the body faces, barely while it still faces away (turns almost in place)
+            let facing_scale = move_dir.map_or(1.0, |move_dir| move_dir.dot(&self.direction).max(0.0));
+
+            desired += movement_frame_scale.z * facing_scale * self.direction.normalize();
         }
 
         // up/down in fly mode - unscaled, same as before the capsule was introduced
@@ -1706,9 +2065,6 @@ impl SceneController for CharacterController
 
             let world_pos = world_pos + platform_delta;
 
-            let capsule = Capsule::new_y(self.collision.capsule_half_height, self.collision.capsule_radius);
-            let capsule_pos = Pose::from_translation(Vector::new(world_pos.x, world_pos.y + self.collision.capsule_center_offset, world_pos.z));
-
             let mut char_controller = KinematicCharacterController::default();
             char_controller.up = Vector::Y;
             char_controller.offset = CharacterLength::Absolute(self.collision.offset);
@@ -1748,6 +2104,33 @@ impl SceneController for CharacterController
             };
 
             let filter = QueryFilter::default().predicate(&predicate);
+
+            // ***** low capsule while rolling or crouching - shrinking is instant, growing needs room *****
+            let wanted_factor = if is_rolling { self.collision.roll_height_factor } else if crouching { self.collision.crouch_height_factor } else { 1.0 };
+            let current_factor = self.low_capsule.unwrap_or(1.0);
+
+            let factor = if wanted_factor <= current_factor
+            {
+                wanted_factor
+            }
+            else
+            {
+                // lifted a bit, so the ground under the feet does not count as blocking
+                let (center_offset, half_height, radius) = self.capsule_dimensions_for(wanted_factor);
+                let grown = Capsule::new_y((half_height - STAND_UP_GROUND_MARGIN * 0.5).max(0.0), radius);
+                let grown_pos = Pose::from_translation(Vector::new(world_pos.x, world_pos.y + center_offset + STAND_UP_GROUND_MARGIN * 0.5, world_pos.z));
+
+                let queries = scene.physics.query_pipeline(filter);
+                let blocked = queries.intersect_shape(grown_pos, &grown).next().is_some();
+
+                if blocked { current_factor } else { wanted_factor }
+            };
+
+            self.low_capsule = if factor < 1.0 { Some(factor) } else { None };
+
+            let (capsule_center_offset, capsule_half_height, capsule_radius) = self.capsule_dimensions();
+            let capsule = Capsule::new_y(capsule_half_height, capsule_radius);
+            let capsule_pos = Pose::from_translation(Vector::new(world_pos.x, world_pos.y + capsule_center_offset, world_pos.z));
 
             // every collider the character ran into on its way, so they can be pushed after
             let mut collisions = vec![];
@@ -1873,7 +2256,7 @@ impl SceneController for CharacterController
         }
 
         // ********** camera angle for follow mode **********
-        if !approx_zero(movement.z) && !approx_zero(rotation.y) && self.rotation_follow
+        if !approx_zero(movement.z) && !approx_zero(rotation.y) && self.control_mode == CharControlMode::CharacterRelativeChaseCam
         {
             if let Some(cam) = scene.get_game_camera_mut(&self.cam_name)
             {
@@ -1972,6 +2355,58 @@ impl SceneController for CharacterController
         });
 
         ui.separator();
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Control Mode: ");
+            ui.label("ℹ").on_hover_text("Camera Relative: W/A/S/D relative to the camera, the character turns into the walking direction (re-run auto setup for the matching camera)\nTank + Camera Follow: A/D rotate, the camera swings in behind\nTank: A/D rotate, the camera stays\nFirst person always uses forward + strafe");
+
+            egui::ComboBox::from_id_salt("char_control_mode").selected_text(format!("{:?}", self.control_mode)).show_ui(ui, |ui|
+            {
+                for mode in [CharControlMode::CameraRelative, CharControlMode::CharacterRelativeChaseCam, CharControlMode::Tank]
+                {
+                    ui.selectable_value(&mut self.control_mode, mode, format!("{:?}", mode));
+                }
+            });
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Perspective: ");
+            ui.label("ℹ").on_hover_text(format!("FirstAndThirdPerson: zooming in all the way switches to first person\nFirstPersonOnly: no zoom\nThirdPersonOnly: zoom stops at {} m", MIN_THIRD_PERSON_RADIUS));
+
+            egui::ComboBox::from_id_salt("char_perspective").selected_text(format!("{:?}", self.perspective)).show_ui(ui, |ui|
+            {
+                for perspective in [CharPerspective::FirstAndThirdPerson, CharPerspective::FirstPersonOnly, CharPerspective::ThirdPersonOnly]
+                {
+                    ui.selectable_value(&mut self.perspective, perspective, format!("{:?}", perspective));
+                }
+            });
+        });
+
+        if self.control_mode == CharControlMode::CameraRelative
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Turn Speed: ");
+                ui.add(egui::Slider::new(&mut self.turn_speed, 1.0..=30.0).fixed_decimals(1));
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.checkbox(&mut self.idle_turn, "Turn Into View While Standing");
+                ui.add_enabled(self.idle_turn, egui::Slider::new(&mut self.idle_turn_speed, 0.1..=10.0).fixed_decimals(1));
+            });
+        }
+
+        if self.control_mode == CharControlMode::CharacterRelativeChaseCam
+        {
+            ui.horizontal(|ui|
+            {
+                ui.label("Rotation Follow Angle speed: ");
+                ui.add(egui::Slider::new(&mut self.rotation_follow_angle_speed, 0.0..=1.0).fixed_decimals(3));
+            });
+        }
 
         ui.horizontal(|ui|
         {
@@ -2205,6 +2640,20 @@ impl SceneController for CharacterController
             ui.add(egui::Slider::new(&mut self.collision.min_slope_slide_angle, 0.0..=PI / 2.0).fixed_decimals(2));
         });
 
+        ui.horizontal(|ui|
+        {
+            ui.label("Roll Height: ");
+            ui.label("ℹ").on_hover_text("capsule height while rolling, relative to standing - it only grows back once there is room to stand up");
+            ui.add(egui::Slider::new(&mut self.collision.roll_height_factor, 0.1..=1.0).fixed_decimals(2));
+        });
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Crouch Height: ");
+            ui.label("ℹ").on_hover_text("capsule height while crouching, relative to standing - it only grows back once there is room to stand up");
+            ui.add(egui::Slider::new(&mut self.collision.crouch_height_factor, 0.1..=1.0).fixed_decimals(2));
+        });
+
         ui.separator();
 
         ui.checkbox(&mut self.collision.push_bodies, "Push Dynamic Objects").on_hover_text("turns the collisions the character already reports into impulses, so it can shove things out of the way instead of just being stopped by them");
@@ -2226,8 +2675,7 @@ impl SceneController for CharacterController
         ui.horizontal(|ui|
         {
             ui.label(format!("Scene Colliders: {}", scene.physics.collider_amount()));
-            ui.label("ℹ").on_hover_text(format!("synced last frame: {} / shape rebuilds: {}
-both should be 0 while only the character moves", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
+            ui.label("ℹ").on_hover_text(format!("synced last frame: {} / shape rebuilds: {}both should be 0 while only the character moves", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
 
             if ui.button("Rebuild").clicked()
             {
@@ -2272,7 +2720,7 @@ both should be 0 while only the character moves", scene.physics.last_synced, sce
 
         ui.horizontal(|ui|
         {
-            ui.checkbox(&mut self.physics, "Physics (Collide with ground)");
+            ui.checkbox(&mut self.physics, "Physics (Collide with objects)");
         });
 
         ui.horizontal(|ui|
@@ -2283,17 +2731,6 @@ both should be 0 while only the character moves", scene.physics.last_synced, sce
         ui.horizontal(|ui|
         {
             ui.checkbox(&mut self.update_only_on_move, "Update only on movement");
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.checkbox(&mut self.rotation_follow, "Rotation Follow");
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Rotation Follow Angle speed: ");
-            ui.add(egui::Slider::new(&mut self.rotation_follow_angle_speed, 0.0..=1.0).fixed_decimals(0));
         });
     }
 }

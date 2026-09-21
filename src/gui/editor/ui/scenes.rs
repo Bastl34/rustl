@@ -425,7 +425,10 @@ waiting: objects holding still for their first hit", scene.physics.last_synced, 
                     ui.label("Phase:");
                     ui.selectable_value(phase, ControllerPhase::Pre, "Pre").on_hover_text("before nodes, animations and physics");
                     ui.selectable_value(phase, ControllerPhase::Post, "Post").on_hover_text("after physics");
+
                 });
+
+                ui.separator();
 
                 controller.ui(ui, scene);
             });
