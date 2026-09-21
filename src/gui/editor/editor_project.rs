@@ -62,8 +62,7 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, path: &str) -
         objects,
         cameras,
         lights,
-        pre_controller: extract_controllers(&scene.pre_controller),
-        post_controller: extract_controllers(&scene.post_controller),
+        controller: extract_controllers(&scene.controller),
     }
 }
 

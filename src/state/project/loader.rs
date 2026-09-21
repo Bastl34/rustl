@@ -285,7 +285,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
 }
 
 // cameras and controllers reference the objects -> applied after them
-fn apply_scene_entries(state: &mut State, scene_id: u32, cameras: Vec<serde_json::Value>, lights: Vec<serde_json::Value>, pre_controller: Vec<serde_json::Value>, post_controller: Vec<serde_json::Value>)
+fn apply_scene_entries(state: &mut State, scene_id: u32, cameras: Vec<serde_json::Value>, lights: Vec<serde_json::Value>, controller: Vec<serde_json::Value>)
 {
     let textures = state.resources.textures.values().cloned().collect();
     let mesh_resources = state.resources.mesh_resources.values().cloned().collect();
@@ -354,21 +354,16 @@ fn apply_scene_entries(state: &mut State, scene_id: u32, cameras: Vec<serde_json
     }
 
     // after the cameras - the character controller looks its camera up by name
-    for (values, post) in [(pre_controller, false), (post_controller, true)]
+    for value in controller
     {
-        for value in values
+        match serde_json::from_value::<SceneControllerBox>(value)
         {
-            match serde_json::from_value::<SceneControllerBox>(value)
+            Ok(mut controller) =>
             {
-                Ok(mut controller) =>
-                {
-                    controller.run_after_deserialize(&mut context);
-
-                    if post { context.scene.post_controller.push(controller); }
-                    else    { context.scene.pre_controller.push(controller); }
-                },
-                Err(e) => { console_error!("failed to parse scene controller: {}", e); },
-            }
+                controller.run_after_deserialize(&mut context);
+                context.scene.controller.push(controller);
+            },
+            Err(e) => { console_error!("failed to parse scene controller: {}", e); },
         }
     }
 }
@@ -433,7 +428,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                 loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
             }
 
-            let EditorScene { cameras, lights, pre_controller, post_controller, .. } = editor_scene;
+            let EditorScene { cameras, lights, controller, .. } = editor_scene;
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
@@ -443,7 +438,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                     apply_prepared_object(state, scene_id, None, object);
                 }
 
-                apply_scene_entries(state, scene_id, cameras, lights, pre_controller, post_controller);
+                apply_scene_entries(state, scene_id, cameras, lights, controller);
             }));
         }
 

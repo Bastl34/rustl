@@ -7,7 +7,7 @@ use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::{extras::Extras, tags::{self, Tags}}}, state::{get_delta_t, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, get_delta_t}}};
 
 use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
@@ -73,8 +73,7 @@ pub struct Scene
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
     pub materials: HashMap<u32, MaterialItem>,
 
-    pub pre_controller: Vec<SceneControllerBox>, // before scene updates
-    pub post_controller: Vec<SceneControllerBox>, // after scene updates
+    pub controller: Vec<SceneControllerBox>,
 
     // collision world for gameplay queries - not serialized, it is rebuilt from the nodes
     pub physics: PhysicsWorld,
@@ -129,11 +128,8 @@ impl Serialize for Scene
 
         map.serialize_entry("physics", &self.physics.settings)?;
 
-        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter().filter(|controller| controller.is_serializable()).collect();
-        map.serialize_entry("pre_controller", &pre_controller)?;
-
-        let post_controller: Vec<&SceneControllerBox> = self.post_controller.iter().filter(|controller| controller.is_serializable()).collect();
-        map.serialize_entry("post_controller", &post_controller)?;
+        let controller: Vec<&SceneControllerBox> = self.controller.iter().filter(|controller| controller.is_serializable()).collect();
+        map.serialize_entry("controller", &controller)?;
 
         map.end()
     }
@@ -189,16 +185,7 @@ impl<'de> Deserialize<'de> for Scene
                             let material_map: HashMap<u32, Box<dyn Component>> = map.next_value()?;
                             scene.materials = material_map.into_iter().map(|(id, mat)| (id, Arc::new(RwLock::new(mat)))).collect();
                         }
-                        "pre_controller" =>
-                        {
-                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
-                            scene.pre_controller = controllers;
-                        }
-                        "post_controller" =>
-                        {
-                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
-                            scene.post_controller = controllers;
-                        }
+                        "controller" => scene.controller = map.next_value()?,
                         _ =>
                         {
                             // ignore
@@ -247,8 +234,7 @@ impl Scene
             lights: ChangeTracker::new(vec![]),
             materials: HashMap::new(),
 
-            pre_controller: vec![],
-            post_controller: vec![],
+            controller: vec![],
 
             physics: PhysicsWorld::new(),
 
@@ -285,6 +271,24 @@ impl Scene
     pub fn has_tag(&self, tag: &str) -> bool
     {
         self.tags.contains(tag)
+    }
+
+    fn update_controller(&mut self, phase: ControllerPhase, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode)
+    {
+        // taken out so the controller can borrow the scene mutably
+        let mut controller = std::mem::take(&mut self.controller);
+        for controller_item in &mut controller
+        {
+            let base = controller_item.get_base();
+            if base.is_enabled && base.phase == phase && controller_item.runs_in_mode(run_mode)
+            {
+                controller_item.update(self, io, frame_scale);
+            }
+        }
+
+        // controllers added during the update are kept
+        controller.append(&mut self.controller);
+        self.controller = controller;
     }
 
     pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> f32
@@ -327,17 +331,7 @@ impl Scene
         }
 
         // ********** update pre controller **********
-        let mut pre_controller = vec![];
-        swap(&mut self.pre_controller, &mut pre_controller);
-        for controller_item in &mut pre_controller
-        {
-            if controller_item.get_base().is_enabled && controller_item.runs_in_mode(run_mode)
-            {
-                controller_item.update(self, io, frame_scale);
-            }
-        }
-
-        swap(&mut pre_controller, &mut self.pre_controller);
+        self.update_controller(ControllerPhase::Pre, io, frame_scale, run_mode);
 
         // ********** update nodes **********
         let mut delete_nodes = vec![];
@@ -437,17 +431,7 @@ impl Scene
         }
 
         // ********** update post controller **********
-        let mut post_controller = vec![];
-        swap(&mut self.post_controller, &mut post_controller);
-        for controller_item in &mut post_controller
-        {
-            if controller_item.get_base().is_enabled && controller_item.runs_in_mode(run_mode)
-            {
-                controller_item.update(self, io, frame_scale);
-            }
-        }
-
-        swap(&mut post_controller, &mut self.post_controller);
+        self.update_controller(ControllerPhase::Post, io, frame_scale, run_mode);
 
         // ********** delete requested "delete_later" nodes **********
         for node_id in delete_nodes
@@ -637,8 +621,7 @@ impl Scene
             is_internal && !remove_internals
         });
 
-        self.pre_controller.clear();
-        self.post_controller.clear();
+        self.controller.clear();
 
         // re-add defaults
         self.add_defaults();
@@ -674,20 +657,7 @@ impl Scene
         }
 
         // controller
-        for controller in &mut self.pre_controller
-        {
-            if let Some(node) = &node
-            {
-                controller.cleanup_node(node.clone());
-            }
-            // only cleanup everything if no node is specified
-            else if from_node_id.is_none()
-            {
-                controller.cleanup();
-            }
-        }
-
-        for controller in &mut self.post_controller
+        for controller in &mut self.controller
         {
             if let Some(node) = &node
             {

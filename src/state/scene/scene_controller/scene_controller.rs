@@ -8,6 +8,9 @@ use crate::{state::{scene::node::NodeItem, state::{InputOutput, RunMode}}};
 
 pub type SceneControllerBox = Box<dyn SceneController>;
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+pub enum ControllerPhase { #[default] Pre, Post } // pre: before nodes, animations and physics - post: after physics
+
 #[typetag::serde(tag = "type")]
 pub trait SceneController: Any + Send + Sync
 {
@@ -42,6 +45,9 @@ pub struct SceneControllerBase
     pub is_enabled: bool,
     pub name: String,
 
+    #[serde(default)]
+    pub phase: ControllerPhase,
+
     #[serde(skip, default)]
     pub icon: String,
 }
@@ -54,6 +60,7 @@ impl SceneControllerBase
         {
             name,
             icon,
+            phase: ControllerPhase::Pre,
             is_enabled: true
         }
     }

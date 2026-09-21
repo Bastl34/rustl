@@ -108,10 +108,7 @@ pub struct EditorScene
     pub lights: Vec<serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub pre_controller: Vec<serde_json::Value>,
-
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub post_controller: Vec<serde_json::Value>,
+    pub controller: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
