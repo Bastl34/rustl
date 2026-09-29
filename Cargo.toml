@@ -42,10 +42,8 @@ uuid = {version = "1.26.0", features = ["v4", "v5"] }
 
 xxhash-rust = { version = "0.8.18", features = [ "xxh3"] }
 
-parry3d = "0.30.2"
-#rapier3d = { version = "0.35.3", default-features = false, features = ["dim3", "f32", "std"] }
-# master for the character controller compound panic fix (dimforge/rapier#1004) - back to crates.io once it is released
-rapier3d = { git = "https://github.com/dimforge/rapier", rev = "bd7a2f2eae99fe00c3c52af2a9430ea119fe7c00", default-features = false, features = ["dim3", "f32", "std"] }
+parry3d = "0.31.1"
+rapier3d = { version = "0.36.0", default-features = false, features = ["dim3", "f32", "std"] }
 
 arboard = { version = "3.6.1", optional = true }
 

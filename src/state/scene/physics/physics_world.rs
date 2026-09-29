@@ -538,6 +538,7 @@ pub struct PhysicsWorld
     narrow_phase: NarrowPhase,
     impulse_joints: ImpulseJointSet,
     multibody_joints: MultibodyJointSet,
+    soft_bodies: SoftBodySet, // not used currently
     ccd_solver: CCDSolver,
 
     pub settings: PhysicsWorldSettings,
@@ -623,6 +624,7 @@ impl PhysicsWorld
             narrow_phase: NarrowPhase::new(),
             impulse_joints: ImpulseJointSet::new(),
             multibody_joints: MultibodyJointSet::new(),
+            soft_bodies: SoftBodySet::new(),
             ccd_solver: CCDSolver::new(),
 
             settings: PhysicsWorldSettings::default(),
@@ -676,6 +678,7 @@ impl PhysicsWorld
         self.narrow_phase = NarrowPhase::new();
         self.impulse_joints = ImpulseJointSet::new();
         self.multibody_joints = MultibodyJointSet::new();
+        self.soft_bodies = SoftBodySet::new();
         self.time_accumulator = 0.0;
         self.body_amount = 0;
 
@@ -763,7 +766,7 @@ impl PhysicsWorld
     {
         if let Some(handle) = self.ground_plane.take()
         {
-            self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+            self.colliders.remove(handle, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, false);
             self.rebuild_bvh();
         }
 
@@ -1597,14 +1600,14 @@ impl PhysicsWorld
 
     fn remove_collider(&mut self, handle: ColliderHandle)
     {
-        self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+        self.colliders.remove(handle, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, false);
     }
 
     fn remove_bodies(&mut self, bodies: &Vec<RigidBodyHandle>)
     {
         for body in bodies
         {
-            self.bodies.remove(*body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, true);
+            self.bodies.remove(*body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, &mut self.soft_bodies, true);
             self.body_amount = self.body_amount.saturating_sub(1);
         }
     }
@@ -1983,7 +1986,7 @@ impl PhysicsWorld
 
                 match parry3d::query::distance(collider_a.position(), collider_a.shape(), collider_b.position(), collider_b.shape())
                 {
-                    Ok(distance) => if distance <= RELEASE_TOUCH_DISTANCE { return true; },
+                    Ok(distance) => if distance.distance <= RELEASE_TOUCH_DISTANCE { return true; },
                     Err(_) => return true,
                 }
             }
@@ -2429,6 +2432,7 @@ impl PhysicsWorld
                 &mut self.colliders,
                 &mut self.impulse_joints,
                 &mut self.multibody_joints,
+                &mut self.soft_bodies,
                 &mut self.ccd_solver,
                 &(),
                 &()
@@ -3007,7 +3011,7 @@ impl PhysicsWorld
         let old_colliders: Vec<ColliderHandle> = self.bodies.get(body).map(|body| body.colliders().to_vec()).unwrap_or_default();
         for collider in old_colliders
         {
-            self.colliders.remove(collider, &mut self.islands, &mut self.bodies, true);
+            self.colliders.remove(collider, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, true);
         }
 
         let com = Vector::new(chassis.center_of_mass.x, chassis.center_of_mass.y, chassis.center_of_mass.z);
@@ -3140,7 +3144,7 @@ impl PhysicsWorld
     {
         if let Some(vehicle) = self.vehicles.remove(&node_id)
         {
-            self.bodies.remove(vehicle.body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, true);
+            self.bodies.remove(vehicle.body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, &mut self.soft_bodies, true);
         }
     }
 
