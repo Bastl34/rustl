@@ -14,7 +14,7 @@ editor = ["dep:rfd", "dep:arboard", "dep:egui_plot"]
 [dependencies]
 simple_logger = "5.2.0"
 log = "0.4.34"
-cfg-if = "1.0.4"
+cfg-if = "1.0.5"
 wgpu = "30.0.1"
 bytemuck = { version = "1.25.2", features = [ "derive" ] }
 web-time = "1.1.0"
@@ -38,9 +38,9 @@ regex = "1.13.1"
 rodio = { version = "0.22.2", default-features = false, features = ["playback", "mp3", "mp4", "lewton", "wav"] }
 gilrs = { version = "0.11.2", default-features = false, features = ["xinput"]}
 take_mut = "0.2.2"
-uuid = {version = "1.26.0", features = ["v4", "v5"] }
+uuid = {version = "1.26.1", features = ["v4", "v5"] }
 
-xxhash-rust = { version = "0.8.18", features = [ "xxh3"] }
+xxhash-rust = { version = "0.8.19", features = [ "xxh3"] }
 
 parry3d = "0.31.1"
 rapier3d = { version = "0.36.0", default-features = false, features = ["dim3", "f32", "std"] }
@@ -88,14 +88,14 @@ pollster = "1.0.1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.1.0"
-reqwest = "0.13.4"
+reqwest = "0.13.5"
 wgpu = { version = "30.0.1", features = ["webgl"]}
-wasm-bindgen = "0.2.127"
-wasm-bindgen-futures = "0.4.77"
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
 
 uuid = { version = "1.26.0", features = ["js", "v5"] }
-getrandom = { version = "0.3.4", features = ["wasm_js"] } # needed for ahash (egui, tobj)
-web-sys = { version = "0.3.104", features = [
+getrandom = { version = "0.4.3", features = ["wasm_js"] } # needed for ahash (egui, tobj)
+web-sys = { version = "0.3.106", features = [
     "Document",
     "Window",
     "Element",
