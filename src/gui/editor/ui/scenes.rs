@@ -215,19 +215,56 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
             {
                 ui.label("linear threshold: ");
                 ui.add(egui::Slider::new(&mut physics.sleep_linear_threshold, 0.0..=1.0).fixed_decimals(3));
-                ui.label("ℹ").on_hover_text("a body sleeps once it stays below this speed and the angular threshold long enough - raise it to settle things sooner, at the price of freezing genuinely slow motion. in world units per second, so this assumes meters");
+                ui.label("ℹ").on_hover_text("a body counts as resting once its fastest point, rotation included, moves slower than about twice this - raise it to settle things sooner, at the price of freezing genuinely slow motion. In world units per second, so this assumes meters.\n\nRapier only puts a whole group of touching bodies to sleep at once: a single body still moving keeps the entire pile awake, see 'freeze resting bodies'");
             });
 
             ui.horizontal(|ui|
             {
                 ui.label("angular threshold: ");
-                ui.add(egui::Slider::new(&mut physics.sleep_angular_threshold, 0.0..=5.0).fixed_decimals(3)).on_hover_text("in radians per second");
+                ui.add(egui::Slider::new(&mut physics.sleep_angular_threshold, 0.0..=5.0).fixed_decimals(3));
+                ui.label("ℹ").on_hover_text("in radians per second, and only used for bodies without a collider. For everything else rapier folds the rotation into the linear threshold above, and any turn faster than 90° per second keeps a body awake");
             });
 
             ui.horizontal(|ui|
             {
                 ui.label("time until sleep: ");
                 ui.add(egui::Slider::new(&mut physics.time_until_sleep, 0.0..=5.0).fixed_decimals(2).suffix(" s"));
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.label("settle damping: ");
+                ui.add(egui::Slider::new(&mut physics.settle_damping, 0.0..=20.0).fixed_decimals(1));
+                ui.label("ℹ").on_hover_text("extra linear and angular damping, on top of the object's own, for a body that has stayed in place for a moment (0.3 s within 10 cm and about 11°) - rocking and jitter in a pile die out quickly instead of going on. Anything actually on its way is not affected. 0 turns it off");
+            });
+
+            ui.horizontal(|ui|
+            {
+                ui.checkbox(&mut physics.freeze_resting, "freeze resting bodies");
+                ui.label("ℹ").on_hover_text("a body that has been resting this long on its own is made fixed until something hits it, like an object waiting for its first hit - it does not have to wait for the whole pile it lies in to calm down. A body that wobbles in place for 3 s without getting anywhere (within 10 cm and about 11°) is frozen too. Saves a lot on fallen dominoes and rubble. Anything heading at it faster than the wake speed thaws it just before it arrives");
+            });
+
+            ui.add_enabled_ui(physics.freeze_resting, |ui|
+            {
+                ui.horizontal(|ui|
+                {
+                    ui.label("freeze after: ");
+                    ui.add(egui::Slider::new(&mut physics.freeze_after, 0.1..=5.0).fixed_decimals(2).suffix(" s"));
+                });
+
+                ui.horizontal(|ui|
+                {
+                    ui.label("wake speed: ");
+                    ui.add(egui::Slider::new(&mut physics.wake_speed, 0.0..=2.0).fixed_decimals(2));
+                    ui.label("ℹ").on_hover_text("a frozen body wakes up when something heads at it faster than this, in units per second, rotation included. Lower feels softer, anything slower pushes against a wall. Too low and the jitter in a pile keeps waking its neighbours, which costs the saving again");
+                });
+
+                ui.horizontal(|ui|
+                {
+                    ui.label("calm down within: ");
+                    ui.add(egui::Slider::new(&mut physics.settle_time, 0.0..=20.0).fixed_decimals(1).suffix(" s"));
+                    ui.label("ℹ").on_hover_text("how long a body may keep moving after it was set moving - by the start of the run, a hit or a thaw. After that it is frozen as soon as it gets less than 20 cm in half a second while touching something, however much it rocks or spins, and it no longer wakes its frozen neighbours. Anything actually sliding, rolling or flying keeps going. 0 turns it off");
+                });
             });
 
             ui.separator();
@@ -260,11 +297,13 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         ui.horizontal(|ui|
         {
-            ui.label(format!("colliders: {} / bodies: {} / combined: {} / waiting: {}", scene.physics.collider_amount(), scene.physics.body_amount(), scene.physics.combined_amount(), scene.physics.waiting_amount()));
+            ui.label(format!("colliders: {} / bodies: {} / combined: {} / waiting: {} / frozen: {} / awake: {}", scene.physics.collider_amount(), scene.physics.body_amount(), scene.physics.combined_amount(), scene.physics.waiting_amount(), scene.physics.frozen_amount(), scene.physics.awake_amount()));
             ui.label("ℹ").on_hover_text(format!("synced last frame: {} / shape rebuilds: {}
 both should be 0 while nothing but the character moves
 combined: objects whose meshes share one body
-waiting: objects holding still for their first hit", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
+waiting: objects holding still for their first hit
+frozen: resting objects made fixed until the next hit
+awake: dynamic objects the solver still simulates", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
 
             if ui.button("Rebuild").clicked()
             {
