@@ -99,6 +99,15 @@ mod state
         {
             pub(crate) mod scene_controller;
             pub(crate) mod char_controller;
+            pub(crate) mod vehicle_controller;
+
+            pub(crate) mod vehicle
+            {
+                pub(crate) mod engine;
+                pub(crate) mod engine_sound;
+                pub(crate) mod presets;
+                pub(crate) mod tire_marks;
+            }
         }
 
         pub(crate) mod camera_controller
@@ -154,6 +163,7 @@ mod gui
     pub(crate) mod helper
     {
         pub(crate) mod info_box;
+        pub(crate) mod property_items;
         #[cfg(feature = "editor")]
         pub(crate) mod generic_items;
     }
@@ -214,6 +224,8 @@ pub(crate) mod input
     pub(crate) mod mouse;
     pub(crate) mod touch;
     pub(crate) mod gamepad;
+
+    pub(crate) mod input_binding;
 }
 
 pub(crate) mod output

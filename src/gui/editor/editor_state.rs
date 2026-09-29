@@ -15,10 +15,12 @@ const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
 const MATERIALS_DIR: &str = "materials/";
+const SOUNDS_DIR: &str = "sounds/";
 
 const LOCAL_OBJECTS_DIR: &str = "resourcesLocal/objects/";
 const LOCAL_SCENES_DIR: &str = "resourcesLocal/scenes/";
 const LOCAL_MATERIALS_DIR: &str = "resourcesLocal/materials/";
+const LOCAL_SOUNDS_DIR: &str = "resourcesLocal/sounds/";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
@@ -116,7 +118,8 @@ pub enum AssetType
     Scene,
     Object,
     Texture,
-    Material
+    Material,
+    Sound
 }
 
 #[derive(Clone, Copy)]
@@ -299,6 +302,7 @@ pub struct EditorState
     pub assets_objects: Vec<Asset>,
     pub assets_scenes: Vec<Asset>,
     pub assets_materials: Vec<Asset>,
+    pub assets_sounds: Vec<Asset>,
 
     // Some(true) = re-render all (assets menu), Some(false) = only missing (startup)
     pub generate_material_thumbnails: Option<bool>,
@@ -439,6 +443,7 @@ impl EditorState
             assets_objects: vec![],
             assets_scenes: vec![],
             assets_materials: vec![],
+            assets_sounds: vec![],
             generate_material_thumbnails: Some(false),
             material_thumbnails_running: Arc::new(RwLock::new(false)),
             reload_assets_requested: Arc::new(RwLock::new(false)),
@@ -1091,6 +1096,7 @@ impl EditorState
         self.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui_context, false);
         self.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui_context, false);
         self.load_asset_entries(MATERIALS_DIR, state, AssetType::Material, egui_context, false);
+        self.load_asset_entries(SOUNDS_DIR, state, AssetType::Sound, egui_context, false);
 
         // local
         let local_objects_dir = env::current_dir().unwrap().join(LOCAL_OBJECTS_DIR);
@@ -1105,6 +1111,9 @@ impl EditorState
         self.load_asset_entries(local_objects_dir.as_str(), state, AssetType::Object, egui_context, true);
         self.load_asset_entries(local_scenes_dir.as_str(), state, AssetType::Scene, egui_context, true);
         self.load_asset_entries(local_materials_dir.as_str(), state, AssetType::Material, egui_context, true);
+
+        let local_sounds_dir = env::current_dir().unwrap().join(LOCAL_SOUNDS_DIR);
+        self.load_asset_entries(local_sounds_dir.to_string_lossy().as_ref(), state, AssetType::Sound, egui_context, true);
     }
 
     pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui_context: &egui::Context, append: bool)
@@ -1124,6 +1133,7 @@ impl EditorState
                 AssetType::Object => state.supported_file_types.objects.contains(&extension),
                 AssetType::Material => state.supported_file_types.materials.contains(&extension),
                 AssetType::Texture => state.supported_file_types.textures.contains(&extension),
+                AssetType::Sound => state.supported_file_types.sounds.contains(&extension),
             }
         }).map(|s| s.to_string()).collect();
 
@@ -1205,6 +1215,17 @@ impl EditorState
             else
             {
                 self.assets_materials = assets;
+            }
+        }
+        else if asset_type == AssetType::Sound
+        {
+            if append
+            {
+                self.assets_sounds.extend(assets);
+            }
+            else
+            {
+                self.assets_sounds = assets;
             }
         }
     }

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex, RwLock}};
-use crate::{component_downcast, component_downcast_mut, console_error, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::texture::TextureItem, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, execute_on_state_mut_and_wait}}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file::{get_extension, get_stem}, option_or_id::OptionOrId}, resources::resources::load_binary, state::{resources::{sound_source::SoundSource, texture::TextureItem}, scene::{components::{animation::Animation, material::{Material, MaterialData, MaterialItem, TextureState, TextureType}, sound::{Sound, SoundType}}, loader::{asset_container::{AssetContainer, SceneAddResult}, gltf, wavefront}, node::Node, utilities::scene_utils::{clone_all_animations, execute_on_scene_mut_and_wait, execute_on_state_mut, execute_on_state_mut_and_wait}}}};
 
 pub type TextureCache = HashMap<String, TextureItem>;
 pub type MaterialCache = HashMap<String, MaterialItem>;
@@ -226,17 +226,27 @@ pub fn load_texture(path: &str, main_queue: ExecutionQueueItem, texture_type: Op
     }));
 }
 
+// into the sound resources, and into the sound component if there is one
 pub fn load_sound(path: &str, main_queue: ExecutionQueueItem, sound_component_id: Option<u32>)
 {
-    let extension = get_extension(path);
-    let name = get_stem(path);
+    let path = path.to_string();
 
-    let bytes = load_binary(path).unwrap();
+    let bytes = match load_binary(&path)
+    {
+        Ok(bytes) => bytes,
+        Err(error) =>
+        {
+            console_error!("can not load sound '{}': {}", path, error);
+            return;
+        }
+    };
 
     let mut main_queue = main_queue.write().unwrap();
     main_queue.add(Box::new(move |state|
     {
-        let sound_source = state.load_sound_source_byte_or_reuse(&bytes, name.as_str(), Some(extension.clone()));
+        let sound_source = SoundSource::from_file_bytes(&path, &bytes, state.io.audio_device.clone());
+        let sound_source = state.add_sound_source(sound_source);
+        console_log!("sound '{}' added to the sound resources", sound_source.read().unwrap().name);
 
         for scene in &mut state.scenes
         {

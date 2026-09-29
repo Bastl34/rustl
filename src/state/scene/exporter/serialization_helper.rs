@@ -172,6 +172,13 @@ where
         OptionOrId::Some(item) =>
         {
             let guard = item.read().map_err(serde::ser::Error::custom)?;
+
+            // deleted, only the reference was not released yet
+            if guard.get_base().delete_later_request
+            {
+                return serializer.serialize_none();
+            }
+
             serializer.serialize_str(&guard.get_base().uuid)
         }
         OptionOrId::Id(uuid) =>

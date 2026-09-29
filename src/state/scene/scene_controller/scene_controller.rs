@@ -4,12 +4,18 @@ use std::any::Any;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{state::{scene::node::NodeItem, state::{InputOutput, RunMode}}};
+use crate::state::{resources::sound_source::SoundSourceItem, scene::node::NodeItem, state::{InputOutput, RunMode}};
 
 pub type SceneControllerBox = Box<dyn SceneController>;
 
+// what a controller ui may need from outside its scene
+pub struct ControllerUiContext
+{
+    pub sound_sources: Vec<SoundSourceItem>, // the sound resources, by name
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
-pub enum ControllerPhase { #[default] Pre, Post } // pre: before nodes, animations and physics - post: after physics
+pub enum ControllerPhase { #[default] Pre, Post } // pre: before nodes, animations and physics, plus update_after_physics - post: after physics and cameras
 
 #[typetag::serde(tag = "type")]
 pub trait SceneController: Any + Send + Sync
@@ -26,9 +32,12 @@ pub trait SceneController: Any + Send + Sync
     fn cleanup(&mut self);
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
 
-    fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene);
+    fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene, context: &ControllerUiContext);
 
     fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool;
+
+    // pre controllers only: after the physics step and before the cameras - for what has to match the pose shown this frame
+    fn update_after_physics(&mut self, _scene: &mut crate::state::scene::scene::Scene, _io: &mut InputOutput, _frame_scale: f32) {}
 
     // called once the controller was taken out of the scene
     fn on_remove(&mut self, _scene: &mut crate::state::scene::scene::Scene) {}

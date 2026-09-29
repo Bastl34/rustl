@@ -10,6 +10,7 @@ use parry3d::mass_properties::MassProperties;
 use parry3d::query::DefaultQueryDispatcher;
 use parry3d::shape::{Shape, TypedShape};
 use rapier3d::prelude::*;
+use rapier3d::control::{DynamicRayCastVehicleController, WheelTuning};
 
 use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem, PhysicsBodyType, PhysicsSettings, PhysicsShape}, scene::Scene}}};
 
@@ -22,11 +23,6 @@ const SCALE_EPSILON: f32 = 0.0001;
 // Above this ratio between the largest and smallest scale above a body, a rotating rigid
 // body stretches enough to be obvious.
 const NON_UNIFORM_SCALE_LIMIT: f32 = 1.5;
-
-// Nothing in a normal scene moves this fast or jumps this far in a single step, so either
-// is worth reporting once.
-const IMPLAUSIBLE_SPEED: f32 = 50.0;
-const IMPLAUSIBLE_JUMP: f32 = 2.0;
 
 // Smallest half extent a primitive collider is built with, and the share of the object's
 // own size used when it is flat. A flat mesh would otherwise produce a volume-less shape,
@@ -437,6 +433,87 @@ struct CharacterShape
     radius: f32,
 }
 
+// The chassis a vehicle controller asks for, in chassis space: the rigid part of the vehicle node's world transform.
+pub struct VehicleChassisDesc
+{
+    pub shape: SharedShape,
+    pub mass: f32,
+    pub center_of_mass: Vector3<f32>,
+    pub principal_inertia: Vector3<f32>,
+    pub friction: f32,
+    pub restitution: f32,
+    pub linear_damping: f32,
+    pub angular_damping: f32,
+
+    // frictionless massless balls in chassis space (center, radius) - they slide the vehicle up over edges its wheel rays cannot see yet
+    pub bumpers: Vec<(Vector3<f32>, f32)>,
+}
+
+// One wheel, in chassis space.
+pub struct VehicleWheelDesc
+{
+    pub connection: Vector3<f32>, // where the suspension is mounted
+    pub direction: Vector3<f32>,  // suspension direction, usually chassis down
+    pub axle: Vector3<f32>,       // forward x up, so a positive engine force always drives forward
+    pub rest_length: f32,
+    pub radius: f32,
+    pub tuning: WheelTuning,
+}
+
+// A vehicle: its own body, driven by rapier's ray cast vehicle. The node and everything below stay out of the entries.
+pub struct VehicleEntry
+{
+    node: Weak<RwLock<Box<Node>>>,
+
+    pub body: RigidBodyHandle,
+    pub collider: ColliderHandle,
+    pub controller: DynamicRayCastVehicleController,
+
+    previous: Pose,         // body pose before the last step, the written pose is interpolated from it
+    shown: Matrix4<f32>,    // the node world transform as last written or followed
+    start: Option<Matrix4<f32>>, // node local transform when the run started
+
+    // nodes outside the vehicle that ride along, e.g. the driver and the passengers, at a pose in chassis space
+    riders: Vec<(Weak<RwLock<Box<Node>>>, Pose)>,
+    rider_starts: Vec<(Weak<RwLock<Box<Node>>>, Matrix4<f32>)>, // node local transforms when the run started
+}
+
+impl VehicleEntry
+{
+    fn place_riders(&self, pose: &Pose)
+    {
+        for (rider, seat) in &self.riders
+        {
+            let Some(rider) = rider.upgrade() else { continue; };
+
+            let anchor = Anchor::Node { node: rider };
+            anchor.ensure_transformation();
+            anchor.write_back(&(*pose * *seat));
+        }
+    }
+
+    // Standing still at the given pose: no motion, no pending forces, no driver input.
+    fn stop_at(&mut self, bodies: &mut RigidBodySet, pose: Pose)
+    {
+        if let Some(body) = bodies.get_mut(self.body)
+        {
+            PhysicsWorld::teleport(body, pose);
+            body.reset_forces(true);
+            body.reset_torques(true);
+        }
+
+        for wheel in self.controller.wheels_mut()
+        {
+            wheel.engine_force = 0.0;
+            wheel.brake = 0.0;
+            wheel.steering = 0.0;
+            wheel.rotation = 0.0;
+        }
+
+        self.previous = pose;
+    }
+}
+
 // What the scene wants built at one anchor, collected during a scan.
 struct Request
 {
@@ -515,6 +592,9 @@ pub struct PhysicsWorld
 
     // character capsules by node id, debug view only - kept across a rebuild like excluded_nodes
     characters: HashMap<u32, CharacterShape>,
+
+    // vehicles by node id - kept across a rebuild, only their controllers set them up or remove them
+    vehicles: HashMap<u32, VehicleEntry>,
 }
 
 impl PhysicsWorld
@@ -567,6 +647,7 @@ impl PhysicsWorld
             last_shape_rebuilds: 0,
             excluded_nodes: HashSet::new(),
             characters: HashMap::new(),
+            vehicles: HashMap::new(),
         }
     }
 
@@ -588,8 +669,8 @@ impl PhysicsWorld
 
     pub fn clear(&mut self)
     {
-        self.bodies = RigidBodySet::new();
-        self.colliders = ColliderSet::new();
+        let old_bodies = std::mem::replace(&mut self.bodies, RigidBodySet::new());
+        let old_colliders = std::mem::replace(&mut self.colliders, ColliderSet::new());
         self.broad_phase_bvh = BroadPhaseBvh::new();
         self.islands = IslandManager::new();
         self.narrow_phase = NarrowPhase::new();
@@ -603,6 +684,9 @@ impl PhysicsWorld
         self.applied_ground_plane = None;
         self.applied_sleep = None;
         // excluded_nodes is kept on purpose - a rebuild must not resurrect character colliders
+
+        // vehicles belong to their controllers, not to the scene colliders - they keep their motion and run start
+        self.carry_vehicles(&old_bodies, &old_colliders);
 
         // the ground plane is configuration, not scene content, so it survives a rebuild
         self.rebuild_ground_plane();
@@ -729,7 +813,8 @@ impl PhysicsWorld
         let Ok(shape) = SharedShape::trimesh(vertices, indices) else { return; };
 
         let pose = Pose::from_translation(Vector::new(0.0, y, 0.0));
-        let collider = ColliderBuilder::new(shape).position(pose).build();
+        // the friction every scene object gets by default - rapier's own 0.5 made the floor the slipperiest surface
+        let collider = ColliderBuilder::new(shape).position(pose).friction(PhysicsSettings::default().friction).build();
         let handle = self.colliders.insert(collider);
 
         self.ground_plane = Some(handle);
@@ -774,9 +859,7 @@ impl PhysicsWorld
                 let mut pose = *body.position();
                 pose.translation.y += penetration;
 
-                body.set_position(pose, true);
-                body.set_linvel(Vector::ZERO, true);
-                body.set_angvel(Vector::ZERO, true);
+                Self::teleport(body, pose);
             }
         }
     }
@@ -806,12 +889,12 @@ impl PhysicsWorld
 
     pub fn has_dynamics(&self) -> bool
     {
-        self.body_amount > 0
+        self.body_amount > 0 || !self.vehicles.is_empty()
     }
 
     pub fn is_empty(&self) -> bool
     {
-        self.entries.is_empty() && self.ground_plane.is_none()
+        self.entries.is_empty() && self.ground_plane.is_none() && self.vehicles.is_empty()
     }
 
     pub fn entries(&self) -> &Vec<BodyEntry>
@@ -838,6 +921,14 @@ impl PhysicsWorld
     }
 
     // ********** transform helpers **********
+
+    // puts a body somewhere else at a standstill
+    fn teleport(body: &mut RigidBody, pose: Pose)
+    {
+        body.set_position(pose, true);
+        body.set_linvel(Vector::ZERO, true);
+        body.set_angvel(Vector::ZERO, true);
+    }
 
     // splits a transform into a rigid pose (for the body or collider) and a scale (baked into the shape)
     fn split_transform(transform: &Matrix4<f32>) -> (Pose, Vector3<f32>)
@@ -873,11 +964,6 @@ impl PhysicsWorld
     fn scale_differs(a: &Vector3<f32>, b: &Vector3<f32>) -> bool
     {
         (a.x - b.x).abs() > SCALE_EPSILON || (a.y - b.y).abs() > SCALE_EPSILON || (a.z - b.z).abs() > SCALE_EPSILON
-    }
-
-    fn translation_of(transform: &Matrix4<f32>) -> Vector
-    {
-        Vector::new(transform[(0, 3)], transform[(1, 3)], transform[(2, 3)])
     }
 
     // A solver pose as a local transform below the given frame, carrying the scale the
@@ -1922,6 +2008,14 @@ impl PhysicsWorld
 
             self.pre_step_speed.insert(handle, body.linvel().length());
         }
+
+        // a vehicle ramming a waiting object is a hit like any other
+        for vehicle in self.vehicles.values()
+        {
+            let Some(body) = self.bodies.get(vehicle.body) else { continue; };
+
+            self.pre_step_speed.insert(vehicle.body, body.linvel().length());
+        }
     }
 
     // Hits the solver saw: a contact with a dynamic body that arrived faster than the hit
@@ -2127,6 +2221,12 @@ impl PhysicsWorld
                 self.snapshot_node_chain(&node);
             }
         }
+
+        for vehicle in self.vehicles.values_mut()
+        {
+            vehicle.start = vehicle.node.upgrade().and_then(|node| Self::node_local_transform(&node));
+            vehicle.rider_starts = vehicle.riders.iter().filter_map(|(rider, _)| rider.upgrade().and_then(|node| Self::node_local_transform(&node)).map(|start| (rider.clone(), start))).collect();
+        }
     }
 
     fn restore_node_chain(&self, node: &NodeItem)
@@ -2204,9 +2304,7 @@ impl PhysicsWorld
             {
                 if let Some(body) = self.bodies.get_mut(body)
                 {
-                    body.set_position(pose, true);
-                    body.set_linvel(Vector::ZERO, true);
-                    body.set_angvel(Vector::ZERO, true);
+                    Self::teleport(body, pose);
                 }
             }
 
@@ -2221,6 +2319,44 @@ impl PhysicsWorld
 
         self.edit_snapshot.clear();
         self.edit_snapshot_nodes.clear();
+
+        self.restore_vehicles();
+    }
+
+    // Vehicles go back to where the run started, standing still.
+    fn restore_vehicles(&mut self)
+    {
+        for vehicle in self.vehicles.values_mut()
+        {
+            let Some(node) = vehicle.node.upgrade() else { continue; };
+
+            if let (Some(start), Some(transformation)) = (vehicle.start.take(), node.read().unwrap().find_component::<Transformation>())
+            {
+                component_downcast_mut!(transformation, Transformation);
+                transformation.set_local_transform(start);
+            }
+
+            Self::refresh_instance_cache_below(&node);
+
+            for (rider, start) in std::mem::take(&mut vehicle.rider_starts)
+            {
+                let Some(rider) = rider.upgrade() else { continue; };
+
+                if let Some(transformation) = rider.read().unwrap().find_component::<Transformation>()
+                {
+                    component_downcast_mut!(transformation, Transformation);
+                    transformation.set_local_transform(start);
+                }
+
+                Self::refresh_instance_cache_below(&rider);
+            }
+
+            let world = node.read().unwrap().get_full_transform();
+            let (pose, _) = Self::split_transform(&world);
+
+            vehicle.stop_at(&mut self.bodies, pose);
+            vehicle.shown = world;
+        }
     }
 
     // Advances the solver in fixed steps. The frame time is not constant, and feeding a
@@ -2279,6 +2415,8 @@ impl PhysicsWorld
         {
             self.time_accumulator -= self.settings.fixed_timestep;
             steps += 1;
+
+            self.update_vehicles(self.settings.fixed_timestep);
 
             self.pipeline.step
             (
@@ -2444,9 +2582,7 @@ impl PhysicsWorld
                         {
                             if dynamic
                             {
-                                body.set_position(anchor_pose, true);
-                                body.set_linvel(Vector::ZERO, true);
-                                body.set_angvel(Vector::ZERO, true);
+                                Self::teleport(body, anchor_pose);
                             }
                             else
                             {
@@ -2486,10 +2622,115 @@ impl PhysicsWorld
             }
         }
 
+        updated += self.sync_vehicles(scene_owns_dynamics);
+
         self.last_synced = updated;
         self.last_shape_rebuilds = rebuilds;
 
         updated
+    }
+
+    // Same rule as for a dynamic entry: the scene owns the pose outside a run, and an author move wins inside one.
+    fn sync_vehicles(&mut self, scene_owns_dynamics: bool) -> usize
+    {
+        // a deleted vehicle node must not leave an invisible body behind
+        let dead: Vec<u32> = self.vehicles.iter().filter(|(_, vehicle)| vehicle.node.upgrade().is_none()).map(|(id, _)| *id).collect();
+        for id in dead
+        {
+            self.remove_vehicle(id);
+        }
+
+        let mut updated = 0;
+
+        for vehicle in self.vehicles.values_mut()
+        {
+            if Self::follow_vehicle_node(vehicle, &mut self.bodies, scene_owns_dynamics)
+            {
+                updated += 1;
+            }
+        }
+
+        updated
+    }
+
+    // Puts the body where the node is, if somebody else moved the node since it was last written.
+    fn follow_vehicle_node(vehicle: &mut VehicleEntry, bodies: &mut RigidBodySet, scene_owns_dynamics: bool) -> bool
+    {
+        let Some(node) = vehicle.node.upgrade() else { return false; };
+        let world = node.read().unwrap().get_full_transform();
+
+        if !Self::transform_differs(&world, &vehicle.shown)
+        {
+            return false;
+        }
+
+        if !scene_owns_dynamics && !Self::differs_beyond_noise(&world, &vehicle.shown)
+        {
+            return false;
+        }
+
+        let (pose, _) = Self::split_transform(&world);
+
+        if let Some(body) = bodies.get_mut(vehicle.body)
+        {
+            Self::teleport(body, pose);
+        }
+
+        vehicle.place_riders(&pose);
+
+        vehicle.previous = pose;
+        vehicle.shown = world;
+
+        true
+    }
+
+    // Suspension, drive and tire forces - right before each solver step, like any other force.
+    fn update_vehicles(&mut self, dt: f32)
+    {
+        for vehicle in self.vehicles.values_mut()
+        {
+            let Some(body) = self.bodies.get(vehicle.body) else { continue; };
+            vehicle.previous = *body.position();
+
+            let filter = QueryFilter::default().exclude_rigid_body(vehicle.body).exclude_sensors();
+            let queries = self.broad_phase_bvh.as_query_pipeline_mut(&self.dispatcher, &mut self.bodies, &mut self.colliders, filter);
+
+            vehicle.controller.update_vehicle(dt, queries);
+        }
+    }
+
+    // Writes the vehicle poses back, interpolated between the last two steps - the steps do not line up with the frames.
+    fn apply_vehicles(&mut self) -> usize
+    {
+        let alpha = if self.settings.fixed_timestep > 0.0 { (self.time_accumulator / self.settings.fixed_timestep).clamp(0.0, 1.0) } else { 1.0 };
+        let mut applied = 0;
+
+        for vehicle in self.vehicles.values_mut()
+        {
+            let Some(node) = vehicle.node.upgrade() else { continue; };
+            let Some(body) = self.bodies.get(vehicle.body) else { continue; };
+
+            let current = *body.position();
+
+            if !current.translation.is_finite() || !current.rotation.is_finite()
+            {
+                continue;
+            }
+
+            let pose = Pose::from_parts(vehicle.previous.translation.lerp(current.translation, alpha), vehicle.previous.rotation.slerp(current.rotation, alpha));
+
+            let anchor = Anchor::Node { node };
+            anchor.ensure_transformation();
+
+            let Some(shown) = anchor.write_back(&pose) else { continue; };
+
+            vehicle.place_riders(&pose);
+
+            vehicle.shown = shown;
+            applied += 1;
+        }
+
+        applied
     }
 
     // Writes the solver result back into the scene. This is the one place where the
@@ -2530,22 +2771,6 @@ impl PhysicsWorld
                 continue;
             }
 
-            // An object that suddenly leaves at an absurd speed is worth naming, and the
-            // two possible causes look different here: a real speed means the solver did it,
-            // a big jump at a small speed means something teleported the body.
-            {
-                let speed = body.linvel().length();
-                let jump = (pose.translation - Self::translation_of(&self.entries[index].transform)).length();
-
-                if speed > IMPLAUSIBLE_SPEED || jump > IMPLAUSIBLE_JUMP
-                {
-                    let (node_id, _) = self.entries[index].key;
-                    let name = self.entries[index].anchor.name();
-
-                    Self::warn_once(node_id, format!("physics: '{}' left at {:.1} units/s after a {:.2} unit jump - a high speed points at the solver resolving a deep overlap, a big jump at a small speed points at a teleport", name, speed, jump));
-                }
-            }
-
             let anchor = self.entries[index].anchor.clone();
 
             let Some(shown) = anchor.write_back(&pose) else { continue; };
@@ -2553,6 +2778,8 @@ impl PhysicsWorld
             self.entries[index].transform = shown;
             applied += 1;
         }
+
+        applied += self.apply_vehicles();
 
         applied
     }
@@ -2618,6 +2845,30 @@ impl PhysicsWorld
             let pose = Pose::from_translation(Vector::new(position.x, position.y + character.center_offset, position.z));
 
             volumes.push(Self::debug_volume(PhysicsDebugShape::Capsule { half_height: character.half_height, radius: character.radius }, &pose, PhysicsDebugState::Character));
+        }
+
+        for vehicle in self.vehicles.values()
+        {
+            let Some(body) = self.bodies.get(vehicle.body) else { continue; };
+            let state = if body.is_sleeping() { PhysicsDebugState::Sleeping } else { PhysicsDebugState::Dynamic };
+
+            if let Some(collider) = self.colliders.get(vehicle.collider)
+            {
+                let offset = collider.position_wrt_parent().copied().unwrap_or(Pose::IDENTITY);
+                Self::push_debug_shape(collider.shape(), &(*body.position() * offset), state, &mut volumes);
+            }
+
+            // wheels as balls where the suspension currently holds them
+            for wheel in vehicle.controller.wheels()
+            {
+                let pose = body.position();
+                let hard_point = *pose * wheel.chassis_connection_point_cs;
+                let direction = pose.rotation * wheel.direction_cs;
+
+                let length = if self.running { wheel.raycast_info().suspension_length } else { wheel.suspension_rest_length };
+
+                volumes.push(Self::debug_volume(PhysicsDebugShape::Sphere { radius: wheel.radius }, &Pose::from_translation(hard_point + direction * length), PhysicsDebugState::Character));
+            }
         }
 
         volumes
@@ -2721,6 +2972,238 @@ impl PhysicsWorld
     pub fn instance_id_of(&self, handle: ColliderHandle) -> Option<u32>
     {
         self.colliders.get(handle).map(|collider| (collider.user_data >> 32) as u32)
+    }
+
+    pub fn collider_friction(&self, handle: ColliderHandle) -> Option<f32>
+    {
+        self.colliders.get(handle).map(|collider| collider.friction())
+    }
+
+    // ********** vehicles **********
+
+    // Builds the chassis and the wheels. A new vehicle starts at the node's world pose, an existing one keeps its body - its motion and where its run started.
+    pub fn set_vehicle(&mut self, node: &NodeItem, chassis: VehicleChassisDesc, wheels: &[VehicleWheelDesc])
+    {
+        let node_id = node.read().unwrap().id;
+
+        if !self.vehicles.get(&node_id).is_some_and(|vehicle| self.bodies.get(vehicle.body).is_some())
+        {
+            self.remove_vehicle(node_id);
+            self.insert_vehicle_body(node);
+        }
+
+        let Some(vehicle) = self.vehicles.get_mut(&node_id) else { return; };
+        let body = vehicle.body;
+
+        // a node moved by hand wins over the kept body, like in the sync
+        Self::follow_vehicle_node(vehicle, &mut self.bodies, !self.running);
+
+        if let Some(body) = self.bodies.get_mut(body)
+        {
+            body.set_linear_damping(chassis.linear_damping.max(0.0));
+            body.set_angular_damping(chassis.angular_damping.max(0.0));
+        }
+
+        let old_colliders: Vec<ColliderHandle> = self.bodies.get(body).map(|body| body.colliders().to_vec()).unwrap_or_default();
+        for collider in old_colliders
+        {
+            self.colliders.remove(collider, &mut self.islands, &mut self.bodies, true);
+        }
+
+        let com = Vector::new(chassis.center_of_mass.x, chassis.center_of_mass.y, chassis.center_of_mass.z);
+        let inertia = Vector::new(chassis.principal_inertia.x.max(0.001), chassis.principal_inertia.y.max(0.001), chassis.principal_inertia.z.max(0.001));
+
+        let collider = ColliderBuilder::new(chassis.shape)
+            .user_data(Self::pack_user_data(node_id, 0))
+            .friction(chassis.friction.max(0.0))
+            .restitution(chassis.restitution.clamp(0.0, 1.0))
+            .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
+            .mass_properties(MassProperties::new(com, chassis.mass.max(1.0), inertia))
+            .build();
+
+        let collider = self.colliders.insert_with_parent(collider, body, &mut self.bodies);
+
+        for (center, radius) in &chassis.bumpers
+        {
+            let bumper = ColliderBuilder::ball(radius.max(0.01))
+                .user_data(Self::pack_user_data(node_id, 0))
+                .position(Pose::from_translation(Vector::new(center.x, center.y, center.z)))
+                .density(0.0)
+                .friction(0.0)
+                .friction_combine_rule(CoefficientCombineRule::Min)
+                .restitution(0.0)
+                .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
+                .build();
+
+            self.colliders.insert_with_parent(bumper, body, &mut self.bodies);
+        }
+
+        let mut controller = DynamicRayCastVehicleController::new(body);
+        controller.index_up_axis = 1;
+
+        for wheel in wheels
+        {
+            let v = |v: &Vector3<f32>| Vector::new(v.x, v.y, v.z);
+            controller.add_wheel(v(&wheel.connection), v(&wheel.direction), v(&wheel.axle), wheel.rest_length, wheel.radius, &wheel.tuning);
+        }
+
+        // the wheels keep their spin, everything else is measured again in the next step
+        for (new, old) in controller.wheels_mut().iter_mut().zip(vehicle.controller.wheels())
+        {
+            new.rotation = old.rotation;
+        }
+
+        vehicle.collider = collider;
+        vehicle.controller = controller;
+    }
+
+    // A dynamic body at the node's world pose, registered as a vehicle without colliders and wheels yet.
+    fn insert_vehicle_body(&mut self, node: &NodeItem)
+    {
+        let node_id = node.read().unwrap().id;
+        let world = node.read().unwrap().get_full_transform();
+        let (pose, _) = Self::split_transform(&world);
+
+        let body = RigidBodyBuilder::dynamic()
+            .pose(pose)
+            .ccd_enabled(true) // fast and heavy - it must not tunnel through thin walls
+            .build();
+
+        let body = self.bodies.insert(body);
+
+        let (linear, angular, time_until_sleep) = self.configured_sleep();
+        if let Some(body) = self.bodies.get_mut(body)
+        {
+            let activation = body.activation_mut();
+
+            activation.normalized_linear_threshold = linear;
+            activation.angular_threshold = angular;
+            activation.time_until_sleep = time_until_sleep;
+        }
+
+        let controller = DynamicRayCastVehicleController::new(body);
+        self.vehicles.insert(node_id, VehicleEntry { node: Arc::downgrade(node), body, collider: ColliderHandle::invalid(), controller, previous: pose, shown: world, start: None, riders: vec![], rider_starts: vec![] });
+    }
+
+    // Moves the vehicles from the replaced sets into the new ones - a rebuild of the scene colliders must not reset them.
+    fn carry_vehicles(&mut self, old_bodies: &RigidBodySet, old_colliders: &ColliderSet)
+    {
+        let mut lost = vec![];
+
+        for (node_id, vehicle) in self.vehicles.iter_mut()
+        {
+            let Some(old_body) = old_bodies.get(vehicle.body) else
+            {
+                lost.push(*node_id);
+                continue;
+            };
+
+            let mut body = old_body.clone();
+            body.wake_up(true);
+            let body = self.bodies.insert(body);
+
+            for handle in old_body.colliders()
+            {
+                let Some(collider) = old_colliders.get(*handle) else { continue; };
+                let new_handle = self.colliders.insert_with_parent(collider.clone(), body, &mut self.bodies);
+
+                if *handle == vehicle.collider
+                {
+                    vehicle.collider = new_handle;
+                }
+            }
+
+            vehicle.body = body;
+            vehicle.controller.chassis = body;
+        }
+
+        for node_id in lost
+        {
+            self.vehicles.remove(&node_id);
+        }
+    }
+
+    // Sets the nodes riding along. They are put on their seats right away.
+    pub fn set_vehicle_riders(&mut self, node_id: u32, riders: Vec<(NodeItem, Pose)>)
+    {
+        let Some(vehicle) = self.vehicles.get_mut(&node_id) else { return; };
+
+        vehicle.riders = riders.into_iter().map(|(rider, seat)| (Arc::downgrade(&rider), seat)).collect();
+
+        if let Some(body) = self.bodies.get(vehicle.body)
+        {
+            vehicle.place_riders(body.position());
+        }
+    }
+
+    pub fn remove_vehicle(&mut self, node_id: u32)
+    {
+        if let Some(vehicle) = self.vehicles.remove(&node_id)
+        {
+            self.bodies.remove(vehicle.body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, true);
+        }
+    }
+
+    pub fn has_vehicle(&self, node_id: u32) -> bool
+    {
+        self.vehicles.contains_key(&node_id)
+    }
+
+    pub fn vehicle(&self, node_id: u32) -> Option<(&VehicleEntry, &RigidBody)>
+    {
+        let vehicle = self.vehicles.get(&node_id)?;
+        let body = self.bodies.get(vehicle.body)?;
+
+        Some((vehicle, body))
+    }
+
+    pub fn vehicle_mut(&mut self, node_id: u32) -> Option<(&mut VehicleEntry, &mut RigidBody)>
+    {
+        let vehicle = self.vehicles.get_mut(&node_id)?;
+        let body = self.bodies.get_mut(vehicle.body)?;
+
+        Some((vehicle, body))
+    }
+
+    // Puts a vehicle somewhere else at a standstill, without an interpolated slide there.
+    pub fn place_vehicle(&mut self, node_id: u32, pose: Pose)
+    {
+        let Some((vehicle, body)) = self.vehicle_mut(node_id) else { return; };
+
+        Self::teleport(body, pose);
+        vehicle.previous = pose;
+    }
+
+    // Mesh vertices of the given nodes, moved into a frame - e.g. the chassis space of a vehicle.
+    pub fn collect_points(nodes: &[NodeItem], to_frame: &Matrix4<f32>) -> Vec<Vector3<f32>>
+    {
+        let mut points = vec![];
+
+        for node in nodes
+        {
+            let instances = node.read().unwrap().instances.get_ref().clone();
+
+            for instance in instances
+            {
+                let world = instance.read().unwrap().calculate_transform();
+
+                if let Some((vertices, _)) = Self::collect_geometry(node, &(to_frame * world))
+                {
+                    points.extend(vertices.iter().map(|v| Vector3::new(v.x, v.y, v.z)));
+                }
+            }
+        }
+
+        points
+    }
+
+    // Undoes exclude_nodes - the next scan picks the nodes up again.
+    pub fn include_nodes(&mut self, node_ids: &HashSet<u32>)
+    {
+        for node_id in node_ids
+        {
+            self.excluded_nodes.remove(node_id);
+        }
     }
 }
 

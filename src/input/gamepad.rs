@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
@@ -10,7 +11,7 @@ use super::press_state::{PressState, is_pressed_by_state};
 const GAMEPAD_MAX_TIMEOUT: u64 = 5 * 60;
 const DEFAULT_DEADZONE: f32 = 0.1;
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum GamepadButton
 {
     South, // xBox: A
@@ -36,7 +37,7 @@ pub enum GamepadButton
     Unkown
 }
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum GamepadAxis
 {
     LeftStickX,

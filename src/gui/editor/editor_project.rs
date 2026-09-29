@@ -8,7 +8,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::{component_downcast, console_error, console_success};
+use crate::{component_downcast, console_error, console_success, console_warning};
 use rfd;
 use crate::helper::console_log::LogType;
 use crate::helper::file::{get_dirname, get_stem, make_relative_path, sanitize_filename, write_string_to_tile};
@@ -16,7 +16,8 @@ use crate::gui::editor::editor::EDITOR_INTERNAL_TAG;
 use crate::gui::editor::editor_state::EditorState;
 use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
-use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorProjectFormat, EditorProjectSceneRef, EditorScene, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorProjectFormat, EditorProjectSceneRef, EditorScene, EditorSound, RESUSE_MATERIALS_TAG};
+use crate::state::resources::sound_source::SoundSourceItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode, State};
@@ -28,7 +29,37 @@ fn scene_file_name(scene_name: &str, project_name: &str) -> String
     format!("{}_{}.scene", sanitize_filename(project_name), sanitize_filename(&scene_name.to_lowercase()))
 }
 
-fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, path: &str) -> EditorScene
+// the sound resources with their files - the scene brings them for its controllers
+fn extract_sounds(sound_sources: &[SoundSourceItem], path: &str) -> Vec<EditorSound>
+{
+    sound_sources.iter().filter_map(|source|
+    {
+        let source = source.read().unwrap();
+
+        let Some(origin) = source.origin_path() else
+        {
+            console_warning!("sound '{}' has no file - not saved", source.name);
+            return None;
+        };
+
+        Some(EditorSound { uuid: source.uuid.clone(), name: source.name.clone(), source: asset_source_path(origin, path) })
+    }).collect()
+}
+
+// bundled resources as "resources://...", other files relative to the project file if possible
+fn asset_source_path(origin: &str, path: &str) -> String
+{
+    if let Some(resource) = resources::to_resource_path(origin)
+    {
+        format!("{}{}", RESOURCE_SCHEME, resource)
+    }
+    else
+    {
+        make_relative_path(path, origin).unwrap_or_else(|| origin.to_string())
+    }
+}
+
+fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<EditorSound>, path: &str) -> EditorScene
 {
     let objects = scene.nodes.iter()
         .filter_map(|node_item| extract_node(node_item, path))
@@ -59,6 +90,7 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, path: &str) -
     {
         name: scene.name.clone(),
         active: scene.active,
+        sounds,
         objects,
         cameras,
         lights,
@@ -133,6 +165,19 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
         settings: node.settings.clone(),
     };
 
+    let components = node.components.iter()
+        .filter_map(|component|
+        {
+            let component = component.read().unwrap();
+            if !component.saved_with_node() || component.get_base().delete_later_request
+            {
+                return None;
+            }
+
+            to_json_value("component", &component.get_base().name, &*component)
+        })
+        .collect();
+
     let objects = node.nodes.iter()
         .filter_map(|child| extract_node(child, path))
         .collect();
@@ -147,6 +192,7 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
         rotation,
         rotation_quat,
         scale,
+        components,
         objects,
     })
 }
@@ -187,6 +233,9 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
     let mut total_objects = 0;
     let mut used_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
+    // the resources are shared, so every scene file lists all of them - a scene can be loaded on its own
+    let sounds = extract_sounds(&state.list_sound_sources(), path);
+
     for scene in &state.scenes
     {
         // skip engine/editor-internal scenes (e.g. the preview scene) — they are not part of the project
@@ -196,7 +245,7 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
             continue;
         }
 
-        let editor_scene = extract_editor_scene(scene, path);
+        let editor_scene = extract_editor_scene(scene, sounds.clone(), path);
         total_objects += editor_scene.objects.len();
 
         // determine scene file path: reuse source if set, otherwise generate from name

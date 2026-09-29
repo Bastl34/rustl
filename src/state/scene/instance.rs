@@ -590,7 +590,7 @@ impl Instance
 
         if alpha_components.len() == 0
         {
-            return node_alpha;
+            return node_alpha * instance_color_alpha;
         }
 
         let mut alpha = 1.0;

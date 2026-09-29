@@ -97,6 +97,10 @@ pub struct EditorScene
     #[serde(default, skip_serializing)]
     pub active: bool,
 
+    // the sound resources - loaded before the controllers, which refer to them by uuid
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sounds: Vec<EditorSound>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<EditorObject>,
 
@@ -109,6 +113,14 @@ pub struct EditorScene
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub controller: Vec<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EditorSound
+{
+    pub uuid: String,
+    pub name: String,
+    pub source: String, // like an object source: relative to the project file or "resources://..."
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -142,6 +154,10 @@ pub struct EditorObject
     pub rotation: [f32; 3],
     pub rotation_quat: Option<[f32; 4]>,
     pub scale: [f32; 3],
+
+    // components added in the editor (sounds, ...) - serde of the runtime types, parsed one by one
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<EditorObject>,

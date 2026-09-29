@@ -2,7 +2,7 @@ use std::mem::swap;
 
 use egui::{Ui, RichText, Color32};
 
-use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene, scene_controller::scene_controller::ControllerPhase}, state::State}};
+use crate::{component_downcast, gui::{editor::editor_state::EditorState, helper::generic_items::{self, collapse_with_title, label_with_background}}, helper::concurrency::thread::spawn_thread, state::{scene::{components::{material::{Material, TextureType}, mesh::Mesh}, scene::Scene, scene_controller::scene_controller::{ControllerPhase, ControllerUiContext}}, state::State}};
 
 use super::dialogs::load_texture_dialog;
 
@@ -378,6 +378,8 @@ waiting: objects holding still for their first hit", scene.physics.last_synced, 
         ui.separator();
         ui.label(RichText::new("Scene Controller").heading().strong());
 
+        let ui_context = ControllerUiContext { sound_sources: state.list_sound_sources() };
+
         let scene = state.find_scene_by_id_mut(scene_id).unwrap();
         let mut controller = vec![];
         swap(&mut scene.controller, &mut controller);
@@ -423,14 +425,14 @@ waiting: objects holding still for their first hit", scene.physics.last_synced, 
                 {
                     let phase = &mut controller.get_base_mut().phase;
                     ui.label("Phase:");
-                    ui.selectable_value(phase, ControllerPhase::Pre, "Pre").on_hover_text("before nodes, animations and physics");
-                    ui.selectable_value(phase, ControllerPhase::Post, "Post").on_hover_text("after physics");
+                    ui.selectable_value(phase, ControllerPhase::Pre, "Pre").on_hover_text("before nodes, animations and physics - only pre controllers also get the after physics update (before the cameras)");
+                    ui.selectable_value(phase, ControllerPhase::Post, "Post").on_hover_text("after physics and cameras - no after physics update");
 
                 });
 
                 ui.separator();
 
-                controller.ui(ui, scene);
+                controller.ui(ui, scene, &ui_context);
             });
 
             controller.get_base_mut().is_enabled = enabled;

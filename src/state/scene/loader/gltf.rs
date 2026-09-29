@@ -189,25 +189,25 @@ pub fn load(options: &LoaderOptions) -> anyhow::Result<AssetContainer>
 
 
 //fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: String, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, scene_id: u32, main_queue: ExecutionQueueItem, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
-fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: String, asset_container: &mut AssetContainer, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
+fn read_node(gltf_node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: String, asset_container: &mut AssetContainer, object_only: bool, loaded_materials: &HashMap<usize, MaterialItem>, parent: NodeItem, parent_transform: &Matrix4<f32>, level: usize)
 {
     //https://github.com/flomonster/easy-gltf/blob/de8654c1d3f069132dbf1bf3b50b1868f6cf1f84/src/scene/mod.rs#L69
 
-    let local_transform = transform_to_matrix(node.transform());
+    let local_transform = transform_to_matrix(gltf_node.transform());
     //let world_transform = parent_transform * local_transform;
     let world_transform = local_transform * parent_transform;
-    let (translate, rotation, scale) = transform_decompose(node.transform());
+    let (translate, rotation, scale) = transform_decompose(gltf_node.transform());
 
     let mut parent_node = parent;
 
-    let node_index = node.index();
+    let node_index = gltf_node.index();
 
-    //println!("{} - {}", " ".repeat(level * 2), node.name().unwrap_or("unknown"));
+    //println!("{} - {}", " ".repeat(level * 2), gltf_node.name().unwrap_or("unknown"));
 
     // ********** lights **********
     if !object_only
     {
-        if let Some(light) = node.light()
+        if let Some(light) = gltf_node.light()
         {
             let intensity = light.intensity();
             let color = light.color();
@@ -255,7 +255,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
     // ********** cameras **********
     if !object_only
     {
-        if let Some(camera) = node.camera()
+        if let Some(camera) = gltf_node.camera()
         {
             let name = camera.name().unwrap_or("Unnamed Camera").to_string();
             let name = Arc::new(name);
@@ -328,16 +328,15 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
     }
 
     // ********** mesh **********
-    if let Some(mesh) = node.mesh()
+    if let Some(mesh) = gltf_node.mesh()
     {
         let primitives_amount = mesh.primitives().len();
 
-        let node_name = node.name().unwrap_or("mesh node");
+        let mesh_name = mesh.name().unwrap_or("mesh");
+        let node_name = gltf_node.name().or(mesh.name()).unwrap_or("mesh node");
 
         for (primitive_id, primitive) in mesh.primitives().enumerate()
         {
-            let mut mesh_name = mesh.name().unwrap_or("unknown mesh").to_string();
-
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             let material_index = primitive.material().index();
 
@@ -499,7 +498,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             let mut components: Vec<ComponentItem> = vec![];
 
             // mesh component
-            let mut mesh_resource: MeshResource = MeshResource::new_with_data("Mesh", verts, indices, uvs1, uv_indices, normals, normals_indices);
+            let mut mesh_resource: MeshResource = MeshResource::new_with_data(mesh_name, verts, indices, uvs1, uv_indices, normals, normals_indices);
 
             mesh_resource.source = Some(AssetPathDesciptor::new_from_path(file_path.clone()));
             mesh_resource.source.as_mut().unwrap().inner_path = format!("#Primitive{}", primitive_id);
@@ -580,18 +579,15 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             asset_container.mesh_resources.push(mesh_resource_result.clone());
 
 
-            let mut mesh_component: Mesh = Mesh::new("Mesh");
+            let mut mesh_component: Mesh = Mesh::new(mesh_name);
             mesh_component.mesh_resource = OptionOrId::Some(mesh_resource_result.clone());
 
             components.push(Arc::new(RwLock::new(Box::new(mesh_component))));
 
-            // node
-            if primitives_amount > 1
-            {
-                mesh_name = format!("{} {} primitive_{}", node_name, mesh_name, primitive_id);
-            }
+            // node - named after the gltf node, the mesh component keeps the mesh name
+            let name = if primitives_amount > 1 { format!("{} primitive_{}", node_name, primitive_id) } else { node_name.to_string() };
 
-            let node_arc = Node::new(mesh_name.as_str());
+            let node_arc = Node::new(name.as_str());
             {
                 let mut scene_node = node_arc.write().unwrap();
 
@@ -616,7 +612,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
                 }
 
                 // add skeleton/skin if needed
-                if let Some(skin) = node.skin()
+                if let Some(skin) = gltf_node.skin()
                 {
                     scene_node.extras.insert("_skeleton_index", skin.index());
                 }
@@ -631,10 +627,10 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             // extras
             {
                 let mut scene_node = node_arc.write().unwrap();
-                read_extras(&mut scene_node.extras, node.extras().as_ref());
+                read_extras(&mut scene_node.extras, gltf_node.extras().as_ref());
             }
 
-            console_log!("{} - {} ({}) (mesh)", " ".repeat(level * 2), mesh_name.as_str(), node_index);
+            console_log!("{} - {} ({}) (mesh {})", " ".repeat(level * 2), name.as_str(), node_index, mesh_name);
             Node::add_node(parent_node.clone(), node_arc.clone());
 
             // only if there is one primitive -> use it as parent for next childs
@@ -647,12 +643,12 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
 
     // ********** empty transform node **********
     // if there is nothing set -> its just a transform node
-    if node.camera().is_none() && node.mesh().is_none() && node.light().is_none()
+    if gltf_node.camera().is_none() && gltf_node.mesh().is_none() && gltf_node.light().is_none()
     {
         // only if the node has children -> otherwise ignore it
         //if node.children().len() > 0
         {
-            let name = node.name().unwrap_or("transform node");
+            let name = gltf_node.name().unwrap_or("transform node");
             console_log!("{} - {} ({}) (no mesh)", " ".repeat(level * 2), name, node_index);
 
             let scene_node = Node::new(name);
@@ -668,7 +664,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
             // extras
             {
                 let mut scene_node = scene_node.write().unwrap();
-                read_extras(&mut scene_node.extras, node.extras().as_ref());
+                read_extras(&mut scene_node.extras, gltf_node.extras().as_ref());
             }
 
             Node::add_node(parent_node.clone(), scene_node.clone());
@@ -678,7 +674,7 @@ fn read_node(node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>, file_path: St
     }
 
     // ********** children **********
-    for child in node.children()
+    for child in gltf_node.children()
     {
         read_node(&child, &buffers, file_path.clone(), asset_container, object_only, loaded_materials, parent_node.clone(), &world_transform, level + 1);
     }

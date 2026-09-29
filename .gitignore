@@ -12,3 +12,5 @@ flamegraph*.svg
 data/
 resources/objects/temp
 resourcesLocal/
+
+tools/

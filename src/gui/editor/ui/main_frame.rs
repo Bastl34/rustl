@@ -9,7 +9,7 @@ use crate::helper::console_log;
 use crate::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::gui::editor::ui::console::create_console_section;
 use crate::gui::editor::ui::debug::create_debug_settings;
-use crate::gui::editor::ui::dialogs::load_texture_dialog;
+use crate::gui::editor::ui::dialogs::{load_sound_dialog, load_texture_dialog};
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
@@ -1456,7 +1456,22 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
                 }
 
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sound Sources ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sound Sources ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong());
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Sound").on_hover_text("loads a sound file into the sound resources - controllers can pick it then").clicked()
+                    {
+                        let exec_queue = exec_queue.clone();
+                        spawn_thread(move ||
+                        {
+                            load_sound_dialog(exec_queue.clone(), None);
+                        });
+                        ui.close();
+                    }
+                });
+
+                if toggle.clicked()
                 {
                     if selection
                     {

@@ -5,11 +5,12 @@ use std::{collections::HashSet, f32::consts::PI, sync::{Arc, RwLock}};
 use nalgebra::{Rotation3, Vector3, Vector4};
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::{Capsule, Collider, ColliderHandle, Pose, QueryFilter, Vector};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::console_warning;
-use crate::state::scene::exporter::serialization_helper::default_true;
+use crate::state::scene::exporter::serialization_helper::{default_true, deserialize_node, serialize_node};
 use crate::state::scene::components::mesh::Mesh;
+use crate::gui::helper::property_items::{combo, slider, slider_widget};
 use crate::{component_downcast, component_downcast_mut, console_error, console_log, helper::{math::{approx_equal, approx_zero, approx_zero_vec3, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::keyboard::{Key, Modifier}, scene_controller_impl_default, state::{scene::{camera_controller::target_rotation_controller::{default_max_radius, TargetRotationController}, components::{animation::Animation, animation_blending::AnimationBlending, component::{Component, ComponentItem}, joint::Joint, transformation::Transformation}, node::{Node, NodeItem}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use super::scene_controller::SceneController;
@@ -170,42 +171,6 @@ impl Default for AnimationComponents
 
             blending: None,
         }
-    }
-}
-
-fn serialize_node<S>(node: &OptionOrId<NodeItem>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match node
-    {
-        OptionOrId::Some(node_item) =>
-        {
-            let guard = node_item.read().map_err(serde::ser::Error::custom)?;
-            serializer.serialize_str(&guard.uuid)
-        }
-        OptionOrId::Id(uuid) =>
-        {
-            serializer.serialize_str(uuid)
-        }
-        OptionOrId::None => serializer.serialize_none(),
-    }
-}
-
-
-pub fn deserialize_node<'de, D>(deserializer: D) -> Result<OptionOrId<NodeItem>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let uuid_opt = Option::<String>::deserialize(deserializer)?;
-
-    if let Some(uuid) = uuid_opt
-    {
-        Ok(OptionOrId::from_id(uuid))
-    }
-    else
-    {
-        Ok(OptionOrId::None)
     }
 }
 
@@ -2331,7 +2296,7 @@ impl SceneController for CharacterController
         has_change
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene)
+    fn ui(&mut self, ui: &mut egui::Ui, scene: &mut crate::state::scene::scene::Scene, _context: &super::scene_controller::ControllerUiContext)
     {
         ui.horizontal(|ui|
         {
@@ -2356,111 +2321,33 @@ impl SceneController for CharacterController
 
         ui.separator();
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Control Mode: ");
-            ui.label("ℹ").on_hover_text("Camera Relative: W/A/S/D relative to the camera, the character turns into the walking direction (re-run auto setup for the matching camera)\nTank + Camera Follow: A/D rotate, the camera swings in behind\nTank: A/D rotate, the camera stays\nFirst person always uses forward + strafe");
-
-            egui::ComboBox::from_id_salt("char_control_mode").selected_text(format!("{:?}", self.control_mode)).show_ui(ui, |ui|
-            {
-                for mode in [CharControlMode::CameraRelative, CharControlMode::CharacterRelativeChaseCam, CharControlMode::Tank]
-                {
-                    ui.selectable_value(&mut self.control_mode, mode, format!("{:?}", mode));
-                }
-            });
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Perspective: ");
-            ui.label("ℹ").on_hover_text(format!("FirstAndThirdPerson: zooming in all the way switches to first person\nFirstPersonOnly: no zoom\nThirdPersonOnly: zoom stops at {} m", MIN_THIRD_PERSON_RADIUS));
-
-            egui::ComboBox::from_id_salt("char_perspective").selected_text(format!("{:?}", self.perspective)).show_ui(ui, |ui|
-            {
-                for perspective in [CharPerspective::FirstAndThirdPerson, CharPerspective::FirstPersonOnly, CharPerspective::ThirdPersonOnly]
-                {
-                    ui.selectable_value(&mut self.perspective, perspective, format!("{:?}", perspective));
-                }
-            });
-        });
+        combo(ui, "char_control_mode", "Control Mode", "Camera Relative: W/A/S/D relative to the camera, the character turns into the walking direction (re-run auto setup for the matching camera)\nTank + Camera Follow: A/D rotate, the camera swings in behind\nTank: A/D rotate, the camera stays\nFirst person always uses forward + strafe", &mut self.control_mode, &[CharControlMode::CameraRelative, CharControlMode::CharacterRelativeChaseCam, CharControlMode::Tank]);
+        combo(ui, "char_perspective", "Perspective", &format!("FirstAndThirdPerson: zooming in all the way switches to first person\nFirstPersonOnly: no zoom\nThirdPersonOnly: zoom stops at {} m", MIN_THIRD_PERSON_RADIUS), &mut self.perspective, &[CharPerspective::FirstAndThirdPerson, CharPerspective::FirstPersonOnly, CharPerspective::ThirdPersonOnly]);
 
         if self.control_mode == CharControlMode::CameraRelative
         {
-            ui.horizontal(|ui|
+            slider(ui, "Turn Speed", "1/s - how fast the character turns into the walking direction", &mut self.turn_speed, 1.0..=30.0, 1);
+            ui.checkbox(&mut self.idle_turn, "Turn Into View While Standing");
+            ui.add_enabled_ui(self.idle_turn, |ui|
             {
-                ui.label("Turn Speed: ");
-                ui.add(egui::Slider::new(&mut self.turn_speed, 1.0..=30.0).fixed_decimals(1));
-            });
-
-            ui.horizontal(|ui|
-            {
-                ui.checkbox(&mut self.idle_turn, "Turn Into View While Standing");
-                ui.add_enabled(self.idle_turn, egui::Slider::new(&mut self.idle_turn_speed, 0.1..=10.0).fixed_decimals(1));
+                slider(ui, "Idle Turn Speed", "1/s - how fast a standing character turns into the view direction", &mut self.idle_turn_speed, 0.1..=10.0, 1);
             });
         }
 
         if self.control_mode == CharControlMode::CharacterRelativeChaseCam
         {
-            ui.horizontal(|ui|
-            {
-                ui.label("Rotation Follow Angle speed: ");
-                ui.add(egui::Slider::new(&mut self.rotation_follow_angle_speed, 0.0..=1.0).fixed_decimals(3));
-            });
+            slider(ui, "Rotation Follow Angle Speed", "share of the angle the camera swings in behind the character per frame at 60 fps", &mut self.rotation_follow_angle_speed, 0.0..=1.0, 3);
         }
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Animation Fade Speed: ");
-            ui.add(egui::Slider::new(&mut self.fade_speed, 0.0..=1.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Movement Speed: ");
-            ui.add(egui::Slider::new(&mut self.movement_speed, 0.0..=0.5).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Movement Speed Fast: ");
-            ui.add(egui::Slider::new(&mut self.movement_speed_fast, 0.0..=0.5).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Fly Speed: ");
-            ui.add(egui::Slider::new(&mut self.fly_speed, 0.0..=0.5).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Fly Speed Fast: ");
-            ui.add(egui::Slider::new(&mut self.fly_speed_fast, 0.0..=0.5).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Rotation Speed: ");
-            ui.add(egui::Slider::new(&mut self.rotation_speed, 0.0..=0.5).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Rotation Offset: ");
-            ui.add(egui::Slider::new(&mut self.rotation_offset, 0.0..=PI * 2.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Fall Velocity: ");
-            ui.add(egui::Slider::new(&mut self.fall_velocity, 0.0..=20.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Fall Stop Height: ");
-            ui.add(egui::Slider::new(&mut self.fall_stop_height, 0.001..=1.0).fixed_decimals(3));
-        });
+        slider(ui, "Animation Fade Speed", "s - crossfade time between two clips", &mut self.fade_speed, 0.0..=1.0, 2);
+        slider(ui, "Movement Speed", "m per frame at 60 fps - 0.05 is 3 m/s", &mut self.movement_speed, 0.0..=0.5, 2);
+        slider(ui, "Movement Speed Fast", "m per frame at 60 fps while sprinting", &mut self.movement_speed_fast, 0.0..=0.5, 2);
+        slider(ui, "Fly Speed", "fly mode, m per frame at 60 fps", &mut self.fly_speed, 0.0..=0.5, 2);
+        slider(ui, "Fly Speed Fast", "fly mode, m per frame at 60 fps while sprinting", &mut self.fly_speed_fast, 0.0..=0.5, 2);
+        slider(ui, "Rotation Speed", "tank controls: rad per frame at 60 fps that A/D turn the character", &mut self.rotation_speed, 0.0..=0.5, 2);
+        slider(ui, "Rotation Offset", "rad - added to the model's heading, for a model whose front is not where the controller expects it", &mut self.rotation_offset, 0.0..=PI * 2.0, 2);
+        slider(ui, "Fall Velocity", "m/s downwards from which the fall clip plays", &mut self.fall_velocity, 0.0..=20.0, 2);
+        slider(ui, "Fall Stop Height", "not used at the moment", &mut self.fall_stop_height, 0.001..=1.0, 3);
 
         ui.separator();
 
@@ -2521,12 +2408,7 @@ impl SceneController for CharacterController
             }
         });
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Eye Height: ");
-            ui.label("ℹ").on_hover_text("first person camera height, taken from the head joint");
-            ui.add(egui::Slider::new(&mut self.camera.eye_offset, 0.0..=3.0).fixed_decimals(3));
-        });
+        slider(ui, "Eye Height", "first person camera height, taken from the head joint", &mut self.camera.eye_offset, 0.0..=3.0, 3);
 
         if ui.checkbox(&mut self.camera.follow_auto, "Orbit Around Eye Height").on_hover_text("keeps the third person pivot on the eye point, so scrolling into first person does not jump").changed() && self.camera.follow_auto
         {
@@ -2535,12 +2417,7 @@ impl SceneController for CharacterController
 
         ui.add_enabled_ui(!self.camera.follow_auto, |ui|
         {
-            ui.horizontal(|ui|
-            {
-                ui.label("Follow Height: ");
-                ui.label("ℹ").on_hover_text("third person: what the camera orbits around");
-                ui.add(egui::Slider::new(&mut self.camera.follow_offset, 0.0..=3.0).fixed_decimals(3));
-            });
+            slider(ui, "Follow Height", "third person: what the camera orbits around", &mut self.camera.follow_offset, 0.0..=3.0, 3);
         });
 
         {
@@ -2576,83 +2453,24 @@ impl SceneController for CharacterController
             }
         });
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Capsule Radius: ");
-            ui.add(egui::Slider::new(&mut self.collision.capsule_radius, 0.01..=2.0).fixed_decimals(3));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Capsule Half Height: ");
-            ui.label("ℹ").on_hover_text("cylindrical part only, without the two caps");
-            ui.add(egui::Slider::new(&mut self.collision.capsule_half_height, 0.0..=2.0).fixed_decimals(3));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Capsule Center Offset: ");
-            ui.label("ℹ").on_hover_text("from the node origin (feet) up to the capsule center");
-            ui.add(egui::Slider::new(&mut self.collision.capsule_center_offset, 0.0..=4.0).fixed_decimals(3));
-        });
+        slider(ui, "Capsule Radius", "m", &mut self.collision.capsule_radius, 0.01..=2.0, 3);
+        slider(ui, "Capsule Half Height", "m - cylindrical part only, without the two caps", &mut self.collision.capsule_half_height, 0.0..=2.0, 3);
+        slider(ui, "Capsule Center Offset", "m - from the node origin (feet) up to the capsule center", &mut self.collision.capsule_center_offset, 0.0..=4.0, 3);
 
         // outside play the controller does not update, so edits reach the debug view from here
         self.publish_capsule(scene);
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Collision Offset: ");
-            ui.label("ℹ").on_hover_text("gap the controller keeps between capsule and geometry");
-            ui.add(egui::Slider::new(&mut self.collision.offset, 0.001..=0.2).fixed_decimals(3));
-        });
+        slider(ui, "Collision Offset", "m - gap the controller keeps between capsule and geometry", &mut self.collision.offset, 0.001..=0.2, 3);
 
         ui.checkbox(&mut self.collision.slide, "Slide Along Walls");
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Snap To Ground: ");
-            ui.label("ℹ").on_hover_text("keeps the character glued to the floor over small bumps - too large a value does the opposite and buries the capsule in the floor while walking, 0 disables it");
-            ui.add(egui::Slider::new(&mut self.collision.snap_to_ground, 0.0..=0.1).fixed_decimals(3));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Autostep Height: ");
-            ui.label("ℹ").on_hover_text("max stair height, 0 disables stair stepping");
-            ui.add(egui::Slider::new(&mut self.collision.autostep_height, 0.0..=1.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Autostep Min Width: ");
-            ui.add(egui::Slider::new(&mut self.collision.autostep_min_width, 0.0..=1.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Max Slope Climb Angle: ");
-            ui.add(egui::Slider::new(&mut self.collision.max_slope_climb_angle, 0.0..=PI / 2.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Min Slope Slide Angle: ");
-            ui.add(egui::Slider::new(&mut self.collision.min_slope_slide_angle, 0.0..=PI / 2.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Roll Height: ");
-            ui.label("ℹ").on_hover_text("capsule height while rolling, relative to standing - it only grows back once there is room to stand up");
-            ui.add(egui::Slider::new(&mut self.collision.roll_height_factor, 0.1..=1.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Crouch Height: ");
-            ui.label("ℹ").on_hover_text("capsule height while crouching, relative to standing - it only grows back once there is room to stand up");
-            ui.add(egui::Slider::new(&mut self.collision.crouch_height_factor, 0.1..=1.0).fixed_decimals(2));
-        });
+        slider(ui, "Snap To Ground", "m - keeps the character glued to the floor over small bumps - too large a value does the opposite and buries the capsule in the floor while walking, 0 disables it", &mut self.collision.snap_to_ground, 0.0..=0.1, 3);
+        slider(ui, "Autostep Height", "m - max stair height, 0 disables stair stepping", &mut self.collision.autostep_height, 0.0..=1.0, 2);
+        slider(ui, "Autostep Min Width", "m of free floor a step needs on top, so the character does not climb onto thin edges", &mut self.collision.autostep_min_width, 0.0..=1.0, 2);
+        slider(ui, "Max Slope Climb Angle", "rad - steeper slopes cannot be walked up", &mut self.collision.max_slope_climb_angle, 0.0..=PI / 2.0, 2);
+        slider(ui, "Min Slope Slide Angle", "rad - from this slope on the character slides down", &mut self.collision.min_slope_slide_angle, 0.0..=PI / 2.0, 2);
+        slider(ui, "Roll Height", "capsule height while rolling, relative to standing - it only grows back once there is room to stand up", &mut self.collision.roll_height_factor, 0.1..=1.0, 2);
+        slider(ui, "Crouch Height", "capsule height while crouching, relative to standing - it only grows back once there is room to stand up", &mut self.collision.crouch_height_factor, 0.1..=1.0, 2);
 
         ui.separator();
 
@@ -2660,12 +2478,7 @@ impl SceneController for CharacterController
 
         ui.add_enabled_ui(self.collision.push_bodies, |ui|
         {
-            ui.horizontal(|ui|
-            {
-                ui.label("Push Mass: ");
-                ui.add(egui::Slider::new(&mut self.collision.push_mass, 1.0..=500.0).fixed_decimals(0).suffix(" kg"));
-                ui.label("ℹ").on_hover_text("the character is a shape cast, not a rigid body, so it has no mass of its own - this is only how hard it shoves. Nothing pushes back, so a heavy object gives way too, just slower");
-            });
+            slider_widget(ui, "Push Mass", "the character is a shape cast, not a rigid body, so it has no mass of its own - this is only how hard it shoves. Nothing pushes back, so a heavy object gives way too, just slower", egui::Slider::new(&mut self.collision.push_mass, 1.0..=500.0).fixed_decimals(0).suffix(" kg"));
         });
 
         ui.separator();
@@ -2685,29 +2498,10 @@ impl SceneController for CharacterController
 
         ui.separator();
 
-        ui.horizontal(|ui|
-        {
-            ui.label("Gravity: ");
-            ui.add(egui::Slider::new(&mut self.gravity, 0.0..=20.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Jump Force: ");
-            ui.add(egui::Slider::new(&mut self.jump_force, 0.0..=10.0).fixed_decimals(2));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Max Fall Speed: ");
-            ui.add(egui::Slider::new(&mut self.max_fall_speed, 0.0..=100.0).fixed_decimals(1));
-        });
-
-        ui.horizontal(|ui|
-        {
-            ui.label("Max Jumps: ");
-            ui.add(egui::Slider::new(&mut self.max_jumps, 1..=10).fixed_decimals(0));
-        });
+        slider(ui, "Gravity", "m/s²", &mut self.gravity, 0.0..=20.0, 2);
+        slider(ui, "Jump Force", "m/s upwards when the jump starts", &mut self.jump_force, 0.0..=10.0, 2);
+        slider(ui, "Max Fall Speed", "m/s", &mut self.max_fall_speed, 0.0..=100.0, 1);
+        slider(ui, "Max Jumps", "jumps before touching the ground again - 2 is a double jump", &mut self.max_jumps, 1..=10, 0);
 
         ui.separator();
 

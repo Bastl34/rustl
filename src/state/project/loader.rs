@@ -12,10 +12,11 @@ use crate::helper::change_tracker::ChangeTracker;
 use crate::helper::concurrency::thread::spawn_thread;
 use crate::helper::file::resolve_relative_path;
 use crate::helper::option_or_id::OptionOrId;
-use crate::resources::resources::{RESOURCE_SCHEME, load_string};
-use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorScene, LoadingGuard, ProjectDoneCallback, RESUSE_MATERIALS_TAG};
+use crate::resources::resources::{RESOURCE_SCHEME, load_binary, load_string};
+use crate::state::resources::sound_source::SoundSource;
+use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorScene, EditorSound, LoadingGuard, ProjectDoneCallback, RESUSE_MATERIALS_TAG};
 use crate::state::scene::camera::Camera;
-use crate::state::scene::components::component::DeserializationContext;
+use crate::state::scene::components::component::{ComponentBox, ComponentItem, DeserializationContext};
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::light::Light;
 use crate::state::scene::manager::id_manager;
@@ -88,8 +89,12 @@ struct PreparedEditorObject
     scale: [f32; 3],
     source: Option<String>,
     container: Option<AssetContainer>,
+    components: Vec<serde_json::Value>,
     children: Vec<PreparedEditorObject>,
 }
+
+// components saved with a node - they need the deserialization context, so they are applied with the controllers
+type PendingComponents = Vec<(crate::state::scene::node::NodeItem, Vec<serde_json::Value>)>;
 
 fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &mut TextureCache, mat_cache: &mut MaterialCache, progress_callback: &dyn Fn()) -> PreparedEditorObject
 {
@@ -183,13 +188,14 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
         scale: obj.scale,
         source: obj.source.clone(),
         container,
+        components: obj.components.clone(),
         children,
     }
 }
 
-fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedEditorObject)
+fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedEditorObject, pending: &mut PendingComponents)
 {
-    let PreparedEditorObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, children } = object;
+    let PreparedEditorObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, components, children } = object;
 
     let node: Option<crate::state::scene::node::NodeItem> = match container
     {
@@ -278,14 +284,42 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
         }
     };
 
+    if let Some(node) = node.as_ref().filter(|_| !components.is_empty())
+    {
+        pending.push((node.clone(), components));
+    }
+
     for child in children
     {
-        apply_prepared_object(state, scene_id, node.clone(), child);
+        apply_prepared_object(state, scene_id, node.clone(), child, pending);
     }
 }
 
+// the files of the sound resources, read off the main thread: entry, path, bytes
+fn load_editor_sounds(sounds: &[EditorSound], base_path: &str) -> Vec<(EditorSound, String, Vec<u8>)>
+{
+    sounds.iter().filter_map(|sound|
+    {
+        let path = match sound.source.strip_prefix(RESOURCE_SCHEME)
+        {
+            Some(resource) => resource.to_string(),
+            None => resolve_relative_path(base_path, &sound.source),
+        };
+
+        match load_binary(&path)
+        {
+            Ok(bytes) => Some((sound.clone(), path, bytes)),
+            Err(error) =>
+            {
+                console_error!("can not load sound '{}' ({}): {}", sound.name, sound.source, error);
+                None
+            }
+        }
+    }).collect()
+}
+
 // cameras and controllers reference the objects -> applied after them
-fn apply_scene_entries(state: &mut State, scene_id: u32, cameras: Vec<serde_json::Value>, lights: Vec<serde_json::Value>, controller: Vec<serde_json::Value>)
+fn apply_scene_entries(state: &mut State, scene_id: u32, node_components: PendingComponents, cameras: Vec<serde_json::Value>, lights: Vec<serde_json::Value>, controller: Vec<serde_json::Value>)
 {
     let textures = state.resources.textures.values().cloned().collect();
     let mesh_resources = state.resources.mesh_resources.values().cloned().collect();
@@ -310,6 +344,28 @@ fn apply_scene_entries(state: &mut State, scene_id: u32, cameras: Vec<serde_json
 
         io: &mut state.io,
     };
+
+    // before the controllers - they refer to them by uuid
+    for (node, values) in node_components
+    {
+        for value in values
+        {
+            match serde_json::from_value::<ComponentBox>(value)
+            {
+                Ok(mut component) =>
+                {
+                    // ids are runtime only
+                    component.get_base_mut().id = id_manager::get_next_component_id();
+                    component.run_after_deserialize(&mut context);
+
+                    let component: ComponentItem = Arc::new(RwLock::new(component));
+                    node.write().unwrap().add_component(component.clone());
+                    context.components.push(component);
+                },
+                Err(e) => { console_error!("failed to parse component of '{}': {}", node.read().unwrap().name, e); },
+            }
+        }
+    }
 
     for value in lights
     {
@@ -428,17 +484,28 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                 loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
             }
 
+            let sounds = load_editor_sounds(&editor_scene.sounds, &base_path);
+
             let EditorScene { cameras, lights, controller, .. } = editor_scene;
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
             {
-                for object in loaded_objects
+                for (sound, path, bytes) in sounds
                 {
-                    apply_prepared_object(state, scene_id, None, object);
+                    let mut sound_source = SoundSource::from_file_bytes(&path, &bytes, state.io.audio_device.clone());
+                    sound_source.uuid = sound.uuid;
+                    sound_source.name = sound.name;
+                    state.add_sound_source(sound_source);
                 }
 
-                apply_scene_entries(state, scene_id, cameras, lights, controller);
+                let mut node_components = vec![];
+                for object in loaded_objects
+                {
+                    apply_prepared_object(state, scene_id, None, object, &mut node_components);
+                }
+
+                apply_scene_entries(state, scene_id, node_components, cameras, lights, controller);
             }));
         }
 

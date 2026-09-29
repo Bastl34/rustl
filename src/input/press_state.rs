@@ -141,6 +141,7 @@ impl PressState
         else
         {
             self.holding_state = false;
+            self.holding_value = value;
             self.first_action_time = 0;
             self.first_action_frame = 0;
             self.last_press_time = 0;

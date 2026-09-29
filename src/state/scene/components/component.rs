@@ -32,6 +32,9 @@ pub trait Component: Any + Send + Sync
     fn is_serializable(&self) -> bool { true }
     fn run_after_deserialize(&mut self, context: &mut DeserializationContext);
 
+    // saved in the project with its node - the others come back with the asset the node is loaded from
+    fn saved_with_node(&self) -> bool { false }
+
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
     fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);

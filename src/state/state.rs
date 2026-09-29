@@ -132,6 +132,7 @@ pub struct SupportedFileTypes
     pub scenes: Vec<String>,
     pub textures: Vec<String>,
     pub materials: Vec<String>,
+    pub sounds: Vec<String>,
 }
 
 impl Default for SupportedFileTypes
@@ -144,6 +145,7 @@ impl Default for SupportedFileTypes
              scenes: vec![String::from("scene")],
              textures: vec![String::from("jpg"), String::from("jpeg"), String::from("png"), String::from("webp")],
              materials: vec![String::from("mat")],
+             sounds: vec![String::from("ogg"), String::from("mp3"), String::from("wav")],
         }
     }
 }
@@ -412,6 +414,7 @@ impl State
 
         let mut scene_controller: Vec<(String, fn() -> SceneControllerBox)> = vec![];
         scene_controller.push(("Character Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::char_controller::CharacterController::default()) }));
+        scene_controller.push(("Vehicle Controller".to_string(), || { Box::new(crate::state::scene::scene_controller::vehicle_controller::VehicleController::default()) }));
 
         Self
         {
@@ -602,6 +605,46 @@ impl State
         self.resources.textures.insert(hash, arc.clone());
 
         arc
+    }
+
+    // a loaded file with the same bytes is reused, it takes over the uuid as an alias (and the path if it had none)
+    pub fn add_sound_source(&mut self, sound_source: SoundSource) -> SoundSourceItem
+    {
+        if let Some(existing) = self.resources.sound_sources.get(&sound_source.hash)
+        {
+            {
+                let mut existing = existing.write().unwrap();
+                if existing.uuid != sound_source.uuid && !existing.uuid_aliases.contains(&sound_source.uuid)
+                {
+                    existing.uuid_aliases.push(sound_source.uuid.clone());
+                }
+
+                if existing.source.is_none()
+                {
+                    existing.source = sound_source.source.clone();
+                }
+            }
+
+            return existing.clone();
+        }
+
+        let hash = sound_source.hash.clone();
+        let item: SoundSourceItem = Arc::new(RwLock::new(Box::new(sound_source)));
+        self.resources.sound_sources.insert(hash, item.clone());
+
+        item
+    }
+
+    // the sound resources a controller can pick from, by name
+    pub fn list_sound_sources(&self) -> Vec<SoundSourceItem>
+    {
+        let mut sources: Vec<SoundSourceItem> = self.resources.sound_sources.values()
+            .filter(|source| { let source = source.read().unwrap(); !source.delete_later_request && !source.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) })
+            .cloned()
+            .collect();
+
+        sources.sort_by_cached_key(|source| source.read().unwrap().name.to_lowercase());
+        sources
     }
 
     pub fn load_sound_source_byte_or_reuse(&mut self, sound_bytes: &Vec<u8>, name: &str, extension: Option<String>) -> SoundSourceItem
@@ -996,6 +1039,9 @@ impl State
             {
                 scene.clear(true, true);
             }
+
+            // the scene files bring their sounds - kept ones would end up in the next project's files
+            self.resources.sound_sources.retain(|_key, sound_source| sound_source.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX));
         }
 
         let len = self.scenes.len();

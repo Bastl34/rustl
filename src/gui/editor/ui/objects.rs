@@ -1100,6 +1100,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         let mut occlusion_culling;
         let mut physics;
         let mut collision;
+        let mut camera_collision;
         let mut layer_mask;
         let mut name;
         let mut color;
@@ -1121,6 +1122,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             frustum_culling = node.settings.frustum_culling;
             occlusion_culling = node.settings.occlusion_culling;
             collision = node.settings.collision;
+            camera_collision = node.settings.camera_collision;
             physics = node.settings.physics;
             layer_mask = node.settings.layer_mask;
             name = node.name.clone();
@@ -1191,6 +1193,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
         changed = ui.checkbox(&mut frustum_culling, "frustum culling").changed() || changed;
         changed = ui.checkbox(&mut occlusion_culling, "occlusion culling").changed() || changed;
         changed = ui.checkbox(&mut collision, "collision").changed() || changed;
+        changed = ui.checkbox(&mut camera_collision, "camera collision").changed() || changed;
 
         ui.separator();
 
@@ -1362,6 +1365,7 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
             node.settings.occlusion_culling = occlusion_culling;
             node.settings.layer_mask = layer_mask;
             node.settings.collision = collision;
+            node.settings.camera_collision = camera_collision;
             node.settings.physics = physics;
             node.name = name;
             node.color = color;

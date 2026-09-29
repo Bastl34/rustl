@@ -129,6 +129,7 @@ pub struct NodeSettings
     pub occlusion_culling: bool,
 
     pub collision: bool,
+    pub camera_collision: bool, // if true, the camera will not be able to go through this node
 
     pub physics: PhysicsSettings,
 
@@ -154,6 +155,7 @@ impl Default for NodeSettings
             frustum_culling: true,
             occlusion_culling: true,
             collision: true,
+            camera_collision: true,
             physics: PhysicsSettings::default(),
             layer_mask: LAYER_DEFAULT,
         }
@@ -1242,7 +1244,6 @@ impl Node
         self.settings.physics
     }
 
-    // inherited like visibility: off on an object root disables every mesh below it
     pub fn has_collision(&self) -> bool
     {
         if !self.settings.collision
@@ -1256,6 +1257,30 @@ impl Node
             {
                 let parent = parent.clone().unwrap();
                 if !parent.read().unwrap().settings.collision
+                {
+                    return false;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        true
+    }
+
+    pub fn has_camera_collision(&self) -> bool
+    {
+        if !self.settings.camera_collision
+        {
+            return false;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if !parent.read().unwrap().settings.camera_collision
                 {
                     return false;
                 }

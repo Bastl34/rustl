@@ -28,6 +28,7 @@ pub fn create_asset_tree(editor_state: &mut EditorState, _state: &mut State, ui:
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Object, "📦 Objects");
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Texture, "🖼 Textures");
             ui.selectable_value(&mut editor_state.asset_type, AssetType::Material, "🎨 Materials");
+            ui.selectable_value(&mut editor_state.asset_type, AssetType::Sound, "🔊 Sounds").on_hover_text("drag a sound into the editor to add it to the sound resources");
         });
     });
 }
@@ -40,6 +41,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
         AssetType::Object => Some(&editor_state.assets_objects),
         AssetType::Texture => None,
         AssetType::Material => Some(&editor_state.assets_materials),
+        AssetType::Sound => Some(&editor_state.assets_sounds),
     };
 
     if items.is_none() { return; }
@@ -194,6 +196,10 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                                                     else if asset.asset_type == AssetType::Material
                                                     {
                                                         ui.label(RichText::new("🎨").size(60.0));
+                                                    }
+                                                    else if asset.asset_type == AssetType::Sound
+                                                    {
+                                                        ui.label(RichText::new("🔊").size(60.0));
                                                     }
                                                 });
                                             });

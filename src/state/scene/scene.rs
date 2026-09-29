@@ -304,6 +304,21 @@ impl Scene
         self.controller = controller;
     }
 
+    fn update_controller_after_physics(&mut self, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode)
+    {
+        let mut controller = std::mem::take(&mut self.controller);
+        for controller_item in &mut controller
+        {
+            if controller_item.get_base().is_enabled && controller_item.get_base().phase == ControllerPhase::Pre && controller_item.runs_in_mode(run_mode)
+            {
+                controller_item.update_after_physics(self, io, frame_scale);
+            }
+        }
+
+        controller.append(&mut self.controller);
+        self.controller = controller;
+    }
+
     pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> f32
     {
         crate::notify_observable!(self, on_before_update);
@@ -396,32 +411,6 @@ impl Scene
             }
         }
 
-        // ********** spatial sound listener (based on the first active camera) **********
-        {
-            let cam = self.cameras.iter().find(|cam| self.is_camera_active(cam, run_mode));
-            if let Some(cam) = cam
-            {
-                if cam.get_data_tracker().changed()
-                {
-                    let (left, right) = cam.get_left_right_ear_positions();
-
-                    let mut audio_device = io.audio_device.write().unwrap();
-                    audio_device.data.get_mut().left_ear_pos = left;
-                    audio_device.data.get_mut().right_ear_pos = right;
-                }
-            }
-        }
-
-        // ********** cameras **********
-        let mut cameras = vec![];
-        swap(&mut self.cameras, &mut cameras);
-        for cam in &mut cameras
-        {
-            cam.update(self, io, frame_scale, run_mode);
-        }
-
-        swap(&mut cameras, &mut self.cameras);
-
         // ********** physics colliders (transforms) **********
         // after the node update on purpose - animations move nodes there
         if !self.physics.is_empty()
@@ -442,6 +431,41 @@ impl Scene
 
             physics_update_time += physics_time.elapsed().as_micros();
         }
+
+        // ********** controllers after physics **********
+        self.update_controller_after_physics(io, frame_scale, run_mode);
+
+        // ********** spatial sound listeners (one per active camera, split screen has several) **********
+        // internal scenes (e.g. the editor preview) must not move the global listeners
+        if !self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            // every frame - the ears can follow the target node without the camera data changing
+            let listeners: Vec<_> = self.cameras.iter()
+                .filter(|cam| self.is_camera_active(cam, run_mode))
+                .map(|cam| cam.get_left_right_ear_positions())
+                .collect();
+
+            if !listeners.is_empty()
+            {
+                let mut audio_device = io.audio_device.write().unwrap();
+
+                if audio_device.data.get_ref().listeners != listeners
+                {
+                    audio_device.data.get_mut().listeners = listeners;
+                }
+            }
+        }
+
+        // ********** cameras **********
+        // after physics, so a camera follows what the solver moved this frame
+        let mut cameras = vec![];
+        swap(&mut self.cameras, &mut cameras);
+        for cam in &mut cameras
+        {
+            cam.update(self, io, frame_scale, run_mode);
+        }
+
+        swap(&mut cameras, &mut self.cameras);
 
         // ********** update post controller **********
         self.update_controller(ControllerPhase::Post, io, frame_scale, run_mode);

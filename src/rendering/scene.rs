@@ -1353,7 +1353,7 @@ impl Scene
                 {
                     self.update_result.slot_buffer_recreated = self.draw_slots.update(wgpu, slots, slot_map);
                     self.update_result.slots_rebuilt = true;
-                    console_debug!("draw slots updated");
+                    //console_debug!("draw slots updated");
                 }
             }
 
