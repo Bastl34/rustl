@@ -3,7 +3,7 @@ use std::any::Any;
 use serde::{Deserialize, Serialize};
 
 use crate::input::mouse::Mouse;
-use crate::state::{scene::{camera::{Camera, CameraData}, node::NodeItem}, state::InputOutput};
+use crate::state::{scene::{camera::{Camera, CameraData}, node::NodeItem}, state::{InputOutput, RunMode}};
 
 //pub type CameraControllerBox = Box<dyn SerializableCameraController + Send + Sync>;
 pub type CameraControllerBox = Box<dyn CameraController>;
@@ -22,6 +22,11 @@ pub trait CameraController: Any + Send + Sync
     fn ui(&mut self, ui: &mut egui::Ui);
 
     fn update(&mut self, node: Option<NodeItem>, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, cam_data: &mut crate::helper::change_tracker::ChangeTracker<crate::state::scene::camera::CameraData>, frame_scale: f32) -> bool;
+
+    fn runs_in_mode(&self, run_mode: RunMode) -> bool
+    {
+        run_mode.updates_engine()
+    }
 }
 
 #[derive(Serialize, Deserialize)]

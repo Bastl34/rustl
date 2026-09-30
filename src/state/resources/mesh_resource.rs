@@ -338,6 +338,134 @@ impl MeshResource
         }
     }
 
+    // Mesh resources are shared by hash, so anything that edits geometry has to work on a
+    // copy first. There is no Clone on this type because of the render item and the id.
+    pub fn duplicate(&self) -> MeshResource
+    {
+        let mut copy =
+        {
+            let data = self.get_data();
+
+            MeshResource::new_with_data(self.name.as_str(), data.vertices.clone(), data.indices.clone(), data.uvs_0.clone(), data.uv_indices.clone(), data.normals.clone(), data.normals_indices.clone())
+        };
+
+        {
+            let source = self.get_data();
+            let uvs_1 = source.uvs_1.clone();
+            let uvs_2 = source.uvs_2.clone();
+            let uvs_3 = source.uvs_3.clone();
+            let joints = source.joints.clone();
+            let weights = source.weights.clone();
+            let morph_target_positions = source.morph_target_positions.clone();
+            let morph_target_normals = source.morph_target_normals.clone();
+            let morph_target_tangents = source.morph_target_tangents.clone();
+
+            let data = copy.get_data_mut().get_mut();
+
+            data.uvs_1 = uvs_1;
+            data.uvs_2 = uvs_2;
+            data.uvs_3 = uvs_3;
+
+            data.joints = joints;
+            data.weights = weights;
+
+            data.morph_target_positions = morph_target_positions;
+            data.morph_target_normals = morph_target_normals;
+            data.morph_target_tangents = morph_target_tangents;
+        }
+
+        copy.source = self.source.clone();
+        copy.tags = self.tags.clone();
+
+        copy
+    }
+
+    // Bakes a scale into the geometry itself, so the node above it can go back to a scale
+    // of one. A rigid body under a non-uniform scale is stretched differently for every
+    // orientation, which is what makes a rotating physics object change shape.
+    pub fn apply_scale(&mut self, scale: &Vector3<f32>)
+    {
+        self.apply_transform(&Matrix4::new_nonuniform_scaling(scale));
+    }
+
+    // Bakes a whole transform into the geometry. Translation and rotation are rigid, so
+    // this is only ever about tidying a node up - the scale is the part that a physics body
+    // actually needs baked.
+    pub fn apply_transform(&mut self, transform: &Matrix4<f32>)
+    {
+        // normals transform by the inverse transpose, otherwise a non-uniform scale tilts
+        // them off the surface they belong to
+        let normal_matrix = match transform.fixed_view::<3, 3>(0, 0).into_owned().try_inverse()
+        {
+            Some(inverse) => inverse.transpose(),
+            None =>
+            {
+                console_error!("{}", "cannot bake a transform that has no inverse".red());
+                return;
+            }
+        };
+
+        {
+            let data = self.get_data_mut().get_mut();
+
+            let move_vertices = |vertices: &mut Vec<Point3<f32>>|
+            {
+                for vertex in vertices
+                {
+                    let moved = transform * vertex.to_homogeneous();
+                    *vertex = moved.xyz().into();
+                }
+            };
+
+            move_vertices(&mut data.vertices);
+
+            for positions in &mut data.morph_target_positions
+            {
+                move_vertices(positions);
+            }
+
+            let rescale_normals = |normals: &mut Vec<Vector3<f32>>|
+            {
+                for normal in normals
+                {
+                    *normal = normal_matrix * *normal;
+
+                    let length = normal.norm();
+
+                    if length > 0.0
+                    {
+                        *normal /= length;
+                    }
+                }
+            };
+
+            rescale_normals(&mut data.normals);
+
+            for normals in &mut data.morph_target_normals
+            {
+                rescale_normals(normals);
+            }
+
+            // the collision mesh is built from the vertices, so it has to follow
+            let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
+
+            data.mesh = match TriMesh::new(vertices_vec3, data.indices.clone())
+            {
+                Ok(mesh) => mesh,
+                Err(e) =>
+                {
+                    console_error!("{}", (format!("error rebuilding mesh after baking the scale: {}", e)).red());
+                    TriMesh::new(vec![], vec![]).unwrap()
+                }
+            };
+        }
+
+        self.calc_bounding_volumes();
+
+        // the hash identifies the geometry, and the geometry just changed
+        self.calc_hash();
+    }
+
     pub fn flip_faces(&mut self)
     {
         {
@@ -459,33 +587,6 @@ impl MeshResource
         let data = self.data.get_mut();
         data.b_box = data.mesh.aabb(&trans);
         data.b_sphere = data.mesh.bounding_sphere(&trans);
-    }
-
-    fn apply_transform(&mut self, transform: &Matrix4<f32>)
-    {
-        let data = self.data.get_mut();
-
-        for v in &mut data.vertices
-        {
-            let new_pos = transform * v.to_homogeneous();
-            v.x = new_pos.x;
-            v.y = new_pos.y;
-            v.z = new_pos.z;
-        }
-
-        for n in &mut data.normals
-        {
-            let new_vec = transform * n.to_homogeneous();
-            n.x = new_vec.x;
-            n.y = new_vec.y;
-            n.z = new_vec.z;
-        }
-
-        // clear trimesh and rebuild
-        let vertices_vec3: Vec<Vec3> = data.vertices.iter().map(|v| Vec3::new(v.x, v.y, v.z)).collect();
-        data.mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
-
-        self.calc_bounding_volumes();
     }
 
     pub fn merge(&mut self, mesh_data: &MeshResourceData)

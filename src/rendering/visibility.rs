@@ -180,7 +180,7 @@ impl VisibilityBuffer
                 let count = self.readback_count.load(Ordering::SeqCst);
 
                 {
-                    let data = self.readback_buffer.slice(..(std::mem::size_of::<Visibility>() * count) as u64).get_mapped_range();
+                    let data = self.readback_buffer.slice(..(std::mem::size_of::<Visibility>() * count) as u64).get_mapped_range().unwrap();
 
                     let count_in_bytes = (count * std::mem::size_of::<Visibility>()).min(data.len());
                     let result = bytemuck::cast_slice::<u8, Visibility>(&data[..count_in_bytes]).to_vec();

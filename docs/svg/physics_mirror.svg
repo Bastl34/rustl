@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ph_arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="ph_arrow_light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="760" height="430" fill="#f8fafc" rx="12"/>
+  <text x="380" y="30" text-anchor="middle" font-size="17" font-weight="600" fill="#1e293b">The collider set mirrors the scene, it never owns it</text>
+
+  <!-- ============ scene graph ============ -->
+  <rect x="30" y="56" width="250" height="336" fill="#ffffff" stroke="#cbd5e1" rx="8"/>
+  <text x="155" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">Scene graph (the authority)</text>
+
+  <!-- node tree -->
+  <rect x="52" y="98" width="140" height="26" fill="#e2e8f0" stroke="#94a3b8" rx="4"/>
+  <text x="62" y="116" font-size="12" fill="#1e293b">house (Node)</text>
+
+  <line x1="66" y1="124" x2="66" y2="146" stroke="#94a3b8"/>
+  <rect x="76" y="140" width="150" height="26" fill="#e2e8f0" stroke="#94a3b8" rx="4"/>
+  <text x="86" y="158" font-size="12" fill="#1e293b">wall (Mesh)</text>
+
+  <line x1="90" y1="166" x2="90" y2="188" stroke="#94a3b8"/>
+  <rect x="100" y="182" width="150" height="24" fill="#dbeafe" stroke="#60a5fa" rx="4"/>
+  <text x="110" y="199" font-size="11" fill="#1e3a8a">instance #1</text>
+
+  <line x1="90" y1="206" x2="90" y2="224" stroke="#94a3b8"/>
+  <rect x="100" y="218" width="150" height="24" fill="#dbeafe" stroke="#60a5fa" rx="4"/>
+  <text x="110" y="235" font-size="11" fill="#1e3a8a">instance #2</text>
+
+  <line x1="66" y1="242" x2="66" y2="272" stroke="#94a3b8"/>
+  <rect x="76" y="266" width="150" height="26" fill="#e2e8f0" stroke="#94a3b8" rx="4"/>
+  <text x="86" y="284" font-size="12" fill="#1e293b">door (Mesh)</text>
+
+  <line x1="90" y1="292" x2="90" y2="314" stroke="#94a3b8"/>
+  <rect x="100" y="308" width="150" height="24" fill="#dbeafe" stroke="#60a5fa" rx="4"/>
+  <text x="110" y="325" font-size="11" fill="#1e3a8a">instance #3</text>
+  <text x="110" y="352" font-size="10.5" fill="#64748b">rotated here, not on the node</text>
+
+  <text x="52" y="378" font-size="10.5" fill="#64748b">MeshResource holds the parry TriMesh</text>
+
+  <!-- ============ mirror arrow ============ -->
+  <line x1="288" y1="215" x2="352" y2="215" stroke="#475569" stroke-width="2" marker-end="url(#ph_arrow)"/>
+  <text x="320" y="205" text-anchor="middle" font-size="11" fill="#334155">mirror</text>
+  <text x="320" y="234" text-anchor="middle" font-size="10" fill="#64748b">one per</text>
+  <text x="320" y="246" text-anchor="middle" font-size="10" fill="#64748b">instance</text>
+
+  <!-- ============ physics world ============ -->
+  <rect x="360" y="56" width="370" height="336" fill="#ffffff" stroke="#cbd5e1" rx="8"/>
+  <text x="545" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">PhysicsWorld (a derived copy)</text>
+
+  <!-- collider set -->
+  <rect x="380" y="96" width="330" height="86" fill="#f1f5f9" stroke="#94a3b8" rx="6"/>
+  <text x="392" y="115" font-size="12" font-weight="600" fill="#1e293b">ColliderSet</text>
+  <rect x="392" y="124" width="96" height="46" fill="#fef3c7" stroke="#f59e0b" rx="4"/>
+  <text x="400" y="141" font-size="10.5" fill="#78350f">shape: TriMesh</text>
+  <text x="400" y="156" font-size="10.5" fill="#78350f">pose, user_data</text>
+  <rect x="500" y="124" width="96" height="46" fill="#fef3c7" stroke="#f59e0b" rx="4"/>
+  <text x="508" y="141" font-size="10.5" fill="#78350f">shape: TriMesh</text>
+  <text x="508" y="156" font-size="10.5" fill="#78350f">pose, user_data</text>
+  <rect x="608" y="124" width="90" height="46" fill="#fef3c7" stroke="#f59e0b" rx="4"/>
+  <text x="616" y="141" font-size="10.5" fill="#78350f">shape: quad</text>
+  <text x="616" y="156" font-size="10.5" fill="#78350f">ground plane</text>
+
+  <!-- bvh -->
+  <rect x="380" y="196" width="330" height="102" fill="#f1f5f9" stroke="#94a3b8" rx="6"/>
+  <text x="392" y="215" font-size="12" font-weight="600" fill="#1e293b">BroadPhaseBvh</text>
+  <text x="392" y="231" font-size="10.5" fill="#64748b">a tree of aabbs over the colliders</text>
+
+  <rect x="520" y="222" width="52" height="18" fill="#c7d2fe" stroke="#6366f1" rx="3"/>
+  <line x1="546" y1="240" x2="504" y2="252" stroke="#6366f1"/>
+  <line x1="546" y1="240" x2="588" y2="252" stroke="#6366f1"/>
+  <rect x="478" y="252" width="52" height="18" fill="#c7d2fe" stroke="#6366f1" rx="3"/>
+  <rect x="562" y="252" width="52" height="18" fill="#c7d2fe" stroke="#6366f1" rx="3"/>
+  <line x1="504" y1="270" x2="486" y2="282" stroke="#6366f1"/>
+  <line x1="504" y1="270" x2="522" y2="282" stroke="#6366f1"/>
+  <rect x="462" y="282" width="48" height="14" fill="#e0e7ff" stroke="#6366f1" rx="3"/>
+  <rect x="516" y="282" width="48" height="14" fill="#e0e7ff" stroke="#6366f1" rx="3"/>
+  <rect x="576" y="282" width="48" height="14" fill="#e0e7ff" stroke="#6366f1" rx="3"/>
+  <line x1="588" y1="270" x2="600" y2="282" stroke="#6366f1"/>
+
+  <!-- empty sets -->
+  <rect x="380" y="312" width="330" height="62" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="4 3" rx="6"/>
+  <text x="392" y="331" font-size="12" font-weight="600" fill="#94a3b8">RigidBodySet, NarrowPhase, IslandManager</text>
+  <text x="392" y="349" font-size="10.5" fill="#94a3b8">empty and never stepped - there is no dynamics here,</text>
+  <text x="392" y="364" font-size="10.5" fill="#94a3b8">they only exist because the rapier api asks for them</text>
+
+  <!-- ============ query arrow back ============ -->
+  <line x1="352" y1="330" x2="292" y2="330" stroke="#94a3b8" stroke-width="2" marker-end="url(#ph_arrow_light)"/>
+  <text x="322" y="322" text-anchor="middle" font-size="11" fill="#64748b">queries</text>
+
+  <text x="380" y="412" font-size="11" fill="#64748b">Editor picking does not use any of this - it walks the scene graph directly (Scene::pick).</text>
+</svg>

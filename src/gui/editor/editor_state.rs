@@ -6,7 +6,8 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{console_log, gui::editor::{editor_project::EditorProjectData, helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::State}};
+use crate::{gui::editor::gizmo::hide_gizmos, state::{project::project::ProjectData, scene::node::NodeSettings}};
+use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -14,10 +15,12 @@ const THUMB_SUFFIX_NAME: &str = "_thumb.png";
 const OBJECTS_DIR: &str = "objects/";
 const SCENES_DIR: &str = "scenes/";
 const MATERIALS_DIR: &str = "materials/";
+const SOUNDS_DIR: &str = "sounds/";
 
 const LOCAL_OBJECTS_DIR: &str = "resourcesLocal/objects/";
 const LOCAL_SCENES_DIR: &str = "resourcesLocal/scenes/";
 const LOCAL_MATERIALS_DIR: &str = "resourcesLocal/materials/";
+const LOCAL_SOUNDS_DIR: &str = "resourcesLocal/sounds/";
 
 const DEFAULT_GRID_SIZE: f32 = 0.25;
 const DEFAULT_GRID_AMOUNT: u32 = 1500;
@@ -86,6 +89,7 @@ pub enum PickType
 {
     Camera,
     Parent,
+    ParentRemap,
     AnimationCopy,
     Texture,
     None
@@ -114,7 +118,8 @@ pub enum AssetType
     Scene,
     Object,
     Texture,
-    Material
+    Material,
+    Sound
 }
 
 #[derive(Clone, Copy)]
@@ -163,21 +168,16 @@ pub struct DebugImages
     pub hzb_image: Option<egui::TextureHandle>,
 }
 
-pub struct LoadingGuard(pub Arc<RwLock<bool>>);
-
-impl Drop for LoadingGuard
-{
-    fn drop(&mut self)
-    {
-        *self.0.write().unwrap() = false;
-    }
-}
+pub use crate::state::project::project::LoadingGuard;
 
 // generic "are you sure?" dialog - shown while present in EditorState, hidden when None
 pub struct ConfirmDialog
 {
     pub title: String,
     pub message: String,
+    // true: Save / Don't Save / Cancel (Save stores the project before the callback runs)
+    // false: Yes / No
+    pub save_option: bool,
     pub callback: Box<dyn FnOnce(&mut EditorState, &mut State)>,
 }
 
@@ -187,9 +187,7 @@ pub struct EditorState
     pub loading: Arc<RwLock<bool>>,
     pub loading_progress: Arc<RwLock<f32>>,
 
-    pub try_mode: bool,
     pub selectable: bool,
-    pub fly_camera: bool,
 
     pub quad_view: bool,
 
@@ -200,7 +198,6 @@ pub struct EditorState
     pub recent_projects: RecentProjectsData,
     pub settings: EditorSettings,
 
-    pub project_data: EditorProjectData,
     pub project_path: Option<String>,
     pub project_session_start: Instant,
 
@@ -265,6 +262,7 @@ pub struct EditorState
     pub copy_asset_transform: Option<TransformationData>,
     pub copy_node_id: Arc<RwLock<Option<u32>>>,
     pub copy_node_name: Option<String>,
+    pub copy_node_settings: Option<NodeSettings>,
 
     pub drag_id: Option<String>,
 
@@ -282,7 +280,11 @@ pub struct EditorState
 
     pub dialog_add_scene_controller: bool,
     pub add_scene_controller_id: usize,
-    pub add_scene_controller_post: bool,
+
+    pub dialog_alert: bool,
+    pub dialog_alert_type: LogType,
+    pub dialog_alert_title: String,
+    pub dialog_alert_message: String,
 
     pub dialog_debug_image: bool,
     pub dialog_debug_image_id: Option<egui::TextureHandle>,
@@ -300,6 +302,7 @@ pub struct EditorState
     pub assets_objects: Vec<Asset>,
     pub assets_scenes: Vec<Asset>,
     pub assets_materials: Vec<Asset>,
+    pub assets_sounds: Vec<Asset>,
 
     // Some(true) = re-render all (assets menu), Some(false) = only missing (startup)
     pub generate_material_thumbnails: Option<bool>,
@@ -320,15 +323,13 @@ impl EditorState
 {
     pub fn new() -> EditorState
     {
-        let mut state = EditorState
+        let state = EditorState
         {
             visible: true,
             loading: Arc::new(RwLock::new(false)),
             loading_progress: Arc::new(RwLock::new(0.0)),
 
-            try_mode: false,
             selectable: true,
-            fly_camera: true,
 
             quad_view: false,
 
@@ -339,7 +340,6 @@ impl EditorState
             recent_projects: RecentProjectsData::new(),
             settings: EditorSettings::new(),
 
-            project_data: EditorProjectData::default(),
             project_path: None,
             project_session_start: Instant::now(),
 
@@ -404,6 +404,7 @@ impl EditorState
             copy_asset_transform: None,
             copy_node_id: Arc::new(RwLock::new(None)),
             copy_node_name: None,
+            copy_node_settings: None,
 
             drag_id: None,
 
@@ -420,7 +421,11 @@ impl EditorState
 
             dialog_add_scene_controller: false,
             add_scene_controller_id: 0,
-            add_scene_controller_post: false,
+
+            dialog_alert: false,
+            dialog_alert_type: LogType::All,
+            dialog_alert_title: String::new(),
+            dialog_alert_message: String::new(),
 
             dialog_debug_image: false,
             dialog_debug_image_id: None,
@@ -438,6 +443,7 @@ impl EditorState
             assets_objects: vec![],
             assets_scenes: vec![],
             assets_materials: vec![],
+            assets_sounds: vec![],
             generate_material_thumbnails: Some(false),
             material_thumbnails_running: Arc::new(RwLock::new(false)),
             reload_assets_requested: Arc::new(RwLock::new(false)),
@@ -454,14 +460,12 @@ impl EditorState
             open_scene_tabs: vec![],
         };
 
-        state.reset_project();
-
         state
     }
 
-    pub fn reset_project(&mut self)
+    pub fn reset_project(&mut self, state: &mut State)
     {
-        self.project_data = EditorProjectData::default();
+        state.project = ProjectData::default();
         self.project_path = None;
         self.project_session_start = Instant::now();
     }
@@ -473,14 +477,53 @@ impl EditorState
         {
             title: title.to_string(),
             message: message.to_string(),
+            save_option: false,
             callback: Box::new(callback),
         });
     }
 
-    pub fn accumulate_editing_time(&mut self)
+    // shows a Save / Don't Save / Cancel modal - the callback runs after saving or on "Don't Save"
+    pub fn show_save_changes_dialog(&mut self, title: &str, message: &str, callback: impl FnOnce(&mut EditorState, &mut State) + 'static)
+    {
+        self.confirm_dialog = Some(ConfirmDialog
+        {
+            title: title.to_string(),
+            message: message.to_string(),
+            save_option: true,
+            callback: Box::new(callback),
+        });
+    }
+
+    pub fn request_new_project(&mut self)
+    {
+        self.show_save_changes_dialog
+        (
+            "New Project",
+            "Save changes to the current project before creating a new one?",
+            |editor_state, state|
+            {
+                editor_state.reset_project(state);
+                state.delete_all_scenes(true);
+                state.add_scene("main scene").add_default_lights_and_cam();
+                state.run_mode = RunMode::Edit;
+            }
+        );
+    }
+
+    // shows a modal alert the user has to acknowledge
+    // for things that must not be missed - everything else belongs in the console
+    pub fn alert(&mut self, title: &str, message: &str, alert_type: LogType)
+    {
+        self.dialog_alert = true;
+        self.dialog_alert_type = alert_type;
+        self.dialog_alert_title = title.to_string();
+        self.dialog_alert_message = message.to_string();
+    }
+
+    pub fn accumulate_editing_time(&mut self, state: &mut State)
     {
         let elapsed = self.project_session_start.elapsed().as_secs();
-        self.project_data.editing_time_secs += elapsed;
+        state.project.editing_time_secs += elapsed;
         self.project_session_start = Instant::now();
     }
 
@@ -561,11 +604,12 @@ impl EditorState
         // ******************** hzb image ********************
         if let Some(show_hzb_image_mip) = state.debug.show_hzb_image
         {
+            let run_mode = state.run_mode;
             let scene = self.get_debug_scene(state);
 
             if let Some(scene) = scene
             {
-                if let Some(cam) = scene.get_active_camera()
+                if let Some(cam) = scene.get_active_camera(run_mode)
                 {
                     if let Some(ref render_item_box) = cam.hzb_texture_render_item
                     {
@@ -1003,16 +1047,46 @@ impl EditorState
         false
     }
 
-    pub fn set_try_mode(&mut self, state: &mut State, try_out: bool)
+    pub fn set_run_mode(&mut self, state: &mut State, run_mode: RunMode, fullscreen: bool)
     {
-        self.try_mode = try_out;
-        self.visible = !try_out;
-        state.rendering.fullscreen.set(try_out);
-        state.io.input_manager.mouse.visible.set(!try_out);
+        let was_running = state.run_mode.is_running();
 
-        if try_out
+        state.set_run_mode(run_mode);
+
+        let play_mode = run_mode == RunMode::Play;
+
+        self.visible = !play_mode;
+        state.io.input_manager.mouse.visible.set(!play_mode);
+
+        if run_mode.is_running()
         {
-            self.de_select_current_item(state);
+            if fullscreen && !*state.rendering.fullscreen.get_ref()
+            {
+                state.rendering.fullscreen.set(true);
+            }
+
+            if play_mode
+            {
+                self.de_select_current_item(state);
+                hide_gizmos(state); // TODO: hide grid and other editor stuff too
+            }
+        }
+        // end fullscreen if needed
+        else if was_running && *state.rendering.fullscreen.get_ref()
+        {
+            state.rendering.fullscreen.set(false);
+        }
+    }
+
+    // Freezing means you want to look around, so the editor comes back while it lasts.
+    pub fn set_paused(&mut self, state: &mut State, paused: bool)
+    {
+        state.pause = paused;
+
+        if state.run_mode == RunMode::Play
+        {
+            self.visible = paused;
+            state.io.input_manager.mouse.visible.set(paused);
         }
     }
 
@@ -1022,6 +1096,7 @@ impl EditorState
         self.load_asset_entries(SCENES_DIR, state, AssetType::Scene, egui_context, false);
         self.load_asset_entries(OBJECTS_DIR, state, AssetType::Object, egui_context, false);
         self.load_asset_entries(MATERIALS_DIR, state, AssetType::Material, egui_context, false);
+        self.load_asset_entries(SOUNDS_DIR, state, AssetType::Sound, egui_context, false);
 
         // local
         let local_objects_dir = env::current_dir().unwrap().join(LOCAL_OBJECTS_DIR);
@@ -1036,6 +1111,9 @@ impl EditorState
         self.load_asset_entries(local_objects_dir.as_str(), state, AssetType::Object, egui_context, true);
         self.load_asset_entries(local_scenes_dir.as_str(), state, AssetType::Scene, egui_context, true);
         self.load_asset_entries(local_materials_dir.as_str(), state, AssetType::Material, egui_context, true);
+
+        let local_sounds_dir = env::current_dir().unwrap().join(LOCAL_SOUNDS_DIR);
+        self.load_asset_entries(local_sounds_dir.to_string_lossy().as_ref(), state, AssetType::Sound, egui_context, true);
     }
 
     pub fn load_asset_entries(&mut self, path: &str, state: &State, asset_type: AssetType, egui_context: &egui::Context, append: bool)
@@ -1055,6 +1133,7 @@ impl EditorState
                 AssetType::Object => state.supported_file_types.objects.contains(&extension),
                 AssetType::Material => state.supported_file_types.materials.contains(&extension),
                 AssetType::Texture => state.supported_file_types.textures.contains(&extension),
+                AssetType::Sound => state.supported_file_types.sounds.contains(&extension),
             }
         }).map(|s| s.to_string()).collect();
 
@@ -1136,6 +1215,17 @@ impl EditorState
             else
             {
                 self.assets_materials = assets;
+            }
+        }
+        else if asset_type == AssetType::Sound
+        {
+            if append
+            {
+                self.assets_sounds.extend(assets);
+            }
+            else
+            {
+                self.assets_sounds = assets;
             }
         }
     }

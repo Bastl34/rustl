@@ -2,7 +2,8 @@ use std::{env, sync::{Arc, RwLock}};
 use gltf::json::extensions::scene;
 use nalgebra::Vector3;
 
-use crate::{console_debug, console_error, gui::editor::editor_project::load_and_apply_project, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
+use crate::state::project::loader::load_and_apply_project;
+use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 
@@ -24,6 +25,12 @@ impl App for AppDummy
     fn init(&mut self, context: &mut Context)
     {
         // ********** observer examples (context level) **********
+
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // THE CONTENT OF THIS FILE IS NOT FINAL OR STABLE, IT IS CURRENTLY JUST A PLACE FOR TESTING AND EXPERIMENTING WITH FEATURES
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         // fires every frame right before rendering
         /*
@@ -72,9 +79,13 @@ impl App for AppDummy
                     state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
                 }
 
+                // projects saved with cameras and lights bring their own
                 for scene in &mut state.scenes
                 {
-                    scene.add_default_lights_and_cam();
+                    if scene.cameras.is_empty()
+                    {
+                        scene.add_default_lights_and_cam();
+                    }
                 }
             })));
         }

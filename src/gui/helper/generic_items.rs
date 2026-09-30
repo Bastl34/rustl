@@ -1,10 +1,12 @@
 use egui::{Color32, Frame, RichText, Ui};
 
 pub const TAB_CORNER_RADIUS: egui::CornerRadius = egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 };
+pub const TAB_V_PAD: f32 = 5.0;
 
 pub const TAB_BG_SELECTED: Color32 = Color32::from_rgba_premultiplied(60, 60, 60, 60);
 pub const TAB_BG_HOVER: Color32        = Color32::from_rgba_premultiplied(22, 22, 22, 22);
 pub const TAB_BG_INACTIVE: Color32     = Color32::from_rgba_premultiplied(8, 8, 8, 8);
+pub const TAB_BUTTON_BG: Color32       = Color32::from_rgba_premultiplied(35, 35, 35, 35);
 
 pub struct TabResponse
 {
@@ -21,10 +23,56 @@ pub fn tab_separator(ui: &mut Ui)
     ui.spacing_mut().item_spacing.y = prev_spacing;
 }
 
+// visual vertical center of the letter body (median letter top to baseline), so emoji icons, i-dots and descenders don't shift the text
+fn text_center_y(galley: &egui::Galley) -> f32
+{
+    let mut tops: Vec<f32> = Vec::new();
+    let mut baseline = f32::NEG_INFINITY;
+
+    for row in &galley.rows
+    {
+        for glyph in row.glyphs.iter().filter(|glyph| glyph.chr.is_alphanumeric())
+        {
+            let glyph_baseline = row.pos.y + glyph.pos.y;
+            tops.push(glyph_baseline + glyph.uv_rect.offset.y);
+            baseline = baseline.max(glyph_baseline);
+        }
+    }
+
+    // symbols only (e.g. "+" or the close icon): center the drawn shape
+    if tops.is_empty()
+    {
+        return galley.mesh_bounds.center().y;
+    }
+
+    tops.sort_by(|a, b| a.total_cmp(b));
+    (tops[tops.len() / 2] + baseline) / 2.0
+}
+
+// tab shaped button (e.g. "+" next to the tabs): same shape as a tab, but always with a visible background
+pub fn tab_button(ui: &mut Ui, label: impl Into<egui::WidgetText>, size: egui::Vec2) -> egui::Response
+{
+    let galley = label.into().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+
+    let bg_color = if response.hovered() { TAB_BG_SELECTED } else { TAB_BUTTON_BG };
+    ui.painter().rect_filled(rect, TAB_CORNER_RADIUS, bg_color);
+
+    let pos = egui::pos2(rect.center().x - galley.mesh_bounds.center().x, rect.center().y - text_center_y(&galley));
+    ui.painter().galley(pos, galley, ui.visuals().text_color());
+
+    response
+}
+
 pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, closable: bool) -> TabResponse
 {
-    let h_pad = 10.0;
-    let v_pad = 5.0;
+    tab_sized(ui, label, selected, closable, None, 10.0)
+}
+
+// tab with an optional fixed height (label stays vertically centered) and custom side padding
+pub fn tab_sized(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, closable: bool, height: Option<f32>, h_pad: f32) -> TabResponse
+{
+    let v_pad = TAB_V_PAD;
     let gap = 6.0;
 
     let label_galley = label.into().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
@@ -43,7 +91,7 @@ pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, clos
     {
         tab_w += gap + close.size().x;
     }
-    let tab_h = label_galley.size().y + v_pad * 2.0;
+    let tab_h = height.unwrap_or(label_galley.size().y + v_pad * 2.0);
 
     let (tab_rect, tab_response) = ui.allocate_exact_size(egui::vec2(tab_w, tab_h), egui::Sense::click());
 
@@ -62,7 +110,7 @@ pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, clos
     ui.painter().rect_filled(tab_rect, TAB_CORNER_RADIUS, bg_color);
 
     // label, vertically centered
-    let label_pos = egui::pos2(tab_rect.left() + h_pad, tab_rect.center().y - label_galley.size().y / 2.0);
+    let label_pos = egui::pos2(tab_rect.left() + h_pad, tab_rect.center().y - text_center_y(&label_galley));
     ui.painter().galley(label_pos, label_galley, ui.visuals().text_color());
 
     // close button
@@ -70,7 +118,7 @@ pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, clos
     if let Some(close_galley) = close_galley
     {
         let close_x = tab_rect.right() - h_pad - close_galley.size().x;
-        let close_y = tab_rect.center().y - close_galley.size().y / 2.0;
+        let close_y = tab_rect.center().y - close_galley.mesh_bounds.center().y;
         let close_rect = egui::Rect::from_min_size
         (
             egui::pos2(close_x - 3.0, close_y - 2.0),

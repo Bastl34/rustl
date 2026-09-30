@@ -9,7 +9,7 @@ use crate::helper::console_log;
 use crate::gui::editor::helper::get_object_and_pointer_world_position;
 use crate::gui::editor::ui::console::create_console_section;
 use crate::gui::editor::ui::debug::create_debug_settings;
-use crate::gui::editor::ui::dialogs::load_texture_dialog;
+use crate::gui::editor::ui::dialogs::{load_sound_dialog, load_texture_dialog};
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
@@ -38,6 +38,9 @@ use super::scenes::create_scene_settings;
 use super::sound::{build_sound_sources_list, create_sound_settings, create_sound_source_settings};
 use super::statistics::{create_chart, create_statistic};
 use super::textures::{create_texture_settings, build_texture_list};
+use super::run_mode_bar::{create_run_mode_bar, RUN_MODE_BAR_HEIGHT, RUN_MODE_BAR_V_PADDING};
+
+const HIERARCHY_MIN_HEIGHT: f32 = 250.0;
 
 pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &mut State)
 {
@@ -64,8 +67,8 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    // status bar — just a single row at the bottom of the screen, separate from the bottom panel
-    egui::Panel::bottom("bottom_status_panel").resizable(true).frame(frame).show(ui, |ui|
+    // status bar
+    egui::Panel::bottom("bottom_status_panel").resizable(false).frame(frame).show(ui, |ui|
     {
         ui.horizontal(|ui|
         {
@@ -124,98 +127,118 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    // bottom panel
-    if editor_state.bottom_panel_open
+    // bottom panel (drag below min size to close, drag the edge handle to reopen)
+    let mut bottom_panel_open = editor_state.bottom_panel_open;
+    egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).min_size(100.0).show_collapsible(ui, &mut bottom_panel_open, |ui|
     {
-        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).show(ui, |ui|
+        ui.horizontal(|ui|
         {
-            ui.horizontal(|ui|
+            ui.spacing_mut().item_spacing.x = 2.0;
+
+            if tab(ui, "📦 Assets", editor_state.bottom == BottomPanel::Assets, false).clicked
             {
-                ui.spacing_mut().item_spacing.x = 2.0;
-
-                if tab(ui, "📦 Assets", editor_state.bottom == BottomPanel::Assets, false).clicked
-                {
-                    editor_state.bottom = BottomPanel::Assets;
-                }
-
-                let console_log_amount = console_log::get_amount();
-                let console_errors = console_log::get_error_amount();
-                let console_label = if console_errors > 0
-                {
-                    egui::RichText::new(format!("📝 Console ({} with Errors)", console_log_amount)).color(egui::Color32::LIGHT_RED)
-                }
-                else
-                {
-                    egui::RichText::new(format!("📝 Console ({})", console_log_amount))
-                };
-                let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
-                if console_errors > 0
-                {
-                    console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
-                }
-                if console_tab.clicked
-                {
-                    editor_state.bottom = BottomPanel::Console;
-                }
-
-                if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
-                {
-                    editor_state.bottom = BottomPanel::Debug;
-                }
-            });
-            tab_separator(ui);
-
-            if editor_state.bottom == BottomPanel::Assets
-            {
-                create_asset_section(editor_state, state, ui);
+                editor_state.bottom = BottomPanel::Assets;
             }
-            else if editor_state.bottom == BottomPanel::Console
+
+            let console_log_amount = console_log::get_amount();
+            let console_errors = console_log::get_error_amount();
+            let console_label = if console_errors > 0
             {
-                create_console_section(editor_state, state, ui);
+                egui::RichText::new(format!("📝 Console {} (with Errors {})", console_log_amount, console_errors)).color(egui::Color32::LIGHT_RED)
             }
-            else if editor_state.bottom == BottomPanel::Debug
+            else
             {
-                create_debug_settings(editor_state, state, ui);
+                egui::RichText::new(format!("📝 Console ({})", console_log_amount))
+            };
+            let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
+            if console_errors > 0
+            {
+                console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
+            }
+            if console_tab.clicked
+            {
+                editor_state.bottom = BottomPanel::Console;
+            }
+
+            if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
+            {
+                editor_state.bottom = BottomPanel::Debug;
             }
         });
-    }
+        tab_separator(ui);
+
+        if editor_state.bottom == BottomPanel::Assets
+        {
+            create_asset_section(editor_state, state, ui);
+        }
+        else if editor_state.bottom == BottomPanel::Console
+        {
+            create_console_section(editor_state, state, ui);
+        }
+        else if editor_state.bottom == BottomPanel::Debug
+        {
+            create_debug_settings(editor_state, state, ui);
+        }
+    });
+    editor_state.bottom_panel_open = bottom_panel_open;
 
     // left panel
-    if editor_state.left_panel_open
+    let mut left_panel_open = editor_state.left_panel_open;
+    egui::Panel::left("left_panel").frame(frame).min_size(150.0).show_collapsible(ui, &mut left_panel_open, |ui|
     {
-        egui::Panel::left("left_panel").frame(frame).min_size(300.0).show(ui, |ui|
-        {
-            ui.set_max_width(ui.available_width());
+        // content in a child ui (>= 300) that doesn't report its size, otherwise the resize line sticks at 300
+        let content_width = ui.available_width().max(300.0);
+        let content_rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(content_width, ui.available_height()));
+        let mut content_ui = ui.new_child(egui::UiBuilder::new().id_salt("left_sidebar_content").max_rect(content_rect).layout(*ui.layout()));
 
-            //ui.add_enabled_ui(!loading, |ui|
-            //{
-                ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui|
-                {
-                    create_left_sidebar(editor_state, state, ui);
-                });
-            //});
-        });
-    }
+        create_left_sidebar(editor_state, state, &mut content_ui);
+
+        // while resizing report the visible width (line follows pointer), otherwise >= 300 (snaps back)
+        let resizing = ui.input(|i| i.pointer.primary_down());
+        let reported_width = if resizing { ui.available_width() } else { content_width };
+        ui.advance_cursor_after_rect(egui::Rect::from_min_size(ui.cursor().min, egui::vec2(reported_width, 0.0)));
+    });
+    editor_state.left_panel_open = left_panel_open;
 
     // right panel
-    if editor_state.right_panel_open
+    let mut right_panel_open = editor_state.right_panel_open;
+    egui::Panel::right("right_panel").frame(frame).min_size(150.0).show_collapsible(ui, &mut right_panel_open, |ui|
     {
-        egui::Panel::right("right_panel").frame(frame).show(ui, |ui|
-        {
-            ui.set_min_width(300.0);
+        ui.set_min_width(300.0);
 
-            //ui.add_enabled_ui(!loading, |ui|
-            //{
-                create_right_sidebar(editor_state, state, ui);
-            //});
-        });
-    }
+        create_right_sidebar(editor_state, state, ui);
+    });
+    editor_state.right_panel_open = right_panel_open;
 
-    // scene tabs — no bottom inner margin so the tabs sit flush on the panel separator
-    let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 2, bottom: 0 });
+    // scene tabs — no vertical inner margin: the tabs sit flush on the panel separator, the row brings its own padding
+    let scene_tabs_frame = frame.inner_margin(egui::Margin { left: 8, right: 8, top: 0, bottom: 0 });
     egui::Panel::top("scene_tabs_panel").frame(scene_tabs_frame).show(ui, |ui|
     {
-        create_scene_tabs(editor_state, state, ui);
+        // the real bar height is only known after drawing, so the last measured one is used
+        let bar_height_id = ui.id().with("run_mode_bar_height");
+        let bar_height = ui.data(|data| data.get_temp::<f32>(bar_height_id)).unwrap_or(RUN_MODE_BAR_HEIGHT);
+
+        // explicit rects: the run mode bar vertically centered on the right, the tabs as high as the bar and flush on the separator
+        let row_height = bar_height + RUN_MODE_BAR_V_PADDING * 2.0;
+        let tabs_height = bar_height;
+        let (_, row_rect) = ui.allocate_space(egui::vec2(ui.available_width(), row_height));
+
+        // top aligned: a centered layout would center the bar's start height and let the content grow downwards
+        let bar_rect = egui::Rect::from_center_size(row_rect.center(), egui::vec2(row_rect.width(), bar_height));
+        let mut bar_ui = ui.new_child(egui::UiBuilder::new().id_salt("run_mode_bar").max_rect(bar_rect).layout(egui::Layout::right_to_left(egui::Align::Min)));
+        create_run_mode_bar(editor_state, state, &mut bar_ui);
+
+        let measured_height = bar_ui.min_rect().height();
+        if (measured_height - bar_height).abs() > 0.5
+        {
+            ui.data_mut(|data| data.insert_temp(bar_height_id, measured_height));
+            ui.ctx().request_repaint();
+        }
+
+        let tabs_right = bar_ui.min_rect().left() - 8.0;
+        let tabs_rect = egui::Rect::from_min_max(egui::pos2(row_rect.left(), row_rect.bottom() - tabs_height), egui::pos2(tabs_right, row_rect.bottom()));
+        let mut tabs_ui = ui.new_child(egui::UiBuilder::new().id_salt("scene_tabs").max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        create_scene_tabs(editor_state, state, &mut tabs_ui, tabs_height);
     });
 
     //top
@@ -249,17 +272,7 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         let shortcut_new = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
         if ui.add(egui::Button::new("New").shortcut_text(ui.ctx().format_shortcut(&shortcut_new))).clicked()
         {
-            editor_state.show_confirm_dialog
-            (
-                "New Project",
-                "Do you really want to create a new project?\nUnsaved changes will be lost.",
-                |editor_state, state|
-                {
-                    editor_state.reset_project();
-                    state.delete_all_scenes(true);
-                    state.add_scene("main scene");
-                }
-            );
+            editor_state.request_new_project();
         }
 
         let shortcut_open = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::O);
@@ -420,9 +433,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         // same height (otherwise the grid menu, added first, sticks to the top)
         ui.set_min_height(icon_size + padding * 2.0);
 
-        let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
-        let mut try_out = editor_state.try_mode;
-
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui|
         {
             create_tool_menu_grid(editor_state, state, ui);
@@ -431,30 +441,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
         {
             ui.spacing_mut().button_padding = egui::vec2(padding, padding);
-
-            // fullscreen change
-            {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/fullscreen.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(fullscreen).frame(true);
-                if ui.add(btn).on_hover_text("Fullscreen").clicked()
-                {
-                    fullscreen = !fullscreen;
-                    state.rendering.fullscreen.set(fullscreen);
-                }
-            }
-
-            // try out mode
-            {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/tryout.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(try_out).frame(true);
-                if ui.add(btn).on_hover_text("Try Out").clicked()
-                {
-                    try_out = !try_out;
-                    editor_state.set_try_mode(state, try_out);
-                }
-            }
-
-            ui.separator();
 
             // gizmo
             {
@@ -510,6 +496,16 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
+            // editor internals (hierarchy, lists and the light/camera debug view)
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/internal_entries.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.show_internal_entries).frame(true);
+                if ui.add(btn).on_hover_text("show editor internals (hierarchy, lists and the light/camera debug view)").clicked()
+                {
+                    editor_state.show_internal_entries = !editor_state.show_internal_entries;
+                }
+            }
+
             // wireframe mode
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/wireframe.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
@@ -525,6 +521,8 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
                 }
             }
+
+            ui.separator();
 
             // bounding volume rendering (cycles off -> spheres -> boxes)
             {
@@ -558,6 +556,40 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     }
                 }
             }
+
+            // physics volume rendering (colliders and character capsules)
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/physics_volumes.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let mut btn = egui::Button::image(img).selected(state.rendering.draw_physics_volumes).frame(true);
+                let supported = state.rendering_adapter.storage_buffer_array_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle physics volume rendering (colliders and character capsules)" } else { "physics volume rendering not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    state.rendering.draw_physics_volumes = !state.rendering.draw_physics_volumes;
+                }
+            }
+
+            // light icons and camera frustums
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/light_camera_volumes.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let mut btn = egui::Button::image(img).selected(state.rendering.draw_light_camera_volumes).frame(true);
+                let supported = state.rendering_adapter.storage_buffer_array_support;
+                if !supported
+                {
+                    btn = btn.sense(egui::Sense::hover());
+                }
+                let hover = if supported { "toggle light and camera rendering (light icons, camera frustums)" } else { "light and camera rendering not supported by this GPU/backend" };
+                if ui.add(btn).on_hover_text(hover).clicked() && supported
+                {
+                    state.rendering.draw_light_camera_volumes = !state.rendering.draw_light_camera_volumes;
+                }
+            }
+
+            ui.separator();
 
             // x-ray mode (Blender-style see-through)
             {
@@ -599,16 +631,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             }
 
             ui.separator();
-
-            // fly camera
-            {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/fly_camera.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(editor_state.fly_camera).frame(true);
-                if ui.add(btn).on_hover_text("fly camera").clicked()
-                {
-                    editor_state.fly_camera = !editor_state.fly_camera;
-                }
-            }
 
             // frame scene (fit the editor camera to the whole scene)
             {
@@ -653,19 +675,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     {
                         editor_state.de_select_current_item(state);
                     }
-                }
-            }
-
-            ui.separator();
-
-            // play/pause
-            {
-                let playing = !state.pause;
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/engine.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(playing).frame(true);
-                if ui.add(btn).on_hover_text("Playing/Pause").clicked()
-                {
-                    state.pause = playing;
                 }
             }
         });
@@ -745,88 +754,97 @@ fn create_tool_menu_grid(editor_state: &mut EditorState, state: &mut State, ui: 
 
 fn create_left_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
-    // statistics
-    collapse_with_title(ui, "chart", true, "📈 Chart", None, |ui|
-    {
-        create_chart(editor_state, state, ui);
-    });
+    let viewport_height = ui.available_height();
 
-    // statistics
-    collapse_with_title(ui, "statistic", true, "ℹ Statistics", None, |ui|
-    {
-        create_statistic(editor_state, state, ui);
-    });
+    // solid scroll bars take their own space, so the sidebar bar doesn't cover the hierarchy bar
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
 
-    // hierarchy
-    collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", None, |ui|
+    ScrollArea::vertical().id_salt("left_sidebar_scroll").auto_shrink([false, false]).show(ui, |ui|
     {
-        ScrollArea::vertical().show(ui, |ui|
+        // both move with the scroll offset, so their difference is the unscrolled content height
+        let content_top = ui.cursor().min.y;
+
+        // chart
+        collapse_with_title(ui, "chart", true, "📈 Chart", None, |ui|
+        {
+            create_chart(editor_state, state, ui);
+        });
+
+        // statistics
+        collapse_with_title(ui, "statistic", false, "ℹ Statistics", None, |ui|
+        {
+            create_statistic(editor_state, state, ui);
+        });
+
+        // hierarchy
+        collapse_with_title(ui, "hierarchy", true, "🗄 Hierarchy", None, |ui|
         {
             ui.scope(|ui|
             {
                 ui.style_mut().visuals.indent_has_left_vline = true;
 
-                let row_width = ui.available_width();
-                let row_height = ui.spacing().interact_size.y;
-                ui.allocate_ui(egui::vec2(row_width, row_height), |ui|
+                // header (add / search / more) stays fixed above the scrolling list
                 {
-                    ui.horizontal(|ui|
+                    let row_width = ui.available_width();
+                    let row_height = ui.spacing().interact_size.y;
+                    ui.allocate_ui(egui::vec2(row_width, row_height), |ui|
                     {
-                        let icon_size = 14.0;
-
-                        // add button
-                        let add_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/add.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
-                        egui::Popup::menu(&add_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
+                        ui.horizontal(|ui|
                         {
-                            ui.set_min_width(120.0);
-                            if ui.button("⊞ Add Scene").clicked()
-                            {
-                                state.add_scene("Scene");
-                                egui::Popup::close_all(ui.ctx());
-                            }
+                            let icon_size = 14.0;
 
-                            if ui.button("⬇ Import Scene").clicked()
+                            // add button
+                            let add_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/add.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
+                            egui::Popup::menu(&add_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
                             {
-                                let loading_state = editor_state.loading.clone();
-                                let loading_progress_state = editor_state.loading_progress.clone();
-                                if let Some(new_scene_id) = crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state)
+                                ui.set_min_width(120.0);
+                                if ui.button("⊞ Add Scene").clicked()
                                 {
-                                    if !editor_state.open_scene_tabs.contains(&new_scene_id)
-                                    {
-                                        editor_state.open_scene_tabs.push(new_scene_id);
-                                    }
-                                    editor_state.selected_scene_id = Some(new_scene_id);
-                                    editor_state.selected_object.clear();
-                                    editor_state.selected_type = SelectionType::None;
-                                    editor_state.settings_panel = SettingsPanel::Scene;
-                                    state.set_active_scene(new_scene_id);
+                                    state.add_scene("Scene").add_default_lights_and_cam();
+                                    egui::Popup::close_all(ui.ctx());
                                 }
 
-                                egui::Popup::close_all(ui.ctx());
-                            }
-                        });
+                                if ui.button("⬇ Import Scene").clicked()
+                                {
+                                    let loading_state = editor_state.loading.clone();
+                                    let loading_progress_state = editor_state.loading_progress.clone();
+                                    if let Some(new_scene_id) = crate::gui::editor::editor_project::import_editor_scene_with_dialog(state, loading_state, loading_progress_state)
+                                    {
+                                        if !editor_state.open_scene_tabs.contains(&new_scene_id)
+                                        {
+                                            editor_state.open_scene_tabs.push(new_scene_id);
+                                        }
+                                        editor_state.selected_scene_id = Some(new_scene_id);
+                                        editor_state.selected_object.clear();
+                                        editor_state.selected_type = SelectionType::None;
+                                        editor_state.settings_panel = SettingsPanel::Scene;
+                                        state.set_active_scene(new_scene_id);
+                                    }
 
-                        // more button — add right-to-left so TextEdit gets exact remaining space
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
-                        {
-                            let more_btn = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../../../../resources/icons/more.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size))));
-                            egui::Popup::menu(&more_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui|
-                            {
-                                ui.set_min_width(160.0);
-                                ui.checkbox(&mut editor_state.show_internal_entries, "Show Internal Entries").on_hover_text("Show nodes that are used by the editor, like the grid or the camera node.");
+                                    egui::Popup::close_all(ui.ctx());
+                                }
                             });
 
-                            let search_response = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(f32::INFINITY));
-                            let icon_rect = egui::Rect::from_center_size(egui::pos2(search_response.rect.right() - icon_size / 2.0 - 4.0, search_response.rect.center().y),egui::vec2(icon_size, icon_size));
-                            egui::Image::new(egui::include_image!("../../../../resources/icons/search.svg")).tint(ui.visuals().weak_text_color()).paint_at(ui, icon_rect);
+                            // right-to-left so the TextEdit gets exact remaining space
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui|
+                            {
+                                let search_response = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_filter).desired_width(f32::INFINITY));
+                                let icon_rect = egui::Rect::from_center_size(egui::pos2(search_response.rect.right() - icon_size / 2.0 - 4.0, search_response.rect.center().y),egui::vec2(icon_size, icon_size));
+                                egui::Image::new(egui::include_image!("../../../../resources/icons/search.svg")).tint(ui.visuals().weak_text_color()).paint_at(ui, icon_rect);
+                            });
                         });
                     });
+
+                    ui.separator();
+                }
+
+                // hierarchy — fills the rest of the panel (minus the bottom padding of collapse())
+                let used_height = ui.cursor().min.y - content_top;
+                let scroll_height = (viewport_height - used_height - 12.0).max(HIERARCHY_MIN_HEIGHT);
+                ScrollArea::vertical().id_salt("hierarchy_scroll").max_height(scroll_height).auto_shrink([false, false]).show(ui, |ui|
+                {
+                    create_hierarchy(editor_state, state, ui);
                 });
-
-                ui.separator();
-
-                // hierarchy
-                create_hierarchy(editor_state, state, ui);
             });
         });
     });
@@ -859,8 +877,8 @@ fn create_right_sidebar(editor_state: &mut EditorState, state: &mut State, ui: &
 
         if editor_state.selected_type == SelectionType::Object && !editor_state.selected_object.is_empty()
         {
-            settings_tab(ui, SettingsPanel::Components, " Components");
             settings_tab(ui, SettingsPanel::Object, "◼ Object");
+            settings_tab(ui, SettingsPanel::Components, " Components");
 
             object_settings = true;
         }
@@ -1438,7 +1456,22 @@ fn create_resources_entries(state: &mut State, editor_state: &mut EditorState, e
                 }
 
                 let mut selection; if editor_state.selected_scene_id == None && editor_state.selected_object.is_empty() &&  editor_state.selected_type == SelectionType::SoundSource { selection = true; } else { selection = false; }
-                if ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sound Sources ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong()).clicked()
+                let toggle = ui.toggle_value(&mut selection, RichText::new(format!("🔊 Sound Sources ({})", sound_sources_amount)).color(Color32::LIGHT_GRAY).strong());
+
+                toggle.context_menu(|ui|
+                {
+                    if ui.button("Add New Sound").on_hover_text("loads a sound file into the sound resources - controllers can pick it then").clicked()
+                    {
+                        let exec_queue = exec_queue.clone();
+                        spawn_thread(move ||
+                        {
+                            load_sound_dialog(exec_queue.clone(), None);
+                        });
+                        ui.close();
+                    }
+                });
+
+                if toggle.clicked()
                 {
                     if selection
                     {

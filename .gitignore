@@ -1,5 +1,4 @@
 target/
-Cargo.lock
 .DS_Store
 
 pos.data
@@ -13,3 +12,5 @@ flamegraph*.svg
 data/
 resources/objects/temp
 resourcesLocal/
+
+tools/

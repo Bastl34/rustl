@@ -108,9 +108,19 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             binding_row_mixed(ui, &[Chip::Mouse("Wheel")],                            "Step-rotate object (in rotate mode)");
             binding_row_mixed(ui, &[Chip::Mouse("drag asset")],                       "Drop asset from panel into viewport");
 
+            // camera
+            category_header(ui, "  Camera");
+            binding_row_mixed(ui, &[Chip::Mouse("drag")],                             "Look around (perspective view)");
+            binding_row(ui, &["W / A / S / D"],                                       "Move camera");
+            binding_row(ui, &["Space / C"],                                           "Up / down (ortho views: zoom)");
+            binding_row(ui, &["Shift"],                                               "Move faster (while moving)");
+            binding_row_mixed(ui, &[Chip::Mouse("MMB"), Chip::Mouse("drag")],         "Pan (ortho views)");
+            binding_row_mixed(ui, &[Chip::Mouse("Wheel")],                            "Zoom (ortho views)");
+
             // project
             category_header(ui, "  Project");
             binding_row(ui, &["Ctrl", "S"], "Save project");
+            binding_row(ui, &["Ctrl", "Shift", "S"], "Save project as");
             binding_row(ui, &["Ctrl", "O"], "Open project");
             binding_row(ui, &["Ctrl", "N"], "New project");
 
@@ -123,16 +133,21 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             binding_row(ui, &["Ctrl", "Alt", "B"], "Toggle right sidebar");
             binding_row(ui, &["Ctrl", "J"],        "Toggle bottom panel");
 
-            // try mode
-            category_header(ui, "  Try Mode");
-            binding_row(ui, &["Ctrl", "R"],  "Start try mode");
-            binding_row(ui, &["Escape"],     "Exit try mode");
+            // play / simulate
+            category_header(ui, "  Play / Simulate");
+            binding_row(ui, &["Ctrl", "R"],          "Play");
+            binding_row(ui, &["Ctrl", "Shift", "R"], "Play in fullscreen");
+            binding_row(ui, &["Ctrl", "T"],          "Simulate - physics runs, the editor stays open");
+            binding_row(ui, &["Ctrl", "Shift", "T"], "Simulate in fullscreen");
+            binding_row(ui, &["P"],                  "Pause / resume");
+            binding_row(ui, &["Escape"],             "Stop - back to edit mode");
 
             // selection
             category_header(ui, "  Selection");
             binding_row(ui, &["B"],            "Box select (drag a rect, x-ray mode selects through)");
             binding_row_mixed(ui, &[Chip::Key("B"), Chip::Key("Ctrl"), Chip::Mouse("drag")], "Box select: extend current selection");
             binding_row_mixed(ui, &[Chip::Key("B"), Chip::Key("Shift"), Chip::Mouse("drag")], "Box select: deselect boxed objects");
+            binding_row_mixed(ui, &[Chip::Key("B"), Chip::Mouse("RMB")], "Box select: cancel (also Escape or B again)");
             binding_row(ui, &["Escape"],       "Deselect object / cancel action");
             binding_row(ui, &["Ctrl", "C"],    "Copy selected object");
             binding_row(ui, &["Ctrl", "V"],    "Paste object");
@@ -150,13 +165,20 @@ pub fn create_modal_help_shortcuts(editor_state: &mut EditorState, ctx: &egui::C
             binding_row(ui, &["Shift", "X"],  "Constrain to YZ plane");
             binding_row(ui, &["Shift", "Y"],  "Constrain to XZ plane");
             binding_row(ui, &["Shift", "Z"],  "Constrain to XY plane");
+            binding_row(ui, &["Ctrl"],        "Grab: snap to grid center / rotate: 22.5° steps");
+            binding_row(ui, &["Shift"],       "Grab: snap bottom-left to grid / rotate: snap to 22.5°");
+            binding_row_mixed(ui, &[Chip::Mouse("LMB")], "End rotate (continues as grab)");
             binding_row(ui, &["Escape"],      "Cancel transform");
+
+            // gizmo
+            category_header(ui, "  Gizmo  (while dragging a handle)");
+            binding_row(ui, &["Ctrl"],        "Snap (move: grid center, rotate / scale: steps)");
+            binding_row(ui, &["Shift"],       "Move: snap bottom-left / rotate: slow / scale: uniform");
 
             // rendering
             category_header(ui, "  Rendering");
             binding_row(ui, &["Shift", "Z"],  "Toggle wireframe mode");
             binding_row(ui, &["Alt", "Z"],    "Toggle x-ray mode");
-            binding_row(ui, &["Ctrl", "Alt", "Q"], "Toggle quad view");
 
             // grid
             category_header(ui, "  Grid");

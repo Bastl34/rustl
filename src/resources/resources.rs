@@ -187,6 +187,46 @@ pub fn exists(path: &str) -> bool
 }
 
 
+// A file inside the bundled resources as the path relative to them ("sounds/vehicle/skid.ogg"), like read_files_recursive lists them - None for other files.
+pub fn to_resource_path(path: &str) -> Option<String>
+{
+    let path = path.replace('\\', "/");
+    let bundled = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR);
+
+    if !std::path::Path::new(&path).is_absolute()
+    {
+        if bundled.join(&path).exists()
+        {
+            return Some(path);
+        }
+
+        // relative to the working directory, like "resources/sounds/..."
+        let stripped = path.strip_prefix(&format!("{}/", RESOURCES_DIR))?;
+        return if bundled.join(stripped).exists() { Some(stripped.to_string()) } else { None };
+    }
+
+    // the bundled copy or the resources folder in the working directory - but only files the bundled copy has
+    let target = std::fs::canonicalize(&path).ok()?;
+    let roots = [Some(bundled.clone()), env::current_dir().ok().map(|dir| dir.join(RESOURCES_DIR))];
+
+    for root in roots.into_iter().flatten()
+    {
+        if let Ok(root) = std::fs::canonicalize(root)
+        {
+            if let Ok(relative) = target.strip_prefix(&root)
+            {
+                let relative = relative.to_string_lossy().replace('\\', "/");
+                if bundled.join(&relative).exists()
+                {
+                    return Some(relative);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 pub fn get_path(path: &str) -> String
 {
     cfg_if!

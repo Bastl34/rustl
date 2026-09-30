@@ -267,7 +267,12 @@ pub fn inverse_ray(ray: &Ray, trans_inverse: &Matrix4<f32>) -> Ray
     let ray_inverse_start = trans_inverse * origin.to_homogeneous();
     let ray_inverse_dir = trans_inverse * dir.to_homogeneous();
 
-    Ray::new(Point3::from_homogeneous(ray_inverse_start).unwrap().into(), Vector3::from_homogeneous(ray_inverse_dir).unwrap().into())
+    // a degenerate or non finite transform has no usable inverse - a ray that hits nothing
+    // is the right answer there, panicking is not
+    let origin = Point3::from_homogeneous(ray_inverse_start).unwrap_or(Point3::origin());
+    let dir = Vector3::from_homogeneous(ray_inverse_dir).unwrap_or(Vector3::zeros());
+
+    Ray::new(origin.into(), dir.into())
 }
 
 /*

@@ -395,7 +395,8 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput
     out.view_dir = camera.view_pos.xyz - out.position;
 
     // object space position/normal (raw, not normalized - fragment shader normalizes the normal for the mapping projection)
-    out.object_position = object_position.xyz;
+    // divide by w: skinning accumulates w = sum(weights) - max() keeps a weightless vertex at (0,0,0) instead of NaN
+    out.object_position = object_position.xyz / max(object_position.w, 0.0001);
     out.object_normal = object_normal.xyz;
 
     // object -> world rotation (scale removed) as a quaternion - brings object space mapped normals into world space
@@ -1210,8 +1211,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
             if (lights[i].light_type == 4u) //LIGHT_TYPE_HEMISPHERIC
             {
+                // dir is where the light travels (as for a directional light), so normals facing against it get the sky color
                 let dir = normalize(lights[i].dir.xyz);
-                let normal_dot_light_dir = dot(normal, dir);
+                let normal_dot_light_dir = dot(normal, -dir);
 
                 let light_contrib = clamp(normal_dot_light_dir, -1.0, 1.0) * 0.5 + 0.5;
                 let light_color = mix(lights[i].ground_color, lights[i].color, light_contrib);

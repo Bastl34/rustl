@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::{gamepad::Gamepad, input_point::InputPoint, keyboard::Keyboard, mouse::{Mouse, MouseButton}, touch::Touch};
 
@@ -16,7 +16,7 @@ pub struct InputManager
 {
     pub keyboard: Keyboard,
     pub mouse: Mouse,
-    pub gamepads: HashMap<usize, Gamepad>,
+    pub gamepads: BTreeMap<usize, Gamepad>, // by player id 1.., which stays while the gamepad is known
     pub touch: Touch,
 
     pub last_input_device: InputType
@@ -30,7 +30,7 @@ impl InputManager
         {
             keyboard: Keyboard::new(),
             mouse: Mouse::new(),
-            gamepads: HashMap::new(),
+            gamepads: BTreeMap::new(),
             touch: Touch::new(),
 
             last_input_device: InputType::Unkown
@@ -69,6 +69,29 @@ impl InputManager
         {
             gamepad.update_states();
         }
+    }
+
+    // the lowest player id no gamepad holds, starting at 1
+    pub fn free_gamepad_id(&self) -> usize
+    {
+        (1..).find(|id| !self.gamepads.contains_key(id)).unwrap()
+    }
+
+    // the gamepad of a player id, connected or not
+    pub fn gamepad(&self, id: usize) -> Option<&Gamepad>
+    {
+        self.gamepads.get(&id)
+    }
+
+    pub fn gamepad_mut(&mut self, id: usize) -> Option<&mut Gamepad>
+    {
+        self.gamepads.get_mut(&id)
+    }
+
+    // the gamepad gilrs knows by this uid
+    pub fn gamepad_by_uid_mut(&mut self, uid: usize) -> Option<&mut Gamepad>
+    {
+        self.gamepads.values_mut().find(|gamepad| gamepad.uid == uid)
     }
 
     pub fn get_pointer_input(&self) -> InputPoint

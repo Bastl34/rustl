@@ -121,8 +121,8 @@ impl Pipeline
                 entry_point: Some("vs_main"),
                 buffers:
                 &[
-                    Vertex::desc(),
-                    Instance::desc()
+                    Some(Vertex::desc()),
+                    Some(Instance::desc())
                 ],
                 compilation_options: Default::default(),
             },
@@ -304,8 +304,8 @@ impl Pipeline
                 entry_point: Some("vs_main"),
                 buffers:
                 &[
-                    Vertex::desc(),
-                    Instance::desc()
+                    Some(Vertex::desc()),
+                    Some(Instance::desc())
                 ],
                 compilation_options: Default::default(),
             },

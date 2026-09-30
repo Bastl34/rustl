@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use egui::{Color32, RichText, Ui};
 use rfd::FileDialog;
 
-use crate::{component_downcast, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::concurrency::thread::spawn_thread, state::{resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
+use crate::{component_downcast, component_downcast_mut, gui::{editor::{editor::EDITOR_INTERNAL_TAG, ui::helper::ui_helper::{fit_hierarchy_heading, rename_hierarchy_item_or_toggle_selection}}, helper::{generic_items::collapse_with_title, info_box::info_box}}, helper::{concurrency::thread::spawn_thread, option_or_id::OptionOrId}, state::{resources::sound_source::SoundSourceItem, scene::{components::{component::Component, sound::Sound}, scene::Scene}, state::{State, ENGINE_INTERNAL_TAG}}};
 
 use crate::gui::editor::ui::dialogs::load_sound_dialog;
 use super::super::editor_state::{EditorState, SelectionType, SettingsPanel};
@@ -182,6 +182,42 @@ pub fn create_sound_source_settings(editor_state: &mut EditorState, state: &mut 
     }
 }
 
+// picks the sound resource the component plays
+fn sound_source_combo(ui: &mut Ui, sound: &mut Sound, sound_sources: &[SoundSourceItem])
+{
+    let current = sound.sound_source.as_ref().cloned();
+    let text = match &sound.sound_source
+    {
+        OptionOrId::Some(source) => RichText::new(source.read().unwrap().name.clone()),
+        OptionOrId::Id(uuid) => RichText::new(format!("⚠ missing {}", uuid)).color(Color32::LIGHT_RED),
+        OptionOrId::None => RichText::new("none"),
+    };
+
+    ui.horizontal(|ui|
+    {
+        ui.label("Sound Resource: ");
+        egui::ComboBox::from_id_salt("sound_component_source").width(220.0).selected_text(text).show_ui(ui, |ui|
+        {
+            for source in sound_sources
+            {
+                let selected = current.as_ref().is_some_and(|current| Arc::ptr_eq(current, source));
+                let (name, path) = { let source = source.read().unwrap(); (source.name.clone(), source.origin_path().unwrap_or("").to_string()) };
+
+                if ui.selectable_label(selected, name).on_hover_text(path).clicked() && !selected
+                {
+                    let running = sound.running();
+                    sound.set_sound_source(source.clone());
+
+                    if running
+                    {
+                        sound.start();
+                    }
+                }
+            }
+        });
+    });
+}
+
 pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     // no scene selected
@@ -191,6 +227,7 @@ pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, 
     let (sound_id, ..) = editor_state.get_object_ids();
 
     let main_queue = state.main_thread_execution_queue.clone();
+    let sound_sources = state.list_sound_sources();
     let scene = state.find_scene_by_id_mut(scene_id);
     if scene.is_none() { return; }
 
@@ -203,7 +240,8 @@ pub fn create_sound_settings(editor_state: &mut EditorState, state: &mut State, 
     {
         collapse_with_title(ui, "sound_settings", true, "🔊 Sound Settings", None, |ui|
         {
-            let mut sound = sound.write().unwrap();
+            component_downcast_mut!(sound, Sound);
+            sound_source_combo(ui, sound, &sound_sources);
             sound.ui(ui, None);
         });
 

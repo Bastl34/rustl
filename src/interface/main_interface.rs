@@ -26,7 +26,6 @@ use crate::state::scene::utilities::scene_utils::highlight_and_unhighlight_scene
 use crate::{console_debug, console_error, console_log, rendering};
 use crate::rendering::egui::EGui;
 use crate::rendering::scene::Scene;
-use crate::gui::editor::editor::Editor;
 use crate::rendering::wgpu::WGpu;
 use crate::state::helper::render_item::get_render_item_mut;
 use crate::state::state::{State, FPS_CHART_VALUES, REFERENCE_UPDATE_FRAMES};
@@ -36,6 +35,9 @@ use super::context::Context;
 use super::gilrs::{gilrs_event, gilrs_initialize};
 use super::winit::{winit_map_key, winit_map_physical_key};
 
+#[cfg(feature = "editor")]
+use crate::gui::editor::editor::Editor;
+
 pub struct MainInterface
 {
     pub context: Context,
@@ -43,6 +45,8 @@ pub struct MainInterface
     app: Option<Box<dyn App>>,
 
     gilrs: Option<Gilrs>,
+
+    #[cfg(feature = "editor")]
     editor_gui: Option<Editor>,
 }
 
@@ -73,15 +77,11 @@ impl MainInterface
 
         let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
 
-        let use_editor = !env::args().any(|a| a == "--no-editor");
-
-        let editor_gui = if use_editor
+        #[cfg(feature = "editor")]
+        let editor_gui =
         {
-            Some(Editor::new())
-        }
-        else
-        {
-            None
+            let use_editor = !env::args().any(|a| a == "--no-editor");
+            if use_editor { Some(Editor::new()) } else { None }
         };
 
         let gilrs_res = Gilrs::new();
@@ -97,7 +97,7 @@ impl MainInterface
             {
                 state,
 
-                window_title: window.title().clone(),
+                window_title: format!("Rustl v{}", env!("CARGO_PKG_VERSION")),
                 window_minimized: false,
 
                 wgpu,
@@ -113,6 +113,8 @@ impl MainInterface
             app: None,
 
             gilrs,
+
+            #[cfg(feature = "editor")]
             editor_gui,
         };
 
@@ -134,6 +136,7 @@ impl MainInterface
             }
 
             // init editor
+            #[cfg(feature = "editor")]
             if let Some(editor_gui) = &mut self.editor_gui
             {
                 editor_gui.init(state, &self.context.egui, scene_id);
@@ -296,7 +299,20 @@ impl MainInterface
                     state.stats.fps_1_percent_low_chart.pop_front();
                 }
 
-                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", &self.context.window_title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
+                let title = if state.project.name.trim().is_empty()
+                {
+                    self.context.window_title.clone()
+                }
+                else if state.project.version.trim().is_empty()
+                {
+                    format!("{} | {}", &self.context.window_title, state.project.name.trim())
+                }
+                else
+                {
+                    format!("{} | {} v{}", &self.context.window_title, state.project.name.trim(), state.project.version.trim())
+                };
+
+                self.context.window.set_title(format!("{} | FPS: {} (1%L: {})", title, state.stats.last_fps, state.stats.last_fps_1_percent_low).as_str());
                 state.stats.fps = 0;
                 state.stats.frame_times.clear();
             }
@@ -314,6 +330,7 @@ impl MainInterface
 
 
         // ******************** editor/ui update ********************
+        #[cfg(feature = "editor")]
         if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
@@ -370,6 +387,7 @@ impl MainInterface
         }
 
         // ******************** build ui ********************
+        #[cfg(feature = "editor")]
         if let Some(editor_gui) = &mut self.editor_gui
         {
             let now = Instant::now();
@@ -387,7 +405,7 @@ impl MainInterface
 
 
         // ******************** app update ********************
-        if !self.context.state.borrow().pause
+        if self.context.state.borrow().run_mode.updates_engine()
         {
             let now = Instant::now();
             self.app_update();
@@ -405,8 +423,8 @@ impl MainInterface
         }
 
 
-        // ******************** update scene and rendering ********************
-        if !self.context.state.borrow().pause
+        // ******************** update scene and rendering items ********************
+        if self.context.state.borrow().run_mode.updates_engine()
         {
             let engine_update_time = Instant::now();
 
@@ -420,7 +438,8 @@ impl MainInterface
                 self.context.wgpu.create_msaa_texture(msaa_samples);
             }
 
-            state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+            let physics_update_time = state.update(state.stats.frame_update_time, state.stats.frame_scale, state.stats.frame);
+            state.stats.physics_update_time = physics_update_time / 1000.0; // physic times are based on micros
 
             rendering::state::update(&mut self.context.wgpu, state);
 
@@ -472,6 +491,7 @@ impl MainInterface
             swap(&mut scenes, &mut state.scenes);
 
             state.stats.engine_update_time = engine_update_time.elapsed().as_micros() as f32 / 1000.0;
+            state.stats.engine_update_time -= state.stats.physics_update_time; // get raw update time without physics
         }
 
 
@@ -520,6 +540,7 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
+                        render_scene.run_mode = state.run_mode;
 
                         scene.notify_before_render_all();
 
@@ -529,12 +550,12 @@ impl MainInterface
                         scene.notify_after_render_all();
 
                         // update visibility info for cameras
-                        let mut enabled_index = 0;
-                        for cam in scene.cameras.iter_mut()
+                        for render_result in &render_results
                         {
-                            if !cam.enabled { continue; }
-                            cam.visible_nodes_last_frame = render_results[enabled_index].objects_visible.clone();
-                            enabled_index += 1;
+                            if let Some(cam) = scene.get_camera_by_id_mut(render_result.camera_id)
+                            {
+                                cam.visible_nodes_last_frame = render_result.objects_visible.clone();
+                            }
                         }
 
                         // all draw calls (camera passes + shadow passes)
@@ -575,6 +596,7 @@ impl MainInterface
                 }
 
                 // render egui
+                #[cfg(feature = "editor")]
                 if let Some(editor_gui) = &mut self.editor_gui
                 {
                     let now = Instant::now();
@@ -656,12 +678,14 @@ impl MainInterface
                         render_scene.distance_sorting = state.rendering.distance_sorting;
                         render_scene.frustum_culling = state.rendering.frustum_culling;
                         render_scene.occlusion_culling = state.rendering.occlusion_culling;
+                        render_scene.run_mode = state.run_mode;
                         render_scene.render(&mut self.context.wgpu, &view, &msaa_view, &mut encoder, scene);
 
                         scene.render_item = render_item;
                     }
 
                     // egui overlay
+                    #[cfg(feature = "editor")]
                     if let Some(editor_gui) = &mut self.editor_gui
                     {
                         if editor_gui.editor_state.visible
@@ -785,14 +809,31 @@ impl MainInterface
 
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
+        #[cfg(feature = "editor")]
         let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {
-            editor_gui.editor_state.visible && self.context.egui.on_event(event, self.context.window.clone())
+            if editor_gui.editor_state.visible
+            {
+                self.context.egui.on_event(event, self.context.window.clone())
+            }
+            else
+            {
+                // keep egui's modifier state in sync while hidden, otherwise a Ctrl held on entering play mode stays stuck and turns the wheel into zoom
+                if matches!(event, winit::event::WindowEvent::ModifiersChanged(_) | winit::event::WindowEvent::Focused(_))
+                {
+                    _ = self.context.egui.on_event(event, self.context.window.clone());
+                }
+
+                false
+            }
         }
         else
         {
             false
         };
+
+        #[cfg(not(feature = "editor"))]
+        let egui_consumed = false;
 
 
         // Always forward mouse button releases to the input manager, even if egui consumed the event.
@@ -950,6 +991,7 @@ impl MainInterface
                 {
                     if let Some(path) = path.to_str()
                     {
+                        #[cfg(feature = "editor")]
                         if let Some(editor_gui) = &mut self.editor_gui
                         {
                             editor_gui.apply_external_asset_drag(global_state, path.to_string());

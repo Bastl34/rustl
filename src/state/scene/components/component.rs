@@ -12,7 +12,7 @@ use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
-use crate::state::state::InputOutput;
+use crate::state::state::{InputOutput, RunMode};
 
 pub type ComponentBox = Box<dyn Component>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component>>>;
@@ -32,10 +32,18 @@ pub trait Component: Any + Send + Sync
     fn is_serializable(&self) -> bool { true }
     fn run_after_deserialize(&mut self, context: &mut DeserializationContext);
 
+    // saved in the project with its node - the others come back with the asset the node is loaded from
+    fn saved_with_node(&self) -> bool { false }
+
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
     fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
     fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
+
+    fn runs_in_mode(&self, run_mode: RunMode) -> bool
+    {
+        run_mode.updates_engine()
+    }
 
     fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component

@@ -7,8 +7,8 @@ todo:
  * action management
  * dynamic shader pipelines (backface culling, depth test/write, blending)
  * move editor to extra crate
- * physics
  * null engine
+ * PBR
 
 done:
  * winit + wgpu update
@@ -46,3 +46,4 @@ done:
  * better scene statistics graph
  * dead lock while loading an object/scene (just sometimes)
  * offscreen rendering
+ * physics

@@ -90,11 +90,24 @@ mod state
             pub(crate) mod delay;
         }
 
+        pub(crate) mod physics
+        {
+            pub(crate) mod physics_world;
+        }
+
         pub(crate) mod scene_controller
         {
             pub(crate) mod scene_controller;
-            pub(crate) mod generic_controller;
             pub(crate) mod char_controller;
+            pub(crate) mod vehicle_controller;
+
+            pub(crate) mod vehicle
+            {
+                pub(crate) mod engine;
+                pub(crate) mod engine_sound;
+                pub(crate) mod presets;
+                pub(crate) mod tire_marks;
+            }
         }
 
         pub(crate) mod camera_controller
@@ -134,17 +147,28 @@ mod state
         pub(crate) mod mesh_resource;
     }
 
+    pub(crate) mod project
+    {
+        pub(crate) mod project;
+        pub(crate) mod loader;
+    }
+
 
 }
 
 mod gui
 {
+    // generic egui widgets - also used by scene components for their inspector UI,
+    // so this stays available without the editor
     pub(crate) mod helper
     {
         pub(crate) mod info_box;
+        pub(crate) mod property_items;
+        #[cfg(feature = "editor")]
         pub(crate) mod generic_items;
     }
 
+    #[cfg(feature = "editor")]
     pub(crate) mod editor
     {
         pub(crate) mod editor;
@@ -175,6 +199,7 @@ mod gui
             pub(crate) mod lights;
             pub(crate) mod scenes;
             pub(crate) mod scene_tabs;
+            pub(crate) mod run_mode_bar;
             pub(crate) mod general;
             pub(crate) mod project;
             pub(crate) mod debug;
@@ -199,6 +224,8 @@ pub(crate) mod input
     pub(crate) mod mouse;
     pub(crate) mod touch;
     pub(crate) mod gamepad;
+
+    pub(crate) mod input_binding;
 }
 
 pub(crate) mod output

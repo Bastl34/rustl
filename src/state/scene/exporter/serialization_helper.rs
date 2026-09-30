@@ -6,7 +6,6 @@ use crate::{helper::option_or_id::OptionOrId, state::{resources::{mesh_resource:
 
 
 pub fn default_true() -> bool { true }
-pub fn is_true(v: &bool) -> bool { *v }
 pub fn is_false(v: &bool) -> bool { !*v }
 
 
@@ -173,6 +172,13 @@ where
         OptionOrId::Some(item) =>
         {
             let guard = item.read().map_err(serde::ser::Error::custom)?;
+
+            // deleted, only the reference was not released yet
+            if guard.get_base().delete_later_request
+            {
+                return serializer.serialize_none();
+            }
+
             serializer.serialize_str(&guard.get_base().uuid)
         }
         OptionOrId::Id(uuid) =>

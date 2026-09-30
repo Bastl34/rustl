@@ -643,7 +643,7 @@ impl Texture
         wgpu.device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
         // ********** remove padding **********
-        let padded_data = slice.get_mapped_range();
+        let padded_data = slice.get_mapped_range().unwrap();
         let data = remove_padding(&padded_data, &buffer_dimensions);
         drop(padded_data);
         output_buffer.unmap();

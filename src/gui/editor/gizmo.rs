@@ -2,7 +2,7 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{distance, Point2, Point3, UnitQuaternion, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::helper::transform_vec_to_parent_local, helper::{concurrency::thread::spawn_thread, math::{self, extract_rotation_as_euler_vec, extract_rotation_only, signed_angle_between_points, snap_to_grid}}, input::{keyboard::Modifier, mouse::MouseButton}, state::{scene::{camera::CameraProjectionType, components::{material::{BlendMode, Material}, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP}, loader::loader as scene_utils, scene::Scene, utilities::scene_utils::execute_on_scene_mut_and_wait}, state::{RunMode, State}}};
 
 use super::{editor_state::{EditorState, GizmoTranslationAnchor, GizmoTypeAndAxis}, grid::create_grid, helper::{apply_fly_camera_move_state, find_transform_component, get_parent_world_transform_from_selected_node, get_world_transform_from_selected_node, pick_node, set_internal_tag_for_utils_nodes}};
 
@@ -252,6 +252,31 @@ pub fn update_gizmo_visibility(editor_state: &mut EditorState, state: &mut State
     }
 }
 
+pub fn hide_gizmos(state: &mut State)
+{
+    for scene in &mut state.scenes
+    {
+        let gizmo_translation = scene.find_node_by_name("gizmo_position");
+        let gizmo_rotation = scene.find_node_by_name("gizmo_rotation");
+        let gizmo_scale = scene.find_node_by_name("gizmo_scale");
+
+        if let Some(gizmo_translation) = gizmo_translation
+        {
+            gizmo_translation.write().unwrap().settings.visible = false;
+        }
+
+        if let Some(gizmo_rotation) = gizmo_rotation
+        {
+            gizmo_rotation.write().unwrap().settings.visible = false;
+        }
+
+        if let Some(gizmo_scale) = gizmo_scale
+        {
+            gizmo_scale.write().unwrap().settings.visible = false;
+        }
+    }
+}
+
 pub fn update_position_gizmo(pointer_pos: Point2<f32>, first_action: bool, input_active: bool, editor_state: &mut EditorState, state: &mut State) -> bool
 {
     if !editor_state.gizmo_position
@@ -341,10 +366,12 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, first_action: bool, input
                 {
                     let selected_gizmo = editor_state.selected_gizmo.clone();
 
+                    let run_mode = state.run_mode;
                     let (scene, _, _) = editor_state.get_selected_node(state);
-                    for camera in &scene.unwrap().cameras
+                    let scene = scene.unwrap();
+                    for camera in &scene.cameras
                     {
-                        if camera.enabled && camera.is_point_in_viewport(&pointer_pos)
+                        if scene.is_camera_active(camera, run_mode) && camera.is_point_in_viewport(&pointer_pos)
                         {
                             let ray = camera.get_ray_from_viewport_coordinates(&pointer_pos);
                             let ray_dir = Vector3::new(ray.dir.x, ray.dir.y, ray.dir.z);
@@ -405,11 +432,13 @@ pub fn update_position_gizmo(pointer_pos: Point2<f32>, first_action: bool, input
             {
                 let anchor_camera_id = anchor.camera_id;
 
+                let run_mode = state.run_mode;
                 let (scene, _, _) = editor_state.get_selected_node(state);
-                for camera in &scene.unwrap().cameras
+                let scene = scene.unwrap();
+                for camera in &scene.cameras
                 {
                     // stick to the camera the drag started in -> the object keeps following even if the pointer leaves the viewport/window
-                    if camera.enabled && camera.id == anchor_camera_id
+                    if scene.is_camera_active(camera, run_mode) && camera.id == anchor_camera_id
                     {
                         ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
                         break;
@@ -613,10 +642,12 @@ pub fn update_rotation_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<
             {
                 let selected_gizmo = editor_state.selected_gizmo.clone();
 
+                let run_mode = state.run_mode;
                 let (scene, _, _) = editor_state.get_selected_node(state);
-                for camera in &scene.unwrap().cameras
+                let scene = scene.unwrap();
+                for camera in &scene.cameras
                 {
-                    if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
+                    if scene.is_camera_active(camera, run_mode) && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
                     {
                         ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
                         ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
@@ -793,10 +824,12 @@ pub fn update_scale_gizmo(pointer_pos: Point2<f32>, pointer_pos_last: Point2<f32
             {
                 let selected_gizmo = editor_state.selected_gizmo.clone();
 
+                let run_mode = state.run_mode;
                 let (scene, _, _) = editor_state.get_selected_node(state);
-                for camera in &scene.unwrap().cameras
+                let scene = scene.unwrap();
+                for camera in &scene.cameras
                 {
-                    if camera.enabled && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
+                    if scene.is_camera_active(camera, run_mode) && camera.is_point_in_viewport(&pointer_pos) && camera.is_point_in_viewport(&pointer_pos_last)
                     {
                         ray_last = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos_last));
                         ray_now = Some(camera.get_ray_from_viewport_coordinates(&pointer_pos));
@@ -951,6 +984,7 @@ pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, st
         }
     }
 
+    let run_mode = state.run_mode;
     let (scene, _, _) = editor_state.get_selected_node(state);
     let scene = scene.unwrap();
 
@@ -965,10 +999,10 @@ pub fn update_gizmo_transforms_and_visibility(editor_state: &mut EditorState, st
     };
 
     // pick the active camera (the one the pointer is over), fallback to the perspective cam
-    let mut camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();
+    let mut camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().projection_type == CameraProjectionType::Perspective).unwrap();
     if let Some(pointer_pos) = pointer_pos
     {
-        camera = scene.cameras.iter().find(|c| c.enabled && c.is_point_in_viewport(&pointer_pos)).unwrap_or(camera);
+        camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.is_point_in_viewport(&pointer_pos)).unwrap_or(camera);
     }
 
     // calculate gizmo scaling from the visible viewport height at the gizmo position

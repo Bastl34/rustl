@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use nalgebra::{Matrix4, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components, remove_components_by_type}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, helper::{change_tracker::ChangeTracker, observable::Observable, option_or_id::OptionOrId}, state::{scene::components::component::{find_and_add_new_components, remove_components_by_type}, state::{InputOutput, RunMode}}};
 
 use super::{components::{alpha::Alpha, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, transformation::Transformation}, manager::id_manager, node::{InstanceItemArc, Node, NodeItem}};
 
@@ -292,7 +292,7 @@ impl Instance
         }
     }
 
-    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> bool
+    pub fn update(instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> bool
     {
         crate::notify_observable_arc!(instance, on_before_update);
 
@@ -321,9 +321,13 @@ impl Instance
                 delete_components.push(component.read().unwrap().id());
             }
 
-            if !component.read().unwrap().is_enabled()
             {
-                continue;
+                let component_read = component.read().unwrap();
+
+                if !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
+                {
+                    continue;
+                }
             }
 
             // remove the component itself  for the component update
@@ -501,7 +505,19 @@ impl Instance
             if let Some(node) = self.node.as_ref()
             {
                 let node = node.read().unwrap();
-                node_trans = node.get_full_transform();
+
+                // skinning already placed the vertices via the joint matrices - inheriting the joints again would apply them twice
+                // "Only the joint transforms are applied to the skinned mesh; the transform of the skinned mesh node MUST be ignored."
+                // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skins
+                if node.skin.len() > 0
+                {
+                    node_trans = node.get_full_transform_without_joints();
+                }
+                else
+                {
+                    // this is for objects with no skinning, like a gun -> they should inherit the full transform of the node, including the joints
+                    node_trans = node.get_full_transform();
+                }
             }
             else
             {
@@ -574,7 +590,7 @@ impl Instance
 
         if alpha_components.len() == 0
         {
-            return node_alpha;
+            return node_alpha * instance_color_alpha;
         }
 
         let mut alpha = 1.0;

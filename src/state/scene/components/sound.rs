@@ -8,7 +8,7 @@ use rodio::{Player, Source, SpatialPlayer};
 use serde::{Deserialize, Serialize};
 use web_time::Duration;
 
-use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::SoundSourceItem, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
+use crate::{component_impl_default, component_impl_no_cleanup_node, console_error, console_warning, helper::{change_tracker::ChangeTracker, math::approx_zero, option_or_id::OptionOrId}, output::audio_device::AudioDeviceItem, state::{resources::sound_source::{SoundSourceItem, find_sound_source}, scene::node::{InstanceItemArc, NodeItem}, state::InputOutput}};
 use crate::state::resources::sound_source::Decodable;
 use crate::state::scene::exporter::serialization_helper;
 
@@ -53,7 +53,17 @@ pub struct Sound
 
     #[serde(skip, default)]
     player_spatial: Option<SpatialPlayer>,
+
+    // set by a controller every frame on top of volume and speed - not saved
+    #[serde(skip, default = "default_one")]
+    runtime_gain: f32,
+    #[serde(skip, default = "default_one")]
+    runtime_pitch: f32,
+    #[serde(skip, default)]
+    runtime_changed: bool,
 }
+
+fn default_one() -> f32 { 1.0 }
 
 impl Sound
 {
@@ -82,6 +92,10 @@ impl Sound
 
             player: None,
             player_spatial: None,
+
+            runtime_gain: 1.0,
+            runtime_pitch: 1.0,
+            runtime_changed: false,
         };
 
         sound.set_sound_source(sound_source.clone());
@@ -114,6 +128,10 @@ impl Sound
 
             player: None,
             player_spatial: None,
+
+            runtime_gain: 1.0,
+            runtime_pitch: 1.0,
+            runtime_changed: false,
         };
 
         sound
@@ -132,6 +150,17 @@ impl Sound
     pub fn get_data_mut(&mut self) -> &mut ChangeTracker<SoundData>
     {
         &mut self.data
+    }
+
+    // gain and pitch factor of a controller, e.g. the engine rpm - 1.0 plays the sound as set
+    pub fn set_runtime_modulation(&mut self, gain: f32, pitch: f32)
+    {
+        if self.runtime_gain != gain || self.runtime_pitch != pitch
+        {
+            self.runtime_gain = gain;
+            self.runtime_pitch = pitch;
+            self.runtime_changed = true;
+        }
     }
 
     pub fn reset(&mut self)
@@ -374,29 +403,31 @@ impl Sound
         let audio_device_change = audio_device.data.changed();
         let audio_device_data = audio_device.data.get_ref();
 
+        let runtime_change = std::mem::take(&mut self.runtime_changed);
         let (data, change) = self.data.consume_borrow();
 
         let is_spatial = self.player_spatial.is_some();
 
-        if !audio_device_change && !change && !force && !is_spatial
+        if !audio_device_change && !change && !runtime_change && !force && !is_spatial
         {
             return;
         }
 
-        let volume = audio_device.data.get_ref().volume * data.volume;
+        let volume = audio_device.data.get_ref().volume * data.volume * self.runtime_gain;
+        let speed = data.speed * self.runtime_pitch;
 
         // default player
         if let Some(player) = &self.player
         {
             player.set_volume(volume);
-            player.set_speed(data.speed);
+            player.set_speed(speed);
         }
 
         // spatial player
         if let Some(player) = &self.player_spatial
         {
-            player.set_volume(audio_device.data.get_ref().volume * data.volume);
-            player.set_speed(data.speed);
+            player.set_volume(volume);
+            player.set_speed(speed);
 
             let mut position = None;
             if let Some(instance) = instance
@@ -413,11 +444,9 @@ impl Sound
                 position = Some(Point3::<f32>::new(transform.m14, transform.m24, transform.m34));
             }
 
-            if let Some(position) = position
+            // split screen: the camera nearest to the sound hears it
+            if let Some((position, (left_pos, right_pos))) = position.and_then(|position| Some((position, audio_device_data.nearest_listener(&position)?)))
             {
-                let left_pos = audio_device_data.left_ear_pos;
-                let right_pos = audio_device_data.right_ear_pos;
-
                 let dist_left = distance(&left_pos, &position);
                 let dist_right = distance(&right_pos, &position);
 
@@ -463,25 +492,24 @@ impl Component for Sound
 
     fn run_after_deserialize(&mut self, context: &mut crate::state::scene::components::component::DeserializationContext)
     {
-        if self.sound_source.is_ref()
+        // not saved
+        self.base.component_name = "Sound".to_string();
+        self.base.icon = "🔊".to_string();
+
+        // a missing resource keeps its uuid, so saving does not lose the assignment
+        if let Some(uuid) = self.sound_source.id().map(str::to_string)
         {
-            // resolve sound source
-            let sound_source_found = context.sound_sources.iter().find(|s| s.read().unwrap().uuid == self.sound_source.id().unwrap());
-            if let Some(sound_source) = sound_source_found
+            match find_sound_source(&context.sound_sources, &uuid)
             {
-                self.set_sound_source(sound_source.clone());
-            }
-            else
-            {
-                self.sound_source = OptionOrId::None;
-                console_error!("Sound: SoundSource with id {} not found", self.sound_source.id().unwrap());
+                Some(sound_source) => self.set_sound_source(sound_source),
+                None => { console_error!("Sound '{}': no sound resource with the uuid {}", self.base.name, uuid); },
             }
         }
-        else
-        {
-            self.sound_source = OptionOrId::None;
-            console_error!("Sound: no SoundSource found");
-        }
+    }
+
+    fn saved_with_node(&self) -> bool
+    {
+        true
     }
 
     fn instantiable() -> bool
@@ -526,6 +554,10 @@ impl Component for Sound
 
             player: None,
             player_spatial: None,
+
+            runtime_gain: 1.0,
+            runtime_pitch: 1.0,
+            runtime_changed: false,
         };
 
         if let Some(sound_source) = source.sound_source.as_ref()
@@ -548,14 +580,19 @@ impl Component for Sound
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)
     {
-        if self.sound_source.is_none()
+        match &self.sound_source
         {
-            return;
-        }
-
-        if let Some(sound_source) = self.sound_source.as_ref()
-        {
-            sound_source.read().unwrap().ui_info(ui);
+            OptionOrId::Some(sound_source) => sound_source.read().unwrap().ui_info(ui),
+            OptionOrId::Id(uuid) =>
+            {
+                ui.label(RichText::new(format!("⚠ no sound resource with the uuid {}", uuid)).color(egui::Color32::LIGHT_RED));
+                return;
+            },
+            OptionOrId::None =>
+            {
+                ui.label(RichText::new("no sound resource - pick one in the sound settings").color(egui::Color32::GRAY));
+                return;
+            },
         }
 
         if !approx_zero(self.duration)

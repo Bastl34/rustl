@@ -353,7 +353,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
 
     // cpu times (frame loop - these run sequentially on the cpu and add up to the frame time)
     // wait = rest of the frame time (waiting for gpu/vsync) - if it is small, the frame is cpu bound
-    let cpu_total = state.stats.engine_update_time + state.stats.engine_render_time + state.stats.egui_update_time + state.stats.egui_render_time + state.stats.app_update_time;
+    let cpu_total = state.stats.engine_update_time + state.stats.engine_render_time + state.stats.egui_update_time + state.stats.egui_render_time + state.stats.app_update_time + state.stats.physics_update_time;
     let cpu_wait = (state.stats.frame_time - cpu_total).max(0.0);
 
     let mut cpu_times: Vec<_> = vec![];
@@ -362,6 +362,7 @@ pub fn create_statistic(_editor_state: &mut EditorState, state: &mut State, ui: 
     cpu_times.push(format!("editor update: {:.3} ms", state.stats.egui_update_time));
     cpu_times.push(format!("editor encode: {:.3} ms", state.stats.egui_render_time));
     cpu_times.push(format!("app update: {:.3} ms", state.stats.app_update_time));
+    cpu_times.push(format!("physics update: {:.3} ms", state.stats.physics_update_time));
     cpu_times.push(format!("total: {:.3} ms", cpu_total));
     cpu_times.push(format!("wait: {:.3} ms", cpu_wait));
     stats.push(("CPU times".to_string(), "⏱".to_string(), cpu_times, true));

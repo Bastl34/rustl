@@ -7,7 +7,7 @@ use parry3d::bounding_volume::BoundingVolume; // Needed for BoundingSphere::merg
 use regex::Regex;
 use serde::{de::{self, MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::InputOutput}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, state::state::ENGINE_INTERNAL_TAG_PREFX, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, generic::match_by_include_exclude, math::{extract_max_scale_from_transform, extract_scale_from_transform}, observable::Observable, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{components::component::{find_and_add_new_components, remove_components_by_type}, scene::Scene}, state::{InputOutput, RunMode}}};
 
 use super::{components::{alpha::Alpha, animation::Animation, component::{find_component, find_component_by_id, find_components, remove_component_by_id, remove_component_by_type, remove_components_by_ids, Component, ComponentItem}, joint::Joint, mesh::Mesh, morph_target::MorphTarget, transformation::Transformation}, instance::{Instance, InstanceItem}, layers::LAYER_DEFAULT, manager::id_manager, utilities::{extras::Extras, tags::Tags}};
 
@@ -16,10 +16,101 @@ pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
+// How rapier owns an object. Static geometry is mirrored from the scene, a dynamic body is
+// moved by the solver and the scene node follows it instead.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+pub enum PhysicsBodyType
+{
+    Static,
+    Dynamic,
+    Kinematic, // moved by animations or code, pushes dynamic bodies but is never pushed back
+}
+
+// A dynamic body needs volume for mass and inertia, which a trimesh does not have.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+pub enum PhysicsShape
+{
+    Auto, // trimesh when static, convex hull otherwise
+    TriMesh,
+    ConvexHull,
+    ConvexDecomposition, // slow to build, only worth it for concave dynamic props
+    Box,
+    Sphere,
+    Capsule,
+}
+
+// Low enough not to slow a fall visibly, but it takes the last bit of sliding out.
+fn default_linear_damping() -> f32 { 0.05 }
+
+// Rocking is almost always angular, so this one carries the weight. A thrown object still
+// spins, it just does not keep teetering once it has landed.
+fn default_angular_damping() -> f32 { 0.5 }
+
+// every field falls back to Default, so an older project file without a given setting
+// still loads and simply gets today's default for it
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(default)]
+pub struct PhysicsSettings
+{
+    pub body_type: PhysicsBodyType,
+    pub shape: PhysicsShape,
+
+    pub density: f32, // mass is derived from this and the shape volume
+    pub friction: f32,
+    pub restitution: f32, // bounciness, 0 = no bounce
+
+    pub linear_damping: f32,
+    pub angular_damping: f32,
+
+    pub linear_velocity: Vector3<f32>,
+    pub angular_velocity: Vector3<f32>,
+
+    pub center_of_mass_auto: bool,
+    pub center_of_mass: Vector3<f32>,
+
+    pub combine_children: bool,
+
+    // holds still when the run starts, whatever it rests on, until something hits it
+    pub react_on_first_hit: bool,
+}
+
+impl Default for PhysicsSettings
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            body_type: PhysicsBodyType::Static,
+            shape: PhysicsShape::Auto,
+
+            density: 1.0,
+            friction: 0.7,
+            restitution: 0.0,
+
+            linear_damping: default_linear_damping(),
+            angular_damping: default_angular_damping(),
+
+            linear_velocity: Vector3::new(0.0, 0.0, 0.0),
+            angular_velocity: Vector3::new(0.0, 0.0, 0.0),
+
+            center_of_mass_auto: true,
+            center_of_mass: Vector3::new(0.0, 0.0, 0.0),
+
+            combine_children: true,
+
+            react_on_first_hit: false,
+        }
+    }
+}
+
+// saved as a whole with the node, so a new setting is persisted without touching the
+// project format. Missing fields fall back to Default, which keeps older files loadable.
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct NodeSettings
 {
-    pub transient: bool, // not saved
+    #[serde(skip)]
+    pub transient: bool, // node is not written to the project file
 
     pub visible: bool,
     pub locked: bool,
@@ -37,6 +128,11 @@ pub struct NodeSettings
     pub frustum_culling: bool,
     pub occlusion_culling: bool,
 
+    pub collision: bool,
+    pub camera_collision: bool, // if true, the camera will not be able to go through this node
+
+    pub physics: PhysicsSettings,
+
     pub layer_mask: u32, // bitmask, matched against camera culling_mask
 }
 
@@ -47,17 +143,20 @@ impl Default for NodeSettings
         Self
         {
             transient: false,
-            visible: false,
+            visible: true,
             locked: false,
-            pickable: false,
+            pickable: true,
             render_children_first: false,
             alpha_index: 0,
             render_group_id: 0,
-            depth_test: false,
-            depth_write: false,
-            pick_bbox_first: false,
-            frustum_culling: false,
-            occlusion_culling: false,
+            depth_test: true,
+            depth_write: true,
+            pick_bbox_first: true,
+            frustum_culling: true,
+            occlusion_culling: true,
+            collision: true,
+            camera_collision: true,
+            physics: PhysicsSettings::default(),
             layer_mask: LAYER_DEFAULT,
         }
     }
@@ -66,6 +165,7 @@ impl Default for NodeSettings
 pub struct NodeUpdateResult
 {
     pub delete_nodes: Vec<u32>,
+    pub skinned_nodes: Vec<NodeItem>,
 }
 
 pub struct Node
@@ -83,6 +183,8 @@ pub struct Node
     pub parent: OptionOrId<NodeItem>,
 
     pub skin: Vec<OptionOrId<NodeItem>>,
+
+    pub color: Option::<Vector3::<f32>>,
 
     pub extras: Extras,
     pub tags: Tags,
@@ -116,6 +218,7 @@ impl Serialize for Node
         map.serialize_entry("settings", &self.settings)?;
         map.serialize_entry("extras", &self.extras)?;
         map.serialize_entry("tags", &self.tags)?;
+        map.serialize_entry("color", &self.color)?;
 
         if let Some(parent) = self.parent.as_ref()
         {
@@ -191,6 +294,7 @@ impl<'de> Deserialize<'de> for Node
                         "tags" => node.tags = map.next_value()?,
                         "skin" => node.skin = OptionOrId::from_id_vec(&map.next_value()?),
                         "source" => node.source = Some(map.next_value()?),
+                        "color" => node.color = map.next_value()?,
                         "instances" =>
                         {
                             node.instances = ChangeTracker::new
@@ -254,26 +358,8 @@ impl Node
             name: "default".to_string(),
             root_node: false,
 
-            settings: NodeSettings
-            {
-                transient: true,
-                visible: true,
-                locked: false,
-                pickable: true,
-
-                render_children_first: false,
-                alpha_index: 0,
-                render_group_id: 0,
-
-                depth_write: true,
-                depth_test: true,
-
-                pick_bbox_first: true,
-                frustum_culling: true,
-                occlusion_culling: true,
-
-                layer_mask: LAYER_DEFAULT,
-            },
+            // a fresh node is transient until something (the loader, the editor) claims it
+            settings: NodeSettings { transient: true, ..NodeSettings::default() },
 
             components: vec![],
 
@@ -283,6 +369,8 @@ impl Node
 
             extras: Extras::new(),
             tags: Tags::new(),
+
+            color: None,
 
             nodes: vec![],
             instances: ChangeTracker::new(vec![]),
@@ -435,6 +523,68 @@ impl Node
         new_parent.write().unwrap().nodes.push(node.clone());
 
         node.write().unwrap().parent = OptionOrId::Some(new_parent);
+
+        node.write().unwrap().force_instances_update();
+    }
+
+    pub fn set_parent_and_remap_transform(node: NodeItem, new_parent: NodeItem)
+    {
+        if new_parent.read().unwrap().has_parent_or_is_equal(node.clone())
+        {
+            console_warning!("set_parent_and_remap_transform: the new parent can not be the node itself or one of its children");
+            return;
+        }
+
+        let world_transform = node.read().unwrap().get_full_transform();
+
+        Self::set_parent(node.clone(), new_parent.clone());
+        Self::remap_world_transform(node, world_transform);
+    }
+
+    pub fn remap_world_transform(node: NodeItem, world_transform: Matrix4<f32>)
+    {
+        let (_, parent_inheritance) = node.read().unwrap().get_transform();
+        let parent = node.read().unwrap().parent.clone();
+
+        let mut new_local_transform = world_transform;
+
+        // if there is no parent or if the parent transformation is not inherited: the local transformation is the world transformation
+        if parent_inheritance
+        {
+            if let Some(parent) = parent.as_ref()
+            {
+                let parent_transform_inverse = parent.read().unwrap().get_full_transform().try_inverse();
+
+                if parent_transform_inverse.is_none()
+                {
+                    console_warning!("remap_world_transform: the transformation of the parent can not be inverted");
+                    return;
+                }
+
+                new_local_transform = parent_transform_inverse.unwrap() * world_transform;
+            }
+        }
+
+        Self::set_local_transform(node, new_local_transform);
+    }
+
+    pub fn set_local_transform(node: NodeItem, transform: Matrix4<f32>)
+    {
+        let transformation_component = node.read().unwrap().find_component::<Transformation>();
+
+        if let Some(transformation_component) = transformation_component
+        {
+            component_downcast_mut!(transformation_component, Transformation);
+            transformation_component.set_local_transform(transform);
+        }
+        // if there is no transformation component: create one to be able to hold the transformation
+        else
+        {
+            let mut transformation = Transformation::identity("Transform");
+            transformation.set_local_transform(transform);
+
+            node.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(transformation))));
+        }
 
         node.write().unwrap().force_instances_update();
     }
@@ -714,7 +864,7 @@ impl Node
         {
             component_downcast!(mesh, Mesh);
 
-            if let Some(skin_sphere) = mesh.get_scaled_skin_bounding_sphere()
+            if let Some(skin_sphere) = mesh.get_skin_bounding_sphere()
             {
                 if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_mut()
                 {
@@ -849,7 +999,7 @@ impl Node
             component_downcast!(mesh, Mesh);
 
             let mut bounding_box = None;
-            if let Some(skin_box) = mesh.get_scaled_skin_bbox()
+            if let Some(skin_box) = mesh.get_skin_bbox()
             {
                 bounding_box = Some(skin_box);
             }
@@ -1068,6 +1218,104 @@ impl Node
         true
     }
 
+    pub fn resolve_physics(&self) -> PhysicsSettings
+    {
+        if self.settings.physics.body_type != PhysicsBodyType::Static
+        {
+            return self.settings.physics;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                let parent = parent.read().unwrap();
+
+                if parent.settings.physics.body_type != PhysicsBodyType::Static
+                {
+                    return parent.settings.physics;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        self.settings.physics
+    }
+
+    pub fn has_collision(&self) -> bool
+    {
+        if !self.settings.collision
+        {
+            return false;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if !parent.read().unwrap().settings.collision
+                {
+                    return false;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        true
+    }
+
+    pub fn has_camera_collision(&self) -> bool
+    {
+        if !self.settings.camera_collision
+        {
+            return false;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if !parent.read().unwrap().settings.camera_collision
+                {
+                    return false;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        true
+    }
+
+    pub fn is_engine_internal(&self) -> bool
+    {
+        if self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            return true;
+        }
+
+        let mut parent = self.parent.clone();
+        while parent.is_some()
+        {
+            {
+                let parent = parent.clone().unwrap();
+                if parent.read().unwrap().tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+                {
+                    return true;
+                }
+            }
+
+            parent = parent.unwrap().read().unwrap().parent.clone();
+        }
+
+        false
+    }
+
     pub fn set_pickable(&mut self, pickable: bool)
     {
         self.settings.pickable = pickable;
@@ -1148,7 +1396,9 @@ impl Node
         false
     }
 
-    fn get_transform(&self) -> (Matrix4<f32>, bool)
+    // the node's own transform and whether it inherits the parent's - the physics world
+    // walks the chain below a combined object with it
+    pub fn get_transform(&self) -> (Matrix4<f32>, bool)
     {
         let transform_component = self.find_component::<Transformation>();
         let joint_component = self.find_component::<Joint>();
@@ -1205,6 +1455,34 @@ impl Node
             let parent_node = parent_node.read().unwrap();
             parent_trans = parent_node.get_full_transform();
         }
+
+        if node_parent_inheritance
+        {
+            parent_trans * node_transform
+        }
+        else
+        {
+            node_transform
+        }
+    }
+
+    pub fn get_full_transform_without_joints(&self) -> Matrix4<f32>
+    {
+        let mut parent_trans = Matrix4::<f32>::identity();
+
+        if let Some(parent_node) = self.parent.as_ref()
+        {
+            let parent_node = parent_node.read().unwrap();
+            parent_trans = parent_node.get_full_transform_without_joints();
+        }
+
+        // the joints own transform is already part of its joint matrix
+        if self.find_component::<Joint>().is_some()
+        {
+            return parent_trans;
+        }
+
+        let (node_transform, node_parent_inheritance) = self.get_transform();
 
         if node_parent_inheritance
         {
@@ -1425,16 +1703,21 @@ impl Node
     pub fn find_child_node_by_regex(&self, regex: &str) -> Option<NodeItem>
     {
         let regex_item: Regex = Regex::new(regex).unwrap();
+        self.find_child_node_by_compiled_regex(&regex_item)
+    }
 
+    // compiled once by the caller - compiling per visited node made skeleton searches very slow
+    fn find_child_node_by_compiled_regex(&self, regex: &Regex) -> Option<NodeItem>
+    {
         for node in &self.nodes
         {
-            if regex_item.is_match(&node.read().unwrap().name)
+            if regex.is_match(&node.read().unwrap().name)
             {
                 return Some(node.clone());
             }
 
             // check child nodes
-            let result = node.read().unwrap().find_child_node_by_regex(regex);
+            let result = node.read().unwrap().find_child_node_by_compiled_regex(regex);
             if result.is_some()
             {
                 return result;
@@ -1916,7 +2199,7 @@ impl Node
         instance
     }
 
-    pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64) -> NodeUpdateResult
+    pub fn update(node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> NodeUpdateResult
     {
         crate::notify_observable_arc!(&node, on_before_update);
 
@@ -1940,7 +2223,9 @@ impl Node
             }
 
             {
-                if !component.read().unwrap().is_enabled()
+                let component_read = component.read().unwrap();
+
+                if !component_read.is_enabled() || !component_read.runs_in_mode(run_mode)
                 {
                     continue;
                 }
@@ -2002,7 +2287,7 @@ impl Node
                 let node_read = node.read().unwrap();
                 for instance in node_read.instances.get_ref()
                 {
-                    if Instance::update(&instance, io, time, frame_scale, frame)
+                    if Instance::update(&instance, io, time, frame_scale, frame, run_mode)
                     {
                         updates += 1;
                     }
@@ -2019,11 +2304,18 @@ impl Node
 
         // check for delete later
         let mut delete_nodes = vec![];
+        let mut skinned_nodes = vec![];
         {
-            let node = node.read().unwrap();
-            if node.delete_later_request
+            let node_read = node.read().unwrap();
+            if node_read.delete_later_request
             {
-                delete_nodes.push(node.id);
+                delete_nodes.push(node_read.id);
+            }
+
+            // the scene rebuilds the bounding volume of these after all components ran
+            if node_read.skin.len() > 0
+            {
+                skinned_nodes.push(node.clone());
             }
         }
 
@@ -2032,18 +2324,23 @@ impl Node
             let node_read = node.read().unwrap();
             for child_node in &node_read.nodes
             {
-                let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame);
+                let mut update_result = Self::update(child_node.clone(), io, time, frame_scale, frame, run_mode);
 
                 if update_result.delete_nodes.len() > 0
                 {
                     delete_nodes.append(&mut update_result.delete_nodes);
+                }
+
+                if update_result.skinned_nodes.len() > 0
+                {
+                    skinned_nodes.append(&mut update_result.skinned_nodes);
                 }
             }
         }
 
         crate::notify_observable_arc!(&node, on_after_update);
 
-        NodeUpdateResult { delete_nodes:  delete_nodes}
+        NodeUpdateResult { delete_nodes: delete_nodes, skinned_nodes: skinned_nodes }
     }
 
     pub fn merge_mesh(&mut self, node: &NodeItem) -> bool

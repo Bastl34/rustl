@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, Display, FromRepr};
 
 use super::press_state::{PressState, PressStateType, is_pressed_by_state};
 
-#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr)]
+#[derive(EnumIter, Debug, PartialEq, Clone, Copy, Display, FromRepr, Serialize, Deserialize)]
 pub enum Key
 {
     // OK
@@ -410,7 +411,7 @@ pub fn get_keys_as_string_vec() -> Vec<String>
     key_vec.iter().map(|key| { key.to_string() }).collect::<Vec<_>>()
 }
 
-#[derive(EnumIter, Debug, Clone, Copy, PartialEq, Display)]
+#[derive(EnumIter, Debug, Clone, Copy, PartialEq, Display, Serialize, Deserialize)]
 pub enum Modifier
 {
     LeftShift = 0,

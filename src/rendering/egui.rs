@@ -75,17 +75,22 @@ impl EGui
 
         self.renderer.update_buffers(device, queue, encoder, &clipped_primitives, &self.screen_descriptor);
 
-        let textures_delta = std::mem::take(&mut self.pending_textures_delta);
+        let mut textures_delta = std::mem::take(&mut self.pending_textures_delta);
 
-        for (tex_id, img_delta) in textures_delta.set
+        for (tex_id, img_deltas) in &textures_delta.set
         {
-            self.renderer.update_texture(&device, &queue, tex_id, &img_delta);
+            for img_delta in img_deltas
+            {
+                self.renderer.update_texture(&device, &queue, *tex_id, img_delta);
+            }
         }
 
-        for tex_id in textures_delta.free
+        for tex_id in &textures_delta.free
         {
-            self.renderer.free_texture(&tex_id);
+            self.renderer.free_texture(tex_id);
         }
+
+        textures_delta.clear();
 
         clipped_primitives
     }

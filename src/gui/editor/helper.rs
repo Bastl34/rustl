@@ -42,7 +42,7 @@ pub fn pick(state: &State, pos: Point2::<f32>, allow_grid_picking: bool, ignore_
     for camera in &scene.cameras
     {
         // check if click is insight
-        if camera.enabled && camera.is_point_in_viewport(&pos)
+        if scene.is_camera_active(camera, state.run_mode) && camera.is_point_in_viewport(&pos)
         {
             let ray = camera.get_ray_from_viewport_coordinates(&pos);
 
@@ -436,6 +436,7 @@ pub fn get_asset_type_by_supported_files(supported_file_types: &SupportedFileTyp
     let is_material = supported_file_types.materials.contains(&extensions.unwrap_or("").to_lowercase());
     let is_scene = supported_file_types.scenes.contains(&extensions.unwrap_or("").to_lowercase());
     let is_texture = supported_file_types.textures.contains(&extensions.unwrap_or("").to_lowercase());
+    let is_sound = supported_file_types.sounds.contains(&extensions.unwrap_or("").to_lowercase());
 
     if is_object
     {
@@ -452,6 +453,10 @@ pub fn get_asset_type_by_supported_files(supported_file_types: &SupportedFileTyp
     else if is_texture
     {
         return Some(AssetType::Texture);
+    }
+    else if is_sound
+    {
+        return Some(AssetType::Sound);
     }
 
     None

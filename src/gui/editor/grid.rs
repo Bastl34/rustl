@@ -2,14 +2,14 @@ use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
 use nalgebra::{Point3, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{camera::DEFAULT_CLIPPING_FAR, components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, layers::{LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::State}};
+use crate::{component_downcast, component_downcast_mut, console_error, gui::editor::editor::EDITOR_UTILS_NODE_NAME, helper::{concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, math::{approx_equal_vec, is_almost_integer, snap_to_grid_vec3}, option_or_id::OptionOrId}, input::keyboard::Key, state::{resources::mesh_resource::MeshResource, scene::{camera::DEFAULT_CLIPPING_FAR, components::{component::Component, material::{Material, MaterialItem}, mesh::Mesh, transformation::Transformation}, instance::Instance, layers::{LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::load_asset_and_add_to_scene, node::Node, utilities::scene_utils::{execute_on_scene_mut_and_wait, execute_on_state_mut_and_wait}}, state::{RunMode, State}}};
 
 use super::{editor_state::EditorState, helper::set_internal_tag_for_utils_nodes};
 
 const GRID_DEFAULT_ALPHA_INDEX: i64 = -1000;
 
 pub const GRID_ROOT: &str = "grid root";
-pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid main";         // single view + 3d quad
+pub const GRID_ROOT_NAME_XZ_MAIN: &str = "grid main"; // single view + 3d quad
 pub const GRID_NAME_XZ: &str = "grid xz"; // top quad — same orientation, independent transform
 pub const GRID_NAME_XY: &str = "grid xy";
 pub const GRID_NAME_YZ: &str = "grid yz";
@@ -534,6 +534,8 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         move_grid_y_to = Some(0.0);
     }
 
+    let run_mode = state.run_mode;
+
     for scene in &mut state.scenes
     {
         if !scene.active { continue; }
@@ -564,6 +566,22 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             editor_state.grid_recreate = false;
         }
 
+        // scene cams only render user layers --> the X-Z grid joins them in play
+        let grid_xz_layer_mask = if run_mode == RunMode::Play { GRID_XZ_LAYER_MASK | LAYER_MASK_USER } else { GRID_XZ_LAYER_MASK };
+        if let Some(grid_root) = scene.find_node_by_name(GRID_ROOT)
+        {
+            let grid_root = grid_root.read().unwrap();
+            let grid_xz_nodes = [Node::find_mesh_node_by_name(&grid_root.nodes, "grid"), Node::find_node_by_name(&grid_root.nodes, "plane")];
+            for node in grid_xz_nodes.into_iter().flatten()
+            {
+                let mut node = node.write().unwrap();
+                if node.settings.layer_mask != grid_xz_layer_mask
+                {
+                    node.settings.layer_mask = grid_xz_layer_mask;
+                }
+            }
+        }
+
         // update grid position (x-z)
         if let Some(grid) = grid
         {
@@ -577,8 +595,8 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
             }
 
             // follow the 3d quad cam (in quad view) or fall back to the active editor cam (in single view)
-            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_3D != 0);
-            let camera = if camera.is_some() { camera } else { scene.get_active_camera() };
+            let camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().culling_mask & LAYER_QUAD_VIEW_3D != 0);
+            let camera = if camera.is_some() { camera } else { scene.get_active_camera(run_mode) };
             if let Some(camera) = camera
             {
                 let camera_data = camera.get_data();
@@ -606,7 +624,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         // update X-Z grid for the top quad view — follows the top quad cam on x/z (independent of the 3d/editor X-Z grid)
         if let Some(grid_xz_top) = scene.find_node_by_name(GRID_NAME_XZ)
         {
-            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_TOP != 0);
+            let camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().culling_mask & LAYER_QUAD_VIEW_TOP != 0);
             if let Some(camera) = camera
             {
                 let grid_xz_top = grid_xz_top.write().unwrap();
@@ -629,7 +647,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         // update X-Y grid (front view) — follows the front quad camera on x/y
         if let Some(grid_xy) = scene.find_node_by_name(GRID_NAME_XY)
         {
-            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_FRONT != 0);
+            let camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().culling_mask & LAYER_QUAD_VIEW_FRONT != 0);
             if let Some(camera) = camera
             {
                 let grid_xy = grid_xy.write().unwrap();
@@ -652,7 +670,7 @@ pub fn update_grid(editor_state: &mut EditorState , state: &mut State)
         // Y-Z grid (right view) — follows the right quad camera on y/z
         if let Some(grid_yz) = scene.find_node_by_name(GRID_NAME_YZ)
         {
-            let camera = scene.cameras.iter().find(|c| c.enabled && c.get_data().culling_mask & LAYER_QUAD_VIEW_RIGHT != 0);
+            let camera = scene.cameras.iter().find(|c| scene.is_camera_active(c, run_mode) && c.get_data().culling_mask & LAYER_QUAD_VIEW_RIGHT != 0);
             if let Some(camera) = camera
             {
                 let grid_yz = grid_yz.write().unwrap();

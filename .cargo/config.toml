@@ -1,3 +1,9 @@
 [alias]
 dev = ["watch", "-s", "cargo run --profile dev-fast", "-w", "src/", "-w", "resources/"]
 dev-release = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resources/"]
+
+# getrandom 0.3 has no default backend on wasm32-unknown-unknown and refuses to compile without one
+# it needs the cfg flag AND the "wasm_js" feature - the feature is set in Cargo.toml
+# note: a RUSTFLAGS env var would override this whole section, not merge with it
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

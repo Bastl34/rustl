@@ -6,7 +6,7 @@ use nalgebra::{Isometry3, Matrix4, Orthographic3, Perspective3, Point2, Point3, 
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{camera_controller::pan_controller::PanController, utilities::tags::Tags}, state::InputOutput}};
+use crate::{console_log, helper::{change_tracker::ChangeTracker, math::{approx_equal, approx_zero}, option_or_id::OptionOrId}, state::{helper::render_item::RenderItemOption, scene::{camera_controller::pan_controller::PanController, utilities::tags::Tags}, state::{InputOutput, RunMode}}};
 
 use super::{camera_controller::{camera_controller::CameraControllerBox, fly_controller::FlyController, target_rotation_controller::TargetRotationController}, layers::LAYER_MASK_ALL, manager::id_manager, node::NodeItem};
 
@@ -423,9 +423,9 @@ impl Camera
         self.init_matrices();
     }
 
-    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32) -> bool
+    pub fn update(&mut self, scene: &mut crate::state::scene::scene::Scene, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode) -> bool
     {
-        if !self.enabled
+        if !scene.is_camera_active(self, run_mode)
         {
             return false;
         }
@@ -436,7 +436,7 @@ impl Camera
 
         if let Some(controller) = &mut controller
         {
-            if controller.get_base().is_enabled
+            if controller.get_base().is_enabled && controller.runs_in_mode(run_mode)
             {
                 let node = self.node.as_ref().cloned();
                 let data = self.get_data_mut();

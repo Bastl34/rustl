@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+﻿#![allow(dead_code)]
 
 use std::{f32::consts::PI, sync::{Arc, RwLock}};
 
@@ -6,7 +6,7 @@ use egui::FullOutput;
 
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3, Vector4};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, State}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_success, console_warning, gui::editor::{helper::{get_asset_type_by_supported_files, transform_vec_to_parent_local}, preview_scene::{ensure_preview_scene, preview_scene_ready}}, helper::{concurrency::thread::spawn_thread, math::{self, snap_to_grid}}, input::{keyboard::{Key, Modifier}, mouse::MouseButton}, rendering::{egui::EGui, wgpu::WGpu}, state::{scene::{camera::{Camera, CameraProjectionType, DEFAULT_CLIPPING_FAR}, components::{material::Material, mesh::Mesh, transformation::Transformation}, layers::{LAYER_EDITOR, LAYER_MASK_USER, LAYER_QUAD_VIEW_3D, LAYER_QUAD_VIEW_FRONT, LAYER_QUAD_VIEW_RIGHT, LAYER_QUAD_VIEW_TOP, LAYER_SINGLE_VIEW}, loader::loader::{load_asset_and_add_to_scene, load_material_and_add_to_scene, load_sound}, node::{Node, NodeItem}, scene::{PickPredicate, Scene, ScenePickRes}, utilities::{scene_utils::{self, execute_on_scene_mut_and_wait}, tags}}, state::{ENGINE_INTERNAL_TAG_PREFX, RunMode, State}}};
 
 use self::math::approx_zero;
 
@@ -16,7 +16,7 @@ use crate::gui::editor::ui::main_frame;
 pub const MAX_NAME_LENGTH: usize = 24;
 
 pub const EDITOR_INTERNAL_TAG: &str = "__internal_editor";
-pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
+pub use crate::state::project::project::RESUSE_MATERIALS_TAG;
 pub const EDITOR_UTILS_NODE_NAME: &str = "editor utils";
 pub const QUAD_CAM: &str = "quad";
 
@@ -41,7 +41,14 @@ impl Editor
 
     pub fn init(&mut self, state: &mut State, egui: &EGui, scene_id: u32)
     {
+        state.set_run_mode(RunMode::Edit);
+
         self.editor_state.load_all_asset_entries(state, &egui.ctx);
+
+        if let Some(scene) = state.find_scene_by_id_mut(scene_id)
+        {
+            scene.add_default_lights_and_cam();
+        }
 
         self.create_internal_nodes(state, scene_id);
 
@@ -63,26 +70,19 @@ impl Editor
 
     pub fn create_internal_nodes(&mut self, state: &mut State, scene_id: u32)
     {
-        self.create_lights_and_cams_entities(state, scene_id);
+        self.create_editor_cams(state, scene_id);
         self.create_util_objects(state, scene_id);
     }
 
-    pub fn create_lights_and_cams_entities(&mut self, state: &mut State, scene_id: u32)
+    pub fn create_editor_cams(&mut self, state: &mut State, scene_id: u32)
     {
         let main_queue = state.main_thread_execution_queue.clone();
         spawn_thread(move ||
         {
             execute_on_scene_mut_and_wait(main_queue.clone(), scene_id, Box::new(|scene|
             {
-                // dir light
-                let dir = scene.add_light_directional("Dir", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(0.2, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                dir.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-
-                let hemi = scene.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
-                hemi.borrow_mut().get_mut().tags.insert_with_color_locked(EDITOR_INTERNAL_TAG, tags::DEFAULT_RED_COLOR, true);
-
-                // add cameras
-                if scene.cameras.len() == 0
+                // the scene has its own cameras now -> only check for the editor ones
+                if !scene.cameras.iter().any(|cam| cam.tags.contains(EDITOR_INTERNAL_TAG))
                 {
                     // default cam
                     {
@@ -295,10 +295,14 @@ impl Editor
         // update cameras
         self.update_cameras(state);
 
+        // the renderer has no access to the editor state
+        state.rendering.debug_volumes_show_internal = self.editor_state.show_internal_entries;
+
         // update grid based on camera pos and key inputs
         update_grid(&mut self.editor_state, state);
 
-        if !self.editor_state.try_mode
+        // authoring tools are off while the game owns the input
+        if state.run_mode != RunMode::Play
         {
             // key bindings (copy paste, instancing, ...)
             self.key_bindings(state);
@@ -367,16 +371,31 @@ impl Editor
 
     pub fn update_modes(&mut self, state: &mut State)
     {
-        // start try out mde
-        if !self.editor_state.try_mode && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::R)
+        // play mode (Ctrl+R, +shift: fullscreen and no ui)
+        if state.run_mode != RunMode::Play && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::R)
         {
-            self.editor_state.set_try_mode(state, true);
+            let fullscreen = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift);
+            self.editor_state.set_run_mode(state, RunMode::Play, fullscreen);
         }
 
-        // end try out mode
-        if self.editor_state.try_mode && state.io.input_manager.keyboard.is_pressed(Key::Escape)
+        // simulation mode (Ctrl+T, +shift: fullscreen)
+        if state.run_mode != RunMode::Simulate && (state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)) && state.io.input_manager.keyboard.is_pressed(Key::T)
         {
-            self.editor_state.set_try_mode(state, false);
+            let fullscreen = state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift);
+            self.editor_state.set_run_mode(state, RunMode::Simulate, fullscreen);
+        }
+
+        // back to edit mode
+        if (state.run_mode == RunMode::Play || state.run_mode == RunMode::Simulate) && state.io.input_manager.keyboard.is_pressed(Key::Escape)
+        {
+            self.editor_state.set_run_mode(state, RunMode::Edit, false);
+        }
+
+        // pause mode
+        if state.run_mode.is_running() && state.io.input_manager.keyboard.is_pressed(Key::P)
+        {
+            let paused = !state.pause;
+            self.editor_state.set_paused(state, paused);
         }
 
         // hide ui
@@ -482,11 +501,6 @@ impl Editor
 
     pub fn key_bindings(&mut self, state: &mut State)
     {
-        if self.editor_state.try_mode
-        {
-            return;
-        }
-
         // create instance
         if state.io.input_manager.keyboard.is_pressed(Key::I)
         {
@@ -535,17 +549,7 @@ impl Editor
         {
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::N)
             {
-                self.editor_state.show_confirm_dialog
-                (
-                    "New Project",
-                    "Do you really want to create a new project?\nUnsaved changes will be lost.",
-                    |editor_state, state|
-                    {
-                        editor_state.reset_project();
-                        state.delete_all_scenes(true);
-                        state.add_scene("main scene");
-                    }
-                );
+                self.editor_state.request_new_project();
 
                 // reset N key cooldown - blocking dialog consumes unknown time, preventing the next press
                 state.io.input_manager.keyboard.reset_key(Key::N);
@@ -677,6 +681,7 @@ impl Editor
                     self.editor_state.copy_node_name = Some(node.name.clone());
                     self.editor_state.copy_asset = Some(source.origin_path.clone());
                     self.editor_state.copy_asset_transform = None;
+                    self.editor_state.copy_node_settings = Some(node.settings.clone());
 
                     if let Some(transform) = node.find_component::<Transformation>()
                     {
@@ -700,6 +705,7 @@ impl Editor
                     let copy_node_id = self.editor_state.copy_node_id.clone();
                     let copy_asset_transform = self.editor_state.copy_asset_transform.clone();
                     let copy_node_name = self.editor_state.copy_node_name.clone();
+                    let copy_node_settings = self.editor_state.copy_node_settings.clone();
 
                     self.load_asset(state, copy_asset.clone(), AssetType::Object, Point2::<f32>::new(pos.x, pos.y), true, None, Some(Arc::new(move |_scene: &mut Scene, root_node: NodeItem|
                     {
@@ -723,6 +729,12 @@ impl Editor
                         if let Some(copy_node_name) = &copy_node_name
                         {
                             root_node.write().unwrap().name = copy_node_name.clone();
+                        }
+
+                        // apply settings
+                        if let Some(copy_node_settings) = &copy_node_settings
+                        {
+                            root_node.write().unwrap().settings = copy_node_settings.clone();
                         }
 
                         *copy_node_id.write().unwrap() = Some(root_node.read().unwrap().id);
@@ -790,8 +802,7 @@ impl Editor
 
         let mut scene_id = scene_id.unwrap();
 
-        //if !self.editor_state.try_out && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None) && self.editor_state.edit_mode.is_none()
-        if !self.editor_state.try_mode && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
+        if state.run_mode != RunMode::Play && (self.editor_state.selectable || self.editor_state.pick_mode != PickType::None)
         {
             let left_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Left);
             let right_mouse_button = state.io.input_manager.mouse.clicked(MouseButton::Right);
@@ -891,7 +902,7 @@ impl Editor
 
                         let (node_id, ..) = self.editor_state.get_object_ids();
 
-                        let scene = state.find_scene_by_id(scene_id);
+                        let scene = state.find_scene_by_id_mut(scene_id);
                         if scene.is_none() { return; }
 
                         let scene = scene.unwrap();
@@ -899,9 +910,31 @@ impl Editor
                         if node_id.is_none() { return; }
                         let node_id = node_id.unwrap();
 
-                        if let Some(node) = scene.find_node_by_id(node_id)
+                        let node = scene.find_node_by_id(node_id);
+                        if let Some(node) = node
                         {
-                            Node::set_parent(node, hit.node.clone());
+                            scene_utils::set_node_parent(scene, node, Some(hit.node.clone()), false);
+                        }
+                    }
+                    // pick parent target and re-map transformation
+                    else if self.editor_state.pick_mode == PickType::ParentRemap && self.editor_state.selected_scene_id.is_some()
+                    {
+                        let scene_id: u32 = self.editor_state.selected_scene_id.unwrap();
+
+                        let (node_id, ..) = self.editor_state.get_object_ids();
+
+                        let scene = state.find_scene_by_id_mut(scene_id);
+                        if scene.is_none() { return; }
+
+                        let scene = scene.unwrap();
+
+                        if node_id.is_none() { return; }
+                        let node_id = node_id.unwrap();
+
+                        let node = scene.find_node_by_id(node_id);
+                        if let Some(node) = node
+                        {
+                            scene_utils::set_node_parent(scene, node, Some(hit.node.clone()), true);
                         }
                     }
                     // animation re-targeting (copy)
@@ -1183,6 +1216,16 @@ impl Editor
         match asset_type
         {
             Some(AssetType::Object) | Some(AssetType::Material) => {},
+            Some(AssetType::Sound) =>
+            {
+                // no object in the scene - only into the sound resources
+                let main_queue = state.main_thread_execution_queue.clone();
+                spawn_thread(move ||
+                {
+                    load_sound(&path, main_queue, None);
+                });
+                return;
+            },
             Some(_) =>
             {
                 console_error!("Asset type not supported for drag and drop: {}", path);
@@ -1401,18 +1444,33 @@ impl Editor
 
         // get camera transform
         let (scene, _, _) = self.editor_state.get_selected_node(state);
-        let mut cam_inverse = Matrix4::<f32>::identity();
-        let mut cam_culling_mask = 0;
+        let mut start_cam: Option<(Matrix4<f32>, u32)> = None;
+        let mut hovered_culling_mask: Option<u32> = None;
         for camera in &scene.unwrap().cameras
         {
-            if camera.enabled && camera.is_point_in_viewport(&start_pos) && camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+            if !camera.enabled || !camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+            {
+                continue;
+            }
+
+            if start_cam.is_none() && camera.is_point_in_viewport(&start_pos)
             {
                 let cam_data = camera.get_data();
-                cam_inverse = cam_data.view_inverse.clone();
-                cam_culling_mask = cam_data.culling_mask;
-                break;
+                start_cam = Some((cam_data.view_inverse.clone(), cam_data.culling_mask));
+            }
+
+            // the mouse wheel rotates around the axis of the view the pointer is hovering right now
+            // --> it must not stay bound to the view the edit mode was started in
+            if hovered_culling_mask.is_none() && camera.is_point_in_viewport(&pointer_pos)
+            {
+                hovered_culling_mask = Some(camera.get_data().culling_mask);
             }
         }
+
+        let (cam_inverse, start_culling_mask) = start_cam.unwrap_or((Matrix4::<f32>::identity(), 0));
+
+        // if the pointer left the viewports (ui panels, ...): keep the view the edit mode was started in
+        let cam_culling_mask = hovered_culling_mask.unwrap_or(start_culling_mask);
 
         // transform by inverse camera matrix
         movement = (cam_inverse * movement.to_homogeneous()).xyz();
@@ -1466,9 +1524,6 @@ impl Editor
         let mut use_rotation_vec = false;
         let mut rotation_vec = Vector3::<f32>::zeros();
 
-        let mut use_rotation_pos = false;
-        let mut rotation_pos = Vector3::<f32>::zeros();
-
         if apply_x
         {
             if state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftCtrl) || state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftLogo)
@@ -1488,10 +1543,11 @@ impl Editor
                 if movement.z.abs() >= angle_steps || !movement_check
                 {
                     let sign = movement.z.signum();
-                    rotation_pos.x = edit_transformation.get_data().rotation.x + angle_steps * sign;
-                    rotation_pos.x = snap_to_grid(rotation_pos.x, angle_steps);
+                    let current = edit_transformation.get_data().rotation.x;
 
-                    use_rotation_pos = true;
+                    rotation_vec.x = snap_to_grid(current + angle_steps * sign, angle_steps) - current;
+
+                    use_rotation_vec = true;
                 }
             }
             else
@@ -1520,10 +1576,11 @@ impl Editor
                 if movement.x.abs() >= angle_steps || !movement_check
                 {
                     let sign = movement.x.signum();
-                    rotation_pos.y = edit_transformation.get_data().rotation.y + angle_steps * sign;
-                    rotation_pos.y = snap_to_grid(rotation_pos.y, angle_steps);
+                    let current = edit_transformation.get_data().rotation.y;
 
-                    use_rotation_pos = true;
+                    rotation_vec.y = snap_to_grid(current + angle_steps * sign, angle_steps) - current;
+
+                    use_rotation_vec = true;
                 }
             }
             else
@@ -1550,11 +1607,12 @@ impl Editor
 
                 if movement.x.abs() >= angle_steps || !movement_check
                 {
-                    let sign = movement.x.signum();
-                    rotation_pos.z = edit_transformation.get_data().rotation.z + angle_steps * sign;
-                    rotation_pos.z = snap_to_grid(rotation_pos.z, angle_steps);
+                    let sign = -movement.x.signum();
+                    let current = edit_transformation.get_data().rotation.z;
 
-                    use_rotation_pos = true;
+                    rotation_vec.z = snap_to_grid(current + angle_steps * sign, angle_steps) - current;
+
+                    use_rotation_vec = true;
                 }
             }
             else
@@ -1567,15 +1625,12 @@ impl Editor
         if use_rotation_vec
         {
             component_downcast_mut!(edit_transformation, Transformation);
-            edit_transformation.apply_rotation(rotation_vec);
-        }
-        else if use_rotation_pos
-        {
-            component_downcast_mut!(edit_transformation, Transformation);
-            edit_transformation.set_rotation(rotation_pos);
+
+            // rotate around the axes of the parent space - not around the object's own axes
+            edit_transformation.apply_rotation_parent_space(rotation_vec);
         }
 
-        use_rotation_vec || use_rotation_pos
+        use_rotation_vec
     }
 
     pub fn drag_and_drop_object(&mut self, state: &mut State, apply_x: bool, apply_y: bool, apply_z: bool)
@@ -1919,6 +1974,17 @@ impl Editor
 
     pub fn load_asset(&mut self, state: &mut State, path: String, asset_type: AssetType, pos: Point2::<f32>, reuse_material: bool, world_pos: Option<Point3<f32>>, on_done: Option<Arc<dyn Fn(&mut Scene, NodeItem) -> () + Send + Sync>>)
     {
+        // sounds go into the sound resources, the drop position does not matter
+        if asset_type == AssetType::Sound
+        {
+            let main_queue = state.main_thread_execution_queue.clone();
+            spawn_thread(move ||
+            {
+                load_sound(&path, main_queue, None);
+            });
+            return;
+        }
+
         if self.editor_state.loading.read().unwrap().clone()
         {
             console_warning!("loading already in progress");
