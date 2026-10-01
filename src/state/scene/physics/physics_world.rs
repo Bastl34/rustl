@@ -66,6 +66,26 @@ const RELEASE_TOUCH_DISTANCE: f32 = 0.01;
 // into each other are pushed apart in the first steps, and that push is as hard as a hit.
 const HIT_GRACE_STEPS: u32 = 10;
 
+// A body that stays within this distance and angle of where it was for WOBBLE_TIME is
+// wobbling in place and gets frozen too. Measured: thin glass shards lying on each other
+// rock at up to 3.6 rad/s for minutes without going anywhere, too fast to ever count as
+// resting, and a 2 m shard leaning on others swings ±1.5° at 3 Hz while creeping 5 mm/s.
+const WOBBLE_DRIFT: f32 = 0.1;
+const WOBBLE_ANGLE: f32 = 0.2;
+const WOBBLE_TIME: f32 = 3.0;
+
+// How long a body has to stay in place before the settle damping takes hold. Short enough to
+// catch the rocking early, long enough that a body only just hit is already on its way.
+const SETTLE_DELAY: f32 = 0.3;
+
+// Anything faster than the wake speed covers the wobble distance well within this, so a
+// body that has not for this long no longer counts as heading anywhere.
+const WOBBLE_MOVER_TIME: f32 = 0.25;
+
+// past the settle time: moved less than this within SETTLE_WINDOW, however it turned, and it is frozen
+const SETTLE_DRIFT: f32 = 0.2;
+const SETTLE_WINDOW: f32 = 0.5;
+
 // Everything about a physics world the author gets to set. Kept apart from the solver
 // state so it can be serialized with the scene and edited in the ui.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -80,14 +100,36 @@ pub struct PhysicsWorldSettings
     pub ground_plane: bool,
     pub ground_plane_y: f32,
 
-    // A body falls asleep once it stays below both thresholds for this long, and a sleeping
+    // A body falls asleep once it stays below the thresholds for this long, and a sleeping
     // body costs nothing and stops wobbling. The defaults are rapier's and assume meters.
+    // Rapier 0.36 only uses the angular one for bodies without a collider, and it sleeps a
+    // group of touching bodies only once all of them are resting at the same moment.
     #[serde(default = "default_sleep_linear_threshold")]
     pub sleep_linear_threshold: f32,
     #[serde(default = "default_sleep_angular_threshold")]
     pub sleep_angular_threshold: f32,
     #[serde(default = "default_time_until_sleep")]
     pub time_until_sleep: f32,
+
+    // A body resting on its own for freeze_after seconds becomes fixed until a hit, so a
+    // fallen pile stops costing solver time without waiting for its slowest member.
+    #[serde(default = "default_freeze_resting")]
+    pub freeze_resting: bool,
+    #[serde(default = "default_freeze_after")]
+    pub freeze_after: f32,
+
+    // anything faster than this wakes a frozen body, well below the hit speed so a push works
+    #[serde(default = "default_wake_speed")]
+    pub wake_speed: f32,
+
+    // seconds a body may move after it was set moving, then it is frozen as soon as it gets nowhere - 0 turns it off
+    #[serde(default = "default_settle_time")]
+    pub settle_time: f32,
+
+    // extra damping on a body that has stayed in place for a moment, so it stops rocking
+    // instead of rocking on until it is frozen - 0 turns it off
+    #[serde(default = "default_settle_damping")]
+    pub settle_damping: f32,
 
     // How hard the solver works per step. Above rapier's own default of 4, which leaves a
     // visible wobble on tall narrow props in a real scene. It is not a cure for an unstable
@@ -110,6 +152,11 @@ fn default_hit_speed() -> f32 { 1.0 }
 fn default_sleep_linear_threshold() -> f32 { 0.05 }
 fn default_sleep_angular_threshold() -> f32 { 0.5 }
 fn default_time_until_sleep() -> f32 { 0.5 }
+fn default_freeze_resting() -> bool { true }
+fn default_freeze_after() -> f32 { 1.0 }
+fn default_wake_speed() -> f32 { 0.5 }
+fn default_settle_time() -> f32 { 3.0 }
+fn default_settle_damping() -> f32 { 5.0 }
 
 impl Default for PhysicsWorldSettings
 {
@@ -130,6 +177,11 @@ impl Default for PhysicsWorldSettings
             sleep_linear_threshold: default_sleep_linear_threshold(),
             sleep_angular_threshold: default_sleep_angular_threshold(),
             time_until_sleep: default_time_until_sleep(),
+            freeze_resting: default_freeze_resting(),
+            freeze_after: default_freeze_after(),
+            wake_speed: default_wake_speed(),
+            settle_time: default_settle_time(),
+            settle_damping: default_settle_damping(),
 
             solver_iterations: default_solver_iterations(),
             hit_speed: default_hit_speed(),
@@ -318,6 +370,14 @@ impl Anchor
     }
 }
 
+// Where a body was when it last moved on, to notice it wobbling in place.
+#[derive(Clone, Copy)]
+struct RestTrack
+{
+    start: Pose,
+    time: f32,
+}
+
 // One collider: a mesh instance at an offset from its anchor.
 pub struct Part
 {
@@ -355,6 +415,12 @@ pub struct BodyEntry
     // live state.
     pub reacts_on_hit: bool,
     pub waiting: bool,
+
+    // rested long enough to be made fixed until the next hit, see freeze_resting_bodies
+    pub frozen: bool,
+    rest: Option<RestTrack>,
+    settling: bool, // carries the settle damping on top of its own
+    active_time: f32, // since it was last set moving: run start, release or thaw
 
     pub parts: Vec<Part>,
 
@@ -538,6 +604,7 @@ pub struct PhysicsWorld
     narrow_phase: NarrowPhase,
     impulse_joints: ImpulseJointSet,
     multibody_joints: MultibodyJointSet,
+    soft_bodies: SoftBodySet, // not used currently
     ccd_solver: CCDSolver,
 
     pub settings: PhysicsWorldSettings,
@@ -623,6 +690,7 @@ impl PhysicsWorld
             narrow_phase: NarrowPhase::new(),
             impulse_joints: ImpulseJointSet::new(),
             multibody_joints: MultibodyJointSet::new(),
+            soft_bodies: SoftBodySet::new(),
             ccd_solver: CCDSolver::new(),
 
             settings: PhysicsWorldSettings::default(),
@@ -676,6 +744,7 @@ impl PhysicsWorld
         self.narrow_phase = NarrowPhase::new();
         self.impulse_joints = ImpulseJointSet::new();
         self.multibody_joints = MultibodyJointSet::new();
+        self.soft_bodies = SoftBodySet::new();
         self.time_accumulator = 0.0;
         self.body_amount = 0;
 
@@ -763,7 +832,7 @@ impl PhysicsWorld
     {
         if let Some(handle) = self.ground_plane.take()
         {
-            self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+            self.colliders.remove(handle, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, false);
             self.rebuild_bvh();
         }
 
@@ -1495,6 +1564,10 @@ impl PhysicsWorld
             body_type: physics.body_type,
             reacts_on_hit: physics.body_type == PhysicsBodyType::Dynamic && physics.react_on_first_hit,
             waiting: physics.body_type == PhysicsBodyType::Dynamic && physics.react_on_first_hit,
+            frozen: false,
+            rest: None,
+            settling: false,
+            active_time: 0.0,
             parts: built,
             requested_parts,
             transform: anchor_world,
@@ -1597,14 +1670,14 @@ impl PhysicsWorld
 
     fn remove_collider(&mut self, handle: ColliderHandle)
     {
-        self.colliders.remove(handle, &mut self.islands, &mut self.bodies, false);
+        self.colliders.remove(handle, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, false);
     }
 
     fn remove_bodies(&mut self, bodies: &Vec<RigidBodyHandle>)
     {
         for body in bodies
         {
-            self.bodies.remove(*body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, true);
+            self.bodies.remove(*body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, &mut self.soft_bodies, true);
             self.body_amount = self.body_amount.saturating_sub(1);
         }
     }
@@ -1845,6 +1918,7 @@ impl PhysicsWorld
         if let Some(body) = self.entries[index].body
         {
             Self::refresh_body_settings(&mut self.bodies, body, &physics);
+            self.entries[index].settling = false;
         }
 
         let reacts_on_hit = physics.body_type == PhysicsBodyType::Dynamic && physics.react_on_first_hit;
@@ -1893,11 +1967,33 @@ impl PhysicsWorld
         }
 
         self.entries[index].waiting = waiting;
+        self.entries[index].active_time = 0.0;
+        self.apply_hold(index);
+    }
+
+    fn set_frozen(&mut self, index: usize, frozen: bool)
+    {
+        if self.entries[index].body_type != PhysicsBodyType::Dynamic
+        {
+            return;
+        }
+
+        self.entries[index].frozen = frozen;
+        self.entries[index].rest = None;
+        self.entries[index].active_time = 0.0;
+        self.set_settling(index, false);
+        self.apply_hold(index);
+    }
+
+    // a waiting or frozen object is a fixed body, anything else dynamic
+    fn apply_hold(&mut self, index: usize)
+    {
+        let held = self.entries[index].waiting || self.entries[index].frozen;
 
         let Some(handle) = self.entries[index].body else { return; };
         let Some(body) = self.bodies.get_mut(handle) else { return; };
 
-        let body_type = if waiting { RigidBodyType::Fixed } else { RigidBodyType::Dynamic };
+        let body_type = if held { RigidBodyType::Fixed } else { RigidBodyType::Dynamic };
 
         if body.body_type() == body_type
         {
@@ -1908,7 +2004,7 @@ impl PhysicsWorld
         body.set_linvel(Vector::ZERO, true);
         body.set_angvel(Vector::ZERO, true);
 
-        if !waiting
+        if !held
         {
             body.recompute_mass_properties_from_colliders(&self.colliders);
         }
@@ -1983,7 +2079,7 @@ impl PhysicsWorld
 
                 match parry3d::query::distance(collider_a.position(), collider_a.shape(), collider_b.position(), collider_b.shape())
                 {
-                    Ok(distance) => if distance <= RELEASE_TOUCH_DISTANCE { return true; },
+                    Ok(distance) => if distance.distance <= RELEASE_TOUCH_DISTANCE { return true; },
                     Err(_) => return true,
                 }
             }
@@ -1998,7 +2094,7 @@ impl PhysicsWorld
 
         for entry in &self.entries
         {
-            if entry.body_type != PhysicsBodyType::Dynamic || entry.waiting
+            if entry.body_type != PhysicsBodyType::Dynamic || entry.waiting || entry.frozen
             {
                 continue;
             }
@@ -2029,14 +2125,24 @@ impl PhysicsWorld
         }
 
         let hit_speed = self.settings.hit_speed.max(0.0);
+        let wake_speed = self.settings.wake_speed.max(0.0);
         let mut hit: Vec<usize> = vec![];
+
+        // they still release a waiting object, but no longer thaw a frozen one
+        let overdue: HashSet<RigidBodyHandle> = self.entries.iter()
+            .filter(|entry| self.is_overdue(entry))
+            .filter_map(|entry| entry.body)
+            .collect();
 
         for index in 0..self.entries.len()
         {
-            if !self.entries[index].waiting
+            if !self.entries[index].waiting && !self.entries[index].frozen
             {
                 continue;
             }
+
+            let waiting = self.entries[index].waiting;
+            let threshold = if waiting { hit_speed } else { wake_speed };
 
             let was_hit = self.entries[index].parts.iter().any(|part|
             {
@@ -2054,7 +2160,7 @@ impl PhysicsWorld
 
                     if body.is_dynamic()
                     {
-                        self.pre_step_speed.get(&other_body).copied().unwrap_or(0.0) > hit_speed
+                        (waiting || !overdue.contains(&other_body)) && self.pre_step_speed.get(&other_body).copied().unwrap_or(0.0) > threshold
                     }
                     else if body.is_kinematic()
                     {
@@ -2075,16 +2181,35 @@ impl PhysicsWorld
 
         for index in hit
         {
+            self.release(index);
+        }
+    }
+
+    fn release(&mut self, index: usize)
+    {
+        if self.entries[index].waiting
+        {
             self.release_entry(index);
+        }
+        else if self.entries[index].frozen
+        {
+            self.thaw_entry(index);
         }
     }
 
     // A hit the narrow phase never sees: the character is a shape cast, not a body.
-    pub fn hit_collider(&mut self, handle: ColliderHandle)
+    // approach_speed: how fast the character moves into it. Anything waiting counts at any
+    // speed, a frozen piece only if walked into - not the one under its feet.
+    pub fn hit_collider(&mut self, handle: ColliderHandle, approach_speed: f32)
     {
-        let Some(index) = self.entries.iter().position(|entry| entry.waiting && entry.parts.iter().any(|part| part.handle == handle)) else { return; };
+        let Some(index) = self.entries.iter().position(|entry| (entry.waiting || entry.frozen) && entry.parts.iter().any(|part| part.handle == handle)) else { return; };
 
-        self.release_entry(index);
+        if self.entries[index].frozen && approach_speed <= self.settings.wake_speed
+        {
+            return;
+        }
+
+        self.release(index);
     }
 
     // Every run starts as authored: what reacts on a hit waits, everything else runs.
@@ -2092,8 +2217,332 @@ impl PhysicsWorld
     {
         for index in 0..self.entries.len()
         {
+            self.entries[index].frozen = false;
+            self.entries[index].rest = None;
+            self.set_settling(index, false);
+
             let waiting = self.entries[index].reacts_on_hit;
             self.set_waiting(index, waiting);
+        }
+    }
+
+    pub fn frozen_amount(&self) -> usize
+    {
+        self.entries.iter().filter(|entry| entry.frozen).count()
+    }
+
+    // dynamic objects the solver actually simulates right now
+    pub fn awake_amount(&self) -> usize
+    {
+        self.entries.iter().filter(|entry|
+        {
+            entry.body_type == PhysicsBodyType::Dynamic && !entry.waiting && !entry.frozen
+                && entry.body.and_then(|handle| self.bodies.get(handle)).is_some_and(|body| !body.is_sleeping())
+        }).count()
+    }
+
+    // ********** freezing resting bodies **********
+
+    // Rapier sleeps a group of touching bodies only once every one of them rests at the same
+    // moment, and a fallen pile of dominoes or rubble is one such group that rarely gets
+    // there. Rapier still tracks per body how long it has been resting, so a body that has
+    // rested long enough is made fixed here, and released again like a waiting object.
+    // Tracks where every awake body has been, damps the ones that stay in place and freezes
+    // the ones that rest or keep wobbling there.
+    fn settle_bodies(&mut self, elapsed: f32)
+    {
+        // switched off mid run: everything frozen goes back to the solver
+        if !self.settings.freeze_resting
+        {
+            for index in 0..self.entries.len()
+            {
+                if self.entries[index].frozen
+                {
+                    self.set_frozen(index, false);
+                }
+            }
+        }
+
+        if self.run_steps < HIT_GRACE_STEPS
+        {
+            return;
+        }
+
+        let freeze_after = self.settings.freeze_after.max(0.0);
+        let wake_speed = self.settings.wake_speed.max(0.0);
+        let damp = self.settings.settle_damping > 0.0;
+
+        for index in 0..self.entries.len()
+        {
+            let entry = &self.entries[index];
+
+            if entry.body_type != PhysicsBodyType::Dynamic || entry.waiting || entry.frozen
+            {
+                continue;
+            }
+
+            let Some(body) = entry.body.and_then(|handle| self.bodies.get(handle)) else { continue; };
+
+            // a sleeping body costs nothing already
+            if body.is_sleeping()
+            {
+                self.entries[index].rest = None;
+                self.entries[index].active_time = 0.0;
+                self.set_settling(index, false);
+                continue;
+            }
+
+            self.entries[index].active_time += elapsed;
+            let overdue = self.is_overdue(&self.entries[index]);
+
+            let pose = *body.position();
+            let resting = body.activation().time_since_can_sleep >= freeze_after;
+
+            // really on its way somewhere, e.g. just hit, whatever it did before - once overdue only the distance counts
+            let fast = !overdue && body.linvel().length() > wake_speed;
+            let (drift, angle) = if overdue { (SETTLE_DRIFT, f32::INFINITY) } else { (WOBBLE_DRIFT, WOBBLE_ANGLE) };
+
+            let rest_time = match self.entries[index].rest
+            {
+                Some(mut rest) if !fast && Self::stays_put(&rest.start, &pose, drift, angle) =>
+                {
+                    rest.time += elapsed;
+                    self.entries[index].rest = Some(rest);
+                    rest.time
+                }
+                _ =>
+                {
+                    self.entries[index].rest = Some(RestTrack { start: pose, time: 0.0 });
+                    0.0
+                }
+            };
+
+            // not in mid air, a thrown object keeps flying
+            let calmed = overdue && rest_time >= SETTLE_WINDOW && self.touches_anything(index);
+
+            if self.settings.freeze_resting && (resting || rest_time >= WOBBLE_TIME || calmed)
+            {
+                self.set_frozen(index, true);
+                continue;
+            }
+
+            self.set_settling(index, damp && rest_time >= SETTLE_DELAY);
+        }
+    }
+
+    // the settle damping comes on top of the object's own, which is read back when it ends
+    fn set_settling(&mut self, index: usize, settling: bool)
+    {
+        if self.entries[index].settling == settling
+        {
+            return;
+        }
+
+        self.entries[index].settling = settling;
+
+        let Some(handle) = self.entries[index].body else { return; };
+        let physics = self.entries[index].anchor.physics();
+        let extra = if settling { self.settings.settle_damping.max(0.0) } else { 0.0 };
+
+        if let Some(body) = self.bodies.get_mut(handle)
+        {
+            body.set_linear_damping(physics.linear_damping.max(0.0) + extra);
+            body.set_angular_damping(physics.angular_damping.max(0.0) + extra);
+        }
+    }
+
+    // Position and angle apart: at the far edge of a 2 m slab a rocking of 1.5° is already 3.5 cm.
+    fn stays_put(start: &Pose, pose: &Pose, max_drift: f32, max_angle: f32) -> bool
+    {
+        let delta = pose.rotation * start.rotation.inverse();
+        let angle = 2.0 * Vector::new(delta.x, delta.y, delta.z).length().min(1.0).asin();
+
+        (pose.translation - start.translation).length() <= max_drift && angle <= max_angle
+    }
+
+    // moving longer than the settle time since it was last set moving - it only gets frozen, it no longer wakes others
+    fn is_overdue(&self, entry: &BodyEntry) -> bool
+    {
+        self.settings.settle_time > 0.0 && entry.active_time >= self.settings.settle_time
+    }
+
+    fn touches_anything(&self, index: usize) -> bool
+    {
+        self.entries[index].parts.iter().any(|part| self.narrow_phase.contact_pairs_with(part.handle).any(|pair| pair.has_any_active_contact()))
+    }
+
+    // Frozen objects in the way of something moving are thawed before the step, not after
+    // it: a fixed body is infinitely heavy, and a thaw after the contact comes too late -
+    // the mover has already bounced off it like off a wall.
+    fn thaw_ahead_of_movers(&mut self, lookahead: f32)
+    {
+        if !self.entries.iter().any(|entry| entry.frozen)
+        {
+            return;
+        }
+
+        let wake_speed = self.settings.wake_speed.max(0.0);
+
+        // a collider moving faster than the wake speed, with how far it can get this frame
+        let reach = |body: &RigidBody, collider: &Collider| -> Option<f32>
+        {
+            let radius = collider.compute_aabb().half_extents().length();
+            let speed = body.linvel().length() + body.angvel().length() * radius;
+
+            (speed > wake_speed).then_some(speed * lookahead + RELEASE_TOUCH_DISTANCE)
+        };
+
+        let mut movers: Vec<(ColliderHandle, RigidBodyHandle, f32)> = vec![];
+
+        for entry in &self.entries
+        {
+            if entry.body_type != PhysicsBodyType::Dynamic || entry.waiting || entry.frozen
+            {
+                continue;
+            }
+
+            // fast but going nowhere, it would only pass its wobble on to what it touches
+            if entry.rest.is_some_and(|rest| rest.time >= WOBBLE_MOVER_TIME) || self.is_overdue(entry)
+            {
+                continue;
+            }
+
+            let Some(body_handle) = entry.body else { continue; };
+            let Some(body) = self.bodies.get(body_handle) else { continue; };
+
+            if body.is_sleeping()
+            {
+                continue;
+            }
+
+            for part in &entry.parts
+            {
+                let Some(collider) = self.colliders.get(part.handle) else { continue; };
+
+                if let Some(distance) = reach(body, collider)
+                {
+                    movers.push((part.handle, body_handle, distance));
+                }
+            }
+        }
+
+        for vehicle in self.vehicles.values()
+        {
+            let (Some(body), Some(collider)) = (self.bodies.get(vehicle.body), self.colliders.get(vehicle.collider)) else { continue; };
+
+            if let Some(distance) = reach(body, collider)
+            {
+                movers.push((vehicle.collider, vehicle.body, distance));
+            }
+        }
+
+        if movers.is_empty()
+        {
+            return;
+        }
+
+        let frozen_parts: HashMap<ColliderHandle, usize> = self.entries.iter().enumerate()
+            .filter(|(_, entry)| entry.frozen)
+            .flat_map(|(index, entry)| entry.parts.iter().map(move |part| (part.handle, index)))
+            .collect();
+
+        let mut thaw: HashSet<usize> = HashSet::new();
+
+        {
+            let query = self.query_pipeline(QueryFilter::only_fixed());
+
+            for (handle, body, distance) in &movers
+            {
+                let (Some(collider), Some(body)) = (self.colliders.get(*handle), self.bodies.get(*body)) else { continue; };
+                let aabb = collider.compute_aabb().loosened(*distance);
+
+                for (other, other_collider) in query.intersect_aabb_conservative(aabb)
+                {
+                    let Some(&index) = frozen_parts.get(&other) else { continue; };
+
+                    if thaw.contains(&index)
+                    {
+                        continue;
+                    }
+
+                    // only a mover heading into it counts - one leaning on it and rocking does not
+                    let approaching = match parry3d::query::contact(collider.position(), collider.shape(), other_collider.position(), other_collider.shape(), *distance)
+                    {
+                        Ok(Some(contact)) => body.velocity_at_point(contact.point1).dot(contact.normal1) > wake_speed,
+                        Ok(None) => false,
+                        Err(_) => true,
+                    };
+
+                    if approaching
+                    {
+                        thaw.insert(index);
+                    }
+                }
+            }
+        }
+
+        for index in thaw
+        {
+            self.thaw_entry(index);
+        }
+    }
+
+    // Releases a frozen object and the frozen ones resting on it, so nothing is left hanging
+    // in the air. Only one layer up: flooding the whole pile let a ball rolling at the foot
+    // of a heap wake hundreds of pieces, measured. A released piece that moves on hits the
+    // next layer anyway.
+    fn thaw_entry(&mut self, index: usize)
+    {
+        if !self.entries[index].frozen
+        {
+            return;
+        }
+
+        let up = -Vector3::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z);
+
+        let center = |entry: &BodyEntry| entry.body.and_then(|handle| self.bodies.get(handle)).map(|body|
+        {
+            let center = body.center_of_mass();
+            Vector3::new(center.x, center.y, center.z)
+        });
+
+        let bounds = |entry: &BodyEntry| -> Vec<(ColliderHandle, Aabb)>
+        {
+            entry.parts.iter()
+                .filter_map(|part| self.colliders.get(part.handle).map(|collider| (part.handle, collider.compute_aabb())))
+                .collect()
+        };
+
+        let own = bounds(&self.entries[index]);
+        let own_center = center(&self.entries[index]);
+
+        let mut above = vec![];
+
+        for other in 0..self.entries.len()
+        {
+            if other == index || !self.entries[other].frozen
+            {
+                continue;
+            }
+
+            let (Some(own_center), Some(other_center)) = (own_center, center(&self.entries[other])) else { continue; };
+
+            if (other_center - own_center).dot(&up) <= 0.0
+            {
+                continue;
+            }
+
+            if self.colliders_touch(&own, &bounds(&self.entries[other]))
+            {
+                above.push(other);
+            }
+        }
+
+        self.set_frozen(index, false);
+
+        for other in above
+        {
+            self.set_frozen(other, false);
         }
     }
 
@@ -2409,6 +2858,9 @@ impl PhysicsWorld
         if self.time_accumulator >= self.settings.fixed_timestep
         {
             self.record_speeds();
+
+            let pending_steps = (self.time_accumulator / self.settings.fixed_timestep).floor();
+            self.thaw_ahead_of_movers(pending_steps * self.settings.fixed_timestep);
         }
 
         while self.time_accumulator >= self.settings.fixed_timestep
@@ -2429,6 +2881,7 @@ impl PhysicsWorld
                 &mut self.colliders,
                 &mut self.impulse_joints,
                 &mut self.multibody_joints,
+                &mut self.soft_bodies,
                 &mut self.ccd_solver,
                 &(),
                 &()
@@ -2439,6 +2892,7 @@ impl PhysicsWorld
         {
             self.run_steps = self.run_steps.saturating_add(steps);
             self.release_hit_bodies();
+            self.settle_bodies(steps as f32 * self.settings.fixed_timestep);
         }
 
         self.recover_escaped_bodies();
@@ -2492,13 +2946,18 @@ impl PhysicsWorld
             let author_moved = moved && Self::differs_beyond_noise(&anchor_world, &self.entries[index].transform);
             let anchor_follows = moved && (!dynamic || scene_owns_dynamics || author_moved);
 
+            // the author picked up a frozen object mid run, it has to fall from where it lands
+            if author_moved && !scene_owns_dynamics && self.entries[index].frozen
+            {
+                self.set_frozen(index, false);
+            }
 
             let (anchor_pose, fresh_scale) = Self::split_transform(&anchor_world);
 
             // The scale only replaces the stored one when it really changed. It is read
             // back out of a rotating matrix, and the float noise in it would otherwise
             // reach every part and look like an edit on each of them.
-            let scale_changed = Self::scale_differs(&fresh_scale, &self.entries[index].scale);
+            let scale_changed = anchor_follows && Self::scale_differs(&fresh_scale, &self.entries[index].scale);
             let anchor_scale = if scale_changed { fresh_scale } else { self.entries[index].scale };
 
             let body = self.entries[index].body;
@@ -2747,8 +3206,8 @@ impl PhysicsWorld
 
         for index in 0..self.entries.len()
         {
-            // a waiting body sits exactly where the scene put it, nothing to write
-            if self.entries[index].body_type != PhysicsBodyType::Dynamic || self.entries[index].waiting
+            // a waiting body sits exactly where the scene put it, a frozen one where it was last written
+            if self.entries[index].body_type != PhysicsBodyType::Dynamic || self.entries[index].waiting || self.entries[index].frozen
             {
                 continue;
             }
@@ -2813,7 +3272,7 @@ impl PhysicsWorld
                 PhysicsBodyType::Static => PhysicsDebugState::Static,
                 PhysicsBodyType::Kinematic => PhysicsDebugState::Kinematic,
                 PhysicsBodyType::Dynamic if entry.waiting => PhysicsDebugState::Waiting,
-                PhysicsBodyType::Dynamic if body.is_some_and(|body| body.is_sleeping()) => PhysicsDebugState::Sleeping,
+                PhysicsBodyType::Dynamic if entry.frozen || body.is_some_and(|body| body.is_sleeping()) => PhysicsDebugState::Sleeping,
                 PhysicsBodyType::Dynamic => PhysicsDebugState::Dynamic,
             };
 
@@ -3007,7 +3466,7 @@ impl PhysicsWorld
         let old_colliders: Vec<ColliderHandle> = self.bodies.get(body).map(|body| body.colliders().to_vec()).unwrap_or_default();
         for collider in old_colliders
         {
-            self.colliders.remove(collider, &mut self.islands, &mut self.bodies, true);
+            self.colliders.remove(collider, &mut self.islands, &mut self.bodies, &mut self.soft_bodies, true);
         }
 
         let com = Vector::new(chassis.center_of_mass.x, chassis.center_of_mass.y, chassis.center_of_mass.z);
@@ -3140,7 +3599,7 @@ impl PhysicsWorld
     {
         if let Some(vehicle) = self.vehicles.remove(&node_id)
         {
-            self.bodies.remove(vehicle.body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, true);
+            self.bodies.remove(vehicle.body, &mut self.islands, &mut self.colliders, &mut self.impulse_joints, &mut self.multibody_joints, &mut self.soft_bodies, true);
         }
     }
 
@@ -5456,7 +5915,7 @@ mod tests
 
         // what the character controller reports
         let handle = world.entries()[0].parts[0].handle;
-        world.hit_collider(handle);
+        world.hit_collider(handle, f32::INFINITY);
 
         for _ in 0..300
         {

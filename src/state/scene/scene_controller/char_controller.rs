@@ -2134,7 +2134,10 @@ impl SceneController for CharacterController
             {
                 for collision in &collisions
                 {
-                    scene.physics.hit_collider(collision.handle);
+                    // the hit normal points out of the obstacle, towards the character
+                    let approach = -(collision.translation_applied + collision.translation_remaining).dot(collision.hit.normal1) / delta_t.max(0.0001);
+
+                    scene.physics.hit_collider(collision.handle, approach);
                 }
             }
 
