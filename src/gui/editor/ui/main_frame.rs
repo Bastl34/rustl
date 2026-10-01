@@ -553,16 +553,6 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 }
             }
 
-            // editor internals (hierarchy, lists and the light/camera debug view)
-            {
-                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/internal_entries.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(editor_state.show_internal_entries).frame(true);
-                if ui.add(btn).on_hover_text("show editor internals (hierarchy, lists and the light/camera debug view)").clicked()
-                {
-                    editor_state.show_internal_entries = !editor_state.show_internal_entries;
-                }
-            }
-
             // wireframe mode
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/wireframe.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
@@ -684,6 +674,18 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                     {
                         editor_state.apply_highlight(state);
                     }
+                }
+            }
+
+            ui.separator();
+
+            // editor internals (hierarchy, lists and the light/camera debug view)
+            {
+                let img = egui::Image::new(egui::include_image!("../../../../resources/icons/internal_entries.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
+                let btn = egui::Button::image(img).selected(editor_state.show_internal_entries).frame(true);
+                if ui.add(btn).on_hover_text("show editor internals (hierarchy, lists and the light/camera debug view)").clicked()
+                {
+                    editor_state.show_internal_entries = !editor_state.show_internal_entries;
                 }
             }
 
