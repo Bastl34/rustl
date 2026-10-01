@@ -90,7 +90,7 @@ pub fn create_scene_tabs(editor_state: &mut EditorState, state: &mut State, ui: 
                     scene_to_activate = Some(scene_id);
                 }
 
-                if result.close_clicked
+                if result.icon_clicked
                 {
                     tab_to_close = Some(scene_id);
                 }

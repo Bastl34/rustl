@@ -132,13 +132,21 @@ impl ApplicationHandler<CustomEvent> for AppState
         }
     }
 
-    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, _window_id: winit::window::WindowId, event: winit::event::WindowEvent, )
+    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, window_id: winit::window::WindowId, event: winit::event::WindowEvent, )
     {
         let app = match self
         {
             AppState::Initialized(app) => app,
             AppState::Uninitialized(_) => return,
         };
+
+        // other egui windows (e.g. the assets window) - they are rendered with the main window
+        if window_id != app.interface.window().id()
+        {
+            app.interface.viewport_window_input(window_id, &event);
+            return;
+        }
+
         match event
         {
             winit::event::WindowEvent::Resized(size) => app.interface.resize(Some(size.clone()), None),
@@ -162,6 +170,11 @@ impl ApplicationHandler<CustomEvent> for AppState
                     app.interface.window().request_redraw();
                     app.interface.update_done();
 
+                    // windows for new egui viewports (winit needs the active event loop)
+                    if app.interface.has_pending_viewport_windows()
+                    {
+                        app.interface.create_pending_viewport_windows(event_loop, get_icon());
+                    }
                 }
             },
             winit::event::WindowEvent::CloseRequested =>

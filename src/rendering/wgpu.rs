@@ -22,6 +22,8 @@ fn resolve_present_mode(setting: PresentModeSetting, supports_mailbox: bool) -> 
 
 pub struct WGpu
 {
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
     device: Device,
     queue: Queue,
     surface: Surface<'static>,
@@ -216,6 +218,8 @@ impl WGpu
 
         let mut wgpu = Self
         {
+            instance,
+            adapter,
             device,
             surface,
             msaa_samples,
@@ -243,6 +247,49 @@ impl WGpu
     pub fn surface_config(&self) -> &SurfaceConfiguration
     {
         &self.surface_config
+    }
+
+    // surface for an additional window (egui viewports) - same format as the main surface, so the egui renderer can be shared
+    pub fn create_window_surface(&self, window: Arc<winit::window::Window>) -> Option<(Surface<'static>, SurfaceConfiguration)>
+    {
+        let size = window.inner_size();
+
+        let surface = match self.instance.create_surface(window)
+        {
+            Ok(surface) => surface,
+            Err(err) =>
+            {
+                console_error!(format!("failed to create window surface: {:?}", err));
+                return None;
+            }
+        };
+
+        let surface_caps = surface.get_capabilities(&self.adapter);
+        if !surface_caps.formats.contains(&self.surface_config.format)
+        {
+            console_error!(format!("window surface does not support the format {:?}", self.surface_config.format));
+            return None;
+        }
+
+        // no vsync: a second vsynced surface (maybe on a monitor with another refresh rate) would throttle the main loop
+        let present_mode = [wgpu::PresentMode::Mailbox, wgpu::PresentMode::Immediate].into_iter().find(|mode| surface_caps.present_modes.contains(mode)).unwrap_or(wgpu::PresentMode::Fifo);
+
+        let surface_config = wgpu::SurfaceConfiguration
+        {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            width: size.width.max(1),
+            height: size.height.max(1),
+            present_mode,
+            alpha_mode: surface_caps.alpha_modes[0],
+            format: self.surface_config.format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+
+        surface.configure(&self.device, &surface_config);
+
+        Some((surface, surface_config))
     }
 
     pub fn create_msaa_texture(&mut self, sample_count: u32)

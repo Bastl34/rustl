@@ -13,7 +13,8 @@ use nalgebra::{Vector2, Point2};
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::keyboard::ModifiersKeyState;
-use winit::window::{Window, Fullscreen, CursorGrabMode};
+use winit::event_loop::ActiveEventLoop;
+use winit::window::{Window, Fullscreen, CursorGrabMode, Icon, WindowId};
 
 use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::platform::is_mac;
@@ -75,7 +76,7 @@ impl MainInterface
             wgpu.create_msaa_texture(samlpes);
         }
 
-        let egui = EGui::new(wgpu.device(), wgpu.surface_config(), window.clone());
+        let egui = EGui::new(&wgpu, window.clone());
 
         #[cfg(feature = "editor")]
         let editor_gui =
@@ -393,10 +394,12 @@ impl MainInterface
             let now = Instant::now();
             let state = &mut *(self.context.state.borrow_mut());
 
+            self.context.egui.set_viewport_windows_visible(editor_gui.editor_state.visible, &self.context.window);
+
             if editor_gui.editor_state.visible
             {
                 let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, None);
-                self.context.egui.set_output(gui_output);
+                self.context.egui.set_output(gui_output, &self.context.window);
 
                 //self.gui.request_repaint();
             }
@@ -700,7 +703,7 @@ impl MainInterface
 
                             // re-create the GUI output for the new render target size and render
                             let gui_output = editor_gui.build_gui(state, &self.context.window, &mut self.context.egui, target_size);
-                            self.context.egui.set_output(gui_output);
+                            self.context.egui.set_output(gui_output, &self.context.window);
                             self.context.egui.render(&mut self.context.wgpu, &view, &mut encoder);
 
                             // restore the window size for the normal frames
@@ -1003,6 +1006,22 @@ impl MainInterface
                 _ => {}
             }
         }
+    }
+
+    // events of the other egui windows (e.g. the assets window) - they only drive their egui ui
+    pub fn viewport_window_input(&mut self, window_id: WindowId, event: &winit::event::WindowEvent)
+    {
+        self.context.egui.on_viewport_window_event(window_id, event);
+    }
+
+    pub fn has_pending_viewport_windows(&self) -> bool
+    {
+        self.context.egui.has_pending_viewport_windows()
+    }
+
+    pub fn create_pending_viewport_windows(&mut self, event_loop: &ActiveEventLoop, icon: Option<Icon>)
+    {
+        self.context.egui.create_pending_viewport_windows(event_loop, &self.context.wgpu, icon);
     }
 
     pub fn device_input(&mut self, event: &winit::event::DeviceEvent)

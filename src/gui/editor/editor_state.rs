@@ -265,6 +265,15 @@ pub struct EditorState
     pub copy_node_settings: Option<NodeSettings>,
 
     pub drag_id: Option<String>,
+    pub drag_viewport: egui::ViewportId, // egui viewport (window) the asset drag started in
+
+    // assets in their own native window (egui viewport)
+    pub assets_window_supported: bool, // the drag and drop between the windows needs window positions (not on wasm/wayland)
+    pub assets_window_open: bool,
+    pub assets_window_pos: Option<egui::Pos2>, // outer position in points (reopens at the same place)
+    pub assets_window_size: Option<egui::Vec2>, // inner size in points
+    pub asset_window_drag_pos: Option<egui::Pos2>, // pointer of a drag out of the assets window in points of the main window
+    pub asset_window_drop: Option<(String, egui::Pos2)>, // dropped from the assets window onto the 3d view (points of the main window)
 
     // external file drops (from the os) - loaded one after another because loading is not parallel
     pub external_drop_queue: Vec<String>,
@@ -407,6 +416,14 @@ impl EditorState
             copy_node_settings: None,
 
             drag_id: None,
+            drag_viewport: egui::ViewportId::ROOT,
+
+            assets_window_supported: false,
+            assets_window_open: false,
+            assets_window_pos: None,
+            assets_window_size: None,
+            asset_window_drag_pos: None,
+            asset_window_drop: None,
 
             external_drop_queue: vec![],
             external_drop_pos: None,

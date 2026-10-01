@@ -16,7 +16,7 @@ use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
 use crate::{component_downcast, component_downcast_mut};
 use crate::helper::concurrency::execution_queue::ExecutionQueueItem;
-use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator};
+use crate::gui::helper::generic_items::{collapse_with_title, tab, tab_separator, tab_with_icon};
 use crate::state::scene::components::component::ComponentItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::state::State;
@@ -25,7 +25,7 @@ use crate::state::scene::scene::Scene;
 use egui::{Visuals, Style, ScrollArea, Ui, RichText, Color32};
 use web_time::Instant;
 
-use super::assets::create_asset_section;
+use super::assets::{assets_viewport_id, create_asset_section, create_assets_window, dock_assets};
 use super::cameras::{build_camera_list, create_camera_settings};
 use super::super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
@@ -127,60 +127,42 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         });
     });
 
-    // bottom panel (drag below min size to close, drag the edge handle to reopen)
-    let mut bottom_panel_open = editor_state.bottom_panel_open;
-    egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).min_size(100.0).show_collapsible(ui, &mut bottom_panel_open, |ui|
+    // bottom panel - only the tabs while the assets are in their own window (own id: the other tabs keep the height of the normal panel)
+    if editor_state.bottom == BottomPanel::Assets && editor_state.assets_window_open && editor_state.bottom_panel_open
     {
-        ui.horizontal(|ui|
+        egui::Panel::bottom("bottom_panel_tabs").frame(frame).show(ui, |ui|
         {
-            ui.spacing_mut().item_spacing.x = 2.0;
+            create_bottom_tabs(editor_state, ui);
+            tab_separator(ui);
+        });
+    }
+    else
+    {
+        // drag below min size to close, drag the edge handle to reopen
+        let mut bottom_panel_open = editor_state.bottom_panel_open;
+        egui::Panel::bottom("bottom_panel").resizable(true).frame(frame).min_size(100.0).show_collapsible(ui, &mut bottom_panel_open, |ui|
+        {
+            create_bottom_tabs(editor_state, ui);
+            tab_separator(ui);
 
-            if tab(ui, "📦 Assets", editor_state.bottom == BottomPanel::Assets, false).clicked
+            if editor_state.bottom == BottomPanel::Assets
             {
-                editor_state.bottom = BottomPanel::Assets;
+                if !editor_state.assets_window_open
+                {
+                    create_asset_section(editor_state, state, ui);
+                }
             }
-
-            let console_log_amount = console_log::get_amount();
-            let console_errors = console_log::get_error_amount();
-            let console_label = if console_errors > 0
+            else if editor_state.bottom == BottomPanel::Console
             {
-                egui::RichText::new(format!("📝 Console {} (with Errors {})", console_log_amount, console_errors)).color(egui::Color32::LIGHT_RED)
+                create_console_section(editor_state, state, ui);
             }
-            else
+            else if editor_state.bottom == BottomPanel::Debug
             {
-                egui::RichText::new(format!("📝 Console ({})", console_log_amount))
-            };
-            let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
-            if console_errors > 0
-            {
-                console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
-            }
-            if console_tab.clicked
-            {
-                editor_state.bottom = BottomPanel::Console;
-            }
-
-            if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
-            {
-                editor_state.bottom = BottomPanel::Debug;
+                create_debug_settings(editor_state, state, ui);
             }
         });
-        tab_separator(ui);
-
-        if editor_state.bottom == BottomPanel::Assets
-        {
-            create_asset_section(editor_state, state, ui);
-        }
-        else if editor_state.bottom == BottomPanel::Console
-        {
-            create_console_section(editor_state, state, ui);
-        }
-        else if editor_state.bottom == BottomPanel::Debug
-        {
-            create_debug_settings(editor_state, state, ui);
-        }
-    });
-    editor_state.bottom_panel_open = bottom_panel_open;
+        editor_state.bottom_panel_open = bottom_panel_open;
+    }
 
     // left panel
     let mut left_panel_open = editor_state.left_panel_open;
@@ -232,7 +214,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
         if (measured_height - bar_height).abs() > 0.5
         {
             ui.data_mut(|data| data.insert_temp(bar_height_id, measured_height));
-            ui.ctx().request_repaint();
+            ui.ctx().request_discard("run mode bar height changed");
         }
 
         let tabs_right = bar_ui.min_rect().left() - 8.0;
@@ -261,6 +243,80 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
 
     // modals
     create_modals(editor_state, state, ui.ctx());
+
+    // assets in their own window - last: dropping from there checks the space the panels leave free
+    create_assets_window(editor_state, state, ui);
+}
+
+fn create_bottom_tabs(editor_state: &mut EditorState, ui: &mut Ui)
+{
+    ui.horizontal(|ui|
+    {
+        ui.spacing_mut().item_spacing.x = 2.0;
+
+        // the icon moves the assets into their own window and back (not offered on wasm/wayland: the drag and drop between the windows needs window positions)
+        let assets_selected = editor_state.bottom == BottomPanel::Assets;
+        let assets_tab = if !editor_state.assets_window_supported
+        {
+            tab(ui, "📦 Assets", assets_selected, false)
+        }
+        else if editor_state.assets_window_open
+        {
+            tab_with_icon(ui, "📦 Assets", assets_selected, "⬋", "dock the assets back into this panel")
+        }
+        else
+        {
+            tab_with_icon(ui, "📦 Assets", assets_selected, "🗗", "open the assets in a separate window")
+        };
+
+        if assets_tab.icon_clicked
+        {
+            if editor_state.assets_window_open
+            {
+                dock_assets(editor_state);
+            }
+            else
+            {
+                editor_state.assets_window_open = true;
+            }
+        }
+
+        if assets_tab.clicked
+        {
+            editor_state.bottom = BottomPanel::Assets;
+
+            // they are in their own window -> bring it to the front
+            if editor_state.assets_window_open
+            {
+                ui.ctx().send_viewport_cmd_to(assets_viewport_id(), egui::ViewportCommand::Focus);
+            }
+        }
+
+        let console_log_amount = console_log::get_amount();
+        let console_errors = console_log::get_error_amount();
+        let console_label = if console_errors > 0
+        {
+            egui::RichText::new(format!("📝 Console {} (with Errors {})", console_log_amount, console_errors)).color(egui::Color32::LIGHT_RED)
+        }
+        else
+        {
+            egui::RichText::new(format!("📝 Console ({})", console_log_amount))
+        };
+        let console_tab = tab(ui, console_label, editor_state.bottom == BottomPanel::Console, false);
+        if console_errors > 0
+        {
+            console_tab.response.on_hover_text(format!("there are {} errors in the console log", console_errors));
+        }
+        if console_tab.clicked
+        {
+            editor_state.bottom = BottomPanel::Console;
+        }
+
+        if tab(ui, "🐛 Debug", editor_state.bottom == BottomPanel::Debug, false).clicked
+        {
+            editor_state.bottom = BottomPanel::Debug;
+        }
+    });
 }
 
 fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)

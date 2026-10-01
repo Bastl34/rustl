@@ -12,7 +12,15 @@ pub struct TabResponse
 {
     pub response: egui::Response,
     pub clicked: bool,
-    pub close_clicked: bool,
+    pub icon_clicked: bool, // close icon or the icon of tab_with_icon
+}
+
+// clickable icon inside a tab
+struct TabIcon<'a>
+{
+    text: &'a str,
+    hover_bg: Color32,
+    hover_text: Option<&'a str>,
 }
 
 pub fn tab_separator(ui: &mut Ui)
@@ -69,27 +77,33 @@ pub fn tab(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, clos
     tab_sized(ui, label, selected, closable, None, 10.0)
 }
 
+// tab with an action icon (e.g. open in a separate window) at the place of the close icon
+pub fn tab_with_icon(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, icon: &str, hover_text: &str) -> TabResponse
+{
+    let icon = TabIcon { text: icon, hover_bg: Color32::from_rgba_unmultiplied(0, 100, 210, 200), hover_text: Some(hover_text) };
+    tab_with_optional_icon(ui, label, selected, Some(icon), None, 10.0)
+}
+
 // tab with an optional fixed height (label stays vertically centered) and custom side padding
 pub fn tab_sized(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, closable: bool, height: Option<f32>, h_pad: f32) -> TabResponse
+{
+    let close_icon = TabIcon { text: "🗙", hover_bg: Color32::from_rgba_unmultiplied(180, 50, 50, 200), hover_text: None };
+    tab_with_optional_icon(ui, label, selected, closable.then_some(close_icon), height, h_pad)
+}
+
+fn tab_with_optional_icon(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool, icon: Option<TabIcon<'_>>, height: Option<f32>, h_pad: f32) -> TabResponse
 {
     let v_pad = TAB_V_PAD;
     let gap = 6.0;
 
     let label_galley = label.into().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
 
-    let close_galley = if closable
-    {
-        Some(ui.painter().layout_no_wrap("🗙".to_string(), egui::FontId::proportional(11.0), ui.visuals().text_color()))
-    }
-    else
-    {
-        None
-    };
+    let icon_galley = icon.as_ref().map(|icon| ui.painter().layout_no_wrap(icon.text.to_string(), egui::FontId::proportional(11.0), ui.visuals().text_color()));
 
     let mut tab_w = h_pad + label_galley.size().x + h_pad;
-    if let Some(close) = &close_galley
+    if let Some(icon_galley) = &icon_galley
     {
-        tab_w += gap + close.size().x;
+        tab_w += gap + icon_galley.size().x;
     }
     let tab_h = height.unwrap_or(label_galley.size().y + v_pad * 2.0);
 
@@ -113,32 +127,37 @@ pub fn tab_sized(ui: &mut Ui, label: impl Into<egui::WidgetText>, selected: bool
     let label_pos = egui::pos2(tab_rect.left() + h_pad, tab_rect.center().y - text_center_y(&label_galley));
     ui.painter().galley(label_pos, label_galley, ui.visuals().text_color());
 
-    // close button
-    let mut close_clicked = false;
-    if let Some(close_galley) = close_galley
+    // icon button (close or action)
+    let mut icon_clicked = false;
+    if let (Some(icon), Some(icon_galley)) = (icon, icon_galley)
     {
-        let close_x = tab_rect.right() - h_pad - close_galley.size().x;
-        let close_y = tab_rect.center().y - close_galley.mesh_bounds.center().y;
-        let close_rect = egui::Rect::from_min_size
+        let icon_x = tab_rect.right() - h_pad - icon_galley.size().x;
+        let icon_y = tab_rect.center().y - icon_galley.mesh_bounds.center().y;
+        let icon_rect = egui::Rect::from_min_size
         (
-            egui::pos2(close_x - 3.0, close_y - 2.0),
-            egui::vec2(close_galley.size().x + 6.0, close_galley.size().y + 4.0),
+            egui::pos2(icon_x - 3.0, icon_y - 2.0),
+            egui::vec2(icon_galley.size().x + 6.0, icon_galley.size().y + 4.0),
         );
-        let close_response = ui.allocate_rect(close_rect, egui::Sense::click());
+        let mut icon_response = ui.allocate_rect(icon_rect, egui::Sense::click());
 
-        let close_color = if close_response.hovered() { Color32::WHITE } else { ui.visuals().weak_text_color() };
-        if close_response.hovered()
+        let icon_color = if icon_response.hovered() { Color32::WHITE } else { ui.visuals().weak_text_color() };
+        if icon_response.hovered()
         {
-            ui.painter().rect_filled(close_rect, 3.0, Color32::from_rgba_unmultiplied(180, 50, 50, 200));
+            ui.painter().rect_filled(icon_rect, 3.0, icon.hover_bg);
         }
-        ui.painter().galley(egui::pos2(close_x, close_y), close_galley, close_color);
+        ui.painter().galley(egui::pos2(icon_x, icon_y), icon_galley, icon_color);
 
-        close_clicked = close_response.clicked();
+        if let Some(hover_text) = icon.hover_text
+        {
+            icon_response = icon_response.on_hover_text(hover_text);
+        }
+
+        icon_clicked = icon_response.clicked();
     }
 
-    let clicked = tab_response.clicked() && !close_clicked;
+    let clicked = tab_response.clicked() && !icon_clicked;
 
-    TabResponse { response: tab_response, clicked, close_clicked }
+    TabResponse { response: tab_response, clicked, icon_clicked }
 }
 
 pub fn collapse<R>(ui: &mut Ui, id: String, open: bool, bg_color: Option<Color32>, header: impl FnOnce(&mut Ui) -> R, body: impl FnOnce(&mut Ui) -> R)
