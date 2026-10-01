@@ -12,6 +12,7 @@ use crate::gui::editor::ui::debug::create_debug_settings;
 use crate::gui::editor::ui::dialogs::{load_sound_dialog, load_texture_dialog};
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
+use crate::input::keyboard::Key::S;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
 use crate::{component_downcast, component_downcast_mut};
@@ -1062,6 +1063,16 @@ fn create_hierarchy(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let mut toggle = ui.toggle_value(&mut selection, heading);
 
                 toggle = toggle.on_hover_text(format!("Scene ID: {}", scene.id));
+
+                if toggle.double_clicked()
+                {
+                    selection = true;
+                    execute_on_state_mut(exec_queue.clone(),  Box::new(move |sate|
+                    {
+                        sate.set_active_scene(scene_id);
+                    }));
+                }
+
                 if toggle.clicked()
                 {
                     if selection
