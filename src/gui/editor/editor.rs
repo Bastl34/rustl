@@ -43,6 +43,7 @@ impl Editor
     {
         state.set_run_mode(RunMode::Edit);
 
+        self.editor_state.assets_window_supported = egui.multi_viewport_support;
         self.editor_state.load_all_asset_entries(state, &egui.ctx);
 
         if let Some(scene) = state.find_scene_by_id_mut(scene_id)
@@ -220,7 +221,7 @@ impl Editor
 
     pub fn build_gui(&mut self, state: &mut State, window: &winit::window::Window, egui: &mut EGui, render_size: Option<(u32, u32)>) -> FullOutput
     {
-        let mut raw_input = egui.ui_state.take_egui_input(window);
+        let mut raw_input = egui.take_input(window);
 
         // ensure egui always knows the window has focus so text cursor blinks correctly
         raw_input.focused = true;
@@ -1185,7 +1186,19 @@ impl Editor
 
     pub fn apply_internal_asset_drag(&mut self, state: &mut State, ctx: &egui::Context)
     {
-        if let Some(drag_id) = &self.editor_state.drag_id
+        // dropped from the assets window (already checked against the ui of the main window)
+        if let Some((path, pos)) = self.editor_state.asset_window_drop.take()
+        {
+            self.drop_asset(state, path, pos, ctx.pixels_per_point());
+        }
+
+        // drags of other windows are tracked there (see track_asset_window_drag)
+        if self.editor_state.drag_viewport != egui::ViewportId::ROOT
+        {
+            return;
+        }
+
+        if let Some(drag_id) = self.editor_state.drag_id.clone()
         {
             if ctx.dragged_id().is_none()
             {
@@ -1195,17 +1208,23 @@ impl Editor
 
                     if let Some(pos) = pos
                     {
-                        let pos = Vector2::<f32>::new(pos.x * state.scale_factor, pos.y * state.scale_factor);
-                        if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
-                        {
-                            let reuse_materials = if (self.editor_state.asset_type == AssetType::Object || self.editor_state.asset_type == AssetType::Material) && self.editor_state.reuse_materials_by_name  { true } else { false };
-                            self.load_asset(state, drag_id.clone(), self.editor_state.asset_type, Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None, None);
-                        }
+                        self.drop_asset(state, drag_id, pos, ctx.pixels_per_point());
                     }
                 }
 
                 self.editor_state.drag_id = None;
             }
+        }
+    }
+
+    // pos: ui points of the main window
+    fn drop_asset(&mut self, state: &mut State, path: String, pos: egui::Pos2, pixels_per_point: f32)
+    {
+        let pos = Vector2::<f32>::new(pos.x * pixels_per_point, pos.y * pixels_per_point);
+        if pos.x >= 0.0 && pos.y >= 0.0 && pos.x < state.width as f32 && pos.y <= state.height as f32
+        {
+            let reuse_materials = if (self.editor_state.asset_type == AssetType::Object || self.editor_state.asset_type == AssetType::Material) && self.editor_state.reuse_materials_by_name  { true } else { false };
+            self.load_asset(state, path, self.editor_state.asset_type, Point2::<f32>::new(pos.x, state.height as f32 - pos.y), reuse_materials, None, None);
         }
     }
 

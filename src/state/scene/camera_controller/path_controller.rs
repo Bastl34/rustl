@@ -16,7 +16,7 @@ const DEFAULT_SPEED: f32 = 2.0;
 pub enum PathSpace
 {
     World,
-    Node,
+    Object,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
@@ -102,7 +102,7 @@ impl PathController
     {
         PathController
         {
-            base: CameraControllerBase::new("Path Controller".to_string(), "〰".to_string()),
+            base: CameraControllerBase::new("Path Controller".to_string(), "➰".to_string()),
 
             data: ChangeTracker::new(PathControllerData::default()),
         }
@@ -198,7 +198,7 @@ impl CameraController for PathController
         let mut look_at_pos = data.look_at_pos;
 
         // node space: path, offset and look at target are relative to the camera target node
-        if data.space == PathSpace::Node
+        if data.space == PathSpace::Object
         {
             if let Some(node) = node
             {
@@ -318,10 +318,10 @@ impl CameraController for PathController
         ui.horizontal(|ui|
         {
             ui.label("Space:");
-            egui::ComboBox::from_id_salt(ui.make_persistent_id("path_space")).selected_text(match space { PathSpace::World => "World", PathSpace::Node => "Target Node" }).show_ui(ui, |ui|
+            egui::ComboBox::from_id_salt(ui.make_persistent_id("path_space")).selected_text(match space { PathSpace::World => "World", PathSpace::Object => "Target Node" }).show_ui(ui, |ui|
             {
                 changed = ui.selectable_value(&mut space, PathSpace::World, "World").changed() || changed;
-                changed = ui.selectable_value(&mut space, PathSpace::Node, "Target Node").changed() || changed;
+                changed = ui.selectable_value(&mut space, PathSpace::Object, "Target Node").changed() || changed;
             });
         });
 
