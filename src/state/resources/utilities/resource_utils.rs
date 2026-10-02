@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::{console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::execution_queue::ExecutionQueueItem, file}, resources::resources::load_binary, state::resources::texture::{Texture, TextureItem}};
+use crate::{console_error, console_log, helper::{self, asset_path_descriptor::AssetPathDesciptor, concurrency::{execution_queue::ExecutionQueueItem, thread::spawn_thread}, file}, resources::resources::load_binary, state::{resources::{sound_source::SoundSource, texture::{Texture, TextureItem}}, scene::utilities::scene_utils::execute_on_state_mut}};
 
 
 pub fn load_texture_or_reuse(main_queue: ExecutionQueueItem, max_tex_res: u32, create_mipmaps: bool, path: &str, extension: Option<String>) -> anyhow::Result<TextureItem>
@@ -145,4 +145,30 @@ pub fn insert_texture_or_reuse(main_queue: ExecutionQueueItem, create_mipmaps: b
 
     arc
 
+}
+
+pub fn play_and_forget_sound(path: &str, volume: f32, main_queue: ExecutionQueueItem)
+{
+    let path: String = path.to_string();
+
+    spawn_thread(move ||
+    {
+        let bytes = load_binary(&path);
+
+        if bytes.is_err()
+        {
+            console_error!("can not load sound '{}': {}", path, bytes.err().unwrap());
+            return;
+        }
+
+        let bytes = bytes.unwrap();
+
+        execute_on_state_mut(main_queue.clone(), Box::new(move |state|
+        {
+            let sound_source = SoundSource::from_file_bytes(&path, &bytes, state.io.audio_device.clone());
+            let sound_source = state.add_sound_source(sound_source);
+
+            state.play_one_shot_sound_source(sound_source, volume);
+        }));
+    });
 }

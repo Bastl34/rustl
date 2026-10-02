@@ -72,6 +72,9 @@ pub struct PhysicsSettings
 
     // holds still when the run starts, whatever it rests on, until something hits it
     pub react_on_first_hit: bool,
+
+    // its contacts show up in the physics contact events, for this node and everything below it
+    pub report_contacts: bool,
 }
 
 impl Default for PhysicsSettings
@@ -99,6 +102,8 @@ impl Default for PhysicsSettings
             combine_children: true,
 
             react_on_first_hit: false,
+
+            report_contacts: false,
         }
     }
 }

@@ -254,7 +254,7 @@ impl Sound
         self.player = sink;
         self.player_spatial = sink_spatial;
 
-        self._update(None, None, true);
+        self.update_state(None, None, true);
     }
 
     pub fn running(&self) -> bool
@@ -385,7 +385,7 @@ impl Sound
         }
     }
 
-    fn _update(&mut self, node: Option<NodeItem>, instance: Option<&InstanceItemArc>, force: bool)
+    pub fn update_state(&mut self, node: Option<NodeItem>, instance: Option<&InstanceItemArc>, force: bool)
     {
         if self.get_data().delete_after_playback && self.stopped()
         {
@@ -570,12 +570,12 @@ impl Component for Sound
 
     fn update(&mut self, node: NodeItem, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self._update(Some(node), None, false);
+        self.update_state(Some(node), None, false);
     }
 
     fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, _io: &mut InputOutput, _time: u128, _frame_scale: f32, _frame: u64)
     {
-        self._update(node, Some(instance), false);
+        self.update_state(node, Some(instance), false);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _node: Option<NodeItem>)

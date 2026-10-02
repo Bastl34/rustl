@@ -2141,6 +2141,11 @@ impl SceneController for CharacterController
                 }
             }
 
+            // contact events: what the capsule touches after the move, including whatever flew into it
+            let character_id = node.read().unwrap().id;
+            let capsule_end = Pose::from_translation(capsule_pos.translation + movement_res.translation);
+            scene.physics.report_character_contacts(character_id, capsule_end, &capsule, desired / delta_t.max(0.0001), filter);
+
             desired = platform_delta + Vector3::new(movement_res.translation.x, movement_res.translation.y, movement_res.translation.z);
 
             // grounded while rising would cancel the jump on its first frame

@@ -6,7 +6,7 @@ use web_time::Instant;
 use nalgebra::Vector3;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::ProjectData, resources::{mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
+use crate::{component_downcast_mut, helper::{self, change_tracker::ChangeTracker, concurrency::{execution_queue::{ExecutionQueue, ExecutionQueueItem}, thread::spawn_thread}}, impl_arc_rwbox_map_serializer, input::input_manager::InputManager, output::audio_device::AudioDeviceItem, resources::resources::{load_binary, load_binary_async}, state::{project::project::ProjectData, resources::{utilities::resource_utils::play_and_forget_sound, mesh_resource::{MeshResource, MeshResourceItem}, sound_source::{SoundSource, SoundSourceItem, canonical_sound_path}, texture::{Texture, TextureItem}}, scene::{components::{material::Material, mesh::Mesh, sound::Sound}, scene::Scene}}};
 
 use super::scene::{camera_controller::camera_controller::CameraControllerBox, components::{component::{Component, ComponentItem}, material::TextureType}, loader::loader::load_texture, scene::SceneItem, scene_controller::scene_controller::SceneControllerBox};
 
@@ -664,6 +664,34 @@ impl State
         self.resources.sound_sources.insert(hash, arc.clone());
 
         arc
+    }
+
+    pub fn play_one_shot_sound_source(&mut self, sound_source: SoundSourceItem, volume: f32)
+    {
+        let mut sound = Sound::new(&sound_source.read().unwrap().name, sound_source.clone(), super::scene::components::sound::SoundType::Stereo, false);
+        sound.get_data_mut().get_mut().volume = volume;
+        sound.start();
+        sound.update_state(None, None, true);
+
+        self.oneshot_sounds.push(sound);
+    }
+
+    pub fn play_one_shot_sound(&mut self, sound_path: &str, volume: f32)
+    {
+        let sound_path = canonical_sound_path(sound_path);
+
+        let sound_source = self.resources.sound_sources.values()
+            .find(|source| source.read().unwrap().origin_path() == Some(sound_path.as_str()))
+            .cloned();
+
+        if let Some(sound_source) = sound_source
+        {
+            self.play_one_shot_sound_source(sound_source, volume);
+        }
+        else
+        {
+            play_and_forget_sound(&sound_path, volume, self.main_thread_execution_queue.clone());
+        }
     }
 
     pub fn insert_texture_or_reuse(&mut self, texture: TextureItem, name: &str) -> TextureItem

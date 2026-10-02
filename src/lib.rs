@@ -92,6 +92,7 @@ mod state
 
         pub(crate) mod physics
         {
+            pub(crate) mod contacts;
             pub(crate) mod physics_world;
         }
 

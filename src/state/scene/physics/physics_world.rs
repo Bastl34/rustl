@@ -14,6 +14,8 @@ use rapier3d::control::{DynamicRayCastVehicleController, WheelTuning};
 
 use crate::{component_downcast, component_downcast_mut, console_warning, helper::math::{extract_rotation_quat_from_transform, extract_scale_from_transform, extract_translation_from_transform}, state::{scene::{components::{component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::{InstanceItemArc, Node, NodeItem, PhysicsBodyType, PhysicsSettings, PhysicsShape}, scene::Scene}}};
 
+use super::contacts::{CharacterTouch, ContactEvent, ContactTarget, ContactTracker, Measure, CHARACTER_TOUCH_KEEP};
+
 // transform deltas below this are treated as float noise and do not trigger a bvh update
 const TRANSFORM_EPSILON: f32 = 0.00001;
 
@@ -662,6 +664,9 @@ pub struct PhysicsWorld
 
     // vehicles by node id - kept across a rebuild, only their controllers set them up or remove them
     vehicles: HashMap<u32, VehicleEntry>,
+
+    // started, touching and stopped contacts of the last frame, see contact_events
+    contacts: ContactTracker,
 }
 
 impl PhysicsWorld
@@ -716,6 +721,7 @@ impl PhysicsWorld
             excluded_nodes: HashSet::new(),
             characters: HashMap::new(),
             vehicles: HashMap::new(),
+            contacts: ContactTracker::default(),
         }
     }
 
@@ -753,6 +759,9 @@ impl PhysicsWorld
         self.applied_ground_plane = None;
         self.applied_sleep = None;
         // excluded_nodes is kept on purpose - a rebuild must not resurrect character colliders
+
+        // the new collider set hands out the old handles again
+        self.contacts.reset();
 
         // vehicles belong to their controllers, not to the scene colliders - they keep their motion and run start
         self.carry_vehicles(&old_bodies, &old_colliders);
@@ -1417,7 +1426,7 @@ impl PhysicsWorld
 
     // The collider for one part. Attached to a body it is placed by its offset, standing
     // alone it needs the world pose.
-    fn part_collider(shape: SharedShape, offset: &Pose, anchor_pose: &Pose, physics: &PhysicsSettings, node_id: u32, instance_id: u32, attached: bool) -> Collider
+    fn part_collider(shape: SharedShape, offset: &Pose, anchor_pose: &Pose, physics: &PhysicsSettings, node_id: u32, instance_id: u32, attached: bool, report_contacts: bool) -> Collider
     {
         let density = physics.density.max(0.001);
 
@@ -1450,6 +1459,7 @@ impl PhysicsWorld
             .friction(physics.friction.max(0.0))
             .restitution(physics.restitution.clamp(0.0, 1.0))
             .active_collision_types(collision_types)
+            .active_events(Self::contact_events_flag(report_contacts))
             .position(position);
 
         match mass_properties
@@ -1462,6 +1472,31 @@ impl PhysicsWorld
     fn pack_user_data(node_id: u32, instance_id: u32) -> u128
     {
         (node_id as u128) | ((instance_id as u128) << 32)
+    }
+
+    fn contact_events_flag(report_contacts: bool) -> ActiveEvents
+    {
+        if report_contacts { ActiveEvents::COLLISION_EVENTS } else { ActiveEvents::empty() }
+    }
+
+    // set on the node or anywhere above it
+    fn reports_contacts(node: &NodeItem) -> bool
+    {
+        let mut current = Some(node.clone());
+
+        while let Some(item) = current
+        {
+            let item = item.read().unwrap();
+
+            if item.settings.physics.report_contacts
+            {
+                return true;
+            }
+
+            current = item.parent.as_ref().cloned();
+        }
+
+        false
     }
 
     // Builds the colliders and, unless static, the body for one object. Returns false when
@@ -1495,7 +1530,7 @@ impl PhysicsWorld
 
             let Some(shape) = Self::build_shape(&node, &scale) else { continue; };
 
-            let collider = Self::part_collider(shape, &offset, &anchor_pose, &physics, node_id, instance_id, body.is_some());
+            let collider = Self::part_collider(shape, &offset, &anchor_pose, &physics, node_id, instance_id, body.is_some(), Self::reports_contacts(&node));
 
             let handle = match body
             {
@@ -1879,8 +1914,14 @@ impl PhysicsWorld
         {
             let handle = self.entries[index].parts[part_index].handle;
             let offset = self.entries[index].parts[part_index].offset;
+            let active_events = Self::contact_events_flag(Self::reports_contacts(&self.entries[index].parts[part_index].node));
 
             let Some(collider) = self.colliders.get_mut(handle) else { continue; };
+
+            if collider.active_events() != active_events
+            {
+                collider.set_active_events(active_events);
+            }
 
             if (collider.friction() - physics.friction).abs() > 0.0001
             {
@@ -2376,12 +2417,16 @@ impl PhysicsWorld
     // the mover has already bounced off it like off a wall.
     fn thaw_ahead_of_movers(&mut self, lookahead: f32)
     {
-        if !self.entries.iter().any(|entry| entry.frozen)
+        // a waiting object lets go before a fast mover arrives too, it would stop it dead like a wall otherwise
+        let release_waiting = self.run_steps >= HIT_GRACE_STEPS;
+
+        if !self.entries.iter().any(|entry| entry.frozen || (release_waiting && entry.waiting))
         {
             return;
         }
 
         let wake_speed = self.settings.wake_speed.max(0.0);
+        let hit_speed = self.settings.hit_speed.max(0.0);
 
         // a collider moving faster than the wake speed, with how far it can get this frame
         let reach = |body: &RigidBody, collider: &Collider| -> Option<f32>
@@ -2442,7 +2487,7 @@ impl PhysicsWorld
         }
 
         let frozen_parts: HashMap<ColliderHandle, usize> = self.entries.iter().enumerate()
-            .filter(|(_, entry)| entry.frozen)
+            .filter(|(_, entry)| entry.frozen || (release_waiting && entry.waiting))
             .flat_map(|(index, entry)| entry.parts.iter().map(move |part| (part.handle, index)))
             .collect();
 
@@ -2466,9 +2511,10 @@ impl PhysicsWorld
                     }
 
                     // only a mover heading into it counts - one leaning on it and rocking does not
+                    let threshold = if self.entries[index].waiting { hit_speed } else { wake_speed };
                     let approaching = match parry3d::query::contact(collider.position(), collider.shape(), other_collider.position(), other_collider.shape(), *distance)
                     {
-                        Ok(Some(contact)) => body.velocity_at_point(contact.point1).dot(contact.normal1) > wake_speed,
+                        Ok(Some(contact)) => body.velocity_at_point(contact.point1).dot(contact.normal1) > threshold,
                         Ok(None) => false,
                         Err(_) => true,
                     };
@@ -2483,7 +2529,7 @@ impl PhysicsWorld
 
         for index in thaw
         {
-            self.thaw_entry(index);
+            self.release(index);
         }
     }
 
@@ -2570,6 +2616,7 @@ impl PhysicsWorld
         self.running = running;
         self.time_accumulator = 0.0;
         self.run_steps = 0;
+        self.contacts.reset();
 
         if running
         {
@@ -2813,8 +2860,16 @@ impl PhysicsWorld
     // `frozen` stops the stepping without restoring anything, unlike leaving the run mode.
     pub fn step(&mut self, delta_t: f32, frozen: bool) -> u32
     {
+        self.contacts.begin_frame();
+
         if !self.has_dynamics() || !self.running
         {
+            // a character walking through a purely static scene still touches things
+            if self.running && !frozen
+            {
+                self.report_contacts();
+            }
+
             return 0;
         }
 
@@ -2884,9 +2939,11 @@ impl PhysicsWorld
                 &mut self.soft_bodies,
                 &mut self.ccd_solver,
                 &(),
-                &()
+                &self.contacts.collector
             );
         }
+
+        self.report_contacts();
 
         if steps > 0
         {
@@ -2898,6 +2955,113 @@ impl PhysicsWorld
         self.recover_escaped_bodies();
 
         steps
+    }
+
+    // ********** contacts **********
+
+    // Turns rapier's start and stop events of this frame's steps, and what the characters touch, into contact events per object.
+    fn report_contacts(&mut self)
+    {
+        if self.contacts.has_pending()
+        {
+            let vehicles: HashMap<RigidBodyHandle, u32> = self.vehicles.iter().map(|(node_id, vehicle)| (vehicle.body, *node_id)).collect();
+            let combined: HashMap<RigidBodyHandle, u32> = self.entries.iter().filter(|entry| entry.is_combined()).filter_map(|entry| entry.body.map(|body| (body, entry.key.0))).collect();
+            let ground_plane = self.ground_plane;
+            let colliders = &self.colliders;
+
+            self.contacts.process(|handle|
+            {
+                if Some(handle) == ground_plane
+                {
+                    return Some(ContactTarget::GroundPlane);
+                }
+
+                let collider = colliders.get(handle)?;
+
+                if let Some(body) = collider.parent()
+                {
+                    if let Some(node_id) = vehicles.get(&body)
+                    {
+                        return Some(ContactTarget::Vehicle { node_id: *node_id });
+                    }
+
+                    if let Some(node_id) = combined.get(&body)
+                    {
+                        return Some(ContactTarget::Object { node_id: *node_id, instance_id: None });
+                    }
+                }
+
+                // a single mesh placement, its anchor is exactly what the user data holds
+                Some(ContactTarget::Object { node_id: collider.user_data as u32, instance_id: Some((collider.user_data >> 32) as u32) })
+            });
+        }
+
+        self.contacts.refresh(&self.bodies, &self.colliders, &self.narrow_phase);
+    }
+
+    // Every contact change and ongoing touch of the last physics frame. Each contact is in here once, seen from either side.
+    pub fn contact_events(&self) -> &[ContactEvent]
+    {
+        self.contacts.events()
+    }
+
+    // The contacts of one node, turned so that target is that node.
+    pub fn contacts_of(&self, node_id: u32) -> impl Iterator<Item = ContactEvent> + '_
+    {
+        self.contacts.events().iter().filter_map(move |event|
+        {
+            if event.target.node_id() == Some(node_id)
+            {
+                Some(*event)
+            }
+            else if event.other.node_id() == Some(node_id)
+            {
+                Some(event.flipped())
+            }
+            else
+            {
+                None
+            }
+        })
+    }
+
+    pub fn contact_amount(&self) -> usize
+    {
+        self.contacts.active_amount()
+    }
+
+    // Everything within reach of a character capsule, whoever moved - pose: capsule center after the move, velocity: the one it tried to move with.
+    pub fn report_character_contacts(&mut self, node_id: u32, pose: Pose, capsule: &Capsule, velocity: Vector3<f32>, filter: QueryFilter)
+    {
+        let velocity = Vector::new(velocity.x, velocity.y, velocity.z);
+
+        let mut reach = *capsule;
+        reach.radius += CHARACTER_TOUCH_KEEP;
+
+        let mut touches = vec![];
+
+        {
+            let queries = self.query_pipeline(filter);
+
+            for (handle, collider) in queries.intersect_shape(pose, &reach)
+            {
+                let Ok(Some(contact)) = parry3d::query::contact(&pose, capsule, collider.position(), collider.shape(), CHARACTER_TOUCH_KEEP) else { continue; };
+
+                let other_velocity = collider.parent()
+                    .and_then(|body| self.bodies.get(body))
+                    .map(|body| body.velocity_at_point(contact.point2))
+                    .unwrap_or(Vector::ZERO);
+
+                touches.push(CharacterTouch
+                {
+                    collider: handle,
+                    distance: contact.dist,
+                    measure: Measure { point: contact.point2, normal: contact.normal1, relative_velocity: other_velocity - velocity },
+                });
+            }
+        }
+
+        self.contacts.report_character(node_id, touches);
     }
 
     fn rebuild_bvh(&mut self)
@@ -3256,6 +3420,7 @@ impl PhysicsWorld
     pub fn remove_character_shape(&mut self, node_id: u32)
     {
         self.characters.remove(&node_id);
+        self.contacts.remove_character(node_id);
     }
 
     // Every collider and character capsule in world space, for the debug view.
@@ -3477,6 +3642,7 @@ impl PhysicsWorld
             .friction(chassis.friction.max(0.0))
             .restitution(chassis.restitution.clamp(0.0, 1.0))
             .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
+            .active_events(ActiveEvents::COLLISION_EVENTS) // a vehicle always reports, running into something is its main event
             .mass_properties(MassProperties::new(com, chassis.mass.max(1.0), inertia))
             .build();
 
@@ -3492,6 +3658,7 @@ impl PhysicsWorld
                 .friction_combine_rule(CoefficientCombineRule::Min)
                 .restitution(0.0)
                 .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
+                .active_events(ActiveEvents::COLLISION_EVENTS)
                 .build();
 
             self.colliders.insert_with_parent(bumper, body, &mut self.bodies);

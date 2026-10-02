@@ -1235,6 +1235,12 @@ pub fn create_object_settings(editor_state: &mut EditorState, state: &mut State,
                 });
             });
 
+            ui.horizontal(|ui|
+            {
+                changed = ui.checkbox(&mut physics.report_contacts, "report contacts").changed() || changed;
+                ui.label("ℹ").on_hover_text("every contact of this object shows up in the physics contact events (started, touching, stopped), for this node and every mesh below it. Only one side of a contact needs it - vehicles always report, so obstacles for a vehicle do not need it.");
+            });
+
             // a static node under a dynamic or kinematic parent takes the parent's physics
             if physics.body_type == PhysicsBodyType::Static
             {

@@ -297,13 +297,14 @@ pub fn create_scene_settings(editor_state: &mut EditorState, state: &mut State, 
 
         ui.horizontal(|ui|
         {
-            ui.label(format!("colliders: {} / bodies: {} / combined: {} / waiting: {} / frozen: {} / awake: {}", scene.physics.collider_amount(), scene.physics.body_amount(), scene.physics.combined_amount(), scene.physics.waiting_amount(), scene.physics.frozen_amount(), scene.physics.awake_amount()));
+            ui.label(format!("colliders: {} / bodies: {} / combined: {} / waiting: {} / frozen: {} / awake: {} / contacts: {}", scene.physics.collider_amount(), scene.physics.body_amount(), scene.physics.combined_amount(), scene.physics.waiting_amount(), scene.physics.frozen_amount(), scene.physics.awake_amount(), scene.physics.contact_amount()));
             ui.label("ℹ").on_hover_text(format!("synced last frame: {} / shape rebuilds: {}
 both should be 0 while nothing but the character moves
 combined: objects whose meshes share one body
 waiting: objects holding still for their first hit
 frozen: resting objects made fixed until the next hit
-awake: dynamic objects the solver still simulates", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
+awake: dynamic objects the solver still simulates
+contacts: object pairs touching right now, only those with 'report contacts' or a vehicle", scene.physics.last_synced, scene.physics.last_shape_rebuilds));
 
             if ui.button("Rebuild").clicked()
             {

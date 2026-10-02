@@ -7,7 +7,7 @@ use rapier3d::prelude::{ColliderHandle, Pose, Rotation, SharedShape, Vector};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_warning, helper::{math::{approx_zero, extract_rotation_quat_from_transform, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::Key, mouse::MouseButton}, scene_controller_impl_default, state::{scene::{camera_controller::{camera_controller::CameraControllerBox, follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::NodeItem, physics::physics_world::{PhysicsWorld, VehicleChassisDesc, VehicleWheelDesc}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
+use crate::{component_downcast, component_downcast_mut, console_error, console_log, console_warning, helper::{math::{approx_zero, extract_rotation_quat_from_transform, extract_translation_from_transform, shortest_angle_dist, yaw_pitch_from_direction}, option_or_id::OptionOrId}, input::{gamepad::{GamepadAxis, GamepadButton}, input_binding::{gamepad_select_ui, input_action_ui, AxisDirection, GamepadSelect, InputAction, InputSource}, keyboard::Key, mouse::MouseButton}, scene_controller_impl_default, state::{scene::{camera_controller::{camera_controller::CameraControllerBox, follow_controller::FollowController, target_rotation_controller::TargetRotationController}, components::{animation::Animation, component::ComponentItem, mesh::Mesh, transformation::Transformation}, node::NodeItem, physics::{contacts::ContactTarget, physics_world::{PhysicsWorld, VehicleChassisDesc, VehicleWheelDesc}}, scene::Scene, scene_controller::scene_controller::SceneControllerBase}, state::{get_delta_t, InputOutput, RunMode}}};
 
 use rapier3d::control::WheelTuning;
 
@@ -722,6 +722,8 @@ pub struct VehicleTelemetry
     pub skid: f32,
     pub lean: f32, // degrees
     pub wheels: Vec<VehicleWheelTelemetry>,
+    pub touching: Vec<ContactTarget>, // what the body touches right now, the wheels are rays and never count
+    pub last_hit: Option<(ContactTarget, f32)>, // with its impact speed in m/s
 }
 
 // what the last physics step found under a wheel
@@ -2595,6 +2597,23 @@ impl SceneController for VehicleController
         // ********** tire marks **********
         self.update_tire_marks(scene, &wheel_visuals, &slides, &input, speed, brake, wheelspin);
 
+        // ********** contacts **********
+        let mut last_hit = self.telemetry.last_hit;
+        let mut touching = vec![];
+
+        for contact in scene.physics.contacts_of(node_id)
+        {
+            if contact.started()
+            {
+                last_hit = Some((contact.other, contact.impact_speed));
+            }
+
+            if !contact.stopped()
+            {
+                touching.push(contact.other);
+            }
+        }
+
         // ********** telemetry **********
         self.telemetry = VehicleTelemetry
         {
@@ -2609,6 +2628,8 @@ impl SceneController for VehicleController
             skid,
             lean: lean.to_degrees(),
             wheels: telemetry_wheels,
+            touching,
+            last_hit,
         };
     }
 
@@ -3576,6 +3597,20 @@ impl VehicleController
             {
                 let contact = if wheel.contact { "ground" } else { "air" };
                 ui.label(format!("wheel {}: {}, compression {:.3} m, grip {:.2}, drive {:.0} N, brake {:.0} N", index, contact, wheel.compression, wheel.grip, wheel.engine_force, wheel.brake));
+            }
+
+            let name = |target: &ContactTarget| match target.node_id()
+            {
+                Some(id) => scene.find_node_by_id(id).map(|node| node.read().unwrap().name.clone()).unwrap_or(format!("#{}", id)),
+                None => "ground plane".to_string(),
+            };
+
+            let touching: Vec<String> = t.touching.iter().map(|target| name(target)).collect();
+            ui.label(format!("touching: {}", if touching.is_empty() { "nothing".to_string() } else { touching.join(", ") }));
+
+            if let Some((other, speed)) = &t.last_hit
+            {
+                ui.label(format!("last hit: {} at {:.1} m/s", name(other), speed));
             }
         });
 

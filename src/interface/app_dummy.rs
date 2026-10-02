@@ -2,21 +2,31 @@ use std::{env, sync::{Arc, RwLock}};
 use gltf::json::extensions::scene;
 use nalgebra::Vector3;
 
+use crate::resources::resources::load_binary;
 use crate::state::project::loader::load_and_apply_project;
+use crate::state::resources::sound_source::SoundSourceItem;
+use crate::state::scene::components::sound::Sound;
+use crate::state::scene::physics::contacts::ContactKind;
+use crate::state::state::ENGINE_INTERNAL_TAG_PREFX;
 use crate::{console_debug, console_error, helper::concurrency::thread::{sleep_millis, spawn_thread}, state::scene::{components::look_at::LookAt, loader::loader as scene_utils, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 
 pub struct AppDummy
 {
-
+    bump_sound: Option<SoundSourceItem>,
+    hit_sound: Option<SoundSourceItem>,
 }
 
 impl AppDummy
 {
     pub fn new() -> AppDummy
     {
-        AppDummy {}
+        AppDummy
+        {
+            bump_sound: None,
+            hit_sound: None,
+        }
     }
 }
 
@@ -88,6 +98,33 @@ impl App for AppDummy
                     }
                 }
             })));
+        }
+
+        // ********** contact sound **********
+        match load_binary("resourcesLocal/sounds/bump.wav")
+        {
+            Ok(bytes) =>
+            {
+                let state = &mut *(context.state.borrow_mut());
+                self.bump_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "bump.wav", Some("wav".to_string())));
+            },
+            Err(err) =>
+            {
+                console_error!("can not load the bump sound: {}", err);
+            },
+        }
+
+        match load_binary("resourcesLocal/sounds/hit.wav")
+        {
+            Ok(bytes) =>
+            {
+                let state = &mut *(context.state.borrow_mut());
+                self.hit_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "hit.wav", Some("wav".to_string())));
+            },
+            Err(err) =>
+            {
+                console_error!("can not load the hit sound: {}", err);
+            },
         }
 
         let scene_id = context.get_main_scene_id();
@@ -727,7 +764,45 @@ impl App for AppDummy
 
     fn update(&mut self, context: &mut Context)
     {
+        let Some(bump_sound) = &self.bump_sound else { return; };
+        let Some(hit_sound) = &self.hit_sound else { return; };
 
+        let state = &mut *(context.state.borrow_mut());
+
+        let mut sounds = vec![];
+
+        const MAX_IMPACT_SPEED: f32 = 10.0;
+
+        for scene in &state.scenes
+        {
+            for contact in scene.physics.contact_events()
+            {
+                if contact.started()
+                {
+                    let is_wall = contact.normal.y.abs() < 0.5;
+
+                    if is_wall && (contact.target.kind() == ContactKind::Vehicle || contact.other.kind() == ContactKind::Vehicle)
+                    {
+                        let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                        sounds.push((hit_sound.clone(), volume));
+                    }
+                    else if !is_wall || contact.target.kind() == ContactKind::Character || contact.other.kind() == ContactKind::Character
+                    {
+                        let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                        sounds.push((bump_sound.clone(), volume));
+                    }
+                }
+            }
+        }
+
+        // only play the loudest few sounds
+        sounds.sort_by(|a, b| b.1.total_cmp(&a.1));
+        sounds.truncate(4);
+
+        for (source, volume) in sounds
+        {
+            state.play_one_shot_sound_source(source, volume);
+        }
     }
 
     fn resize(&mut self, context: &mut Context)
