@@ -488,10 +488,11 @@ impl Scene
         {
             crate::notify_observable_arc!(node, on_before_render);
 
-            let instances =
+            // only the instances someone listens to - nodes can carry thousands
+            let instances: Vec<_> =
             {
                 let n = node.read().unwrap();
-                n.instances.get_ref().clone()
+                n.instances.get_ref().iter().filter(|instance| instance.read().unwrap().on_before_render.has_observers()).cloned().collect()
             };
             for instance in &instances
             {
@@ -505,10 +506,10 @@ impl Scene
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
         for node in &all_nodes
         {
-            let instances =
+            let instances: Vec<_> =
             {
                 let n = node.read().unwrap();
-                n.instances.get_ref().clone()
+                n.instances.get_ref().iter().filter(|instance| instance.read().unwrap().on_after_render.has_observers()).cloned().collect()
             };
             for instance in &instances
             {

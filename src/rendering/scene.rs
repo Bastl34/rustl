@@ -1182,6 +1182,9 @@ impl Scene
                         render_item = Some(Box::new(InstanceBuffer::new(wgpu, "instance buffer", instances)));
                     }
 
+                    let sphere_bounds = node_arc.read().unwrap().get_local_bounds();
+                    get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap()).update_bounding_sphere(sphere_bounds, true, &[]);
+
                     node_arc.write().unwrap().instance_render_item = render_item;
                 }
             }
@@ -1217,6 +1220,7 @@ impl Scene
                     let node = nodes.get(node_id).unwrap();
                     let node = node.read().unwrap();
                     let instances_ref = node.instances.get_ref();
+                    let mut changed = vec![];
 
                     for (i, instance) in instances_ref.iter().enumerate()
                     {
@@ -1230,11 +1234,17 @@ impl Scene
                         {
                             let render_item = get_render_item_mut::<InstanceBuffer>(render_item.as_mut().unwrap());
                             render_item.update_buffer(wgpu, &instance, i);
+                            changed.push(i);
 
                             // console_debug!(" ============ ONE instance updated {}", &node.name);
 
                             instance_buffers_updated = true;
                         }
+                    }
+
+                    if let Some(render_item) = render_item.as_mut()
+                    {
+                        get_render_item_mut::<InstanceBuffer>(render_item).update_bounding_sphere(node.get_local_bounds(), false, &changed);
                     }
                 }
 
@@ -1285,13 +1295,7 @@ impl Scene
                 for node_id in 0..nodes.len()
                 {
                     let node = nodes.get_mut(node_id).unwrap();
-                    let node = node.read().unwrap();
-
-                    // TODO: optimize - only update if node or instances changed -> case base on node_id
-                    let bbox_for_all_instances =
-                    {
-                        node.get_bounding_box_for_all_instances_from_cached_transform()
-                    };
+                    let mut node = node.write().unwrap();
 
                     // one draw slot per mesh - the slot index is the offset into the indirect args buffers
                     let node_meshes = node.get_meshes_with_mesh_resource();
@@ -1332,6 +1336,16 @@ impl Scene
                         flags |= BOUNDING_BOX_FLAG_OCCLUSION_TEST;
                     }
 
+                    // the hzb check reads the box of tested objects only - the others are always visible
+                    let bbox_for_all_instances = if flags & BOUNDING_BOX_FLAG_OCCLUSION_TEST != 0
+                    {
+                        Self::cached_instances_box(&mut node)
+                    }
+                    else
+                    {
+                        None
+                    };
+
                     if let Some((min, max)) = bbox_for_all_instances
                     {
                         buffer_data.push(BoundingBox::new(node.id, &min, &max, flags, slot_start, slot_count));
@@ -1367,6 +1381,23 @@ impl Scene
         }
 
         self.update_result.instances_updated = instance_buffers_updated;
+    }
+
+    // the occlusion box of all instances - only rebuilt when they changed
+    fn cached_instances_box(node: &mut Node) -> Option<(Point3<f32>, Point3<f32>)>
+    {
+        let mut render_item = node.instance_render_item.take()?;
+        let buffer = get_render_item_mut::<InstanceBuffer>(&mut render_item);
+
+        if buffer.bounding_box_dirty
+        {
+            buffer.bounding_box = node.get_bounding_box_for_all_instances_from_cached_transform();
+            buffer.bounding_box_dirty = false;
+        }
+
+        let bbox = buffer.bounding_box;
+        node.instance_render_item = Some(render_item);
+        bbox
     }
 
     pub fn consume_changed_morph_targets(node: Arc<RwLock<Box<Node>>>) -> bool
@@ -1511,8 +1542,7 @@ impl Scene
                     {
                         let sphere = node.instance_render_item.as_ref().and_then(|render_item|
                         {
-                            let instance_buffer = get_render_item::<InstanceBuffer>(render_item);
-                            node.get_bounding_sphere_for_all_instances(&instance_buffer.transformations)
+                            get_render_item::<InstanceBuffer>(render_item).bounding_sphere
                         });
 
                         if let Some((center, radius)) = sphere
@@ -1941,8 +1971,8 @@ impl Scene
             {
                 if let Some(instance_render_item) = node.instance_render_item.as_ref()
                 {
-                    let instance_buffer = get_render_item::<InstanceBuffer>(instance_render_item);
-                    bounding_sphere = node.get_bounding_sphere_for_all_instances(&instance_buffer.transformations);
+                    // kept up to date in update_nodes
+                    bounding_sphere = get_render_item::<InstanceBuffer>(instance_render_item).bounding_sphere;
                 }
             }
 

@@ -14,6 +14,12 @@ const MAX_GAP: f32 = 3.0;
 // above the ground along its normal, so the marks do not flicker with it
 const LIFT: f32 = 0.02;
 
+// pieces made at once the first time, after that the amount doubles - every new instance count rebuilds buffers
+const FIRST_BLOCK: usize = 256;
+
+// size of a waiting piece - not 0, Transformation inverts its matrix
+const COLLAPSED_SCALE: f32 = 0.0001;
+
 fn default_true() -> bool { true }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
@@ -49,13 +55,14 @@ pub struct TireMarkInput
     pub width: f32, // m
 }
 
-// Rubber left on the ground where the tires slide - pieces of one quad mesh as instances of an internal node, reused in a ring.
+// Rubber left on the ground where the tires slide - pieces of one quad mesh as instances of an internal node, made in blocks, reused in a ring.
 #[derive(Default)]
 pub struct TireMarks
 {
     node: Option<NodeItem>,
     material: Option<MaterialItem>,
     pieces: Vec<InstanceItemArc>,
+    used: usize, // pieces showing a mark, the rest wait collapsed
     next: usize, // the piece reused next once all exist
     last_points: Vec<Option<Vector3<f32>>>, // per wheel, where its current mark ends
 }
@@ -105,23 +112,26 @@ impl TireMarks
     {
         let node = self.node(scene, settings);
 
-        if self.pieces.len() < settings.max_pieces.max(1)
+        let max_pieces = settings.max_pieces.max(1);
+        if self.used == self.pieces.len() && self.pieces.len() < max_pieces
         {
-            let mut instance = Instance::new_with_transform("tire mark".to_string(), node.clone(), Transformation::new_transformation_only("Transform", transform));
-            instance.pickable = false;
-            instance.get_data_mut().get_mut().collision = false;
-            set_piece(&mut instance, transform, color);
-
-            self.pieces.push(node.write().unwrap().add_instance(Box::new(instance)));
-            return;
+            self.grow(&node, max_pieces, &transform);
         }
 
-        // all pieces exist: the oldest one moves here
-        self.next %= self.pieces.len();
-        let piece = self.pieces[self.next].clone();
-        self.next += 1;
+        // a waiting piece, or once all are in use the oldest one moves here
+        let index = if self.used < self.pieces.len()
+        {
+            self.used += 1;
+            self.used - 1
+        }
+        else
+        {
+            self.next %= self.pieces.len();
+            self.next += 1;
+            self.next - 1
+        };
 
-        let mut piece = piece.write().unwrap();
+        let mut piece = self.pieces[index].write().unwrap();
 
         if let Some(transformation) = piece.find_component::<Transformation>()
         {
@@ -130,6 +140,23 @@ impl TireMarks
         }
 
         set_piece(&mut piece, transform, color);
+    }
+
+    // The waiting pieces are invisible and practically without size - collapsed onto the current mark, so the bounding sphere does not reach the origin.
+    fn grow(&mut self, node: &NodeItem, max_pieces: usize, at: &Matrix4<f32>)
+    {
+        let amount = self.pieces.len().max(FIRST_BLOCK).min(max_pieces - self.pieces.len());
+        let collapsed = Matrix4::new_translation(&Vector3::new(at[(0, 3)], at[(1, 3)], at[(2, 3)])) * Matrix4::new_scaling(COLLAPSED_SCALE);
+
+        for _ in 0..amount
+        {
+            let mut instance = Instance::new_with_transform("tire mark".to_string(), node.clone(), Transformation::new_transformation_only("Transform", collapsed));
+            instance.pickable = false;
+            instance.get_data_mut().get_mut().collision = false;
+            set_piece(&mut instance, collapsed, Vector4::zeros());
+
+            self.pieces.push(node.write().unwrap().add_instance(Box::new(instance)));
+        }
     }
 
     // the internal node carrying the pieces - made on the first mark, again if the scene dropped it
@@ -144,6 +171,7 @@ impl TireMarks
             }
 
             self.pieces.clear();
+            self.used = 0;
             self.next = 0;
         }
 
@@ -170,6 +198,7 @@ impl TireMarks
             node.add_component(Arc::new(RwLock::new(Box::new(mesh))));
             node.add_component(material.clone());
             node.tags.insert(ENGINE_INTERNAL_TAG);
+            node.set_skip_instance_update(true); // set_piece writes where each piece is drawn
 
             let settings = &mut node.settings;
             settings.transient = true;
@@ -177,6 +206,7 @@ impl TireMarks
             settings.collision = false;
             settings.camera_collision = false;
             settings.depth_write = false;
+            settings.occlusion_culling = false; // one box over the whole track never hides, but costs every piece each frame
         }
 
         scene.add_node(node.clone());
@@ -226,6 +256,7 @@ impl TireMarks
     {
         self.material = None;
         self.pieces.clear();
+        self.used = 0;
         self.next = 0;
         self.last_points.clear();
     }

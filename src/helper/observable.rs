@@ -175,7 +175,9 @@ where
     let mut drained = {
         let mut w = owner.write().unwrap();
         let obs = get(&mut **w);
-        if obs.notifying
+
+        // nothing to call - and pending removes only exist while notifying
+        if obs.notifying || obs.observers.is_empty()
         {
             return;
         }

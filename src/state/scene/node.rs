@@ -14,6 +14,14 @@ use super::{components::{alpha::Alpha, animation::Animation, component::{find_co
 pub type NodeItem = Arc<RwLock<Box<Node>>>;
 pub type InstanceItemArc = Arc<RwLock<InstanceItem>>;
 
+// the local bounds of a node's meshes - every instance bounding sphere is built from them
+#[derive(Clone, Copy, PartialEq)]
+pub struct LocalBounds
+{
+    pub mesh_box: Option<Aabb>, // local, all non-skinned meshes
+    pub skin_sphere: Option<BoundingSphere>, // follows the animation, so it changes without any instance change
+}
+
 const UPDATE_ALL_INSTANCES_THRESHOLD: u32 = 10; // if more than 10 instances got an update -> update all instances at once to save performance
 
 // How rapier owns an object. Static geometry is mirrored from the scene, a dynamic body is
@@ -208,6 +216,7 @@ pub struct Node
     pub on_after_render: Observable<Node>,
 
     delete_later_request: bool,
+    skip_instance_update: bool, // the owner writes the computed instance data itself, only forced updates run
 }
 
 impl Serialize for Node
@@ -389,7 +398,8 @@ impl Node
             on_before_render: Observable::new(),
             on_after_render: Observable::new(),
 
-            delete_later_request: false
+            delete_later_request: false,
+            skip_instance_update: false
         }
     }
 
@@ -440,6 +450,11 @@ impl Node
     pub fn delete_later(&mut self)
     {
         self.delete_later_request = true;
+    }
+
+    pub fn set_skip_instance_update(&mut self, skip: bool)
+    {
+        self.skip_instance_update = skip;
     }
 
     pub fn add_node(node: NodeItem, child_node: NodeItem)
@@ -854,6 +869,12 @@ impl Node
             return None;
         }
 
+        Self::grow_instance_bounding_sphere(&self.get_local_bounds(), None, transformations.iter())
+    }
+
+    // The local box of the non-skinned meshes and the skin sphere - what every instance sphere is built from.
+    pub fn get_local_bounds(&self) -> LocalBounds
+    {
         let meshes = self.get_meshes();
 
         // non-skinned meshes: collect the local aabb - the world sphere is built per instance
@@ -901,96 +922,97 @@ impl Node
             }
         }
 
-        let mut bounding_sphere_result: Option<BoundingSphere> = None;
+        LocalBounds { mesh_box: bounding_box_mesh, skin_sphere: bounding_sphere_skin }
+    }
 
-        if bounding_box_mesh.is_some() || bounding_sphere_skin.is_some()
+    // Merges the spheres of these instance transforms into start - None starts empty.
+    pub fn grow_instance_bounding_sphere<'a>(bounds: &LocalBounds, start: Option<(Point3<f32>, f32)>, transformations: impl Iterator<Item = &'a Matrix4<f32>>) -> Option<(Point3<f32>, f32)>
+    {
+        if bounds.mesh_box.is_none() && bounds.skin_sphere.is_none()
         {
-            for (instance_id, _) in self.instances.get_ref().iter().enumerate()
+            return start;
+        }
+
+        let mut bounding_sphere_result: Option<BoundingSphere> = start.map(|(center, radius)| BoundingSphere::new(center.into(), radius));
+
+        for transform in transformations
+        {
+            // aabb based sphere: the scaled half extents are enough for the radius,
+            // because a sphere is rotation invariant (assumes no shear - as everywhere)
+            if let Some(bounding_box_mesh) = bounds.mesh_box.as_ref()
             {
-                let transform = transformations.get(instance_id).unwrap();
+                let scale = extract_scale_from_transform(transform);
 
-                // aabb based sphere: the scaled half extents are enough for the radius,
-                // because a sphere is rotation invariant (assumes no shear - as everywhere)
-                if let Some(bounding_box_mesh) = bounding_box_mesh.as_ref()
+                let half_extents = Vector3::<f32>::new
+                (
+                    (bounding_box_mesh.maxs.x - bounding_box_mesh.mins.x) / 2.0,
+                    (bounding_box_mesh.maxs.y - bounding_box_mesh.mins.y) / 2.0,
+                    (bounding_box_mesh.maxs.z - bounding_box_mesh.mins.z) / 2.0,
+                );
+
+                let transformed_radius = half_extents.component_mul(&scale).norm();
+
+                let center = Vector4::<f32>::new
+                (
+                    (bounding_box_mesh.mins.x + bounding_box_mesh.maxs.x) / 2.0,
+                    (bounding_box_mesh.mins.y + bounding_box_mesh.maxs.y) / 2.0,
+                    (bounding_box_mesh.mins.z + bounding_box_mesh.maxs.z) / 2.0,
+                    1.0
+                );
+
+                let transformed_center = transform * center;
+
+                let instance_sphere = BoundingSphere::new
+                (
+                    Point3::<f32>::new
+                    (
+                        transformed_center.x / transformed_center.w,
+                        transformed_center.y / transformed_center.w,
+                        transformed_center.z / transformed_center.w,
+                    ).into(),
+                    transformed_radius
+                );
+
+                if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
                 {
-                    let scale = extract_scale_from_transform(transform);
-
-                    let half_extents = Vector3::<f32>::new
-                    (
-                        (bounding_box_mesh.maxs.x - bounding_box_mesh.mins.x) / 2.0,
-                        (bounding_box_mesh.maxs.y - bounding_box_mesh.mins.y) / 2.0,
-                        (bounding_box_mesh.maxs.z - bounding_box_mesh.mins.z) / 2.0,
-                    );
-
-                    let transformed_radius = half_extents.component_mul(&scale).norm();
-
-                    let center = Vector4::<f32>::new
-                    (
-                        (bounding_box_mesh.mins.x + bounding_box_mesh.maxs.x) / 2.0,
-                        (bounding_box_mesh.mins.y + bounding_box_mesh.maxs.y) / 2.0,
-                        (bounding_box_mesh.mins.z + bounding_box_mesh.maxs.z) / 2.0,
-                        1.0
-                    );
-
-                    let transformed_center = transform * center;
-
-                    let instance_sphere = BoundingSphere::new
-                    (
-                        Point3::<f32>::new
-                        (
-                            transformed_center.x / transformed_center.w,
-                            transformed_center.y / transformed_center.w,
-                            transformed_center.z / transformed_center.w,
-                        ).into(),
-                        transformed_radius
-                    );
-
-                    if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
-                    {
-                        bounding_sphere_all.merge(&instance_sphere);
-                    }
-                    else
-                    {
-                        bounding_sphere_result = Some(instance_sphere);
-                    }
+                    bounding_sphere_all.merge(&instance_sphere);
                 }
-
-                // skin sphere: radius scaled by the max axis scale (padded anyway)
-                if let Some(bounding_sphere_skin) = bounding_sphere_skin.as_ref()
+                else
                 {
-                    let max_scale = extract_max_scale_from_transform(transform);
+                    bounding_sphere_result = Some(instance_sphere);
+                }
+            }
 
-                    let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_skin.center.x, bounding_sphere_skin.center.y, bounding_sphere_skin.center.z, 1.0);
+            // skin sphere: radius scaled by the max axis scale (padded anyway)
+            if let Some(bounding_sphere_skin) = bounds.skin_sphere.as_ref()
+            {
+                let max_scale = extract_max_scale_from_transform(transform);
 
-                    let instance_sphere = BoundingSphere::new
+                let transformed_center = transform * Vector4::<f32>::new(bounding_sphere_skin.center.x, bounding_sphere_skin.center.y, bounding_sphere_skin.center.z, 1.0);
+
+                let instance_sphere = BoundingSphere::new
+                (
+                    Point3::<f32>::new
                     (
-                        Point3::<f32>::new
-                        (
-                            transformed_center.x / transformed_center.w,
-                            transformed_center.y / transformed_center.w,
-                            transformed_center.z / transformed_center.w,
-                        ).into(),
-                        bounding_sphere_skin.radius * max_scale
-                    );
+                        transformed_center.x / transformed_center.w,
+                        transformed_center.y / transformed_center.w,
+                        transformed_center.z / transformed_center.w,
+                    ).into(),
+                    bounding_sphere_skin.radius * max_scale
+                );
 
-                    if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
-                    {
-                        bounding_sphere_all.merge(&instance_sphere);
-                    }
-                    else
-                    {
-                        bounding_sphere_result = Some(instance_sphere);
-                    }
+                if let Some(bounding_sphere_all) = bounding_sphere_result.as_mut()
+                {
+                    bounding_sphere_all.merge(&instance_sphere);
+                }
+                else
+                {
+                    bounding_sphere_result = Some(instance_sphere);
                 }
             }
         }
 
-        if let Some(bounding_sphere_result) = bounding_sphere_result
-        {
-            return Some((bounding_sphere_result.center.into(), bounding_sphere_result.radius));
-        }
-
-        None
+        bounding_sphere_result.map(|sphere| (sphere.center.into(), sphere.radius))
     }
 
     pub fn get_bounding_box_for_all_instances_from_cached_transform(&self) -> Option<(Point3<f32>, Point3<f32>)>
@@ -2290,8 +2312,15 @@ impl Node
             let mut updates = 0;
             {
                 let node_read = node.read().unwrap();
+                let skip = node_read.skip_instance_update;
+
                 for instance in node_read.instances.get_ref()
                 {
+                    if skip && !instance.read().unwrap().needs_force_update()
+                    {
+                        continue;
+                    }
+
                     if Instance::update(&instance, io, time, frame_scale, frame, run_mode)
                     {
                         updates += 1;

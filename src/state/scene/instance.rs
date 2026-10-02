@@ -212,6 +212,11 @@ impl Instance
         self.force_update = true;
     }
 
+    pub fn needs_force_update(&self) -> bool
+    {
+        self.force_update
+    }
+
     pub fn add_component(&mut self, component: ComponentItem)
     {
         self.components.push(component);
