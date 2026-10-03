@@ -8,18 +8,69 @@ pub const RESOURCES_DIR: &str = "resources";
 pub const RESOURCE_SCHEME: &str = "resources://";
 
 #[cfg(target_arch = "wasm32")]
+static RESOURCES_URL: std::sync::OnceLock<reqwest::Url> = std::sync::OnceLock::new();
+
+// resolved from the page url - workers have no window, so the main thread must call this first (window::run does)
+#[cfg(target_arch = "wasm32")]
+pub fn resources_url() -> &'static reqwest::Url
+{
+    RESOURCES_URL.get_or_init(||
+    {
+        let href = web_sys::window().expect("resources url must be resolved on the main thread first").location().href().unwrap();
+        reqwest::Url::parse(&href).unwrap().join(&format!("{}/", RESOURCES_DIR)).unwrap()
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
 fn format_url(file_name: &str) -> reqwest::Url
 {
-    let window = web_sys::window().unwrap();
-    let location = window.location();
-    let mut origin = location.origin().unwrap();
-    let pathname = location.pathname().unwrap();
+    resources_url().join(file_name).unwrap()
+}
 
-    let current_dir: String = origin.to_string() + &pathname;
-    let res_dir = get_dirname(current_dir.as_str()) + "/resources";
+// reqwest has no blocking client on the web - sync XHR works in workers and (deprecated, but allowed) on the main thread
+#[cfg(target_arch = "wasm32")]
+fn request_sync(method: &str, file_name: &str, binary: bool) -> anyhow::Result<web_sys::XmlHttpRequest>
+{
+    let js_err = |err: wasm_bindgen::JsValue| anyhow::anyhow!("{:?}", err);
+    let in_worker = web_sys::window().is_none();
 
-    let base = reqwest::Url::parse(&format!("{}/", res_dir,)).unwrap();
-    base.join(file_name).unwrap()
+    let xhr = web_sys::XmlHttpRequest::new().map_err(js_err)?;
+    xhr.open_with_async(method, format_url(file_name).as_str(), false).map_err(js_err)?;
+
+    // the main thread can not set a response type for sync requests - x-user-defined keeps every byte in responseText
+    if binary && in_worker
+    {
+        xhr.set_response_type(web_sys::XmlHttpRequestResponseType::Arraybuffer);
+    }
+    else if binary
+    {
+        xhr.override_mime_type("text/plain; charset=x-user-defined").map_err(js_err)?;
+    }
+
+    xhr.send().map_err(js_err)?;
+
+    let status = xhr.status().map_err(js_err)?;
+    if !(200..300).contains(&status)
+    {
+        anyhow::bail!("{} {} failed with status {}", method, file_name, status);
+    }
+
+    Ok(xhr)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn response_bytes(xhr: &web_sys::XmlHttpRequest) -> anyhow::Result<Vec<u8>>
+{
+    let js_err = |err: wasm_bindgen::JsValue| anyhow::anyhow!("{:?}", err);
+
+    if xhr.response_type() == web_sys::XmlHttpRequestResponseType::Arraybuffer
+    {
+        return Ok(js_sys::Uint8Array::new(&xhr.response().map_err(js_err)?).to_vec());
+    }
+
+    // x-user-defined maps byte 0x80..0xFF to U+F780..U+F7FF - the low byte is the original one
+    let text = xhr.response_text().map_err(js_err)?.unwrap_or_default();
+    Ok(text.chars().map(|c| c as u32 as u8).collect())
 }
 
 pub async fn load_string_async(file_name: &str) -> anyhow::Result<String>
@@ -47,8 +98,8 @@ pub fn load_string(file_name: &str) -> anyhow::Result<String>
     {
         if #[cfg(target_arch = "wasm32")]
         {
-            let url = format_url(file_name);
-            let txt = reqwest::blocking::get(url)?.text()?;
+            let xhr = request_sync("GET", file_name, false)?;
+            let txt = xhr.response_text().map_err(|err| anyhow::anyhow!("{:?}", err))?.unwrap_or_default();
         }
         else
         {
@@ -85,8 +136,7 @@ pub fn load_binary(file_name: &str) -> anyhow::Result<Vec<u8>>
     {
         if #[cfg(target_arch = "wasm32")]
         {
-            let url = format_url(file_name);
-            let data = reqwest::blocking::get(url)?.bytes()?.to_vec();
+            let data = response_bytes(&request_sync("GET", file_name, true)?)?;
         }
         else
         {
@@ -173,9 +223,7 @@ pub fn exists(path: &str) -> bool
     {
         if #[cfg(target_arch = "wasm32")]
         {
-            let url = format_url(path);
-            let response = reqwest::blocking::head(url).send();
-            response.status().is_success()
+            request_sync("HEAD", path, false).is_ok()
         }
         else
         {
@@ -227,13 +275,33 @@ pub fn to_resource_path(path: &str) -> Option<String>
     None
 }
 
+// packaged builds have the resources next to the executable (mac app bundle: Contents/Resources), the dev build uses the copy of build.rs
+#[cfg(not(target_arch = "wasm32"))]
+fn resource_roots() -> &'static [std::path::PathBuf]
+{
+    static ROOTS: std::sync::OnceLock<Vec<std::path::PathBuf>> = std::sync::OnceLock::new();
+    ROOTS.get_or_init(||
+    {
+        let mut roots = vec![];
+        if let Some(exe_dir) = env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()))
+        {
+            roots.push(exe_dir.join(RESOURCES_DIR));
+            roots.push(exe_dir.join("..").join("Resources").join(RESOURCES_DIR));
+        }
+        roots.push(std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR));
+
+        roots.retain(|root| root.is_dir());
+        roots
+    })
+}
+
 pub fn get_path(path: &str) -> String
 {
     cfg_if!
     {
         if #[cfg(target_arch = "wasm32")]
         {
-            path
+            path.to_string()
         }
         else
         {
@@ -244,17 +312,18 @@ pub fn get_path(path: &str) -> String
             }
 
             // resource path
-            let resource_path = std::path::Path::new(env!("OUT_DIR")).join(RESOURCES_DIR).join(path);
-            if resource_path.exists()
+            for root in resource_roots()
             {
-                return resource_path.to_string_lossy().to_string();
+                let resource_path = root.join(path);
+                if resource_path.exists()
+                {
+                    return resource_path.to_string_lossy().to_string();
+                }
             }
-            else
-            {
-                // local path
-                let local_path = env::current_dir().unwrap().join(path);
-                return local_path.to_string_lossy().to_string();
-            }
+
+            // local path
+            let local_path = env::current_dir().unwrap().join(path);
+            local_path.to_string_lossy().to_string()
         }
     }
 }

@@ -238,6 +238,8 @@ pub struct MaterialBuffer
     pub bind_group: Option<BindGroup>,
 }
 
+crate::render_item_send_sync!(MaterialBuffer);
+
 impl RenderItem for MaterialBuffer
 {
     render_item_impl_default!();

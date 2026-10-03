@@ -8,6 +8,8 @@ pub struct DebugVolumesBindGroup
     pub bind_group: BindGroup
 }
 
+crate::render_item_send_sync!(DebugVolumesBindGroup);
+
 impl RenderItem for DebugVolumesBindGroup
 {
     render_item_impl_default!();

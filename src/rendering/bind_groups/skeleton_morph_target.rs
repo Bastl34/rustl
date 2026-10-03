@@ -10,6 +10,8 @@ pub struct SkeletonMorphTargetBindGroup
     pub bind_group: BindGroup
 }
 
+crate::render_item_send_sync!(SkeletonMorphTargetBindGroup);
+
 impl RenderItem for SkeletonMorphTargetBindGroup
 {
     render_item_impl_default!();

@@ -70,7 +70,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 let in_multi_select = editor_state.hierarchy_multi_select.contains(&node_id);
                 let mut selection = editor_state.selected_object == id || in_multi_select;
 
-                let drag_id = egui::Id::new(("node_drag", node_id));
+                let drag_id = egui::Id::unique(("node_drag", node_id));
                 let is_being_dragged = ui.ctx().is_being_dragged(drag_id);
                 let (toggle, row_rect) = ui.horizontal(|ui|
                 {
@@ -106,7 +106,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                     {
                         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos()
                         {
-                            egui::Area::new(egui::Id::new(("drag_label", node_id)))
+                            egui::Area::new(egui::Id::unique(("drag_label", node_id)))
                                 .fixed_pos(pointer_pos + egui::vec2(14.0, -14.0))
                                 .order(egui::Order::Tooltip)
                                 .interactable(false)
@@ -176,7 +176,7 @@ pub fn build_objects_list(editor_state: &mut EditorState, exec_queue: ExecutionQ
                 flat_node_order_ref.push(node_id);
 
                 // *** drop target: hover-only sense so toggle clicks are not consumed ***
-                let drop_resp = ui.interact(row_rect, egui::Id::new(("node_drop", node_id)), egui::Sense::hover());
+                let drop_resp = ui.interact(row_rect, egui::Id::unique(("node_drop", node_id)), egui::Sense::hover());
                 let is_drop_target = drop_resp.dnd_hover_payload::<u32>().is_some();
                 if is_drop_target
                 {

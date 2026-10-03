@@ -64,6 +64,8 @@ pub struct VertexBuffer
     index_buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(VertexBuffer);
+
 impl RenderItem for VertexBuffer
 {
     render_item_impl_default!();

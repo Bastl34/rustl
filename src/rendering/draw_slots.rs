@@ -64,6 +64,8 @@ pub struct DrawSlotsBuffer
     pub slot_map: HashMap<u32, (u32, u32)>, // node id -> (first slot index, slot count)
 }
 
+crate::render_item_send_sync!(DrawSlotsBuffer);
+
 impl RenderItem for DrawSlotsBuffer
 {
     render_item_impl_default!();
@@ -139,6 +141,8 @@ pub struct IndirectArgsBuffers
     pub args_new: wgpu::Buffer,
     pub buffer_size: usize, // capacity in slots
 }
+
+crate::render_item_send_sync!(IndirectArgsBuffers);
 
 impl RenderItem for IndirectArgsBuffers
 {

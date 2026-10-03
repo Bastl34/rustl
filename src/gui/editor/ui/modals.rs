@@ -67,7 +67,7 @@ pub fn create_alert_dialog(editor_state: &mut EditorState, _state: &mut State, c
 
     let mut confirmed = false;
 
-    let response = egui::Modal::new(egui::Id::new("alert_dialog")).show(ctx, |ui|
+    let response = egui::Modal::new(egui::Id::unique("alert_dialog")).show(ctx, |ui|
     {
         ui.set_width(380.0);
         ui.add_space(4.0);
@@ -533,7 +533,7 @@ pub fn create_modal_splash(editor_state: &mut EditorState, state: &mut State, ct
     let screen_rect = ctx.content_rect();
 
     // backdrop dimming the editor and catching outside clicks
-    egui::Area::new(egui::Id::new("splash_backdrop"))
+    egui::Area::new(egui::Id::unique("splash_backdrop"))
         .fixed_pos(screen_rect.min)
         .order(egui::Order::Middle)
         .interactable(true)

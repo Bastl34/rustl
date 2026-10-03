@@ -27,6 +27,19 @@ macro_rules! render_item_impl_default
     };
 }
 
+// wgpu objects hold JS handles and are not Send/Sync on wasm with threads - render items are only used and dropped on the main thread
+#[macro_export]
+macro_rules! render_item_send_sync
+{
+    ($type:ty) =>
+    {
+        #[cfg(target_arch = "wasm32")]
+        unsafe impl Send for $type {}
+        #[cfg(target_arch = "wasm32")]
+        unsafe impl Sync for $type {}
+    };
+}
+
 pub fn get_render_item<T>(render_item: &RenderItemType) -> Box<&T> where T: 'static
 {
     let any = render_item.as_any();

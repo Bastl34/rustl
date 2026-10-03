@@ -64,8 +64,8 @@ impl MainInterface
         let mut wgpu: WGpu;
         {
             let state = &mut *(state.borrow_mut());
-            state.width = window.inner_size().width;
-            state.height = window.inner_size().height;
+            state.width = window.inner_size().width.max(1);
+            state.height = window.inner_size().height.max(1);
             state.scale_factor = window.scale_factor() as f32;
 
             wgpu = WGpu::new(window.clone(), state).await;
@@ -202,8 +202,12 @@ impl MainInterface
 
                 let mut render_item = scene.render_item.take();
 
-                let render_scene = get_render_item_mut::<Scene>(render_item.as_mut().unwrap());
-                render_scene.resize(&mut self.context.wgpu, scene, width, height);
+                // not rendered yet (resize before the first frame) - it gets created with the current size
+                if let Some(render_item) = render_item.as_mut()
+                {
+                    let render_scene = get_render_item_mut::<Scene>(render_item);
+                    render_scene.resize(&mut self.context.wgpu, scene, width, height);
+                }
 
                 scene.render_item = render_item;
             }
@@ -253,7 +257,7 @@ impl MainInterface
             let state = &mut *(self.context.state.borrow_mut());
             if state.io.input_manager.keyboard.is_pressed_no_wait(Key::F12)
             {
-                play_and_forget_sound("resources/sounds/screenshot.ogg", 1.0, state.main_thread_execution_queue.clone());
+                play_and_forget_sound("sounds/screenshot.ogg", 1.0, state.main_thread_execution_queue.clone());
                 state.debug.save_screenshot = true;
             }
         }

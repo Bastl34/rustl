@@ -48,6 +48,8 @@ pub struct CameraBuffer
     buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(CameraBuffer);
+
 impl RenderItem for CameraBuffer
 {
     render_item_impl_default!();

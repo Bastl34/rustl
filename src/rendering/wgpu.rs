@@ -32,6 +32,7 @@ pub struct WGpu
     msaa_texture: Option<wgpu::Texture>,
 
     surface_config: SurfaceConfiguration,
+    surface_format: wgpu::TextureFormat,
     supports_mailbox: bool,
 }
 
@@ -75,8 +76,22 @@ impl WGpu
             // no limit bucketing: this is a trusted native/wasm app, so use the adapter's real limits
             apply_limit_buckets: false,
         })
-        .await
-        .unwrap();
+        .await;
+
+        let adapter = match adapter
+        {
+            Ok(adapter) => adapter,
+            Err(err) =>
+            {
+                #[cfg(target_arch = "wasm32")]
+                if let Some(window) = web_sys::window()
+                {
+                    let _ = window.alert_with_message("WebGPU is not available in this browser - WebGPU is required.\n\nTry a current Chrome/Edge or restart the browser.");
+                }
+
+                panic!("no gpu adapter found - the web build needs WebGPU: {:?}", err);
+            }
+        };
 
         console_log!(" ********** info **********");
         let adapter_info = adapter.get_info();
@@ -92,22 +107,15 @@ impl WGpu
         let polygon_mode_features = wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::POLYGON_MODE_POINT;
         let supported_polygon_mode_features = adapter_features & polygon_mode_features;
         let timestamp_query_features = adapter_features & wgpu::Features::TIMESTAMP_QUERY;
+        let format_features = adapter_features & wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES; // native only, not on the web
 
         let device_result = adapter.request_device
         (
             &wgpu::DeviceDescriptor
             {
                 label: None,
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | supported_polygon_mode_features | timestamp_query_features, // for multisampling + wireframe + gpu timing (if supported)
-                // WebGL doesn't support all of wgpu's features, so if building for the web: disable some
-                required_limits: if cfg!(target_arch = "wasm32")
-                {
-                    wgpu::Limits::downlevel_webgl2_defaults()
-                }
-                else
-                {
-                    adapter.limits()
-                },
+                required_features: format_features | supported_polygon_mode_features | timestamp_query_features, // for multisampling + wireframe + gpu timing (if supported)
+                required_limits: adapter.limits(),
                 memory_hints: Default::default(),
                 experimental_features: Default::default(),
                 trace: wgpu::Trace::Off,
@@ -152,21 +160,26 @@ impl WGpu
 
         let present_mode = resolve_present_mode(*state.rendering.present_mode.get_ref(), supports_mailbox);
 
+        // WebGPU canvases have no srgb format - render into an srgb view of it, like into the srgb surfaces native uses
+        let surface_format = surface_caps.formats[0];
+        let render_format = if cfg!(target_arch = "wasm32") { surface_format.add_srgb_suffix() } else { surface_format };
+
         let surface_config = wgpu::SurfaceConfiguration
         {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            width: dimensions.width,
-            height: dimensions.height,
+            // the web canvas is 0x0 until its first resize - the resize event configures the real size later
+            width: dimensions.width.max(1),
+            height: dimensions.height.max(1),
             present_mode: present_mode,
             alpha_mode: surface_caps.alpha_modes[0], //wgpu::CompositeAlphaMode::Auto
-            format: surface_caps.formats[0],
+            format: render_format,
             // Auto reproduces the pre-wgpu-30 behaviour (sRGB, or extended linear sRGB for fp16 surfaces)
             color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: vec![],
             desired_maximum_frame_latency: 1, // 1: lower latency, 2: higher throughput maybe check https://github.com/emilk/egui/blob/main/crates/egui-wgpu/src/lib.rs#L331 for ios issues
         };
 
-        surface.configure(&device, &surface_config);
+        surface.configure(&device, &surface_configuration(&surface_config, surface_format));
 
         // msaa
         let texture_features = adapter.get_texture_format_features(surface_caps.formats[0]);
@@ -226,6 +239,7 @@ impl WGpu
             msaa_texture: None,
             queue,
             surface_config,
+            surface_format,
             supports_mailbox,
         };
 
@@ -327,7 +341,7 @@ impl WGpu
         self.surface_config.width = width;
         self.surface_config.height = height;
 
-        self.surface.configure(&self.device, &self.surface_config);
+        self.surface.configure(&self.device, &surface_configuration(&self.surface_config, self.surface_format));
         self.create_msaa_texture(self.msaa_samples);
     }
 
@@ -335,7 +349,7 @@ impl WGpu
     {
         self.surface_config.present_mode = resolve_present_mode(setting, self.supports_mailbox);
 
-        self.surface.configure(&self.device, &self.surface_config);
+        self.surface.configure(&self.device, &surface_configuration(&self.surface_config, self.surface_format));
         self.create_msaa_texture(self.msaa_samples);
     }
 
@@ -352,7 +366,7 @@ impl WGpu
             }
         };
 
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.surface_config.format), ..Default::default() });
 
         let mut msaa_view = None;
         if self.msaa_texture.is_some()
@@ -491,4 +505,17 @@ impl WGpu
         let img = DynamicImage::ImageRgba8(ImageBuffer::<Rgba<u8>, _>::from_raw(buffer_dimensions.width as u32, buffer_dimensions.height as u32, data).unwrap());
         brga_to_rgba(img)
     }
+}
+
+// the config for surface.configure - the surface keeps its own format and offers the render format as a view of it
+fn surface_configuration(render_config: &SurfaceConfiguration, surface_format: wgpu::TextureFormat) -> SurfaceConfiguration
+{
+    let mut config = render_config.clone();
+    if surface_format != render_config.format
+    {
+        config.format = surface_format;
+        config.view_formats = vec![render_config.format];
+    }
+
+    config
 }

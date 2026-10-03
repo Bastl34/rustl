@@ -5,5 +5,17 @@ dev-release = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resour
 # getrandom 0.3 has no default backend on wasm32-unknown-unknown and refuses to compile without one
 # it needs the cfg flag AND the "wasm_js" feature - the feature is set in Cargo.toml
 # note: a RUSTFLAGS env var would override this whole section, not merge with it
+# atomics + shared memory for wasm_thread - needs nightly with -Z build-std (see scripts/build.mjs)
 [target.wasm32-unknown-unknown]
-rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+rustflags = [
+    '--cfg', 'getrandom_backend="wasm_js"',
+    '-C', 'target-feature=+atomics,+bulk-memory,+mutable-globals',
+    # rustc does not pass the shared memory linker args for atomics anymore - wasm-bindgen needs them for threads
+    '-C', 'link-arg=--shared-memory',
+    '-C', 'link-arg=--import-memory',
+    '-C', 'link-arg=--max-memory=4294967296',
+    '-C', 'link-arg=--export=__wasm_init_tls',
+    '-C', 'link-arg=--export=__tls_size',
+    '-C', 'link-arg=--export=__tls_align',
+    '-C', 'link-arg=--export=__tls_base',
+]

@@ -10,6 +10,8 @@ pub struct HZBOcclusionCheckBindGroup
     pub bind_group: BindGroup
 }
 
+crate::render_item_send_sync!(HZBOcclusionCheckBindGroup);
+
 impl RenderItem for HZBOcclusionCheckBindGroup
 {
     render_item_impl_default!();

@@ -12,7 +12,6 @@ use crate::gui::editor::ui::debug::create_debug_settings;
 use crate::gui::editor::ui::dialogs::{load_sound_dialog, load_texture_dialog};
 use crate::gui::editor::ui::helper::ui_helper::loading_progress_bar;
 use crate::gui::editor::ui::mesh::{build_mesh_resources_list, create_mesh_resource_settings};
-use crate::input::keyboard::Key::S;
 use crate::state::scene::utilities::scene_utils::{execute_on_scene_mut, execute_on_state_mut, move_nodes_to};
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX};
 use crate::{component_downcast, component_downcast_mut};
@@ -198,7 +197,7 @@ pub fn create_frame(ui: &mut egui::Ui, editor_state: &mut EditorState, state: &m
     egui::Panel::top("scene_tabs_panel").frame(scene_tabs_frame).show(ui, |ui|
     {
         // the real bar height is only known after drawing, so the last measured one is used
-        let bar_height_id = ui.id().with("run_mode_bar_height");
+        let bar_height_id = ui.scope_id().with("run_mode_bar_height");
         let bar_height = ui.data(|data| data.get_temp::<f32>(bar_height_id)).unwrap_or(RUN_MODE_BAR_HEIGHT);
 
         // explicit rects: the run mode bar vertically centered on the right, the tabs as high as the bar and flush on the separator
@@ -1215,7 +1214,7 @@ fn create_hierarchy_type_entries(_state: &mut State, editor_state: &mut EditorSt
                 let toggle = ui.toggle_value(&mut selection, RichText::new(format!("◼ Objects ({})", scene.get_node_amount_recursive(show_internal))).color(Color32::LIGHT_GREEN).strong()).on_hover_text("there are maybe some internal objects hidden");
 
                 // *** drop onto root: make nodes top-level (no parent) ***
-                let drop_resp = ui.interact(toggle.rect, egui::Id::new(("objects_root_drop", scene_id)), egui::Sense::hover());
+                let drop_resp = ui.interact(toggle.rect, egui::Id::unique(("objects_root_drop", scene_id)), egui::Sense::hover());
                 if drop_resp.dnd_hover_payload::<u32>().is_some()
                 {
                     ui.painter().rect_stroke(toggle.rect, 2.0, egui::Stroke::new(2.0, egui::Color32::YELLOW), egui::StrokeKind::Outside);

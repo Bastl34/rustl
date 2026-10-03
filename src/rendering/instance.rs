@@ -108,6 +108,8 @@ pub struct InstanceBuffer
     sphere_merges: usize, // single instances grown in since the last full build
 }
 
+crate::render_item_send_sync!(InstanceBuffer);
+
 impl RenderItem for InstanceBuffer
 {
     render_item_impl_default!();

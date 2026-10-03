@@ -14,6 +14,8 @@ pub struct ComputePipeline
     pipeline: Option<wgpu::ComputePipeline>,
 }
 
+crate::render_item_send_sync!(ComputePipeline);
+
 impl RenderItem for ComputePipeline
 {
     render_item_impl_default!();

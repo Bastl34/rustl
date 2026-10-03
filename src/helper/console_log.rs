@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use chrono::{DateTime, Local};
+#[cfg(not(target_arch = "wasm32"))]
 use colored::*;
 use std::{sync::{LazyLock, Mutex}};
 
@@ -279,6 +280,20 @@ pub fn log(msg: &str, log_type: LogType)
         logs.logs.remove(0);
     }
 
+    // println goes nowhere on the web
+    #[cfg(target_arch = "wasm32")]
+    {
+        let msg = wasm_bindgen::JsValue::from_str(msg);
+        match log_type
+        {
+            LogType::Error => web_sys::console::error_1(&msg),
+            LogType::Warning => web_sys::console::warn_1(&msg),
+            LogType::Debug => web_sys::console::debug_1(&msg),
+            _ => web_sys::console::log_1(&msg),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     match log_type
     {
         LogType::All => println!("{}", msg),

@@ -56,6 +56,8 @@ pub struct SkeletonBuffer
     buffer: wgpu::Buffer
 }
 
+crate::render_item_send_sync!(SkeletonBuffer);
+
 impl RenderItem for SkeletonBuffer
 {
     render_item_impl_default!();

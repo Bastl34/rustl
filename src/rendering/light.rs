@@ -108,6 +108,8 @@ pub struct LightBuffer
     lights_buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(LightBuffer);
+
 impl RenderItem for LightBuffer
 {
     render_item_impl_default!();

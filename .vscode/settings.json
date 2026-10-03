@@ -1,0 +1,4 @@
+{
+    // rust-analyzer builds into target/rust-analyzer - no file lock waits with cargo run / the web build
+    "rust-analyzer.cargo.targetDir": true
+}

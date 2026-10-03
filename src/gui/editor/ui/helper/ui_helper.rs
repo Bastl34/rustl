@@ -146,7 +146,7 @@ pub fn rename_hierarchy_item_or_toggle_selection(ui: &mut egui::Ui, toggle_title
     if is_renaming
     {
         // *** inline rename input ***
-        let input_id = egui::Id::new(("rename_input", kind, item_id));
+        let input_id = egui::Id::unique(("rename_input", kind, item_id));
         let input_wdith = 140.0;
         let resp = ui.add(egui::TextEdit::singleline(&mut editor_state.hierarchy_rename_value).id(input_id).desired_width(input_wdith));
         if !resp.has_focus() && !resp.lost_focus()

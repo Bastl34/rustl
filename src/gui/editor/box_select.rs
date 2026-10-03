@@ -411,7 +411,7 @@ pub fn draw_box_select_overlay(ui: &egui::Ui, editor_state: &EditorState, state:
     // clip to the viewport area (the space left over after all panels) so the overlay never covers the ui
     let viewport_rect = ui.available_rect_before_wrap();
 
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("box_select_overlay"))).with_clip_rect(viewport_rect);
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("box_select_overlay"))).with_clip_rect(viewport_rect);
 
     // engine mouse coordinates (physical px, origin bottom left) -> egui points (origin top left)
     let scale = state.scale_factor.max(0.001);

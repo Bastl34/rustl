@@ -395,14 +395,14 @@ impl Mesh
     {
         let b_box = self.get_skin_bbox_or_default();
 
-        b_box.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
+        b_box.cast_local_ray(&ray_inverse, f32::MAX, solid)
     }
 
     pub fn intersect_b_sphere(&self, ray_inverse: &Ray, solid: bool) -> Option<f32>
     {
         let b_sphere = self.get_skin_bounding_sphere_or_default();
 
-        b_sphere.cast_local_ray(&ray_inverse, std::f32::MAX, solid)
+        b_sphere.cast_local_ray(&ray_inverse, f32::MAX, solid)
     }
 
     pub fn intersect(&self, ray: &Ray, ray_inverse: &Ray, trans: &Matrix4<f32>, trans_inverse: &Matrix4<f32>, solid: bool, smooth_shading: bool) -> Option<(f32, Vector3<f32>, u32)>
@@ -413,7 +413,7 @@ impl Mesh
 
             let data = mesh_resource.get_data();
 
-            let res = data.mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
+            let res = data.mesh.cast_local_ray_and_get_normal(&ray_inverse, f32::MAX, solid);
             if let Some(res) = res
             {
                 let mut face_id = 0;
@@ -507,7 +507,7 @@ impl Mesh
             let mesh = TriMesh::new(vertices_vec3, data.indices.clone()).unwrap();
 
             // run intersection test
-            let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, std::f32::MAX, solid);
+            let res = mesh.cast_local_ray_and_get_normal(&ray_inverse, f32::MAX, solid);
             if let Some(res) = res
             {
                 let mut face_id = 0;

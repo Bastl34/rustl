@@ -10,6 +10,8 @@ pub struct LightCamSceneBindGroup
     pub bind_group: BindGroup
 }
 
+crate::render_item_send_sync!(LightCamSceneBindGroup);
+
 impl RenderItem for LightCamSceneBindGroup
 {
     render_item_impl_default!();

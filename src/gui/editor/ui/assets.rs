@@ -113,7 +113,7 @@ pub fn create_asset_list(editor_state: &mut EditorState, state: &mut State, ui: 
                     }
 
                     let str_id = format!("{} asset", asset.path);
-                    let item_id = Id::new(str_id.clone());
+                    let item_id = Id::unique(str_id.clone());
                     let str_id_inner = format!("{}_inner", str_id.clone());
 
                     // if is_being_dragged
@@ -441,7 +441,7 @@ fn paint_asset_drag_preview(editor_state: &EditorState, ui: &Ui, pos: egui::Pos2
     // dimmed where it can not be dropped
     let opacity = if is_pos_in_scene_view(ui, pos) { 1.0 } else { 0.4 };
 
-    egui::Area::new(Id::new("asset_window_drag_preview")).order(egui::Order::Tooltip).interactable(false).pivot(egui::Align2::CENTER_CENTER).fixed_pos(pos).show(ui.ctx(), |ui|
+    egui::Area::new(Id::unique("asset_window_drag_preview")).order(egui::Order::Tooltip).interactable(false).pivot(egui::Align2::CENTER_CENTER).fixed_pos(pos).show(ui.ctx(), |ui|
     {
         ui.multiply_opacity(opacity);
 

@@ -366,6 +366,8 @@ pub struct ShadowBuffer
     shadow_views_buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(ShadowBuffer);
+
 impl RenderItem for ShadowBuffer
 {
     render_item_impl_default!();

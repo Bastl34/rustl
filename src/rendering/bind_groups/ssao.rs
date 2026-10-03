@@ -66,6 +66,8 @@ pub struct SsaoBindGroup
     pub uniform_buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(SsaoBindGroup);
+
 impl RenderItem for SsaoBindGroup
 {
     render_item_impl_default!();

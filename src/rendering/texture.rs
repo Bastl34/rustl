@@ -31,6 +31,8 @@ pub struct Texture
     views: Vec<wgpu::TextureView>,
 }
 
+crate::render_item_send_sync!(Texture);
+
 impl RenderItem for Texture
 {
     render_item_impl_default!();

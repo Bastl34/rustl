@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, time::Instant, vec};
+use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
+use web_time::Instant;
 
 use nalgebra::{Vector2, Vector3};
 use nalgebra::Point3;

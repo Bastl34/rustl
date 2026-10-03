@@ -19,6 +19,8 @@ pub struct HZBCullBuffer
     pub num_slots: usize,
 }
 
+crate::render_item_send_sync!(HZBCullBuffer);
+
 impl RenderItem for HZBCullBuffer
 {
     render_item_impl_default!();

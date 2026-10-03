@@ -242,7 +242,7 @@ impl SourceKind
 // one row per source with kind and key, plus add and remove
 pub fn input_action_ui(ui: &mut egui::Ui, id_salt: &str, label: &str, action: &mut InputAction)
 {
-    let id = egui::Id::new(id_salt).with(label);
+    let id = egui::Id::unique(id_salt).with(label);
 
     ui.label(label);
     ui.indent(id, |ui|
@@ -313,7 +313,7 @@ pub fn gamepad_select_ui(ui: &mut egui::Ui, id_salt: &str, select: &mut GamepadS
             GamepadSelect::Player(id) => format!("Player {}", id),
         };
 
-        egui::ComboBox::from_id_salt(egui::Id::new(id_salt).with("gamepad")).selected_text(text).show_ui(ui, |ui|
+        egui::ComboBox::from_id_salt(egui::Id::unique(id_salt).with("gamepad")).selected_text(text).show_ui(ui, |ui|
         {
             ui.selectable_value(select, GamepadSelect::None, "None");
             ui.selectable_value(select, GamepadSelect::Any, "Any");

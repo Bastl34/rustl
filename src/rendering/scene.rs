@@ -279,6 +279,8 @@ pub struct Scene
     empty_skeleton_morph_group: SkeletonMorphTargetBindGroup,
 }
 
+crate::render_item_send_sync!(Scene);
+
 impl RenderItem for Scene
 {
     render_item_impl_default!();

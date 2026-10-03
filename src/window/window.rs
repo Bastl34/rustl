@@ -4,13 +4,6 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
-use winit::window::Icon;
-use std::fs::File;
-use std::io::BufReader;
-use image::GenericImageView;
-
-#[cfg(target_arch="wasm32")]
-use wasm_bindgen::prelude::*;
 
 use crate::interface::main_interface::MainInterface;
 
@@ -50,7 +43,11 @@ fn get_icon() -> Option<winit::window::Icon>
 {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let icon_path = "resources/designs/logo/logo.png";
+        use std::{fs::File, io::BufReader};
+        use image::GenericImageView;
+        use winit::window::Icon;
+
+        let icon_path = crate::resources::resources::get_path("designs/logo/logo.png");
         let icon = match File::open(icon_path)
         {
             Ok(file) =>
@@ -223,6 +220,13 @@ impl ApplicationHandler<CustomEvent> for AppState
                     },
                     AppState::Initialized(_) => state,
                 });
+
+                // the web canvas gets its size asynchronously - resize events before this point were dropped
+                #[cfg(target_arch = "wasm32")]
+                if let AppState::Initialized(app) = self
+                {
+                    app.interface.resize(None, None);
+                }
             }
         }
     }
@@ -234,6 +238,7 @@ pub fn run()
     #[cfg(target_arch = "wasm32")]
     {
         console_error_panic_hook::set_once();
+        crate::resources::resources::resources_url();
     }
 
     let event_loop = winit::event_loop::EventLoop::with_user_event().build().unwrap();
@@ -248,6 +253,6 @@ pub fn run()
     {
         use winit::platform::web::EventLoopExtWebSys;
 
-        event_loop.spawn_app(app);
+        event_loop.spawn_app(app_state);
     }
 }

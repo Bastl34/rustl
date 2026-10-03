@@ -10,6 +10,8 @@ pub struct SingleBindingBindGroup
     pub bind_group: BindGroup
 }
 
+crate::render_item_send_sync!(SingleBindingBindGroup);
+
 impl RenderItem for SingleBindingBindGroup
 {
     render_item_impl_default!();

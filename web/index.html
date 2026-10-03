@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rustl</title>
+    <script>
+        // relative paths need the trailing slash (dist/web -> dist/web/)
+        if (!location.pathname.endsWith("/") && !location.pathname.endsWith(".html"))
+        {
+            location.replace(location.pathname + "/" + location.search);
+        }
+    </script>
+</head>
+
+<body>
+    <script>
+        // browsers start an AudioContext suspended until the user interacts - keep track of cpal's contexts and resume them on the first input
+        const audioContexts = [];
+        const NativeAudioContext = window.AudioContext;
+        window.AudioContext = class extends NativeAudioContext
+        {
+            constructor(...args)
+            {
+                super(...args);
+                audioContexts.push(this);
+            }
+        };
+
+        const resumeAudio = () => audioContexts.forEach(ctx => { if (ctx.state === "suspended") ctx.resume(); });
+        ["pointerdown", "keydown", "touchend"].forEach(name => window.addEventListener(name, resumeAudio, { capture: true }));
+    </script>
+    <script>
+        // project to start (path inside resources/) - set by scripts/build.mjs, ?project=... in the url wins
+        window.RUSTL_PROJECT = /*project*/null;
+    </script>
+    <script type="module">
+        import init from "./pkg/rustl.js";
+
+        if (!window.crossOriginIsolated)
+        {
+            console.error("wasm threads need COOP/COEP headers - serve with: npx serve -p 1337 in the repo root (serve.json)");
+        }
+
+        (async () =>
+        {
+            const engine = await init({ module_or_path: "./pkg/rustl_bg.wasm" });
+        })();
+    </script>
+    <style>
+        canvas
+        {
+            background-color: black;
+        }
+
+        #fullscreen
+        {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 10;
+            padding: 6px 12px;
+            font: 14px sans-serif;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        #fullscreen:hover
+        {
+            background: rgba(0, 0, 0, 0.85);
+        }
+    </style>
+
+    <button id="fullscreen" title="Fullscreen (Esc to leave)">&#x26F6; Fullscreen</button>
+    <script>
+        // fullscreen for the canvas winit creates - its resize observer picks up the new size, focus keeps the keyboard input on it
+        document.getElementById("fullscreen").addEventListener("click", async () =>
+        {
+            const canvas = document.querySelector("canvas");
+            if (canvas)
+            {
+                await canvas.requestFullscreen();
+                canvas.focus();
+            }
+        });
+    </script>
+
+    <div id="container"></div>
+</body>
+
+</html>

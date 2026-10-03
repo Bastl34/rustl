@@ -58,6 +58,8 @@ pub struct MorphTarget
     buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(MorphTarget);
+
 impl RenderItem for MorphTarget
 {
     render_item_impl_default!();

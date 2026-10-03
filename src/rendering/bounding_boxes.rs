@@ -41,6 +41,8 @@ pub struct BoundingBoxesBuffer
     pub buffer_size: usize
 }
 
+crate::render_item_send_sync!(BoundingBoxesBuffer);
+
 impl RenderItem for BoundingBoxesBuffer
 {
     render_item_impl_default!();

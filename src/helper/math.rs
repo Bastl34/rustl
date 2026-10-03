@@ -417,7 +417,7 @@ pub fn extract_rotation_as_euler_vec(matrix: &Matrix4<f32>) -> Vector3<f32>
     let sy = -rotation[(2, 0)];
 
     // normal calculation
-    if sy.abs() < 1.0 - std::f32::EPSILON
+    if sy.abs() < 1.0 - f32::EPSILON
     {
         let pitch = sy.asin();
         let roll = rotation[(2, 1)].atan2(rotation[(2, 2)]);

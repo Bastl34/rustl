@@ -39,6 +39,8 @@ pub struct VisibilityBuffer
     results: Mutex<Vec<Visibility>>, // latest read back results (a few frames behind - stats/debug only)
 }
 
+crate::render_item_send_sync!(VisibilityBuffer);
+
 impl RenderItem for VisibilityBuffer
 {
     render_item_impl_default!();

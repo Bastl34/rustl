@@ -743,8 +743,8 @@ impl Node
     {
         let meshes = self.get_meshes();
 
-        let mut min = Point3::<f32>::new(std::f32::MAX, std::f32::MAX, std::f32::MAX);
-        let mut max = Point3::<f32>::new(std::f32::MIN, std::f32::MIN, std::f32::MIN);
+        let mut min = Point3::<f32>::new(f32::MAX, f32::MAX, f32::MAX);
+        let mut max = Point3::<f32>::new(f32::MIN, f32::MIN, f32::MIN);
 
         let mut found = false;
 

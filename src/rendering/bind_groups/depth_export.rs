@@ -12,6 +12,8 @@ pub struct DepthExportBindGroup
     pub viewport_buffer: wgpu::Buffer,
 }
 
+crate::render_item_send_sync!(DepthExportBindGroup);
+
 impl RenderItem for DepthExportBindGroup
 {
     render_item_impl_default!();

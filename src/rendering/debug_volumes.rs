@@ -242,6 +242,8 @@ pub struct DebugVolumesBuffer
     camera_ids: Vec<u32>,                                                 // camera id per instance of the camera group
 }
 
+crate::render_item_send_sync!(DebugVolumesBuffer);
+
 impl RenderItem for DebugVolumesBuffer
 {
     render_item_impl_default!();

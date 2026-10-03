@@ -9,6 +9,8 @@ pub struct HZBDownsampleBindGroup
     pub bind_groups: Vec<BindGroup>
 }
 
+crate::render_item_send_sync!(HZBDownsampleBindGroup);
+
 impl RenderItem for HZBDownsampleBindGroup
 {
     render_item_impl_default!();
