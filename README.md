@@ -35,14 +35,35 @@ cargo install cargo-watch
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 ```
 
+```bash
+#dev mode (without optimization of rustl crate)
+cargo dev
+```
+
 
 ```bash
+# build locally (watch + dev-fast profile)
+cargo watch -s "cargo run --profile dev-fast" -w src/ -w resources/
+```
 
-# build locally (with watch)
-cargo watch -s "cargo run --release" -w src/ -w resources/
+```bash
+# builds without the editor into dist/<platform> - scripts/build.mjs
+# a given project is packed in with every file it uses (scenes, objects + their textures/.bin/.mtl, sounds) and starts directly
+# web: wasm with threads, one time: rustup toolchain install nightly && rustup +nightly target add wasm32-unknown-unknown && rustup +nightly component add rust-src
+npm run build-web -- "data/cabrio_test/cabrio test.project"      # dist/web, without project: resources/projects/web_test
+npm run build-web -- --dev                                       # dev build
+npm run dev-web -- [x.project]                                   # dev build on every change (code, resources, project folder)
+npx serve -p 1337                                                # in the repo root, serve.json sets the COOP/COEP headers threads need
+# -> http://localhost:1337/dist/web/   (?project=<path inside dist/web/resources> overrides the start project)
+# resources/ only goes in as far as needed: ENGINE_RESOURCES in scripts/build.mjs + what the project uses via resources://, the rest is removed from dist
 
-# build for web  (with watch)
-cargo watch -s "wasm-pack build --target web" -w src/ -w resources/
+# native release builds, each one on its own platform (cross compiling needs that platform's linker/SDK)
+npm run build-windows -- [--dev] [x.project]                     # dist/windows/<project name>.exe + resources/
+npm run build-linux -- [--dev] [x.project]                       # dist/linux/<project name> + resources/
+npm run build-mac -- [--dev] [x.project]                         # dist/mac/<project name>.app
+# named like the project (rustl without one), app icon: the rustl logo for now (APP_ICON in scripts/build.mjs, embedded by build.rs on windows)
+# the native build starts the project of resources/startup.json, a .project argument wins
+# release builds have no console window on windows - start with --console to get one
 
 # run with backtrace (on windows)
 set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/

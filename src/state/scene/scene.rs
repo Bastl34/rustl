@@ -1,18 +1,19 @@
 #![allow(dead_code)]
 
 use std::{cell::RefCell, collections::HashMap, fmt, mem::swap, sync::{Arc, RwLock}, vec};
+use web_time::Instant;
 
-use nalgebra::Vector3;
+use nalgebra::{Vector2, Vector3};
 use nalgebra::Point3;
 use parry3d::query::Ray;
 use serde::{de::{MapAccess, Visitor}, ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{component_downcast, component_downcast_mut, console_log, helper::{change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, utilities::tags}, state::{InputOutput, ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX}}};
+use crate::{component_downcast, component_downcast_mut, console_log, console_warning, helper::{asset_path_descriptor::AssetPathDesciptor, change_tracker::ChangeTracker, math::{self, approx_equal, approx_zero}, observable::Observable, option_or_id::OptionOrId}, impl_arc_rwbox_map_serializer, state::{helper::render_item::RenderItemOption, resources::{mesh_resource::MeshResourceItem, sound_source::SoundSourceItem, texture::TextureItem}, scene::{components::{component::Component, sound::Sound}, manager::id_manager, scene_controller::scene_controller::ControllerPhase, utilities::{extras::Extras, tags::{self, Tags}}}, state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, InputOutput, RunMode, get_delta_t}}};
 
-use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, light::{Light, LightItem}, node::{Node, NodeItem}, scene_controller::{generic_controller::GenericController, scene_controller::SceneControllerBox}};
+use super::{camera::{Camera, CameraItem}, components::{component::ComponentItem, material::{Material, MaterialItem, TextureState}, mesh::Mesh}, layers::LAYER_MASK_USER, light::{Light, LightItem}, node::{Node, NodeItem}, physics::physics_world::PhysicsWorld, scene_controller::scene_controller::SceneControllerBox};
 
 pub type SceneItem = Box<Scene>;
-pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u64>) -> bool>;
+pub type PickPredicate = Arc<dyn Fn(NodeItem, Option<u32>) -> bool>;
 
 #[derive(Clone)]
 pub struct ScenePickRes
@@ -21,13 +22,13 @@ pub struct ScenePickRes
     pub point: Point3<f32>,
     pub normal: Option<Vector3<f32>>,
     pub node: NodeItem,
-    pub instance_id: u64,
+    pub instance_id: u32,
     pub face_id: Option<u32>,
 }
 
 impl ScenePickRes
 {
-    pub fn new(time_of_impact: f32, point: Point3<f32>, normal: Option<Vector3<f32>>, node: NodeItem, instance_id: u64, face_id: Option<u32>) -> ScenePickRes
+    pub fn new(time_of_impact: f32, point: Point3<f32>, normal: Option<Vector3<f32>>, node: NodeItem, instance_id: u32, face_id: Option<u32>) -> ScenePickRes
     {
         Self
         {
@@ -54,25 +55,35 @@ pub struct SceneData
 
 pub struct Scene
 {
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
+
+    pub source: Option<AssetPathDesciptor>,
 
     pub name: String,
     pub visible: bool,
-    pub main: bool,
+    pub active: bool,
+
+    pub extras: Extras,
+    pub tags: Tags,
 
     data: ChangeTracker<SceneData>,
 
     pub nodes: Vec<NodeItem>,
     pub cameras: Vec<CameraItem>,
     pub lights: ChangeTracker<Vec<RefCell<ChangeTracker<LightItem>>>>,
-    pub materials: HashMap<u64, MaterialItem>,
+    pub materials: HashMap<u32, MaterialItem>,
 
-    pub pre_controller: Vec<SceneControllerBox>, // before scene updates
-    pub post_controller: Vec<SceneControllerBox>, // after scene updates
+    pub controller: Vec<SceneControllerBox>,
+
+    // collision world for gameplay queries - not serialized, it is rebuilt from the nodes
+    pub physics: PhysicsWorld,
 
     pub render_item: RenderItemOption,
     pub lights_render_item: RenderItemOption,
+
+    pub on_before_update: Observable<Scene>,
+    pub on_after_update: Observable<Scene>,
 }
 
 impl Default for Scene
@@ -83,7 +94,7 @@ impl Default for Scene
     }
 }
 
-impl_arc_rwbox_map_serializer!(MaterialsSerializer, u64, dyn Component);
+impl_arc_rwbox_map_serializer!(MaterialsSerializer, u32, dyn Component);
 
 impl Serialize for Scene
 {
@@ -94,8 +105,13 @@ impl Serialize for Scene
 
         map.serialize_entry("uuid", &self.uuid)?;
         map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("source", &self.source)?;
         map.serialize_entry("visible", &self.visible)?;
-        map.serialize_entry("main", &self.main)?;
+        map.serialize_entry("main", &self.active)?;
+
+        map.serialize_entry("extras", &self.extras)?;
+        map.serialize_entry("tags", &self.tags)?;
+
         map.serialize_entry("data", &self.data)?;
 
         let node_guards: Vec<_> = self.nodes.iter().map(|arc| arc.read().unwrap()).collect();
@@ -111,11 +127,10 @@ impl Serialize for Scene
 
         map.serialize_entry("materials", &MaterialsSerializer { map: &self.materials })?;
 
-        let pre_controller: Vec<&SceneControllerBox> = self.pre_controller.iter().filter(|controller| controller.is_serializable()).collect();
-        map.serialize_entry("pre_controller", &pre_controller)?;
+        map.serialize_entry("physics", &self.physics.settings)?;
 
-        let post_controller: Vec<&SceneControllerBox> = self.post_controller.iter().filter(|controller| controller.is_serializable()).collect();
-        map.serialize_entry("post_controller", &post_controller)?;
+        let controller: Vec<&SceneControllerBox> = self.controller.iter().filter(|controller| controller.is_serializable()).collect();
+        map.serialize_entry("controller", &controller)?;
 
         map.end()
     }
@@ -148,9 +163,12 @@ impl<'de> Deserialize<'de> for Scene
                     {
                         "uuid" => scene.uuid = map.next_value()?,
                         "name" => scene.name = map.next_value()?,
+                        "source" => scene.source = map.next_value()?,
                         "visible" => scene.visible = map.next_value()?,
-                        "main" => scene.main = map.next_value()?,
+                        "main" => scene.active = map.next_value()?,
                         "data" => scene.data = map.next_value()?,
+                        "extras" => scene.extras = map.next_value()?,
+                        "tags" => scene.tags = map.next_value()?,
                         "nodes" =>
                         {
                             scene.nodes = map.next_value().into_iter().map(|node| Arc::new(RwLock::new(Box::new(node)))).collect()
@@ -163,20 +181,12 @@ impl<'de> Deserialize<'de> for Scene
                         {
                             scene.lights = ChangeTracker::new(map.next_value().into_iter().map(|inst| RefCell::new(ChangeTracker::new(Box::new(inst)))).collect())
                         }
+                        "physics" => scene.physics.settings = map.next_value()?,
                         "materials" => {
-                            let material_map: HashMap<u64, Box<dyn Component>> = map.next_value()?;
+                            let material_map: HashMap<u32, Box<dyn Component>> = map.next_value()?;
                             scene.materials = material_map.into_iter().map(|(id, mat)| (id, Arc::new(RwLock::new(mat)))).collect();
                         }
-                        "pre_controller" =>
-                        {
-                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
-                            scene.pre_controller = controllers;
-                        }
-                        "post_controller" =>
-                        {
-                            let controllers: Vec<SceneControllerBox> = map.next_value()?;
-                            scene.post_controller = controllers;
-                        }
+                        "controller" => scene.controller = map.next_value()?,
                         _ =>
                         {
                             // ignore
@@ -202,9 +212,14 @@ impl Scene
             id: id_manager::get_next_scene_id(),
             uuid: uuid::Uuid::new_v4().to_string(),
 
+            source: None,
+
             name: name.to_string(),
             visible: true,
-            main: false,
+            active: false,
+
+            extras: Extras::new(),
+            tags: Tags::new(),
 
             data: ChangeTracker::new(SceneData
             {
@@ -220,11 +235,15 @@ impl Scene
             lights: ChangeTracker::new(vec![]),
             materials: HashMap::new(),
 
-            pre_controller: vec![],
-            post_controller: vec![],
+            controller: vec![],
+
+            physics: PhysicsWorld::new(),
 
             render_item: None,
             lights_render_item: None,
+
+            on_before_update: Observable::new(),
+            on_after_update: Observable::new(),
         }
     }
 
@@ -250,8 +269,61 @@ impl Scene
         all_nodes.len()
     }
 
-    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64)
+    pub fn has_tag(&self, tag: &str) -> bool
     {
+        self.tags.contains(tag)
+    }
+
+    pub fn notify_run_mode_changed(&mut self, old: RunMode, new: RunMode)
+    {
+        // taken out so the controller can borrow the scene mutably
+        let mut controller = std::mem::take(&mut self.controller);
+        for controller_item in &mut controller
+        {
+            controller_item.on_run_mode_changed(self, old, new);
+        }
+
+        controller.append(&mut self.controller);
+        self.controller = controller;
+    }
+
+    fn update_controller(&mut self, phase: ControllerPhase, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode)
+    {
+        // taken out so the controller can borrow the scene mutably
+        let mut controller = std::mem::take(&mut self.controller);
+        for controller_item in &mut controller
+        {
+            let base = controller_item.get_base();
+            if base.is_enabled && base.phase == phase && controller_item.runs_in_mode(run_mode)
+            {
+                controller_item.update(self, io, frame_scale);
+            }
+        }
+
+        // controllers added during the update are kept
+        controller.append(&mut self.controller);
+        self.controller = controller;
+    }
+
+    fn update_controller_after_physics(&mut self, io: &mut InputOutput, frame_scale: f32, run_mode: RunMode)
+    {
+        let mut controller = std::mem::take(&mut self.controller);
+        for controller_item in &mut controller
+        {
+            if controller_item.get_base().is_enabled && controller_item.get_base().phase == ControllerPhase::Pre && controller_item.runs_in_mode(run_mode)
+            {
+                controller_item.update_after_physics(self, io, frame_scale);
+            }
+        }
+
+        controller.append(&mut self.controller);
+        self.controller = controller;
+    }
+
+    pub fn update(&mut self, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64, run_mode: RunMode) -> f32
+    {
+        crate::notify_observable!(self, on_before_update);
+
         // check moved nodes (if a node has a parent -> remove it from scene nodes)
         // this can happen when a node parent was set via set_parent
         let mut nodes_to_remove_scene = vec![];
@@ -271,58 +343,181 @@ impl Scene
             });
         }
 
-        // update pre controller
-        let mut pre_controller = vec![];
-        swap(&mut self.pre_controller, &mut pre_controller);
-        for controller_item in &mut pre_controller
+        let mut physics_update_time: u128 = 0;
+
+        // ********** physics settings **********
+        // picked up here so a change in the ui, or a freshly loaded scene, takes effect
+        self.physics.apply_settings();
+
+        // ********** physics colliders (structure) **********
+        if self.physics.auto_add_nodes && self.physics.scan_due()
         {
-            if controller_item.get_base().is_enabled
-            {
-                controller_item.update(self, io, frame_scale);
-            }
+            let physics_time = Instant::now();
+            let nodes = self.nodes.clone();
+            self.physics.scan_nodes(&nodes);
+
+            physics_update_time += physics_time.elapsed().as_micros();
         }
 
-        swap(&mut pre_controller, &mut self.pre_controller);
+        // ********** update pre controller **********
+        self.update_controller(ControllerPhase::Pre, io, frame_scale, run_mode);
 
-        // update nodes
+        // ********** update nodes **********
         let mut delete_nodes = vec![];
+        let mut skinned_nodes = vec![];
         for node in &self.nodes
         {
-            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame);
+            let mut update_result = Node::update(node.clone(), io, time, frame_scale, frame, run_mode);
 
             if update_result.delete_nodes.len() > 0
             {
                 delete_nodes.append(&mut update_result.delete_nodes);
             }
+
+            if update_result.skinned_nodes.len() > 0
+            {
+                skinned_nodes.append(&mut update_result.skinned_nodes);
+            }
         }
 
-        // cameras
+        // ********** skinned bounding volumes **********
+        for node in &skinned_nodes
+        {
+            let node = node.read().unwrap();
+
+            let meshes = node.find_components::<Mesh>();
+            if meshes.len() == 0
+            {
+                continue;
+            }
+
+            let joint_matrices = node.get_joint_transform_vec(true);
+            if let Some(joint_matrices) = joint_matrices
+            {
+                for mesh in meshes
+                {
+                    component_downcast_mut!(mesh, Mesh);
+
+                    if mesh.update_skin_bbox_on_animation
+                    {
+                        // exact, but touches every vertex
+                        mesh.calc_bounding_volume_skin(&joint_matrices);
+                    }
+                    else
+                    {
+                        // union of the per joint boxes - cheap enough for every pose change
+                        mesh.update_skin_bounding_volume_from_joints(&joint_matrices);
+                    }
+                }
+            }
+        }
+
+        // ********** physics colliders (transforms) **********
+        // after the node update on purpose - animations move nodes there
+        if !self.physics.is_empty()
+        {
+            let physics_time = Instant::now();
+
+            // the world only runs in a running mode, a pause freezes it without resetting
+            let frozen = !run_mode.runs_physics();
+
+            // sync transforms from scene to physics world
+            self.physics.sync_transformations(frozen);
+
+            // run physics
+            self.physics.step(get_delta_t(frame_scale), frozen);
+
+            // apply the physics world transforms back to the scene nodes
+            self.physics.apply_dynamic_bodies(frozen);
+
+            physics_update_time += physics_time.elapsed().as_micros();
+        }
+
+        // ********** controllers after physics **********
+        self.update_controller_after_physics(io, frame_scale, run_mode);
+
+        // ********** spatial sound listeners (one per active camera, split screen has several) **********
+        // internal scenes (e.g. the editor preview) must not move the global listeners
+        if !self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            // every frame - the ears can follow the target node without the camera data changing
+            let listeners: Vec<_> = self.cameras.iter()
+                .filter(|cam| self.is_camera_active(cam, run_mode))
+                .map(|cam| cam.get_left_right_ear_positions())
+                .collect();
+
+            if !listeners.is_empty()
+            {
+                let mut audio_device = io.audio_device.write().unwrap();
+
+                if audio_device.data.get_ref().listeners != listeners
+                {
+                    audio_device.data.get_mut().listeners = listeners;
+                }
+            }
+        }
+
+        // ********** cameras **********
+        // after physics, so a camera follows what the solver moved this frame
         let mut cameras = vec![];
         swap(&mut self.cameras, &mut cameras);
         for cam in &mut cameras
         {
-            cam.update(self, io, frame_scale);
+            cam.update(self, io, frame_scale, run_mode);
         }
 
         swap(&mut cameras, &mut self.cameras);
 
-        // update post controller
-        let mut post_controller = vec![];
-        swap(&mut self.post_controller, &mut post_controller);
-        for controller_item in &mut post_controller
-        {
-            if controller_item.get_base().is_enabled
-            {
-                controller_item.update(self, io, frame_scale);
-            }
-        }
+        // ********** update post controller **********
+        self.update_controller(ControllerPhase::Post, io, frame_scale, run_mode);
 
-        swap(&mut post_controller, &mut self.post_controller);
-
-        // delete requested "delete_later" nodes
+        // ********** delete requested "delete_later" nodes **********
         for node_id in delete_nodes
         {
             self.delete_node_by_id(node_id, false, false, false, false);
+        }
+
+        crate::notify_observable!(self, on_after_update);
+
+        physics_update_time as f32
+    }
+
+    pub fn notify_before_render_all(&self)
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in &all_nodes
+        {
+            crate::notify_observable_arc!(node, on_before_render);
+
+            // only the instances someone listens to - nodes can carry thousands
+            let instances: Vec<_> =
+            {
+                let n = node.read().unwrap();
+                n.instances.get_ref().iter().filter(|instance| instance.read().unwrap().on_before_render.has_observers()).cloned().collect()
+            };
+            for instance in &instances
+            {
+                crate::notify_observable_arc!(instance, on_before_render);
+            }
+        }
+    }
+
+    pub fn notify_after_render_all(&self)
+    {
+        let all_nodes = Scene::list_all_child_nodes(&self.nodes);
+        for node in &all_nodes
+        {
+            let instances: Vec<_> =
+            {
+                let n = node.read().unwrap();
+                n.instances.get_ref().iter().filter(|instance| instance.read().unwrap().on_after_render.has_observers()).cloned().collect()
+            };
+            for instance in &instances
+            {
+                crate::notify_observable_arc!(instance, on_after_render);
+            }
+
+            crate::notify_observable_arc!(node, on_after_render);
         }
     }
 
@@ -371,12 +566,35 @@ impl Scene
 
         if let Some(parent) = parent
         {
-            let mut parent = parent.write().unwrap();
-            parent.nodes.push(node.clone());
+            {
+                let mut parent = parent.write().unwrap();
+                parent.nodes.push(node.clone());
+            }
+            node.write().unwrap().parent = OptionOrId::Some(parent.clone());
         }
         else
         {
             self.nodes.push(node.clone());
+        }
+
+        node
+    }
+
+    pub fn add_empty_node_front(&mut self, name: &str, parent: Option<NodeItem>) -> NodeItem
+    {
+        let node = Node::new(name);
+
+        if let Some(parent) = parent
+        {
+            {
+                let mut parent = parent.write().unwrap();
+                parent.nodes.insert(0, node.clone());
+            }
+            node.write().unwrap().parent = OptionOrId::Some(parent.clone());
+        }
+        else
+        {
+            self.nodes.insert(0, node.clone());
         }
 
         node
@@ -406,8 +624,6 @@ impl Scene
 
     pub fn clear(&mut self, remove_internals: bool, delete_resources: bool)
     {
-        self.cleanup_cyclic_references(None, remove_internals);
-
         let mut nodes_to_delete = vec![];
         for node in &self.nodes
         {
@@ -423,6 +639,8 @@ impl Scene
             let node_id = node.read().unwrap().id;
             self.delete_node_by_id(node_id, delete_resources, delete_resources, delete_resources, delete_resources);
         }
+
+        self.cleanup_cyclic_references(None, remove_internals);
 
         self.lights.get_mut().retain(|light|
         {
@@ -442,14 +660,13 @@ impl Scene
             is_internal && !remove_internals
         });
 
-        self.pre_controller.clear();
-        self.post_controller.clear();
+        self.controller.clear();
 
         // re-add defaults
         self.add_defaults();
     }
 
-    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u64>, remove_internals: bool)
+    pub fn cleanup_cyclic_references(&mut self, from_node_id: Option<u32>, remove_internals: bool)
     {
         let mut node = None;
         if let Some(node_id) = from_node_id
@@ -479,20 +696,7 @@ impl Scene
         }
 
         // controller
-        for controller in &mut self.pre_controller
-        {
-            if let Some(node) = &node
-            {
-                controller.cleanup_node(node.clone());
-            }
-            // only cleanup everything if no node is specified
-            else if from_node_id.is_none()
-            {
-                controller.cleanup();
-            }
-        }
-
-        for controller in &mut self.post_controller
+        for controller in &mut self.controller
         {
             if let Some(node) = &node
             {
@@ -554,10 +758,26 @@ impl Scene
     pub fn add_defaults(&mut self)
     {
         self.add_default_material();
+    }
 
-        // post controller
-        let controller = GenericController::default();
-        self.post_controller.push(Box::new(controller));
+    pub fn add_default_lights_and_cam(&mut self)
+    {
+        // lights
+        self.add_light_directional("Dir", Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(0.2, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
+        self.add_light_hemispherical("Hemi", Vector3::<f32>::new(0.0, 1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
+
+        // cam
+        let mut cam = Camera::new("Cam".to_string());
+        cam.add_controller_fly(false, Vector2::<f32>::new(0.0015, 0.0015), 0.1, 0.2, false);
+
+        let cam_data = cam.get_data_mut().get_mut();
+        cam_data.fovy = 45.0f32.to_radians();
+        cam_data.eye_pos = Point3::<f32>::new(0.0, 5.0, 10.0);
+        cam_data.dir = Vector3::<f32>::new(-cam_data.eye_pos.x, -cam_data.eye_pos.y, -cam_data.eye_pos.z);
+        cam_data.clipping_near = 0.1;
+        cam_data.clipping_far = 1000.0;
+        cam_data.culling_mask = LAYER_MASK_USER;
+        self.cameras.push(Box::new(cam));
     }
 
     pub fn clear_empty_nodes(&mut self)
@@ -611,7 +831,7 @@ impl Scene
         None
     }
 
-    pub fn get_material_by_id(&self, id: u64) -> Option<MaterialItem>
+    pub fn get_material_by_id(&self, id: u32) -> Option<MaterialItem>
     {
         if self.materials.contains_key(&id)
         {
@@ -649,7 +869,7 @@ impl Scene
         material
     }
 
-    pub fn delete_material_by_id(&mut self, id: u64) -> bool
+    pub fn delete_material_by_id(&mut self, id: u32) -> bool
     {
         // remove material from all nodes
         let all_nodes = Self::list_all_child_nodes(&self.nodes);
@@ -679,7 +899,7 @@ impl Scene
         false
     }
 
-    pub fn get_sound_by_id(&self, id: u64) -> Option<ComponentItem>
+    pub fn get_sound_by_id(&self, id: u32) -> Option<ComponentItem>
     {
         let all_nodes = Scene::list_all_child_nodes(&self.nodes);
 
@@ -706,12 +926,12 @@ impl Scene
         None
     }
 
-    pub fn get_camera_by_id(&self, id: u64) -> Option<&CameraItem>
+    pub fn get_camera_by_id(&self, id: u32) -> Option<&CameraItem>
     {
         self.cameras.iter().find(|cam|{ cam.id == id })
     }
 
-    pub fn get_camera_by_id_mut(&mut self, id: u64) -> Option<&mut CameraItem>
+    pub fn get_camera_by_id_mut(&mut self, id: u32) -> Option<&mut CameraItem>
     {
         self.cameras.iter_mut().find(|cam|{ cam.id == id })
     }
@@ -726,7 +946,7 @@ impl Scene
         self.cameras.iter_mut().find(|cam|{ cam.name == name })
     }
 
-    pub fn delete_camera_by_id(&mut self, id: u64) -> bool
+    pub fn delete_camera_by_id(&mut self, id: u32) -> bool
     {
         let len = self.cameras.len();
         self.cameras.retain(|camera|
@@ -745,38 +965,51 @@ impl Scene
         self.cameras.last().unwrap()
     }
 
-    //pub fn get_active_camera() -> Option<&'static CameraItem>
-    pub fn get_active_camera(&self) -> Option<&CameraItem>
+    // internal (editor) cameras outside of play, the scene's own cameras only in play - internal scenes keep all of theirs
+    pub fn is_camera_active(&self, camera: &Camera, run_mode: RunMode) -> bool
     {
-        for camera in &self.cameras
+        if !camera.enabled
         {
-            if camera.enabled
-            {
-                return Some(camera);
-            }
+            return false;
         }
-        None
+
+        if self.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX)
+        {
+            return true;
+        }
+
+        camera.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) != (run_mode == RunMode::Play)
     }
 
-    pub fn get_active_camera_mut(&mut self) -> Option<&mut CameraItem>
+    pub fn get_active_camera(&self, run_mode: RunMode) -> Option<&CameraItem>
     {
-        for camera in self.cameras.iter_mut()
-        {
-            if camera.enabled
-            {
-                return Some(camera);
-            }
-        }
-        None
+        self.cameras.iter().find(|camera| self.is_camera_active(camera, run_mode))
     }
 
-    pub fn get_light_by_id(&self, id: u64) -> Option<&RefCell<ChangeTracker<Box<Light>>>>
+    pub fn get_active_camera_mut(&mut self, run_mode: RunMode) -> Option<&mut CameraItem>
+    {
+        let index = self.cameras.iter().position(|camera| self.is_camera_active(camera, run_mode))?;
+        self.cameras.get_mut(index)
+    }
+
+    // the named camera (or the first one for an empty name) - internal cameras are never picked
+    pub fn get_game_camera(&self, name: &str) -> Option<&CameraItem>
+    {
+        self.cameras.iter().find(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) && (name.is_empty() || cam.name == name))
+    }
+
+    pub fn get_game_camera_mut(&mut self, name: &str) -> Option<&mut CameraItem>
+    {
+        self.cameras.iter_mut().find(|cam| !cam.tags.contains_starts_with(ENGINE_INTERNAL_TAG_PREFX) && (name.is_empty() || cam.name == name))
+    }
+
+    pub fn get_light_by_id(&self, id: u32) -> Option<&RefCell<ChangeTracker<Box<Light>>>>
     {
         let lights = self.lights.get_ref();
         lights.iter().find(|light|{ light.borrow().get_ref().id == id })
     }
 
-    pub fn delete_light_by_id(&mut self, id: u64) -> bool
+    pub fn delete_light_by_id(&mut self, id: u32) -> bool
     {
         // only mark as changed if there was a change
         let lights = self.lights.get_unmarked_mut();
@@ -799,12 +1032,12 @@ impl Scene
 
     pub fn add_empty_light(&mut self, name: &str) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        self.add_light_point(name, Point3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0)
+        self.add_light_point(name, Point3::<f32>::new(0.0, 0.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0, 0.0)
     }
 
-    pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    pub fn add_light_point(&mut self, name: &str, pos: Point3<f32>, color: Vector3<f32>, intensity: f32, range: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_point(name.to_string(), pos, color, intensity);
+        let light = Light::new_point(name.to_string(), pos, color, intensity, range);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
@@ -818,15 +1051,15 @@ impl Scene
         self.lights.get_ref().last().unwrap()
     }
 
-    pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    pub fn add_light_spot(&mut self, name: &str, pos: Point3<f32>, dir: Vector3<f32>, color: Vector3<f32>, max_angle: f32, intensity: f32, range: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
-        let light = Light::new_spot(name.to_string(), pos, dir, color, max_angle, intensity);
+        let light = Light::new_spot(name.to_string(), pos, dir, color, max_angle, intensity, range);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
 
         self.lights.get_ref().last().unwrap()
     }
 
-    pub fn add_light_hemisperical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
+    pub fn add_light_hemispherical(&mut self, name: &str, dir: Vector3<f32>, color: Vector3<f32>, ground_color: Vector3<f32>, intensity: f32) -> &RefCell<ChangeTracker<Box<Light>>>
     {
         let light = Light::new_hemi(name.to_string(), dir, color, ground_color, intensity);
         self.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
@@ -847,6 +1080,11 @@ impl Scene
         }
 
         all_nodes
+    }
+
+    pub fn list_all_nodes(&self) -> Vec<NodeItem>
+    {
+        Scene::list_all_child_nodes(&self.nodes)
     }
 
     pub fn list_all_child_nodes_with_predicate(nodes: &Vec<NodeItem>, predicate: Arc<dyn Fn(NodeItem) -> bool>) -> Vec<NodeItem>
@@ -887,7 +1125,14 @@ impl Scene
         all_nodes
     }
 
-    pub fn find_node_by_id(&self, id: u64) -> Option<NodeItem>
+    // (Re)builds the collision world from every collidable mesh instance in the scene.
+    pub fn build_physics(&mut self) -> usize
+    {
+        let nodes = self.nodes.clone();
+        self.physics.build_from_nodes(&nodes)
+    }
+
+    pub fn find_node_by_id(&self, id: u32) -> Option<NodeItem>
     {
         Node::find_node_by_id(&self.nodes, id)
     }
@@ -902,12 +1147,12 @@ impl Scene
         Node::find_mesh_node_by_name(&self.nodes, name)
     }
 
-    pub fn find_mesh_node_by_ids(&self, ids: &Vec<u64>) -> Option<NodeItem>
+    pub fn find_mesh_node_by_ids(&self, ids: &Vec<u32>) -> Option<NodeItem>
     {
         Node::find_mesh_node_by_ids(&self.nodes, ids)
     }
 
-    pub fn delete_node_by_id(&mut self, id: u64, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
+    pub fn delete_node_by_id(&mut self, id: u32, delete_mesh_resource: bool, delete_sound_sources: bool, delete_materials: bool, delete_textures: bool) -> bool
     {
         if self.find_node_by_id(id).is_none()
         {
@@ -916,13 +1161,13 @@ impl Scene
 
         if delete_textures && !delete_materials
         {
-            println!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
+            console_warning!("WARNING: delete_textures is set to true, but delete_materials is set to false. This will not work as expected. Please set delete_materials to true.");
         }
 
         // ********** delete mesh resource **********
         if delete_mesh_resource
         {
-            let mut mesh_resources_to_delete: HashMap<u64, MeshResourceItem> = HashMap::new();
+            let mut mesh_resources_to_delete: HashMap<u32, MeshResourceItem> = HashMap::new();
 
             let mut all_nodes_to_delete;
             {
@@ -965,7 +1210,7 @@ impl Scene
         // ********** delete sound sources **********
         if delete_sound_sources
         {
-            let mut sound_sources_to_delete: HashMap<u64, SoundSourceItem> = HashMap::new();
+            let mut sound_sources_to_delete: HashMap<u32, SoundSourceItem> = HashMap::new();
 
             let mut all_nodes_to_delete;
             {
@@ -1006,7 +1251,7 @@ impl Scene
         }
 
         // ********** delete materials **********
-        let mut materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+        let mut materials_to_delete: HashMap<u32, ComponentItem> = HashMap::new();
         if delete_materials
         {
             let mut all_nodes_to_delete;
@@ -1020,7 +1265,7 @@ impl Scene
             }
 
             // find all affecting
-            let mut possible_materials_to_delete: HashMap<u64, ComponentItem> = HashMap::new();
+            let mut possible_materials_to_delete: HashMap<u32, ComponentItem> = HashMap::new();
             for node in all_nodes_to_delete
             {
                 let mut node_materials = vec![];
@@ -1078,7 +1323,7 @@ impl Scene
             }
 
             // find all affecting
-            let mut textures_to_delete: HashMap<u64, TextureItem> = HashMap::new();
+            let mut textures_to_delete: HashMap<u32, TextureItem> = HashMap::new();
 
             // find all textures from materials and delete them from materials
             for (_material_id, material) in &materials_to_delete
@@ -1232,12 +1477,12 @@ impl Scene
             let node = node_arc.read().unwrap();
 
             // early "return" checks
-            if !ignore_visible && !node.visible
+            if !ignore_visible && !node.is_visible()
             {
                 continue;
             }
 
-            if !ignore_pickable && !node.pickable
+            if !ignore_pickable && !node.settings.pickable
             {
                 continue;
             }
@@ -1283,6 +1528,12 @@ impl Scene
                 }
 
                 let instance = instance.read().unwrap();
+
+                if !ignore_visible && !instance.get_data().visible
+                {
+                    continue;
+                }
+
                 if !ignore_pickable && !instance.pickable
                 {
                     continue;
@@ -1328,7 +1579,7 @@ impl Scene
         }
 
         // sort bbox dist (to get the nearest)
-        hits_bbox.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+        hits_bbox.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
         if bounding_box_only && hits_bbox.len() > 0
         {
@@ -1342,7 +1593,7 @@ impl Scene
 
                 let pos = ray.origin + (ray.dir * dist);
 
-                res.push(ScenePickRes::new(dist, pos, None, node.clone(), instance, None));
+                res.push(ScenePickRes::new(dist, pos.into(), None, node.clone(), instance, None));
 
                 if stop_on_first_hit
                 {
@@ -1410,7 +1661,7 @@ impl Scene
             {
                 let pos = ray.origin + (ray.dir * intersection.0);
 
-                hits.push(ScenePickRes::new(intersection.0, pos, Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
+                hits.push(ScenePickRes::new(intersection.0, pos.into(), Some(intersection.1), node_arc.clone(), instance_id, Some(intersection.2)));
 
                 //if best_hit.is_none() || best_hit.is_some() && intersection.0 < best_hit.unwrap().0
                 /*
@@ -1451,7 +1702,7 @@ impl Scene
         }
 
         // sort by distance
-        hits.sort_by(|a, b| a.time_of_impact.partial_cmp(&b.time_of_impact).unwrap());
+        hits.sort_by(|a, b| a.time_of_impact.partial_cmp(&b.time_of_impact).unwrap_or(std::cmp::Ordering::Equal));
 
         // best_hit
         hits
@@ -1461,6 +1712,11 @@ impl Scene
     {
         ui.label(format!("Id: {}", self.id));
         ui.label(format!("UUID: {}", self.uuid));
+
+        if let Some(source) = &self.source
+        {
+            ui.label(format!("Source: {:?}", source.get_full_descriptor()));
+        }
 
         ui.horizontal(|ui|
         {

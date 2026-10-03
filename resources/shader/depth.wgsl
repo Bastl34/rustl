@@ -8,8 +8,11 @@ struct CameraUniform
     view_pos: vec4<f32>,
     view: mat4x4<f32>,
     view_proj: mat4x4<f32>,
+    viewport_width: u32,
+    viewport_height: u32,
 };
 
+// must match the layout in rendering/light.rs (lights are not read here, but the binding layout has to match)
 struct LightUniform
 {
     position: vec4<f32>,
@@ -17,9 +20,15 @@ struct LightUniform
     color: vec4<f32>,
     ground_color: vec4<f32>,
     intensity: f32,
+    range: f32,
     light_type: u32,
     max_angle: f32,
     distance_based_intensity: u32,
+
+    shadow_index: i32,
+    shadow_views: u32,
+    shadow_bias: f32,
+    shadow_strength: f32,
 };
 
 struct SceneUniform

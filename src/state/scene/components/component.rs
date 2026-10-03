@@ -12,7 +12,7 @@ use crate::state::scene::manager::id_manager;
 use crate::state::scene::node::{NodeItem, InstanceItemArc};
 use crate::state::scene::utilities::extras::Extras;
 use crate::state::scene::utilities::tags::Tags;
-use crate::state::state::InputOutput;
+use crate::state::state::{InputOutput, RunMode};
 
 pub type ComponentBox = Box<dyn Component>;
 pub type ComponentItem = Arc<RwLock<Box<dyn Component>>>;
@@ -32,10 +32,18 @@ pub trait Component: Any + Send + Sync
     fn is_serializable(&self) -> bool { true }
     fn run_after_deserialize(&mut self, context: &mut DeserializationContext);
 
+    // saved in the project with its node - the others come back with the asset the node is loaded from
+    fn saved_with_node(&self) -> bool { false }
+
     fn ui(&mut self, ui: &mut egui::Ui, node: Option<NodeItem>);
 
     fn update(&mut self, node: NodeItem, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
     fn update_instance(&mut self, node: Option<NodeItem>, instance: &InstanceItemArc, io: &mut InputOutput, time: u128, frame_scale: f32, frame: u64);
+
+    fn runs_in_mode(&self, run_mode: RunMode) -> bool
+    {
+        run_mode.updates_engine()
+    }
 
     fn duplicate(&self) -> Option<ComponentItem>;
     fn cleanup_node(&mut self, node: NodeItem) -> bool; // node was deleted and should be removed from component
@@ -48,7 +56,7 @@ pub trait Component: Any + Send + Sync
 
     fn duplicatable(&self) -> bool;
 
-    fn id(&self) -> u64
+    fn id(&self) -> u32
     {
         self.get_base().id
     }
@@ -90,7 +98,7 @@ pub struct DeserializationContext<'a>
 pub struct ComponentBase
 {
     #[serde(skip, default)]
-    pub id: u64,
+    pub id: u32,
     pub uuid: String,
 
     pub is_enabled: bool,
@@ -309,7 +317,7 @@ pub fn find_component<T>(components: &Vec<ComponentItem>) -> Option<ComponentIte
     Some(value.unwrap().clone())
 }
 
-pub fn find_component_by_id(components: &Vec<ComponentItem>, id: u64) -> Option<ComponentItem>
+pub fn find_component_by_id(components: &Vec<ComponentItem>, id: u32) -> Option<ComponentItem>
 {
     if components.len() == 0
     {
@@ -379,7 +387,23 @@ pub fn remove_component_by_type<T>(components: &mut Vec<ComponentItem>) -> bool 
     false
 }
 
-pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> bool
+pub fn remove_components_by_type<T>(components: &mut Vec<ComponentItem>) -> bool where T: 'static
+{
+    let prev_len = components.len();
+    components.retain
+    (
+        |c|
+        {
+            let component = c.read().unwrap();
+            let component_item = component.as_any();
+            !component_item.is::<T>()
+        }
+    );
+
+    components.len() != prev_len
+}
+
+pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u32) -> bool
 {
     let index = components.iter().position
     (
@@ -399,9 +423,9 @@ pub fn remove_component_by_id(components: &mut Vec<ComponentItem>, id: u64) -> b
     false
 }
 
-pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u64>) -> bool
+pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u32>) -> bool
 {
-    let set: HashSet<u64> = ids.iter().cloned().collect();
+    let set: HashSet<u32> = ids.iter().cloned().collect();
     let prev_len = components.len();
 
     components.retain(|component|
@@ -415,7 +439,7 @@ pub fn remove_components_by_ids(components: &mut Vec<ComponentItem>, ids: &Vec<u
 
 pub fn find_new_components_with_position(old_list: &Vec<ComponentItem>, new_list: &Vec<ComponentItem>) -> Vec<(ComponentItem, bool)>
 {
-    let old_ids: Vec<u64> = old_list.iter()
+    let old_ids: Vec<u32> = old_list.iter()
         .map(|c| c.read().unwrap().id())
         .collect();
 

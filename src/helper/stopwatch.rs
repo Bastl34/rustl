@@ -76,6 +76,11 @@ impl StopWatch
         self.elapsed
     }
 
+    pub fn get_time_ms(&self) -> u128
+    {
+        self.get_time().as_millis()
+    }
+
     pub fn is_running(&self) -> bool
     {
         self.start_time.is_some()

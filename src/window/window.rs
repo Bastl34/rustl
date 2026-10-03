@@ -4,13 +4,6 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
-use winit::window::Icon;
-use std::fs::File;
-use std::io::BufReader;
-use image::GenericImageView;
-
-#[cfg(target_arch="wasm32")]
-use wasm_bindgen::prelude::*;
 
 use crate::interface::main_interface::MainInterface;
 
@@ -50,7 +43,11 @@ fn get_icon() -> Option<winit::window::Icon>
 {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let icon_path = "resources/designs/logo/logo.png";
+        use std::{fs::File, io::BufReader};
+        use image::GenericImageView;
+        use winit::window::Icon;
+
+        let icon_path = crate::resources::resources::get_path("designs/logo/logo.png");
         let icon = match File::open(icon_path)
         {
             Ok(file) =>
@@ -132,13 +129,20 @@ impl ApplicationHandler<CustomEvent> for AppState
         }
     }
 
-    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, _window_id: winit::window::WindowId, event: winit::event::WindowEvent, )
+    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, window_id: winit::window::WindowId, event: winit::event::WindowEvent, )
     {
         let app = match self
         {
             AppState::Initialized(app) => app,
             AppState::Uninitialized(_) => return,
         };
+
+        // other egui windows (e.g. the assets window) - they are rendered with the main window
+        if window_id != app.interface.window().id()
+        {
+            app.interface.viewport_window_input(window_id, &event);
+            return;
+        }
 
         match event
         {
@@ -163,6 +167,11 @@ impl ApplicationHandler<CustomEvent> for AppState
                     app.interface.window().request_redraw();
                     app.interface.update_done();
 
+                    // windows for new egui viewports (winit needs the active event loop)
+                    if app.interface.has_pending_viewport_windows()
+                    {
+                        app.interface.create_pending_viewport_windows(event_loop, get_icon());
+                    }
                 }
             },
             winit::event::WindowEvent::CloseRequested =>
@@ -211,6 +220,13 @@ impl ApplicationHandler<CustomEvent> for AppState
                     },
                     AppState::Initialized(_) => state,
                 });
+
+                // the web canvas gets its size asynchronously - resize events before this point were dropped
+                #[cfg(target_arch = "wasm32")]
+                if let AppState::Initialized(app) = self
+                {
+                    app.interface.resize(None, None);
+                }
             }
         }
     }
@@ -222,6 +238,7 @@ pub fn run()
     #[cfg(target_arch = "wasm32")]
     {
         console_error_panic_hook::set_once();
+        crate::resources::resources::resources_url();
     }
 
     let event_loop = winit::event_loop::EventLoop::with_user_event().build().unwrap();
@@ -236,6 +253,6 @@ pub fn run()
     {
         use winit::platform::web::EventLoopExtWebSys;
 
-        event_loop.spawn_app(app);
+        event_loop.spawn_app(app_state);
     }
 }

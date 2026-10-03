@@ -2,7 +2,6 @@ use serde::Serialize;
 use serde_json::{to_value, Map, Serializer, Value};
 
 use crate::console_log;
-use crate::state::scene::scene::Scene;
 use crate::state::state::{State, ENGINE_INTERNAL_TAG_PREFX};
 use crate::helper::file::write_string_to_tile;
 

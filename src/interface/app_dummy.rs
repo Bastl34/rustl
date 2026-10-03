@@ -1,22 +1,60 @@
-use std::{cell::RefCell, f32::consts::PI, sync::{Arc, RwLock}};
-
-use egui::epaint::EllipseShape;
-use nalgebra::{Matrix4, Point3, UnitQuaternion, Vector2, Vector3};
-
-use crate::{component_downcast_mut, console_debug, console_error, helper::{change_tracker::ChangeTracker, concurrency::thread::spawn_thread}, state::scene::{camera::Camera, components::{animation::{Animation, AnimationLayerType}, look_at::LookAt}, light::Light, node::Node, scene_controller::char_controller::CharacterController, utilities::scene_utils::{self, execute_on_scene_mut_and_wait}}};
+use crate::resources::resources::load_binary;
+use crate::state::project::loader::load_and_apply_project;
+use crate::state::resources::sound_source::SoundSourceItem;
+use crate::state::scene::physics::contacts::ContactKind;
+use crate::{console_error, helper::concurrency::thread::spawn_thread, state::scene::{node::Node, utilities::scene_utils::execute_on_scene_mut_and_wait}};
 
 use super::{app::App, context::Context};
 
+// native: the .project command line arg, else resources/startup.json - web: ?project=..., else window.RUSTL_PROJECT, else the web test project (both written by scripts/build.mjs)
+fn startup_project() -> Option<String>
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if let Some(project) = std::env::args().find(|a| a.ends_with(".project"))
+        {
+            return Some(project);
+        }
+
+        let startup = crate::resources::resources::load_string("startup.json").ok()?;
+        serde_json::from_str::<serde_json::Value>(&startup).ok()?["project"].as_str().map(str::to_string)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let window = web_sys::window()?;
+
+        let search = window.location().search().unwrap_or_default();
+        let project = search.trim_start_matches('?').split('&').find_map(|pair| pair.strip_prefix("project="));
+        if let Some(project) = project
+        {
+            return urlencoding::decode(project).ok().map(|project| project.into_owned());
+        }
+
+        if let Some(project) = js_sys::Reflect::get(&window, &"RUSTL_PROJECT".into()).ok().and_then(|project| project.as_string())
+        {
+            return Some(project);
+        }
+
+        Some("projects/web_test/web_test.project".to_string())
+    }
+}
+
 pub struct AppDummy
 {
-
+    bump_sound: Option<SoundSourceItem>,
+    hit_sound: Option<SoundSourceItem>,
 }
 
 impl AppDummy
 {
     pub fn new() -> AppDummy
     {
-        AppDummy {}
+        AppDummy
+        {
+            bump_sound: None,
+            hit_sound: None,
+        }
     }
 }
 
@@ -24,17 +62,109 @@ impl App for AppDummy
 {
     fn init(&mut self, context: &mut Context)
     {
+        // ********** observer examples (context level) **********
+
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // THE CONTENT OF THIS FILE IS NOT FINAL OR STABLE, IT IS CURRENTLY JUST A PLACE FOR TESTING AND EXPERIMENTING WITH FEATURES
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        // fires every frame right before rendering
+        /*
+        context.on_before_render.add(|ctx|
+        {
+            let frame = ctx.state.borrow().stats.frame;
+            if frame % 120 == 0
+            {
+                console_debug!("on_before_render @ frame {}", frame);
+            }
+        });
+
+        // fires once after the first render, then auto-removes
+        context.on_after_render.add_once(|_ctx|
+        {
+            console_debug!("first frame rendered");
+        });
+
+        // fires on window resize
+        context.on_resize.add(|ctx|
+        {
+            let state = ctx.state.borrow();
+            console_debug!("resized to {}x{}", state.width, state.height);
+        });
+
+        // fires on app exit
+        context.on_exit.add(|_ctx|
+        {
+            console_debug!("bye");
+        });
+         */
+
+
+
+
+        // load project if needed
+        if let Some(project) = startup_project()
+        {
+            let state = &mut *(context.state.borrow_mut());
+
+            load_and_apply_project(state, project.as_str(), Some(Box::new(|state|
+            {
+                let scene_id = state.get_active_scene_id();
+                if let Some(scene_id) = scene_id
+                {
+                    state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
+                }
+
+                // projects saved with cameras and lights bring their own
+                for scene in &mut state.scenes
+                {
+                    if scene.cameras.is_empty()
+                    {
+                        scene.add_default_lights_and_cam();
+                    }
+                }
+            })));
+        }
+
+        // ********** contact sound **********
+        match load_binary("resourcesLocal/sounds/bump.wav")
+        {
+            Ok(bytes) =>
+            {
+                let state = &mut *(context.state.borrow_mut());
+                self.bump_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "bump.wav", Some("wav".to_string())));
+            },
+            Err(err) =>
+            {
+                console_error!("can not load the bump sound: {}", err);
+            },
+        }
+
+        match load_binary("resourcesLocal/sounds/hit.wav")
+        {
+            Ok(bytes) =>
+            {
+                let state = &mut *(context.state.borrow_mut());
+                self.hit_sound = Some(state.load_sound_source_byte_or_reuse(&bytes, "hit.wav", Some("wav".to_string())));
+            },
+            Err(err) =>
+            {
+                console_error!("can not load the hit sound: {}", err);
+            },
+        }
+
         let scene_id = context.get_main_scene_id();
-
-        let state = &mut *(context.state.borrow_mut());
-
         if scene_id.is_none()
         {
             return;
         }
+
         let scene_id = scene_id.unwrap();
 
         //load default env texture
+        let state = &mut *(context.state.borrow_mut());
         state.load_scene_env_map("textures/environment/footprint_court.jpg", scene_id);
 
         // ********** cam **********
@@ -64,12 +194,12 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(-2.0, 5.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
         */
 
@@ -79,7 +209,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -91,7 +221,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
         */
 
@@ -103,7 +233,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 100.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -116,7 +246,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
             */
 
@@ -125,7 +255,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(6.8627195, 3.287831, 1.4585655), Vector3::<f32>::new(1.0, 1.0, 1.0), 200.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
 
         {
@@ -138,7 +268,7 @@ impl App for AppDummy
             cam.clipping_near = 0.1;
             cam.clipping_far = 1000.0;
 
-            scene.cameras.push(RefCell::new(ChangeTracker::new(Box::new(cam))));
+            scene.cameras.push(std::cell::RefCell::new(ChangeTracker::new(Box::new(cam))));
         }
             */
 
@@ -248,7 +378,7 @@ impl App for AppDummy
         {
             let light_id = id_manager::get_next_light_id();
             let light = Light::new_point(light_id, "Point".to_string(), Point3::<f32>::new(0.0, 4.0, 4.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-            scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+            scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
         }
             */
 
@@ -365,6 +495,7 @@ impl App for AppDummy
 
             //let nodes = scene_utils::load_object("scenes/simple map/simple map.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
+            /*
             let avatar_nodes = scene_utils::load_object("resourcesLocal/objects/temp/avatar3.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
 
             if avatar_nodes.is_err()
@@ -382,7 +513,7 @@ impl App for AppDummy
             let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle aim.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
             let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle prone.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
             let _ = scene_utils::load_and_re_target_animation("resourcesLocal/objects/temp/animations/idle crouch.glb", scene_id, avatar_root.clone(), main_queue_clone.clone(), None);
-
+            */
 
             //scene_utils::load_object("objects/temp/traffic_cone_game_ready.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
             //scene_utils::load_object("objects/temp/headcrab.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
@@ -393,7 +524,17 @@ impl App for AppDummy
             //let nodes = scene_utils::load_object("objects/temp/sofa.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
             //let nodes = scene_utils::load_object("objects/temp/test.gltf", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
 
-            //let nodes = scene_utils::load_object("objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, true, false, 0);
+            //let nodes = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+            /*
+            {
+                let main_queue_clone = main_queue_clone.clone();
+                spawn_thread(move ||
+                {
+                    sleep_millis(4000);
+                    let _ = scene_utils::load_object("resourcesLocal/objects/glass/glass.glb", scene_id, None, main_queue_clone.clone(), false, false, true, false, 0);
+                });
+            }
+            */
 
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
@@ -446,11 +587,13 @@ impl App for AppDummy
 
                 // add camera controller and run auto setup
 
+
                 /*
                 let mut controller = CharacterController::default();
                 controller.auto_setup(scene, "avatar3", "");
                 scene.pre_controller.push(Box::new(controller));
                 */
+
 
 
                 // set pos for fall test
@@ -466,76 +609,76 @@ impl App for AppDummy
                     */
 
                 // add look up joint animation
-                if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
-                {
-                    let avatar_root = avatar_root.read().unwrap();
+                // if let Some(avatar_root) = scene.find_node_by_id(avatar_root)
+                // {
+                //     let avatar_root = avatar_root.read().unwrap();
 
-                    let spine = avatar_root.find_child_node_by_name("mixamorig:Spine1");
-                    let armature = avatar_root.find_child_node_by_name("Armature");
+                //     let spine = avatar_root.find_child_node_by_name("mixamorig:Spine1");
+                //     let armature = avatar_root.find_child_node_by_name("Armature");
 
-                    if spine.is_some() && armature.is_some()
-                    {
-                        let armature = armature.unwrap();
-                        // Target position in world space: 2 units in front of the avatar
-                        let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 1.5, -2.0));
-                        armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
+                //     if spine.is_some() && armature.is_some()
+                //     {
+                //         let armature = armature.unwrap();
+                //         // Target position in world space: 2 units in front of the avatar
+                //         let look_at = LookAt::new("Aim", spine.clone().unwrap(), Vector3::new(0.0, 1.5, -2.0));
+                //         armature.write().unwrap().add_component(Arc::new(RwLock::new(Box::new(look_at))));
 
-                        // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
-                        /*
-                        let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
-                        let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+                //         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                //         /*
+                //         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                //         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
 
-                        console_debug!(parent_inv);
-                        */
+                //         console_debug!(parent_inv);
+                //         */
 
-                        /*
-                        // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
-                        let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
-                        let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
+                //         /*
+                //         // get transform between root joint and root node (because AdditiveComponentAbsolute just takes "full" joint transform into account - and nothing inbetween root and joint root)
+                //         let parent_transform = Node::get_transform_between_root_joint_and_root_node(spine.clone().unwrap());
+                //         let parent_inv = parent_transform.try_inverse().unwrap_or(Matrix4::<f32>::identity());
 
-                        let parent_axes = parent_inv.fixed_view::<3,3>(0,0);
-                        let avatar_x = nalgebra::Unit::new_normalize(parent_axes * Vector3::x()); // Look Up/Down
-                        let avatar_y = nalgebra::Unit::new_normalize(parent_axes * Vector3::y()); // Look Left/Right
+                //         let parent_axes = parent_inv.fixed_view::<3,3>(0,0);
+                //         let avatar_x = nalgebra::Unit::new_normalize(parent_axes * Vector3::x()); // Look Up/Down
+                //         let avatar_y = nalgebra::Unit::new_normalize(parent_axes * Vector3::y()); // Look Left/Right
 
-                        let directions = vec!
-                        [
-                            ("look up", UnitQuaternion::from_axis_angle(&avatar_x, std::f32::consts::PI / 2.0)),
-                            ("look down", UnitQuaternion::from_axis_angle(&avatar_x, -std::f32::consts::PI / 2.0)),
-                            ("look left", UnitQuaternion::from_axis_angle(&avatar_y, std::f32::consts::PI / 2.0)),
-                            ("look right", UnitQuaternion::from_axis_angle(&avatar_y, -std::f32::consts::PI / 2.0)),
-                        ];
+                //         let directions = vec!
+                //         [
+                //             ("look up", UnitQuaternion::from_axis_angle(&avatar_x, std::f32::consts::PI / 2.0)),
+                //             ("look down", UnitQuaternion::from_axis_angle(&avatar_x, -std::f32::consts::PI / 2.0)),
+                //             ("look left", UnitQuaternion::from_axis_angle(&avatar_y, std::f32::consts::PI / 2.0)),
+                //             ("look right", UnitQuaternion::from_axis_angle(&avatar_y, -std::f32::consts::PI / 2.0)),
+                //         ];
 
-                        let armature = armature.unwrap();
-                        let mut armature = armature.write().unwrap();
+                //         let armature = armature.unwrap();
+                //         let mut armature = armature.write().unwrap();
 
-                        for (name, delta_rot) in directions
-                        {
-                            let mut animation = Animation::new_joint_transform_quat
-                            (
-                                name,
-                                spine.clone().unwrap(),
-                                None,
-                                Some(delta_rot),
-                                None,
-                            );
+                //         for (name, delta_rot) in directions
+                //         {
+                //             let mut animation = Animation::new_joint_transform_quat
+                //             (
+                //                 name,
+                //                 spine.clone().unwrap(),
+                //                 None,
+                //                 Some(delta_rot),
+                //                 None,
+                //             );
 
-                            animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
-                            armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
-                        }
-                        */
-                    }
+                //             animation.layer_type = AnimationLayerType::AdditiveComponentAbsolute;
+                //             armature.add_component(Arc::new(RwLock::new(Box::new(animation))));
+                //         }
+                //         */
+                //     }
 
-                    avatar_root.start_animation("aim");
-                    avatar_root.start_animation("idle aim");
-                    //avatar_root.start_animation("look left");
-                }
+                //     avatar_root.start_animation("aim");
+                //     avatar_root.start_animation("idle aim");
+                //     //avatar_root.start_animation("look left");
+                // }
             }));
 
             /*
             execute_on_scene_mut_and_wait(main_queue_clone.clone(), scene_id, Box::new(move |scene|
             {
                 let light = Light::new_point("Point".to_string(), Point3::<f32>::new(2.0, 50.0, 2.0), Vector3::<f32>::new(1.0, 1.0, 1.0), 1.0);
-                scene.lights.get_mut().push(RefCell::new(ChangeTracker::new(Box::new(light))));
+                scene.lights.get_mut().push(std::cell::RefCell::new(ChangeTracker::new(Box::new(light))));
 
                 scene.add_light_hemisperical("hemi", Vector3::<f32>::new(0.0, -1.0, 0.0), Vector3::<f32>::new(1.0, 1.0, 1.0), Vector3::<f32>::new(0.0, 0.0, 0.0), 1.0);
             }));
@@ -649,7 +792,45 @@ impl App for AppDummy
 
     fn update(&mut self, context: &mut Context)
     {
+        let Some(bump_sound) = &self.bump_sound else { return; };
+        let Some(hit_sound) = &self.hit_sound else { return; };
 
+        let state = &mut *(context.state.borrow_mut());
+
+        let mut sounds = vec![];
+
+        const MAX_IMPACT_SPEED: f32 = 10.0;
+
+        for scene in &state.scenes
+        {
+            for contact in scene.physics.contact_events()
+            {
+                if contact.started()
+                {
+                    let is_wall = contact.normal.y.abs() < 0.5;
+
+                    if is_wall && (contact.target.kind() == ContactKind::Vehicle || contact.other.kind() == ContactKind::Vehicle)
+                    {
+                        let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                        sounds.push((hit_sound.clone(), volume));
+                    }
+                    else if !is_wall || contact.target.kind() == ContactKind::Character || contact.other.kind() == ContactKind::Character
+                    {
+                        let volume = (contact.impact_speed / MAX_IMPACT_SPEED).min(1.0);
+                        sounds.push((bump_sound.clone(), volume));
+                    }
+                }
+            }
+        }
+
+        // only play the loudest few sounds
+        sounds.sort_by(|a, b| b.1.total_cmp(&a.1));
+        sounds.truncate(4);
+
+        for (source, volume) in sounds
+        {
+            state.play_one_shot_sound_source(source, volume);
+        }
     }
 
     fn resize(&mut self, context: &mut Context)

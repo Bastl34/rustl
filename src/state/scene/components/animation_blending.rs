@@ -13,8 +13,8 @@ pub struct AnimationBlending
 {
     base: ComponentBase,
 
-    pub from: Option<u64>, // TODO: Serialize, Deserialize?
-    pub to: Option<u64>, // TODO: Serialize, Deserialize?
+    pub from: Option<u32>, // TODO: Serialize, Deserialize?
+    pub to: Option<u32>, // TODO: Serialize, Deserialize?
 
     pub speed: f32,
 
@@ -23,7 +23,7 @@ pub struct AnimationBlending
 
 impl AnimationBlending
 {
-    pub fn new(name: &str, from: Option<u64>, to: Option<u64>, speed: f32) -> AnimationBlending
+    pub fn new(name: &str, from: Option<u32>, to: Option<u32>, speed: f32) -> AnimationBlending
     {
         let mut animation_blending = AnimationBlending
         {
@@ -216,7 +216,7 @@ impl Component for AnimationBlending
         let mut from;
         let mut from_name;
 
-        let mut to: u64;
+        let mut to: u32;
         let mut to_name;
 
         let mut speed;
@@ -231,7 +231,7 @@ impl Component for AnimationBlending
             speed = self.speed;
         }
 
-        let mut animations: Vec<(u64, String)> = vec![];
+        let mut animations: Vec<(u32, String)> = vec![];
 
         if let Some(node) = node
         {

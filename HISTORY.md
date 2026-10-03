@@ -1,6 +1,29 @@
 # History
 Here are some screenshots which are showing the development progress.
 
+# 2026-09-22
+* Experiments with Physics and Vehicle Physics
+
+<img src="history/2026-09-22.webp" width="720">
+<img src="history/2026-09-22-2.webp" width="720">
+<img src="history/2026-09-22-3.webp" width="720">
+<img src="history/2026-09-22-4.webp" width="720">
+<img src="history/2026-09-22-5.webp" width="720">
+<br><br>
+
+# 2026-09-21
+* Physics and Vehicle Physics
+
+<img src="history/2026-09-21.webp" width="720"><br>
+<sub>own assets</sub>
+<br><br>
+
+# 2026-06-29
+* Triplanar Texture Mapping
+
+<img src="history/2026-06-29.webp" width="720">
+<br><br>
+
 # 2025-06-21
 * Easy to use Editor
 
@@ -14,7 +37,7 @@ Here are some screenshots which are showing the development progress.
 <br><br>
 
 # 2024-09-09
-* Editor Improvements (Copy/Paste, Asset selection, Grid based movement)
+* Editor Improvements (Copy/Paste, Asset selection, Grid-based movement)
 
 <img src="history/2024-09-09-2.png" width="720">
 <br><br>
@@ -77,13 +100,13 @@ Here are some screenshots which are showing the development progress.
 
 
 # 2023-08-09
-* first GLTF/GLB loader implementation
+* first glTF/GLB loader implementation
 
 <img src="history/2023-08-09.png" width="720">
 <br>
 
 
-# 2023-05-20
+# 2023-07-30
 * Multi camera setup
 * Normal mapping
 * More UI tests
@@ -92,7 +115,7 @@ Here are some screenshots which are showing the development progress.
 <br>
 
 
-# 2023-05-20
+# 2023-05-21
 * Started with phong shading
 
 <img src="history/2023-05-21.png" width="720">

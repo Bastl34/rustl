@@ -160,7 +160,7 @@ impl Extras
                 ExtraType::Float64(value) => value as &dyn std::any::Any,
                 ExtraType::Vec2(value) => value as &dyn std::any::Any,
                 ExtraType::Vec3(value) => value as &dyn std::any::Any,
-                ExtraType::Vec4(value) => value as &dyn std::any::Any,  
+                ExtraType::Vec4(value) => value as &dyn std::any::Any,
             }.downcast_ref::<T>()
         }
         else
@@ -209,6 +209,12 @@ impl Extras
         let key = key.to_string();
         let extra_type = value.into();
         self.extras.insert(key, extra_type);
+    }
+
+    pub fn remove(&mut self, key: &str)
+    {
+        let key = key.to_string();
+        self.extras.remove(&key);
     }
 
     pub fn iter(&self) -> Iter<'_, String, ExtraType>
