@@ -1,5 +1,6 @@
 [alias]
 dev = ["watch", "-s", "cargo run --profile dev-fast", "-w", "src/", "-w", "resources/"]
+dev-debug = ["watch", "-s", "cargo run --profile dev-debug", "-w", "src/", "-w", "resources/"]
 dev-release = ["watch", "-s", "cargo run --release", "-w", "src/", "-w", "resources/"]
 
 # getrandom 0.3 has no default backend on wasm32-unknown-unknown and refuses to compile without one

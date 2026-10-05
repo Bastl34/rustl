@@ -8,8 +8,8 @@ const DEFAULT_APP_ICON: &str = "resources/designs/logo/logo.png";
 
 fn main() -> Result<()>
 {
-    // This tells cargo to rerun this script if something in resources/ changes
-    println!("cargo:rerun-if-changed=resources/*");
+    // rerun if something in resources/ changes
+    println!("cargo:rerun-if-changed=resources");
 
     // the web build gets its resources from scripts/build.mjs, which copies them into dist/web
     let target = env::var("TARGET").unwrap();

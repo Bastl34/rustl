@@ -131,12 +131,19 @@ image = { version = "0.25.10", default-features = false, features = ["png", "ico
 [profile.dev-fast]
 inherits = "dev"
 incremental = true
+# line numbers in backtraces but no variables in the debugger - smaller pdb, faster linking (cargo dev-debug has everything)
+debug = "line-tables-only"
 
 [profile.dev-fast.package."*"]
 opt-level = 3
 
 [profile.dev-fast.package.rustl]
 opt-level = 0
+
+# dev-fast with full debug info for the debugger
+[profile.dev-debug]
+inherits = "dev-fast"
+debug = "full"
 
 # the binaryen wasm-pack downloads is too old for the threaded build (table.fill) - skip wasm-opt
 [package.metadata.wasm-pack.profile.release]
