@@ -64,6 +64,8 @@ npm run build-mac -- [--dev] [x.project]                         # dist/mac/<pro
 # named like the project (rustl without one), app icon: the rustl logo for now (APP_ICON in scripts/build.mjs, embedded by build.rs on windows)
 # the native build starts the project of resources/startup.json, a .project argument wins
 # release builds have no console window on windows - start with --console to get one
+# all builds take --out=<dir> instead of dist/<platform> (a custom dir is not cleaned up)
+# editor: File > Export > Web/Windows/... runs the same script for the open project (saved first), with a live log
 
 # run with backtrace (on windows)
 set RUST_BACKTRACE=1 && cargo watch -s "cargo run --release" -w src/ -w resources/

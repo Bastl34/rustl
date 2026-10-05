@@ -1,6 +1,7 @@
 // builds without the editor into dist/<platform>, a given project is packed in with every file it uses and starts directly
 // web: wasm with threads (nightly + build-std, the atomics flags are in .cargo/config.toml) - windows/linux/mac: native build, has to run on that platform
-// usage: npm run build-web|build-windows|build-linux|build-mac -- [--dev] [path/to/x.project]   |   npm run dev-web -- [path/to/x.project]
+// usage: npm run build-web|build-windows|build-linux|build-mac -- [--dev] [--out=dir] [path/to/x.project]   |   npm run dev-web -- [path/to/x.project]
+// --out: another target dir instead of dist/<platform> (the editor export uses it)
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -40,6 +41,8 @@ const platform = PLATFORMS[platformName];
 // npm runs scripts in the package root - INIT_CWD is where it was called from
 const projectArg = args.find(arg => !arg.startsWith("--"));
 const project = projectArg ? path.resolve(process.env.INIT_CWD ?? process.cwd(), projectArg) : null;
+const outArg = args.find(arg => arg.startsWith("--out="))?.slice("--out=".length).trim();
+const outDir = outArg ? path.resolve(process.env.INIT_CWD ?? process.cwd(), outArg) : null;
 
 // ******************** commands ********************
 
@@ -60,7 +63,13 @@ function build()
         const name = appName();
         const target = layout(name);
 
-        removeOtherApps(target);
+        fs.mkdirSync(target.dir, { recursive: true });
+
+        // a custom dir can hold other files of the user - only dist/ is cleaned up
+        if (!outDir)
+        {
+            removeOtherApps(target);
+        }
 
         // packaged before the long build, so a broken project fails fast
         const resources = new Resources(target.resources);
@@ -78,8 +87,9 @@ function build()
         if (platformName === "web")
         {
             writeWebFiles(target.dir, project ?? DEFAULT_PROJECT, startProject);
-            buildWeb();
-            console.log(`web build ready in dist/web, starts ${startProject} - http://localhost:1337/dist/web/ (npx serve -p 1337 in the repo root)`);
+            buildWeb(target.dir);
+            const served = path.relative(ROOT, target.dir).replaceAll("\\", "/");
+            console.log(outDir ? `web build ready in ${target.dir}, starts ${startProject} - serve that dir with COOP/COEP headers (serve.json)` : `web build ready in ${served}, starts ${startProject} - http://localhost:1337/${served}/ (npx serve -p 1337 in the repo root)`);
         }
         else
         {
@@ -97,11 +107,21 @@ function build()
     }
 }
 
-function buildWeb()
+function buildWeb(dir)
 {
     // own target dir, so web builds do not wait for the file locks of native builds or rust-analyzer
-    const args = ["run", "nightly", "wasm-pack", "build", "--target", "web", "--no-default-features", "--out-dir", "dist/web/pkg", ...(dev ? ["--dev"] : []), "--", "-Z", "build-std=std,panic_abort"];
+    const pkg = path.join(dir, "pkg");
+    const args = ["run", "nightly", "wasm-pack", "build", "--target", "web", "--no-typescript", "--no-default-features", "--out-dir", pkg, ...(dev ? ["--dev"] : []), "--", "-Z", "build-std=std,panic_abort"];
     run("rustup", args, { CARGO_TARGET_DIR: path.join(ROOT, "target", "web") }, SETUP_WEB);
+
+    // wasm-pack builds an npm package - the page only needs the .js, the .wasm and snippets/
+    for (const entry of fs.readdirSync(pkg))
+    {
+        if ([".gitignore", "package.json", "README.md"].includes(entry) || entry.startsWith("LICENSE") || entry.endsWith(".d.ts"))
+        {
+            fs.rmSync(path.join(pkg, entry), { force: true });
+        }
+    }
 }
 
 function buildNative(target, name)
@@ -155,7 +175,7 @@ function projectName(file)
 // where the executable and the resources go
 function layout(name)
 {
-    const dir = path.join(ROOT, platform.dir);
+    const dir = outDir ?? path.join(ROOT, platform.dir);
 
     switch (platformName)
     {

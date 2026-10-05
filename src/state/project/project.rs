@@ -49,6 +49,34 @@ pub struct ProjectData
 
     #[serde(default)]
     pub editing_time_secs: u64,
+
+    #[serde(default, skip_serializing_if = "ProjectExportDirs::is_empty")]
+    pub export_dirs: ProjectExportDirs,
+}
+
+// target folders of the editor export per platform - empty: dist/<platform>
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProjectExportDirs
+{
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub web: String,
+
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub windows: String,
+
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub linux: String,
+
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mac: String,
+}
+
+impl ProjectExportDirs
+{
+    pub fn is_empty(&self) -> bool
+    {
+        self.web.is_empty() && self.windows.is_empty() && self.linux.is_empty() && self.mac.is_empty()
+    }
 }
 
 impl Default for ProjectData
@@ -66,6 +94,8 @@ impl Default for ProjectData
 
             build: 1,
             editing_time_secs: 0,
+
+            export_dirs: ProjectExportDirs::default(),
         }
     }
 }

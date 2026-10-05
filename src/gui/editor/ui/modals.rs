@@ -1,6 +1,7 @@
 use crate::{gui::{editor::ui::{help::create_modal_help_shortcuts, helper::ui_helper::fit_size}, helper::generic_items::modal_with_title}, helper::generic::cargo_dependencies, state::state::State};
 
 use super::super::editor_state::EditorState;
+use super::export::create_modal_export;
 use crate::helper::console_log::LogType;
 
 pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &egui::Context)
@@ -40,6 +41,10 @@ pub fn create_modals(editor_state: &mut EditorState, state: &mut State, ctx: &eg
     if editor_state.dialog_about
     {
         create_modal_about(editor_state, ctx);
+    }
+    if editor_state.export.open
+    {
+        create_modal_export(editor_state, state, ctx);
     }
     if editor_state.dialog_alert
     {

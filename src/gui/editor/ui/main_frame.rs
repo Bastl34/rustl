@@ -31,6 +31,7 @@ use super::super::editor_state::{SelectionType, BottomPanel};
 use super::lights::{build_light_list, create_light_settings};
 use super::materials::{build_material_list, create_material_settings};
 use super::modals::create_modals;
+use super::export::ExportPlatform;
 use super::objects::{build_objects_list, create_object_settings, create_component_settings};
 use super::general::create_general_settings;
 use super::project::create_project_settings;
@@ -383,6 +384,23 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 editor_state.recent_projects.add_and_save(path);
             }
         }
+
+        ui.separator();
+
+        ui.menu_button("Export", |ui|
+        {
+            for platform in ExportPlatform::ALL
+            {
+                let button = ui.add_enabled(platform.supported(), egui::Button::new(format!("{}...", platform.name())));
+                if button.on_disabled_hover_text(format!("has to run on {}", platform.name())).clicked()
+                {
+                    ui.close();
+                    editor_state.export.show(platform);
+                }
+            }
+        });
+
+        ui.separator();
 
         let shortcut_exit = match ui.ctx().os()
         {

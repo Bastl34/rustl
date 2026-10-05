@@ -8,6 +8,7 @@ use nalgebra::{Point2, Point3, Vector3};
 
 use crate::{gui::editor::gizmo::hide_gizmos, state::{project::project::ProjectData, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
+use crate::gui::editor::ui::export::ExportDialog;
 
 const THUMB_EXTENSION: &str = "png";
 const THUMB_SUFFIX_NAME: &str = "_thumb.png";
@@ -304,6 +305,8 @@ pub struct EditorState
     pub dialog_about: bool,
     pub dialog_splash: bool,
 
+    pub export: ExportDialog,
+
     pub confirm_dialog: Option<ConfirmDialog>,
 
     pub asset_filter: String,
@@ -452,6 +455,8 @@ impl EditorState
             dialog_help_shortcuts: false,
             dialog_about:false,
             dialog_splash: false,
+
+            export: ExportDialog::new(),
 
             confirm_dialog: None,
 

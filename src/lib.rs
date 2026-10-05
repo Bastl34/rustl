@@ -193,6 +193,7 @@ mod gui
             pub(crate) mod main_frame;
             pub(crate) mod modals;
             pub(crate) mod dialogs;
+            pub(crate) mod export;
             pub(crate) mod statistics;
             pub(crate) mod cameras;
             pub(crate) mod objects;
