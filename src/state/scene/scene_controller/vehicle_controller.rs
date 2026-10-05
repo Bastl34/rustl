@@ -4281,7 +4281,7 @@ mod tests
 
     // ********** the real test course and the real off road car, from the local gltf files **********
 
-    const TRACK_FILE: &str = "data/vehicle_test/assets/vehicle_test_track.gltf";
+    const TRACK_FILE: &str = "data/projects/vehicle_test/assets/vehicle_test_track.gltf";
     const OFFROAD_FILE: &str = "resourcesLocal/objects/TTDS_gltf/Car Stuff_Off Road Car.gltf";
 
     type GltfMesh = (String, Vec<Vector3<f32>>, Vec<[u32; 3]>);
@@ -4789,8 +4789,8 @@ mod tests
         }
     }
 
-    const OFFROAD_COURSE_FILE: &str = "data/offroad_test/assets/offroad_course.gltf";
-    const OFFROAD_START_FILE: &str = "data/offroad_test/assets/offroad_start.json";
+    const OFFROAD_COURSE_FILE: &str = "data/projects/offroad_test/assets/offroad_course.gltf";
+    const OFFROAD_START_FILE: &str = "data/projects/offroad_test/assets/offroad_start.json";
 
     // a lap of the off road course, following its track - returns (m driven along the track, rolled over, stuck)
     fn offroad_lap(speed_kmh: f32, seconds: f32) -> Option<(f32, bool, bool)>
@@ -5400,7 +5400,7 @@ mod tests
             (format!("{:?}", vehicle_type), serde_json::to_value(&controller).unwrap())
         }).collect();
 
-        let path = std::env::var("PRESETS_JSON").unwrap_or_else(|_| "data/vehicle_types/presets.json".to_string());
+        let path = std::env::var("PRESETS_JSON").unwrap_or_else(|_| "data/projects/vehicle_types/presets.json".to_string());
         std::fs::write(&path, serde_json::to_string_pretty(&presets).unwrap()).unwrap();
         println!("written {}", path);
     }
@@ -5415,7 +5415,7 @@ mod tests
 
     // ********** the vehicles of the vehicle types project, measured like the auto setup does: wheels by name, the rider left out **********
 
-    const VEHICLE_TYPES_DIR: &str = "data/vehicle_types/assets";
+    const VEHICLE_TYPES_DIR: &str = "data/projects/vehicle_types/assets";
 
     fn vehicle_type_model(file: &str, vehicle_type: VehicleType) -> Option<(Scene, VehicleController, u32)>
     {
@@ -5869,7 +5869,7 @@ mod tests
     {
         for file in std::env::var("TRAIN_SCENE").map(|f| vec![f]).unwrap_or(vec!["tt_05_drawbar".to_string(), "tt_06_road_train".to_string()])
         {
-            let text = std::fs::read_to_string(format!("data/trailer_test/{}.scene", file)).unwrap();
+            let text = std::fs::read_to_string(format!("data/projects/trailer_test/{}.scene", file)).unwrap();
             let json: serde_json::Value = serde_json::from_str(&text).unwrap();
             let mut scene = Scene::new("train bench");
             let mut vehicles: Vec<(VehicleController, u32, Vector3<f32>, Vec<(String, Vector3<f32>)>)> = vec![];
@@ -5882,7 +5882,7 @@ mod tests
                 let object = json["objects"].as_array().unwrap().iter().find(|o| o["uuid"] == uuid).unwrap();
                 let at: Vec<f32> = object["position"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap() as f32).collect();
                 let at = Vector3::new(at[0], at[1], at[2]);
-                let meshes = gltf_meshes(&format!("data/trailer_test/{}", object["source"].as_str().unwrap())).unwrap();
+                let meshes = gltf_meshes(&format!("data/projects/trailer_test/{}", object["source"].as_str().unwrap())).unwrap();
 
                 let node = Node::new(object["name"].as_str().unwrap());
                 node.write().unwrap().uuid = uuid.clone();
@@ -5934,7 +5934,7 @@ mod tests
                 let at: Vec<f32> = object["position"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap() as f32).collect();
                 let density = physics["density"].as_f64().unwrap() as f32;
                 let friction = physics["friction"].as_f64().unwrap() as f32;
-                let meshes = gltf_meshes(&format!("data/trailer_test/{}", source)).unwrap();
+                let meshes = gltf_meshes(&format!("data/projects/trailer_test/{}", source)).unwrap();
                 let groups: Vec<Vec<&GltfMesh>> = if physics["combine_children"].as_bool().unwrap_or(false) { vec![meshes.iter().collect()] } else { meshes.iter().map(|mesh| vec![mesh]).collect() };
 
                 for group in groups

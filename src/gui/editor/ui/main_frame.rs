@@ -367,6 +367,12 @@ fn create_file_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             }
         });
 
+        let reload = ui.add_enabled(editor_state.project_path.is_some(), egui::Button::new("Reload Project"));
+        if reload.on_disabled_hover_text("the project has not been saved yet").clicked()
+        {
+            editor_state.request_reload_project();
+        }
+
         let shortcut_save = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S);
         if ui.add(egui::Button::new("Save Project").shortcut_text(ui.ctx().format_shortcut(&shortcut_save))).clicked()
         {

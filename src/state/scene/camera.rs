@@ -477,6 +477,32 @@ impl Camera
         data.viewport.height = viewport_height;
     }
 
+    // takes over the view and the controller of a saved copy - id, enabled, tags, node, viewport, resolution and layers stay
+    pub fn apply_saved(&mut self, saved: Camera)
+    {
+        let saved_data = saved.data.get_ref();
+        let data = self.data.get_mut();
+
+        data.projection_type = saved_data.projection_type;
+        data.fovy = saved_data.fovy;
+        data.eye_pos = saved_data.eye_pos;
+        data.dir = saved_data.dir;
+        data.up = saved_data.up;
+        data.left = saved_data.left;
+        data.right = saved_data.right;
+        data.top = saved_data.top;
+        data.bottom = saved_data.bottom;
+        data.clipping_near = saved_data.clipping_near;
+        data.clipping_far = saved_data.clipping_far;
+
+        if saved.controller.is_some()
+        {
+            self.controller = saved.controller;
+        }
+
+        self.init_matrices();
+    }
+
     pub fn init_matrices(&mut self)
     {
         let data = self.data.get_mut();

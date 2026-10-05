@@ -12,6 +12,7 @@ use self::math::approx_zero;
 
 use super::{box_select::{cancel_box_select, update_box_select}, editor_state::{AssetType, EditMode, EditorState, LoadingGuard, PickType, SelectionType, SettingsPanel}, gizmo::{create_grid_and_gizmo_objects, update_gizmos}, grid::{update_grid}, helper::{apply_fly_camera_move_state, find_transform_component, pick}};
 use crate::gui::editor::ui::main_frame;
+use crate::state::project::project::EDITOR_VIEW_EXTRA;
 
 pub const MAX_NAME_LENGTH: usize = 24;
 
@@ -202,6 +203,8 @@ impl Editor
                         scene.cameras.push(Box::new(cam));
                     }
                 }
+
+                apply_saved_editor_cameras(scene);
             }));
         });
     }
@@ -2177,3 +2180,29 @@ impl Editor
     }
 }
 
+// the editor cameras saved with the scene file - applied once, then dropped from the extras
+fn apply_saved_editor_cameras(scene: &mut Scene)
+{
+    let Some(json) = scene.extras.get::<String>(EDITOR_VIEW_EXTRA).cloned() else { return; };
+    scene.extras.remove(EDITOR_VIEW_EXTRA);
+
+    let values: Vec<serde_json::Value> = match serde_json::from_str(&json)
+    {
+        Ok(values) => values,
+        Err(e) => { console_error!("failed to parse the editor cameras: {}", e); return; },
+    };
+
+    for value in values
+    {
+        let saved = match serde_json::from_value::<Camera>(value)
+        {
+            Ok(saved) => saved,
+            Err(e) => { console_error!("failed to parse editor camera: {}", e); continue; },
+        };
+
+        if let Some(cam) = scene.cameras.iter_mut().find(|cam| cam.name == saved.name && cam.tags.contains(EDITOR_INTERNAL_TAG))
+        {
+            cam.apply_saved(saved);
+        }
+    }
+}

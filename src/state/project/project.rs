@@ -8,6 +8,9 @@ use crate::state::scene::node::NodeSettings;
 use crate::state::scene::physics::physics_world::PhysicsWorldSettings;
 use crate::state::state::{InputSettings, State, WindowSettings};
 
+/// Scene extra: the saved editor cameras (json) - applied by the editor when it creates its cameras.
+pub const EDITOR_VIEW_EXTRA: &str = "editor_view";
+
 /// Node extra flag: reuse already loaded materials with the same name instead of duplicating them.
 pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
 
@@ -168,6 +171,10 @@ pub struct SceneFile
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physics: Option<PhysicsWorldSettings>,
+
+    // serde of the editor cameras - ignored without the editor
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub editor_cameras: Vec<serde_json::Value>,
 
     // the sound resources - loaded before the controllers, which refer to them by uuid
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

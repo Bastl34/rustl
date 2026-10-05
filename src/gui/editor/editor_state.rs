@@ -533,6 +533,23 @@ impl EditorState
         );
     }
 
+    pub fn request_reload_project(&mut self)
+    {
+        let Some(path) = self.project_path.clone() else { return; };
+
+        self.show_save_changes_dialog
+        (
+            "Reload Project",
+            "Save changes to the current project before reloading it?",
+            move |editor_state, state|
+            {
+                let loading_state = editor_state.loading.clone();
+                let loading_progress_state = editor_state.loading_progress.clone();
+                crate::gui::editor::editor_project::load_editor_project_from_path(editor_state, state, path, loading_state, loading_progress_state);
+            }
+        );
+    }
+
     // shows a modal alert the user has to acknowledge
     // for things that must not be missed - everything else belongs in the console
     pub fn alert(&mut self, title: &str, message: &str, alert_type: LogType)

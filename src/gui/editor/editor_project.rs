@@ -99,6 +99,11 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<S
         })
         .collect();
 
+    let editor_cameras = scene.cameras.iter()
+        .filter(|cam| cam.tags.contains(EDITOR_INTERNAL_TAG))
+        .filter_map(|cam| to_json_value("editor camera", &cam.name, &**cam))
+        .collect();
+
     let data = scene.get_data();
     let settings = SceneSettings
     {
@@ -114,6 +119,7 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<S
         active: scene.active,
         settings: Some(settings),
         physics: Some(scene.physics.settings),
+        editor_cameras,
         sounds,
         objects,
         cameras,

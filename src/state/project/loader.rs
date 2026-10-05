@@ -14,7 +14,7 @@ use crate::helper::file::resolve_relative_path;
 use crate::helper::option_or_id::OptionOrId;
 use crate::resources::resources::{RESOURCE_SCHEME, load_binary, load_string};
 use crate::state::resources::sound_source::SoundSource;
-use crate::state::project::project::{SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{EDITOR_VIEW_EXTRA, SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::component::{ComponentBox, ComponentItem, DeserializationContext};
 use crate::state::scene::components::transformation::Transformation;
@@ -450,6 +450,15 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFil
             if let Some(physics) = editor_scene.physics
             {
                 scene.physics.settings = physics;
+            }
+
+            if !editor_scene.editor_cameras.is_empty()
+            {
+                match serde_json::to_string(&editor_scene.editor_cameras)
+                {
+                    Ok(json) => { scene.extras.insert(EDITOR_VIEW_EXTRA, json); },
+                    Err(e) => { console_error!("failed to keep the editor cameras: {}", e); },
+                }
             }
         }
         scenes.push((editor_scene, id, full_path));

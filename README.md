@@ -50,7 +50,7 @@ cargo watch -s "cargo run --profile dev-fast" -w src/ -w resources/
 # builds without the editor into dist/<platform> - scripts/build.mjs
 # a given project is packed in with every file it uses (scenes, objects + their textures/.bin/.mtl, sounds) and starts directly
 # web: wasm with threads, one time: rustup toolchain install nightly && rustup +nightly target add wasm32-unknown-unknown && rustup +nightly component add rust-src
-npm run build-web -- "data/cabrio_test/cabrio test.project"      # dist/web, without project: resources/projects/web_test
+npm run build-web -- "data/projects/cabrio_test/cabrio test.project"      # dist/web, without project: resources/projects/web_test
 npm run build-web -- --dev                                       # dev build
 npm run dev-web -- [x.project]                                   # dev build on every change (code, resources, project folder)
 npx serve -p 1337                                                # in the repo root, serve.json sets the COOP/COEP headers threads need
