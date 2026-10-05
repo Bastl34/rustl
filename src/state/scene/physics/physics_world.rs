@@ -88,6 +88,10 @@ const WOBBLE_MOVER_TIME: f32 = 0.25;
 const SETTLE_DRIFT: f32 = 0.2;
 const SETTLE_WINDOW: f32 = 0.5;
 
+// a support that moved or turned further than this is checked for whether it still touches the frozen body on it
+const SUPPORT_DRIFT: f32 = 0.01;
+const SUPPORT_ANGLE: f32 = 0.02;
+
 // how many loads deep on a vehicle are still kept from freezing, e.g. carrier - truck - pickup
 const CARRY_DEPTH: usize = 4;
 
@@ -388,6 +392,15 @@ struct RestTrack
 {
     start: Pose,
     time: f32,
+}
+
+// A frozen body resting on one that moves again, see release_unsupported.
+#[derive(Clone, Copy)]
+struct SupportWatch
+{
+    held: usize, // entry index of the frozen body
+    support: usize, // entry index of what it rests on
+    start: Pose, // where the support was when the watch began
 }
 
 // One collider: a mesh instance at an offset from its anchor.
@@ -715,6 +728,9 @@ pub struct PhysicsWorld
     // pile of props. Measured: g * dt = 0.16 per unit mass and step per stacked object.
     pre_step_speed: HashMap<RigidBodyHandle, f32>,
 
+    // frozen bodies on top of something that moves again, thawed once it gets away
+    supports: Vec<SupportWatch>,
+
     // nothing simulates outside a running mode, and leaving one has to put every
     // dynamic object back where the author placed it
     running: bool,
@@ -798,6 +814,7 @@ impl PhysicsWorld
             run_steps: 0,
             moved_kinematics: HashSet::new(),
             pre_step_speed: HashMap::new(),
+            supports: vec![],
             running: true, // the editor turns this off, a game build just runs
             // a run that starts with the world needs its start state too - else leaving the scene does not put its vehicles back
             snapshot_pending: true,
@@ -850,6 +867,7 @@ impl PhysicsWorld
         self.body_amount = 0;
 
         self.entries.clear();
+        self.supports.clear();
         self.ground_plane = None;
         self.applied_ground_plane = None;
         self.applied_sleep = None;
@@ -1793,6 +1811,15 @@ impl PhysicsWorld
     {
         let entry = self.entries.remove(index);
 
+        // the watches point at entries by index
+        self.supports.retain(|watch| watch.held != index && watch.support != index);
+
+        for watch in &mut self.supports
+        {
+            if watch.held > index { watch.held -= 1; }
+            if watch.support > index { watch.support -= 1; }
+        }
+
         match entry.body
         {
             Some(body) => self.remove_bodies(&vec![body]),
@@ -2359,6 +2386,8 @@ impl PhysicsWorld
     // Every run starts as authored: what reacts on a hit waits, everything else runs.
     fn reset_waiting(&mut self)
     {
+        self.supports.clear();
+
         for index in 0..self.entries.len()
         {
             self.entries[index].frozen = false;
@@ -2695,10 +2724,7 @@ impl PhysicsWorld
         }
     }
 
-    // Releases a frozen object and the frozen ones resting on it, so nothing is left hanging
-    // in the air. Only one layer up: flooding the whole pile let a ball rolling at the foot
-    // of a heap wake hundreds of pieces, measured. A released piece that moves on hits the
-    // next layer anyway.
+    // Thaws a frozen object and the layer on it, the layers above follow once their support moves - flooding a whole heap woke hundreds of pieces, measured.
     fn thaw_entry(&mut self, index: usize)
     {
         if !self.entries[index].frozen
@@ -2706,6 +2732,87 @@ impl PhysicsWorld
             return;
         }
 
+        let above = self.frozen_above(index);
+
+        self.set_frozen(index, false);
+
+        for other in above
+        {
+            self.thaw_alone(other);
+        }
+    }
+
+    // Thaws one object and watches the frozen ones resting on it, see release_unsupported.
+    fn thaw_alone(&mut self, index: usize)
+    {
+        if !self.entries[index].frozen
+        {
+            return;
+        }
+
+        let above = self.frozen_above(index);
+
+        self.set_frozen(index, false);
+
+        let Some(start) = self.entries[index].body.and_then(|handle| self.bodies.get(handle)).map(|body| *body.position()) else { return; };
+
+        self.supports.extend(above.into_iter().map(|held| SupportWatch { held, support: index, start }));
+    }
+
+    // A frozen body is fixed in place and would hang in the air once what it rests on is gone, so it goes along once the two come apart - rocking in contact does not count.
+    fn release_unsupported(&mut self)
+    {
+        if self.supports.is_empty()
+        {
+            return;
+        }
+
+        let mut lost = vec![];
+
+        for watch in std::mem::take(&mut self.supports)
+        {
+            if !self.entries.get(watch.held).is_some_and(|entry| entry.frozen)
+            {
+                continue;
+            }
+
+            let Some(support) = self.entries.get(watch.support) else { continue; };
+
+            // held again, or moving so long it no longer wakes anything - a pile would thaw itself forever otherwise
+            if support.frozen || support.waiting || self.is_overdue(support)
+            {
+                continue;
+            }
+
+            let Some(body) = support.body.and_then(|handle| self.bodies.get(handle)) else { continue; };
+
+            // the distance is only measured once the support has moved at all
+            if Self::stays_put(&watch.start, body.position(), SUPPORT_DRIFT, SUPPORT_ANGLE) || self.colliders_touch(&self.entry_bounds(watch.held), &self.entry_bounds(watch.support))
+            {
+                self.supports.push(watch);
+            }
+            else
+            {
+                lost.push(watch.held);
+            }
+        }
+
+        for index in lost
+        {
+            self.thaw_alone(index);
+        }
+    }
+
+    fn entry_bounds(&self, index: usize) -> Vec<(ColliderHandle, Aabb)>
+    {
+        self.entries[index].parts.iter()
+            .filter_map(|part| self.colliders.get(part.handle).map(|collider| (part.handle, collider.compute_aabb())))
+            .collect()
+    }
+
+    // the frozen objects touching this one with their center above its center
+    fn frozen_above(&self, index: usize) -> Vec<usize>
+    {
         let up = -Vector3::new(self.settings.gravity.x, self.settings.gravity.y, self.settings.gravity.z);
 
         let center = |entry: &BodyEntry| entry.body.and_then(|handle| self.bodies.get(handle)).map(|body|
@@ -2714,14 +2821,7 @@ impl PhysicsWorld
             Vector3::new(center.x, center.y, center.z)
         });
 
-        let bounds = |entry: &BodyEntry| -> Vec<(ColliderHandle, Aabb)>
-        {
-            entry.parts.iter()
-                .filter_map(|part| self.colliders.get(part.handle).map(|collider| (part.handle, collider.compute_aabb())))
-                .collect()
-        };
-
-        let own = bounds(&self.entries[index]);
+        let own = self.entry_bounds(index);
         let own_center = center(&self.entries[index]);
 
         let mut above = vec![];
@@ -2740,18 +2840,13 @@ impl PhysicsWorld
                 continue;
             }
 
-            if self.colliders_touch(&own, &bounds(&self.entries[other]))
+            if self.colliders_touch(&own, &self.entry_bounds(other))
             {
                 above.push(other);
             }
         }
 
-        self.set_frozen(index, false);
-
-        for other in above
-        {
-            self.set_frozen(other, false);
-        }
+        above
     }
 
     pub fn waiting_amount(&self) -> usize
@@ -3136,6 +3231,7 @@ impl PhysicsWorld
 
             self.run_steps = self.run_steps.saturating_add(steps);
             self.release_hit_bodies();
+            self.release_unsupported();
             self.settle_bodies(steps as f32 * self.settings.fixed_timestep);
         }
 
@@ -3300,7 +3396,7 @@ impl PhysicsWorld
             // the author picked up a frozen object mid run, it has to fall from where it lands
             if author_moved && !scene_owns_dynamics && self.entries[index].frozen
             {
-                self.set_frozen(index, false);
+                self.thaw_alone(index);
             }
 
             let (anchor_pose, fresh_scale) = Self::split_transform(&anchor_world);
