@@ -1,15 +1,45 @@
 use egui::{Color32, RichText, Ui};
 use nalgebra::Vector3;
 
-use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, rendering::morph_target::MorphTarget, state::{helper::render_item::{get_render_item, render_item_gpu_usage}, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::{PresentModeSetting, State}}};
+use crate::{component_downcast, gui::helper::generic_items::collapse_with_title, rendering::morph_target::MorphTarget, state::{helper::render_item::{get_render_item, render_item_gpu_usage}, scene::{components::{material::Material, mesh::Mesh}, scene::Scene}, state::{MouseCapture, PresentModeSetting, State}}};
 
 use super::super::editor_state::EditorState;
 
 pub fn create_general_settings(editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
     create_rendering_settings(editor_state, state, ui);
+    create_input_settings(editor_state, state, ui);
     create_audio_settings(editor_state, state, ui);
 }
+
+pub fn create_input_settings(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
+{
+    collapse_with_title(ui, "input_settings", true, "🎮 Input Settings", None, |ui|
+    {
+        let label = |m: MouseCapture| match m
+        {
+            MouseCapture::Always     => "Always",
+            MouseCapture::Fullscreen => "Fullscreen only",
+            MouseCapture::Never      => "Never",
+        };
+
+        ui.horizontal(|ui|
+        {
+            ui.label("Capture Mouse:");
+            egui::ComboBox::from_id_salt("mouse_capture_combo")
+                .selected_text(label(state.input.mouse_capture))
+                .show_ui(ui, |ui|
+                {
+                    for m in [MouseCapture::Always, MouseCapture::Fullscreen, MouseCapture::Never]
+                    {
+                        ui.selectable_value(&mut state.input.mouse_capture, m, label(m));
+                    }
+                });
+            ui.label("ℹ").on_hover_text("hides and captures the mouse in the game - Esc or leaving the window releases it, a click captures it again. The editor play mode is not affected. In the browser the first click captures it");
+        });
+    });
+}
+
 
 pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut State, ui: &mut Ui)
 {
@@ -189,13 +219,11 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
             }
         });
 
+        ui.horizontal(|ui|
         {
-            let mut fullscreen = state.rendering.fullscreen.get_ref().clone();
-            if ui.checkbox(&mut fullscreen, "Fullscreen").changed()
-            {
-                state.rendering.fullscreen.set(fullscreen);
-            }
-        }
+            ui.checkbox(&mut state.window.fullscreen, "Fullscreen");
+            ui.label("ℹ").on_hover_text("the game starts in fullscreen - the editor window is not affected (use F or Ctrl+Shift+R there). In the browser it switches on the first click or key press");
+        });
 
         {
             let mut present_mode = state.rendering.present_mode.get_ref().clone();
@@ -230,7 +258,7 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
-            ui.add_enabled(state.rendering_adapter.wireframe_mode_support, egui::Checkbox::new(&mut state.rendering.wireframe_mode, "Wireframe Mode"));
+            ui.add_enabled(state.rendering_adapter.wireframe_mode_support, egui::Checkbox::new(&mut state.rendering.debug.wireframe_mode, "Wireframe Mode"));
             ui.label("ℹ").on_hover_text(if state.rendering_adapter.wireframe_mode_support { "renders all objects in wireframe mode, useful for debugging" } else { "not supported by this GPU/backend" });
         });
 
@@ -238,25 +266,25 @@ pub fn create_rendering_settings(_editor_state: &mut EditorState, state: &mut St
 
         ui.horizontal(|ui|
         {
-            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_bounding_boxes, "Draw Bounding Boxes"));
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.debug.draw_bounding_boxes, "Draw Bounding Boxes"));
             ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the bounding box of each object as lines (the same boxes the occlusion culling tests against)" } else { "not supported by this GPU/backend" });
         });
 
         ui.horizontal(|ui|
         {
-            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_bounding_spheres, "Draw Bounding Spheres"));
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.debug.draw_bounding_spheres, "Draw Bounding Spheres"));
             ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the bounding sphere of each object as lines (the same spheres the frustum culling tests against)" } else { "not supported by this GPU/backend" });
         });
 
         ui.horizontal(|ui|
         {
-            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_physics_volumes, "Draw Physics Volumes"));
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.debug.draw_physics_volumes, "Draw Physics Volumes"));
             ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders the physics colliders and character capsules as lines - mesh colliders as their bounds, faded where hidden behind geometry" } else { "not supported by this GPU/backend" });
         });
 
         ui.horizontal(|ui|
         {
-            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.draw_light_camera_volumes, "Draw Lights And Cameras"));
+            ui.add_enabled(debug_volumes_support, egui::Checkbox::new(&mut state.rendering.debug.draw_light_camera_volumes, "Draw Lights And Cameras"));
             ui.label("ℹ").on_hover_text(if debug_volumes_support { "renders an icon per enabled light (point: rays, directional: arrow, sun: rays + arrow, spot: cone, hemispheric: color and ground color half) and the frustum of each enabled camera, faded where hidden behind geometry - editor lights and cameras only with \"show internal entries\"" } else { "not supported by this GPU/backend" });
         });
 

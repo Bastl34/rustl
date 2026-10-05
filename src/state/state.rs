@@ -62,12 +62,16 @@ pub enum PresentModeSetting
     VSyncOff,  // Immediate: may tear, uncapped
 }
 
+// saved with the project - except the debug views and the window state
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
 pub struct Rendering
 {
     pub clear_color: ChangeTracker<Vector3<f32>>,
     pub present_mode: ChangeTracker<PresentModeSetting>,
 
+    // window state (the run modes toggle it), not a project setting
+    #[serde(skip)]
     pub fullscreen: ChangeTracker<bool>,
     pub msaa: ChangeTracker<u32>,
 
@@ -82,11 +86,8 @@ pub struct Rendering
     pub ssao_strength: f32,
 
     // distance based fog (world space)
-    #[serde(default)]
     pub fog: bool,
-    #[serde(default = "default_fog_color")]
     pub fog_color: Vector3<f32>,
-    #[serde(default = "default_fog_density")]
     pub fog_density: f32,
 
     pub distance_sorting: bool,
@@ -95,36 +96,158 @@ pub struct Rendering
     pub create_mipmaps: bool,
     pub max_texture_resolution: Option<u32>,
 
-    pub wireframe_mode: bool,
-
     // reverse z depth buffer (near = 1, far = 0): near-uniform depth precision, less z-fighting
-    #[serde(default)]
     pub reverse_z: bool,
 
+    #[serde(skip)]
+    pub debug: RenderingDebug,
+}
+
+// debug views - not saved with the project
+pub struct RenderingDebug
+{
+    pub wireframe_mode: bool,
+
     // debug rendering of the culling bounding volumes (lines)
-    #[serde(default)]
     pub draw_bounding_boxes: bool,
-    #[serde(default)]
     pub draw_bounding_spheres: bool,
 
     // debug rendering of the physics colliders and character capsules (lines)
-    #[serde(default)]
     pub draw_physics_volumes: bool,
 
     // debug rendering of the lights (icons) and cameras (frustums)
-    #[serde(default)]
     pub draw_light_camera_volumes: bool,
 
     // editor internal lights and cameras are drawn too - mirrors "show internal entries", set by the editor every frame
-    #[serde(skip)]
     pub debug_volumes_show_internal: bool,
 
     pub xray_mode: bool,
     pub xray_alpha: f32,
 }
 
-fn default_fog_color() -> Vector3<f32> { DEFAULT_FOG_COLOR }
-fn default_fog_density() -> f32 { DEFAULT_FOG_DENSITY }
+impl Default for RenderingDebug
+{
+    fn default() -> Self
+    {
+        RenderingDebug
+        {
+            wireframe_mode: false,
+
+            draw_bounding_boxes: false,
+            draw_bounding_spheres: false,
+            draw_physics_volumes: false,
+            // only the editor shows them - exports without it have no way to turn them off
+            draw_light_camera_volumes: cfg!(feature = "editor"),
+            debug_volumes_show_internal: false,
+
+            xray_mode: false,
+            xray_alpha: DEFAULT_XRAY_ALPHA,
+        }
+    }
+}
+
+impl Default for Rendering
+{
+    fn default() -> Self
+    {
+        Rendering
+        {
+            clear_color: ChangeTracker::new(Vector3::<f32>::new(0.0, 0.0, 0.0)),
+            present_mode: ChangeTracker::new(PresentModeSetting::VSync),
+
+            fullscreen: ChangeTracker::new(false),
+            msaa: ChangeTracker::new(8),
+            shadow: ChangeTracker::new(true),
+            shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
+            shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
+
+            ssao: true,
+            ssao_half_res: false,
+            ssao_radius: DEFAULT_SSAO_RADIUS,
+            ssao_bias: DEFAULT_SSAO_BIAS,
+            ssao_strength: DEFAULT_SSAO_STRENGTH,
+
+            fog: false,
+            fog_color: DEFAULT_FOG_COLOR,
+            fog_density: DEFAULT_FOG_DENSITY,
+
+            distance_sorting: true,
+            frustum_culling: true,
+            occlusion_culling: true,
+            create_mipmaps: true,
+            max_texture_resolution: None,
+
+            reverse_z: true,
+
+            debug: RenderingDebug::default(),
+        }
+    }
+}
+
+impl Rendering
+{
+    // takes over the saved settings, the debug views and the window state stay as they are
+    pub fn apply_settings(&mut self, settings: Rendering, adapter: &RenderingAdapterFeatures)
+    {
+        fn set_changed<T: PartialEq>(tracker: &mut ChangeTracker<T>, value: T)
+        {
+            if *tracker.get_ref() != value
+            {
+                tracker.set(value);
+            }
+        }
+
+        set_changed(&mut self.clear_color, *settings.clear_color.get_ref());
+        set_changed(&mut self.present_mode, *settings.present_mode.get_ref());
+        set_changed(&mut self.msaa, (*settings.msaa.get_ref()).clamp(1, adapter.max_msaa_samples.max(1)));
+        set_changed(&mut self.shadow, *settings.shadow.get_ref());
+        set_changed(&mut self.shadow_map_resolution, (*settings.shadow_map_resolution.get_ref()).min(adapter.max_texture_resolution));
+        self.shadow_max_distance = settings.shadow_max_distance;
+
+        self.ssao = settings.ssao;
+        self.ssao_half_res = settings.ssao_half_res;
+        self.ssao_radius = settings.ssao_radius;
+        self.ssao_bias = settings.ssao_bias;
+        self.ssao_strength = settings.ssao_strength;
+
+        self.fog = settings.fog;
+        self.fog_color = settings.fog_color;
+        self.fog_density = settings.fog_density;
+
+        self.distance_sorting = settings.distance_sorting;
+        self.frustum_culling = settings.frustum_culling;
+        self.occlusion_culling = settings.occlusion_culling;
+        self.create_mipmaps = settings.create_mipmaps;
+        self.max_texture_resolution = settings.max_texture_resolution.map(|res| res.min(adapter.max_texture_resolution));
+
+        self.reverse_z = settings.reverse_z;
+    }
+}
+
+// saved with the project - only a build without the editor applies it, the editor keeps its own window
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct WindowSettings
+{
+    pub fullscreen: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MouseCapture
+{
+    #[default]
+    Always,
+    Fullscreen,
+    Never,
+}
+
+// saved with the project - only a build without the editor applies it, the editor play mode keeps its own
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct InputSettings
+{
+    pub mouse_capture: MouseCapture,
+}
 
 pub struct SupportedFileTypes
 {
@@ -354,6 +477,8 @@ pub struct State
 
     pub rendering_adapter: RenderingAdapterFeatures,
     pub rendering: Rendering,
+    pub window: WindowSettings,
+    pub input: InputSettings,
 
     pub io: InputOutput,
 
@@ -434,46 +559,9 @@ impl State
                 max_supported_texture_resolution: DEFAULT_MAX_SUPPORTED_TEXTURE_RESOLUTION
             },
 
-            rendering: Rendering
-            {
-                clear_color: ChangeTracker::new(Vector3::<f32>::new(0.0, 0.0, 0.0)),
-                present_mode: ChangeTracker::new(PresentModeSetting::VSync),
-
-                fullscreen: ChangeTracker::new(false),
-                msaa: ChangeTracker::new(8),
-                shadow: ChangeTracker::new(true),
-                shadow_map_resolution: ChangeTracker::new(DEFAULT_SHADOW_MAP_SIZE),
-                shadow_max_distance: DEFAULT_SHADOW_MAX_DISTANCE,
-
-                ssao: true,
-                ssao_half_res: false,
-                ssao_radius: DEFAULT_SSAO_RADIUS,
-                ssao_bias: DEFAULT_SSAO_BIAS,
-                ssao_strength: DEFAULT_SSAO_STRENGTH,
-
-                fog: false,
-                fog_color: DEFAULT_FOG_COLOR,
-                fog_density: DEFAULT_FOG_DENSITY,
-
-                distance_sorting: true,
-                frustum_culling: true,
-                occlusion_culling: true,
-                create_mipmaps: true,
-                max_texture_resolution: None,
-
-                wireframe_mode: false,
-                reverse_z: false,
-
-                draw_bounding_boxes: false,
-                draw_bounding_spheres: false,
-                draw_physics_volumes: false,
-                // only the editor shows them - exports without it have no way to turn them off
-                draw_light_camera_volumes: cfg!(feature = "editor"),
-                debug_volumes_show_internal: false,
-
-                xray_mode: false,
-                xray_alpha: DEFAULT_XRAY_ALPHA,
-            },
+            rendering: Rendering::default(),
+            window: WindowSettings::default(),
+            input: InputSettings::default(),
 
             io: InputOutput
             {

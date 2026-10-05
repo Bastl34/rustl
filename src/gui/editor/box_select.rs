@@ -129,7 +129,7 @@ fn apply_box_selection(editor_state: &mut EditorState, state: &mut State, extend
 
     let (Some(camera_id), Some(start), Some(current)) = (box_select.camera_id, box_select.drag_start, box_select.drag_current) else { return; };
 
-    let xray = state.rendering.xray_mode;
+    let xray = state.rendering.debug.xray_mode;
 
     let scene_id;
     let new_ids;

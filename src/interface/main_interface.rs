@@ -20,6 +20,8 @@ use crate::helper::concurrency::execution_queue::ExecutionQueue;
 use crate::helper::platform::is_mac;
 use crate::input::input_point::PointState;
 use crate::input::keyboard::{Key, Modifier};
+#[cfg(not(feature = "editor"))]
+use crate::state::state::MouseCapture;
 use crate::interface::winit::winit_map_mouse_button;
 use crate::output::audio_device::AudioDevice;
 use crate::state::resources::utilities::resource_utils::play_and_forget_sound;
@@ -46,6 +48,18 @@ pub struct MainInterface
     app: Option<Box<dyn App>>,
 
     gilrs: Option<Gilrs>,
+
+    // the game releases the mouse on Esc or focus loss, a click captures it again
+    #[cfg(not(feature = "editor"))]
+    mouse_released: bool,
+
+    // the browser releases the pointer lock on Esc itself
+    #[cfg(all(not(feature = "editor"), target_arch = "wasm32"))]
+    pointer_lock_seen: bool,
+
+    // browsers only allow fullscreen after a user gesture - retried once on the first click/key/touch
+    #[cfg(target_arch = "wasm32")]
+    fullscreen_needs_gesture: bool,
 
     #[cfg(feature = "editor")]
     editor_gui: Option<Editor>,
@@ -115,6 +129,16 @@ impl MainInterface
             app: None,
 
             gilrs,
+
+            // the browser only grants the pointer lock on a click
+            #[cfg(not(feature = "editor"))]
+            mouse_released: cfg!(target_arch = "wasm32"),
+
+            #[cfg(all(not(feature = "editor"), target_arch = "wasm32"))]
+            pointer_lock_seen: false,
+
+            #[cfg(target_arch = "wasm32")]
+            fullscreen_needs_gesture: false,
 
             #[cfg(feature = "editor")]
             editor_gui,
@@ -397,6 +421,23 @@ impl MainInterface
                 let mut fullscreen_mode = None;
                 if fullscreen { fullscreen_mode = Some(Fullscreen::Borderless(None)); }
                 self.context.window.set_fullscreen(fullscreen_mode);
+
+                #[cfg(target_arch = "wasm32")]
+                { self.fullscreen_needs_gesture = fullscreen && self.context.window.fullscreen().is_none(); }
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            if self.fullscreen_needs_gesture
+            {
+                let input = &state.io.input_manager;
+                if input.mouse.is_any_button_holding() || input.keyboard.is_any_key_holding() || input.touch.has_touches()
+                {
+                    self.fullscreen_needs_gesture = false;
+                    if *state.rendering.fullscreen.get_ref()
+                    {
+                        self.context.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                    }
+                }
             }
         }
 
@@ -484,9 +525,9 @@ impl MainInterface
                     render_scene.msaa_sample_size_update(&mut self.context.wgpu, scene, msaa_samples);
                 }
 
-                if state.rendering.wireframe_mode != render_scene.wireframe_mode
+                if state.rendering.debug.wireframe_mode != render_scene.wireframe_mode
                 {
-                    render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.wireframe_mode);
+                    render_scene.wireframe_mode_update(&mut self.context.wgpu, scene, state.rendering.debug.wireframe_mode);
                 }
 
                 if state.rendering.reverse_z != render_scene.reverse_z
@@ -494,9 +535,9 @@ impl MainInterface
                     render_scene.reverse_z_update(&mut self.context.wgpu, scene, state.rendering.reverse_z);
                 }
 
-                if state.rendering.xray_mode != render_scene.xray_mode || (state.rendering.xray_mode && state.rendering.xray_alpha != render_scene.xray_alpha)
+                if state.rendering.debug.xray_mode != render_scene.xray_mode || (state.rendering.debug.xray_mode && state.rendering.debug.xray_alpha != render_scene.xray_alpha)
                 {
-                    render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.xray_mode, state.rendering.xray_alpha);
+                    render_scene.xray_mode_update(&mut self.context.wgpu, scene, state.rendering.debug.xray_mode, state.rendering.debug.xray_alpha);
                 }
 
                 render_scene.update(&mut self.context.wgpu, state, scene);
@@ -747,6 +788,11 @@ impl MainInterface
         }
 
 
+        // ******************** game mouse capture ********************
+        #[cfg(not(feature = "editor"))]
+        self.update_game_mouse_capture();
+
+
         // ******************** mouse visibility ********************
         {
             let state = &mut *(self.context.state.borrow_mut());
@@ -823,8 +869,48 @@ impl MainInterface
         true
     }
 
+    // the editor captures the mouse in play mode - without it the game does it, per InputSettings
+    #[cfg(not(feature = "editor"))]
+    fn update_game_mouse_capture(&mut self)
+    {
+        let state = &mut *(self.context.state.borrow_mut());
+
+        let wanted = match state.input.mouse_capture
+        {
+            MouseCapture::Always => true,
+            MouseCapture::Fullscreen => self.context.window.fullscreen().is_some(),
+            MouseCapture::Never => false,
+        };
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let locked = web_sys::window().and_then(|w| w.document()).and_then(|d| d.pointer_lock_element()).is_some();
+            if self.pointer_lock_seen && !locked
+            {
+                self.mouse_released = true;
+            }
+            self.pointer_lock_seen = locked && !self.mouse_released;
+        }
+
+        let visible = !wanted || self.mouse_released;
+        if *state.io.input_manager.mouse.visible.get_ref() != visible
+        {
+            state.io.input_manager.mouse.visible.set(visible);
+        }
+    }
+
     pub fn window_input(&mut self, event: &winit::event::WindowEvent)
     {
+        #[cfg(not(feature = "editor"))]
+        match event
+        {
+            winit::event::WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) => self.mouse_released = true,
+            winit::event::WindowEvent::Focused(false) => self.mouse_released = true,
+            winit::event::WindowEvent::MouseInput { state: ElementState::Pressed, .. } => self.mouse_released = false,
+            winit::event::WindowEvent::Touch(touch) if touch.phase == winit::event::TouchPhase::Started => self.mouse_released = false,
+            _ => {}
+        }
+
         #[cfg(feature = "editor")]
         let egui_consumed = if let Some(editor_gui) = &mut self.editor_gui
         {

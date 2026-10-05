@@ -573,7 +573,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             // wireframe mode
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/wireframe.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let mut btn = egui::Button::image(img).selected(state.rendering.wireframe_mode).frame(true);
+                let mut btn = egui::Button::image(img).selected(state.rendering.debug.wireframe_mode).frame(true);
                 let supported = state.rendering_adapter.wireframe_mode_support;
                 if !supported
                 {
@@ -582,7 +582,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let hover = if supported { "toggle wireframe mode" } else { "wireframe mode not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
-                    state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
+                    state.rendering.debug.wireframe_mode = !state.rendering.debug.wireframe_mode;
                 }
             }
 
@@ -590,8 +590,8 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
 
             // bounding volume rendering (cycles off -> spheres -> boxes)
             {
-                let boxes = state.rendering.draw_bounding_boxes;
-                let spheres = state.rendering.draw_bounding_spheres;
+                let boxes = state.rendering.debug.draw_bounding_boxes;
+                let spheres = state.rendering.debug.draw_bounding_spheres;
 
                 // the icon shows the active hull type (box icon while off)
                 let img = if spheres && !boxes
@@ -614,9 +614,9 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 {
                     match (boxes, spheres)
                     {
-                        (false, false) => { state.rendering.draw_bounding_boxes = true; },
-                        (true, false) => { state.rendering.draw_bounding_boxes = false; state.rendering.draw_bounding_spheres = true; },
-                        _ => { state.rendering.draw_bounding_boxes = false; state.rendering.draw_bounding_spheres = false; },
+                        (false, false) => { state.rendering.debug.draw_bounding_boxes = true; },
+                        (true, false) => { state.rendering.debug.draw_bounding_boxes = false; state.rendering.debug.draw_bounding_spheres = true; },
+                        _ => { state.rendering.debug.draw_bounding_boxes = false; state.rendering.debug.draw_bounding_spheres = false; },
                     }
                 }
             }
@@ -624,7 +624,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             // physics volume rendering (colliders and character capsules)
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/physics_volumes.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let mut btn = egui::Button::image(img).selected(state.rendering.draw_physics_volumes).frame(true);
+                let mut btn = egui::Button::image(img).selected(state.rendering.debug.draw_physics_volumes).frame(true);
                 let supported = state.rendering_adapter.storage_buffer_array_support;
                 if !supported
                 {
@@ -633,14 +633,14 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let hover = if supported { "toggle physics volume rendering (colliders and character capsules)" } else { "physics volume rendering not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
-                    state.rendering.draw_physics_volumes = !state.rendering.draw_physics_volumes;
+                    state.rendering.debug.draw_physics_volumes = !state.rendering.debug.draw_physics_volumes;
                 }
             }
 
             // light icons and camera frustums
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/light_camera_volumes.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let mut btn = egui::Button::image(img).selected(state.rendering.draw_light_camera_volumes).frame(true);
+                let mut btn = egui::Button::image(img).selected(state.rendering.debug.draw_light_camera_volumes).frame(true);
                 let supported = state.rendering_adapter.storage_buffer_array_support;
                 if !supported
                 {
@@ -649,7 +649,7 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
                 let hover = if supported { "toggle light and camera rendering (light icons, camera frustums)" } else { "light and camera rendering not supported by this GPU/backend" };
                 if ui.add(btn).on_hover_text(hover).clicked() && supported
                 {
-                    state.rendering.draw_light_camera_volumes = !state.rendering.draw_light_camera_volumes;
+                    state.rendering.debug.draw_light_camera_volumes = !state.rendering.debug.draw_light_camera_volumes;
                 }
             }
 
@@ -658,10 +658,10 @@ fn create_tool_menu(editor_state: &mut EditorState, state: &mut State, ui: &mut 
             // x-ray mode (Blender-style see-through)
             {
                 let img = egui::Image::new(egui::include_image!("../../../../resources/icons/xray.svg")).fit_to_exact_size(egui::vec2(icon_size, icon_size));
-                let btn = egui::Button::image(img).selected(state.rendering.xray_mode).frame(true);
+                let btn = egui::Button::image(img).selected(state.rendering.debug.xray_mode).frame(true);
                 if ui.add(btn).on_hover_text("toggle x-ray mode (see through objects)").clicked()
                 {
-                    state.rendering.xray_mode = !state.rendering.xray_mode;
+                    state.rendering.debug.xray_mode = !state.rendering.debug.xray_mode;
                 }
             }
 

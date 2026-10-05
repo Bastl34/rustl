@@ -1506,10 +1506,10 @@ impl Scene
         Self::consume_changed_joints(&all_nodes);
 
         // ********** debug volumes (bounding boxes / spheres, physics colliders) **********
-        self.draw_bounding_boxes = state.rendering.draw_bounding_boxes && self.debug_volumes_supported;
-        self.draw_bounding_spheres = state.rendering.draw_bounding_spheres && self.debug_volumes_supported;
-        self.draw_physics_volumes = state.rendering.draw_physics_volumes && self.debug_volumes_supported;
-        self.draw_light_camera_volumes = state.rendering.draw_light_camera_volumes && self.debug_volumes_supported;
+        self.draw_bounding_boxes = state.rendering.debug.draw_bounding_boxes && self.debug_volumes_supported;
+        self.draw_bounding_spheres = state.rendering.debug.draw_bounding_spheres && self.debug_volumes_supported;
+        self.draw_physics_volumes = state.rendering.debug.draw_physics_volumes && self.debug_volumes_supported;
+        self.draw_light_camera_volumes = state.rendering.debug.draw_light_camera_volumes && self.debug_volumes_supported;
 
         if self.draw_debug_volumes()
         {
@@ -1568,7 +1568,7 @@ impl Scene
             if self.draw_light_camera_volumes
             {
                 // internal entries (editor lights and cameras) only with "show internal entries"
-                let show_internal = state.rendering.debug_volumes_show_internal;
+                let show_internal = state.rendering.debug.debug_volumes_show_internal;
 
                 for light in scene.lights.get_ref()
                 {

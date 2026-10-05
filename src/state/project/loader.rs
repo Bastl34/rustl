@@ -14,7 +14,7 @@ use crate::helper::file::resolve_relative_path;
 use crate::helper::option_or_id::OptionOrId;
 use crate::resources::resources::{RESOURCE_SCHEME, load_binary, load_string};
 use crate::state::resources::sound_source::SoundSource;
-use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorScene, EditorSound, LoadingGuard, ProjectDoneCallback, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{SceneObject, SceneObjectOptions, ProjectFile, SceneFile, SceneSound, LoadingGuard, ProjectDoneCallback, ProjectSettings, RESUSE_MATERIALS_TAG};
 use crate::state::scene::camera::Camera;
 use crate::state::scene::components::component::{ComponentBox, ComponentItem, DeserializationContext};
 use crate::state::scene::components::transformation::Transformation;
@@ -24,11 +24,11 @@ use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
 use crate::state::scene::loader::asset_container::AssetContainer;
 use crate::state::scene::loader::loader::{load_asset, LoaderOptions, MaterialCache, TextureCache};
 use crate::state::scene::utilities::scene_utils::execute_on_state_mut_and_wait;
-use crate::state::state::State;
+use crate::state::state::{Rendering, State};
 
 // ******************** load ********************
 
-pub fn load_editor_project(path: &str) -> Option<EditorProject>
+pub fn load_editor_project(path: &str) -> Option<ProjectFile>
 {
     let json = match load_string(path)
     {
@@ -40,7 +40,7 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
         },
     };
 
-    match serde_json::from_str::<EditorProject>(&json)
+    match serde_json::from_str::<ProjectFile>(&json)
     {
         Ok(project) => Some(project),
         Err(error) =>
@@ -51,7 +51,7 @@ pub fn load_editor_project(path: &str) -> Option<EditorProject>
     }
 }
 
-pub fn load_editor_scene(path: &str) -> Option<EditorScene>
+pub fn load_editor_scene(path: &str) -> Option<SceneFile>
 {
     let json = match load_string(path)
     {
@@ -63,7 +63,7 @@ pub fn load_editor_scene(path: &str) -> Option<EditorScene>
         },
     };
 
-    match serde_json::from_str::<EditorScene>(&json)
+    match serde_json::from_str::<SceneFile>(&json)
     {
         Ok(scene) => Some(scene),
         Err(error) =>
@@ -74,15 +74,15 @@ pub fn load_editor_scene(path: &str) -> Option<EditorScene>
     }
 }
 
-// ******************** apply (EditorProject --> Runtime) ********************
+// ******************** apply (ProjectFile --> Runtime) ********************
 
 /// A parsed editor object ready to be inserted into a scene.
 /// The heavy parsing/decoding is already done; only state-mutation remains.
-struct PreparedEditorObject
+struct PreparedSceneObject
 {
     uuid: Option<String>,
     name: String,
-    options: EditorObjectOptions,
+    options: SceneObjectOptions,
     position: [f32; 3],
     rotation: [f32; 3],
     rotation_quat: Option<[f32; 4]>,
@@ -90,13 +90,13 @@ struct PreparedEditorObject
     source: Option<String>,
     container: Option<AssetContainer>,
     components: Vec<serde_json::Value>,
-    children: Vec<PreparedEditorObject>,
+    children: Vec<PreparedSceneObject>,
 }
 
 // components saved with a node - they need the deserialization context, so they are applied with the controllers
 type PendingComponents = Vec<(crate::state::scene::node::NodeItem, Vec<serde_json::Value>)>;
 
-fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &mut TextureCache, mat_cache: &mut MaterialCache, progress_callback: &dyn Fn()) -> PreparedEditorObject
+fn load_editor_object(obj: &SceneObject, base_path: &str, create_mipmaps: bool, max_tex_res: u32, tex_cache: &mut TextureCache, mat_cache: &mut MaterialCache, progress_callback: &dyn Fn()) -> PreparedSceneObject
 {
     let reuse_materials = obj.options.reuse_materials_by_name.unwrap_or(false);
 
@@ -177,7 +177,7 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
         children.push(load_editor_object(child_object, base_path, create_mipmaps, max_tex_res, tex_cache, mat_cache, progress_callback));
     }
 
-    PreparedEditorObject
+    PreparedSceneObject
     {
         uuid: obj.uuid.clone(),
         name: obj.name.clone(),
@@ -193,9 +193,9 @@ fn load_editor_object(obj: &EditorObject, base_path: &str, create_mipmaps: bool,
     }
 }
 
-fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedEditorObject, pending: &mut PendingComponents)
+fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate::state::scene::node::NodeItem>, object: PreparedSceneObject, pending: &mut PendingComponents)
 {
-    let PreparedEditorObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, components, children } = object;
+    let PreparedSceneObject { uuid, name, options, position, rotation, rotation_quat, scale, source, container, components, children } = object;
 
     let node: Option<crate::state::scene::node::NodeItem> = match container
     {
@@ -296,7 +296,7 @@ fn apply_prepared_object(state: &mut State, scene_id: u32, parent: Option<crate:
 }
 
 // the files of the sound resources, read off the main thread: entry, path, bytes
-fn load_editor_sounds(sounds: &[EditorSound], base_path: &str) -> Vec<(EditorSound, String, Vec<u8>)>
+fn load_editor_sounds(sounds: &[SceneSound], base_path: &str) -> Vec<(SceneSound, String, Vec<u8>)>
 {
     sounds.iter().filter_map(|sound|
     {
@@ -424,9 +424,9 @@ fn apply_scene_entries(state: &mut State, scene_id: u32, node_components: Pendin
     }
 }
 
-fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorScene, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback) -> Vec<u32>
+fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(SceneFile, String, bool)>, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, log_label: String, done_callback: ProjectDoneCallback) -> Vec<u32>
 {
-    let mut scenes: Vec<(EditorScene, u32, String)> = Vec::new();
+    let mut scenes: Vec<(SceneFile, u32, String)> = Vec::new();
     let mut added_ids: Vec<u32> = Vec::new();
 
     for (editor_scene, full_path, active) in editor_scenes
@@ -436,6 +436,21 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
         {
             scene.active = active;
             scene.source = Some(AssetPathDesciptor::new_from_path(full_path.clone()));
+
+            if let Some(settings) = &editor_scene.settings
+            {
+                // unmarked: the render scene does not exist yet and builds from these values - a change mark would recreate pipelines it has not created yet
+                let data = scene.get_data_mut().get_unmarked_mut();
+                data.max_lights = settings.max_lights;
+                data.gamma = settings.gamma;
+                data.exposure = settings.exposure;
+                data.ibl_diffuse_intensity = settings.ibl_diffuse_intensity;
+            }
+
+            if let Some(physics) = editor_scene.physics
+            {
+                scene.physics.settings = physics;
+            }
         }
         scenes.push((editor_scene, id, full_path));
         added_ids.push(id);
@@ -445,7 +460,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
     let create_mipmaps = state.rendering.create_mipmaps;
     let max_tex_res = state.max_texture_resolution();
 
-    fn count_objects(objects: &[EditorObject]) -> usize
+    fn count_objects(objects: &[SceneObject]) -> usize
     {
         objects.iter().map(|o| 1 + count_objects(&o.objects)).sum()
     }
@@ -478,7 +493,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
                 *progress_callback_state.write().unwrap() = *count as f32 / total as f32;
             };
 
-            let mut loaded_objects: Vec<PreparedEditorObject> = Vec::with_capacity(editor_scene.objects.len());
+            let mut loaded_objects: Vec<PreparedSceneObject> = Vec::with_capacity(editor_scene.objects.len());
             for object in &editor_scene.objects
             {
                 loaded_objects.push(load_editor_object(object, &base_path, create_mipmaps, max_tex_res, &mut tex_cache, &mut mat_cache, &progress_callback));
@@ -486,7 +501,7 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
 
             let sounds = load_editor_sounds(&editor_scene.sounds, &base_path);
 
-            let EditorScene { cameras, lights, controller, .. } = editor_scene;
+            let SceneFile { cameras, lights, controller, .. } = editor_scene;
 
             // apply pass: single main-thread round-trip for all prepared objects of this scene
             execute_on_state_mut_and_wait(main_queue.clone(), Box::new(move |state|
@@ -524,7 +539,29 @@ fn load_editor_scenes_into_state(state: &mut State, editor_scenes: Vec<(EditorSc
     added_ids
 }
 
-pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, done_callback: ProjectDoneCallback)
+// missing settings fall back to the defaults, so nothing is carried over from the previous project
+pub fn apply_project_settings(state: &mut State, settings: &ProjectSettings)
+{
+    let rendering = match settings.rendering.clone().map(serde_json::from_value::<Rendering>)
+    {
+        Some(Ok(rendering)) => rendering,
+        Some(Err(e)) => { console_error!("failed to parse rendering settings: {}", e); Rendering::default() },
+        None => Rendering::default(),
+    };
+    state.rendering.apply_settings(rendering, &state.rendering_adapter);
+
+    let audio = settings.audio.clone().unwrap_or_default();
+    state.io.audio_device.write().unwrap().data.get_mut().volume = audio.volume;
+
+    state.window = settings.window.clone().unwrap_or_default();
+    state.input = settings.input.clone().unwrap_or_default();
+    if !cfg!(feature = "editor") && *state.rendering.fullscreen.get_ref() != state.window.fullscreen
+    {
+        state.rendering.fullscreen.set(state.window.fullscreen);
+    }
+}
+
+pub fn apply_editor_project(state: &mut State, project: ProjectFile, path: &str, loading_state: Arc<RwLock<bool>>, loading_progress_state: Arc<RwLock<f32>>, done_callback: ProjectDoneCallback)
 {
     if project.scenes.is_empty()
     {
@@ -533,9 +570,10 @@ pub fn apply_editor_project(state: &mut State, project: EditorProject, path: &st
     }
 
     state.project = project.project.clone();
+    apply_project_settings(state, &project.settings);
     state.delete_all_scenes(true);
 
-    let mut editor_scenes: Vec<(EditorScene, String, bool)> = Vec::new();
+    let mut editor_scenes: Vec<(SceneFile, String, bool)> = Vec::new();
     for scene_ref in project.scenes
     {
         let full_path = resolve_relative_path(path, scene_ref.path.as_str());

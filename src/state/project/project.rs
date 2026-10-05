@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::scene::exporter::serialization_helper::is_false;
 use crate::state::scene::node::NodeSettings;
-use crate::state::state::State;
+use crate::state::scene::physics::physics_world::PhysicsWorldSettings;
+use crate::state::state::{InputSettings, State, WindowSettings};
 
 /// Node extra flag: reuse already loaded materials with the same name instead of duplicating them.
 pub const RESUSE_MATERIALS_TAG: &str = "reuse_materials_by_name";
@@ -17,17 +18,17 @@ pub type ProjectDoneCallback = Option<Box<dyn FnOnce(&mut State) + Send + Sync +
 // ******************** structs ********************
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorProjectFormat
+pub struct ProjectFileFormat
 {
     pub generator: String,
     pub version: String,
 }
 
-impl Default for EditorProjectFormat
+impl Default for ProjectFileFormat
 {
     fn default() -> Self
     {
-        EditorProjectFormat
+        ProjectFileFormat
         {
             generator: format!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")).to_string(),
             version: PROJECT_FILE_VERSION.to_string(),
@@ -102,7 +103,7 @@ impl Default for ProjectData
 
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorProjectSceneRef
+pub struct ProjectSceneRef
 {
     pub path: String,
 
@@ -110,29 +111,70 @@ pub struct EditorProjectSceneRef
     pub active: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct EditorProject
+// the global settings of the engine - missing ones fall back to the defaults on load
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProjectSettings
 {
-    pub format: EditorProjectFormat,
-    pub project: ProjectData,
+    // serde of the runtime Rendering as it is (without the debug views)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendering: Option<serde_json::Value>,
 
-    pub scenes: Vec<EditorProjectSceneRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<AudioSettings>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowSettings>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<InputSettings>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorScene
+pub struct AudioSettings
+{
+    pub volume: f32,
+}
+
+impl Default for AudioSettings
+{
+    fn default() -> Self
+    {
+        AudioSettings { volume: 1.0 }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ProjectFile
+{
+    pub format: ProjectFileFormat,
+    pub project: ProjectData,
+
+    #[serde(default)]
+    pub settings: ProjectSettings,
+
+    pub scenes: Vec<ProjectSceneRef>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SceneFile
 {
     pub name: String,
 
     #[serde(default, skip_serializing)]
     pub active: bool,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<SceneSettings>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physics: Option<PhysicsWorldSettings>,
+
     // the sound resources - loaded before the controllers, which refer to them by uuid
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sounds: Vec<EditorSound>,
+    pub sounds: Vec<SceneSound>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub objects: Vec<EditorObject>,
+    pub objects: Vec<SceneObject>,
 
     // serde of the runtime types as they are - parsed one by one, so a broken entry only drops itself
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -145,8 +187,24 @@ pub struct EditorScene
     pub controller: Vec<serde_json::Value>,
 }
 
+// the scene data without the environment texture
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorSound
+pub struct SceneSettings
+{
+    pub max_lights: u32,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gamma: Option<f32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposure: Option<f32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ibl_diffuse_intensity: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SceneSound
 {
     pub uuid: String,
     pub name: String,
@@ -154,7 +212,7 @@ pub struct EditorSound
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorObjectOptions
+pub struct SceneObjectOptions
 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reuse_materials_by_name: Option<bool>,
@@ -168,7 +226,7 @@ pub struct EditorObjectOptions
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct EditorObject
+pub struct SceneObject
 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -178,7 +236,7 @@ pub struct EditorObject
     pub uuid: Option<String>,
 
     pub name: String,
-    pub options: EditorObjectOptions,
+    pub options: SceneObjectOptions,
 
     pub position: [f32; 3],
     pub rotation: [f32; 3],
@@ -190,7 +248,7 @@ pub struct EditorObject
     pub components: Vec<serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub objects: Vec<EditorObject>,
+    pub objects: Vec<SceneObject>,
 }
 
 

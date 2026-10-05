@@ -6,7 +6,7 @@ use web_time::Instant;
 use image::{ImageFormat, EncodableLayout};
 use nalgebra::{Point2, Point3, Vector3};
 
-use crate::{gui::editor::gizmo::hide_gizmos, state::{project::project::ProjectData, scene::node::NodeSettings}};
+use crate::{gui::editor::gizmo::hide_gizmos, state::{project::{loader::apply_project_settings, project::{ProjectData, ProjectSettings}}, scene::node::NodeSettings}};
 use crate::{console_log, gui::editor::{helper::apply_fly_camera_move_state, recent_projects::RecentProjectsData, settings::EditorSettings}, helper::{console_log::LogType, file::{get_extension, get_stem}, math::approx_equal}, rendering::{self, texture::Texture}, resources::resources::{exists, load_binary, read_files_recursive}, state::{helper::render_item::get_render_item, scene::{components::transformation::TransformationData, node::NodeItem, scene::Scene}, state::{RunMode, State}}};
 use crate::gui::editor::ui::export::ExportDialog;
 
@@ -488,6 +488,7 @@ impl EditorState
     pub fn reset_project(&mut self, state: &mut State)
     {
         state.project = ProjectData::default();
+        apply_project_settings(state, &ProjectSettings::default());
         self.project_path = None;
         self.project_session_start = Instant::now();
     }

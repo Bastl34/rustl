@@ -297,7 +297,7 @@ impl Editor
         self.update_cameras(state);
 
         // the renderer has no access to the editor state
-        state.rendering.debug_volumes_show_internal = self.editor_state.show_internal_entries;
+        state.rendering.debug.debug_volumes_show_internal = self.editor_state.show_internal_entries;
 
         // update grid based on camera pos and key inputs
         update_grid(&mut self.editor_state, state);
@@ -560,13 +560,13 @@ impl Editor
         // wireframe mode toggle
         if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftShift)
         {
-            state.rendering.wireframe_mode = !state.rendering.wireframe_mode;
+            state.rendering.debug.wireframe_mode = !state.rendering.debug.wireframe_mode;
         }
 
         // x-ray mode toggle
         if state.io.input_manager.keyboard.is_pressed_no_wait(Key::Z) && state.io.input_manager.keyboard.is_holding_modifier(Modifier::LeftAlt)
         {
-            state.rendering.xray_mode = !state.rendering.xray_mode;
+            state.rendering.debug.xray_mode = !state.rendering.debug.xray_mode;
         }
 
         // quad view toggle (on windows its mapped to At)
@@ -825,7 +825,7 @@ impl Editor
                 if let Some(pos) = pos
                 {
                     // x-ray click-through (blender style): repeated clicks on the same spot cycle to the next hit behind
-                    let xray_cycling = state.rendering.xray_mode && self.editor_state.pick_mode == PickType::None && !ctrl_holding;
+                    let xray_cycling = state.rendering.debug.xray_mode && self.editor_state.pick_mode == PickType::None && !ctrl_holding;
                     let same_spot = xray_cycling && self.editor_state.xray_pick_pos.map_or(false, |last| (last - pos).norm() < 4.0);
 
                     if !same_spot

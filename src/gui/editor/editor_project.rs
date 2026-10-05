@@ -16,13 +16,13 @@ use crate::gui::editor::editor::EDITOR_INTERNAL_TAG;
 use crate::gui::editor::editor_state::EditorState;
 use crate::resources::resources::{self, RESOURCE_SCHEME};
 use crate::state::project::loader::{apply_editor_project, apply_editor_scene, load_editor_project};
-use crate::state::project::project::{EditorObject, EditorObjectOptions, EditorProject, EditorProjectFormat, EditorProjectSceneRef, EditorScene, EditorSound, RESUSE_MATERIALS_TAG};
+use crate::state::project::project::{AudioSettings, SceneObject, SceneObjectOptions, ProjectFile, ProjectFileFormat, ProjectSceneRef, SceneFile, SceneSettings, SceneSound, ProjectSettings, RESUSE_MATERIALS_TAG};
 use crate::state::resources::sound_source::SoundSourceItem;
 use crate::state::scene::components::transformation::Transformation;
 use crate::state::scene::scene_controller::scene_controller::SceneControllerBox;
 use crate::state::state::{ENGINE_INTERNAL_TAG, ENGINE_INTERNAL_TAG_PREFX, RunMode, State};
 
-// ******************** extraction (Runtime --> EditorProject) ********************
+// ******************** extraction (Runtime --> ProjectFile) ********************
 
 fn scene_file_name(scene_name: &str, project_name: &str) -> String
 {
@@ -30,7 +30,7 @@ fn scene_file_name(scene_name: &str, project_name: &str) -> String
 }
 
 // the sound resources with their files - the scene brings them for its controllers
-fn extract_sounds(sound_sources: &[SoundSourceItem], path: &str) -> Vec<EditorSound>
+fn extract_sounds(sound_sources: &[SoundSourceItem], path: &str) -> Vec<SceneSound>
 {
     sound_sources.iter().filter_map(|source|
     {
@@ -42,7 +42,7 @@ fn extract_sounds(sound_sources: &[SoundSourceItem], path: &str) -> Vec<EditorSo
             return None;
         };
 
-        Some(EditorSound { uuid: source.uuid.clone(), name: source.name.clone(), source: asset_source_path(origin, path) })
+        Some(SceneSound { uuid: source.uuid.clone(), name: source.name.clone(), source: asset_source_path(origin, path) })
     }).collect()
 }
 
@@ -59,7 +59,20 @@ fn asset_source_path(origin: &str, path: &str) -> String
     }
 }
 
-fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<EditorSound>, path: &str) -> EditorScene
+fn extract_project_settings(state: &State) -> ProjectSettings
+{
+    let volume = state.io.audio_device.read().unwrap().data.get_ref().volume;
+
+    ProjectSettings
+    {
+        rendering: to_json_value("rendering settings", "rendering", &state.rendering),
+        audio: Some(AudioSettings { volume }),
+        window: Some(state.window.clone()),
+        input: Some(state.input.clone()),
+    }
+}
+
+fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<SceneSound>, path: &str) -> SceneFile
 {
     let objects = scene.nodes.iter()
         .filter_map(|node_item| extract_node(node_item, path))
@@ -86,10 +99,21 @@ fn extract_editor_scene(scene: &crate::state::scene::scene::Scene, sounds: Vec<E
         })
         .collect();
 
-    EditorScene
+    let data = scene.get_data();
+    let settings = SceneSettings
+    {
+        max_lights: data.max_lights,
+        gamma: data.gamma,
+        exposure: data.exposure,
+        ibl_diffuse_intensity: data.ibl_diffuse_intensity,
+    };
+
+    SceneFile
     {
         name: scene.name.clone(),
         active: scene.active,
+        settings: Some(settings),
+        physics: Some(scene.physics.settings),
         sounds,
         objects,
         cameras,
@@ -119,7 +143,7 @@ fn to_json_value<T: serde::Serialize + ?Sized>(kind: &str, name: &str, item: &T)
     }
 }
 
-fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> Option<EditorObject>
+fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> Option<SceneObject>
 {
     let node = node_item.read().unwrap();
 
@@ -158,7 +182,7 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
 
     let (position, rotation, rotation_quat, scale) = extract_transform(&node);
 
-    let options = EditorObjectOptions
+    let options = SceneObjectOptions
     {
         reuse_materials_by_name: node.extras.get::<bool>(RESUSE_MATERIALS_TAG).copied(),
         color: node.color.map(|color| [color.x, color.y, color.z]),
@@ -182,7 +206,7 @@ fn extract_node(node_item: &crate::state::scene::node::NodeItem, path: &str) -> 
         .filter_map(|child| extract_node(child, path))
         .collect();
 
-    Some(EditorObject
+    Some(SceneObject
     {
         source,
         uuid: Some(node.uuid.clone()),
@@ -229,7 +253,7 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
     let project_name = state.project.name.clone();
     let base_dir = get_dirname(path);
 
-    let mut project_scenes: Vec<EditorProjectSceneRef> = Vec::new();
+    let mut project_scenes: Vec<ProjectSceneRef> = Vec::new();
     let mut total_objects = 0;
     let mut used_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -286,13 +310,14 @@ pub fn save_editor_project(state: &mut State, editor_state: &mut EditorState, pa
         }
 
         let relative = make_relative_path(path, &scene_full_path).unwrap_or(scene_full_path);
-        project_scenes.push(EditorProjectSceneRef { path: relative, active: scene.active });
+        project_scenes.push(ProjectSceneRef { path: relative, active: scene.active });
     }
 
-    let project = EditorProject
+    let project = ProjectFile
     {
         project: state.project.clone(),
-        format: EditorProjectFormat::default(),
+        format: ProjectFileFormat::default(),
+        settings: extract_project_settings(state),
         scenes: project_scenes,
     };
 
